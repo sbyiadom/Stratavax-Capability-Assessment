@@ -1,4 +1,4 @@
-// pages/admin/reports/[resultId].js - FIXED for National Service
+// pages/admin/reports/[resultId].js - FIXED candidate name
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -68,49 +68,57 @@ export default function AdminReportView() {
         }
 
         // ============================================================
-        // FOR NATIONAL SERVICE: Extract category_scores from API response
+        // EXTRACT CANDIDATE NAME - CRITICAL FIX
+        // ============================================================
+        let candidateName = 'Candidate';
+        let candidateEmail = '';
+        let candidateUniversity = '';
+        let candidateProgramme = '';
+        
+        // Try multiple sources for candidate name
+        if (result.candidate_profiles?.full_name) {
+          candidateName = result.candidate_profiles.full_name;
+          candidateEmail = result.candidate_profiles.email || '';
+          candidateUniversity = result.candidate_profiles.university || '';
+          candidateProgramme = result.candidate_profiles.programme || '';
+        } else if (report.candidateInfo?.fullName) {
+          candidateName = report.candidateInfo.fullName;
+          candidateEmail = report.candidateInfo.email || '';
+          candidateUniversity = report.candidateInfo.university || '';
+          candidateProgramme = report.candidateInfo.programme || '';
+        } else if (data.candidateName) {
+          candidateName = data.candidateName;
+        } else if (data.result?.candidate_name) {
+          candidateName = data.result.candidate_name;
+        }
+
+        console.log('[Admin Report] Candidate name:', candidateName);
+
+        // ============================================================
+        // FOR NATIONAL SERVICE
         // ============================================================
         if (isNS) {
-          // Get category_scores from multiple sources
           let categoryScores = [];
           
-          // 1. From data.categoryScores (API top-level)
           if (data.categoryScores && Array.isArray(data.categoryScores) && data.categoryScores.length > 0) {
             categoryScores = data.categoryScores;
-            console.log('[Admin Report] Using categoryScores from data:', categoryScores.length);
-          }
-          // 2. From data.workplaceSubCategories + data.intellectualSubCategories
-          else if (data.workplaceSubCategories && data.intellectualSubCategories) {
+          } else if (data.workplaceSubCategories && data.intellectualSubCategories) {
             categoryScores = [
               ...(data.workplaceSubCategories || []),
               ...(data.intellectualSubCategories || [])
             ];
-            console.log('[Admin Report] Using combined sub-categories from data:', categoryScores.length);
-          }
-          // 3. From result.category_scores
-          else if (result.category_scores && Array.isArray(result.category_scores) && result.category_scores.length > 0) {
+          } else if (result.category_scores && Array.isArray(result.category_scores) && result.category_scores.length > 0) {
             categoryScores = result.category_scores;
-            console.log('[Admin Report] Using category_scores from result:', categoryScores.length);
-          }
-          // 4. From report.category_scores
-          else if (report.category_scores && Array.isArray(report.category_scores) && report.category_scores.length > 0) {
+          } else if (report.category_scores && Array.isArray(report.category_scores) && report.category_scores.length > 0) {
             categoryScores = report.category_scores;
-            console.log('[Admin Report] Using category_scores from report:', categoryScores.length);
-          }
-          // 5. From report.categoryScores
-          else if (report.categoryScores && Array.isArray(report.categoryScores) && report.categoryScores.length > 0) {
+          } else if (report.categoryScores && Array.isArray(report.categoryScores) && report.categoryScores.length > 0) {
             categoryScores = report.categoryScores;
-            console.log('[Admin Report] Using categoryScores from report:', categoryScores.length);
           }
 
-          // CRITICAL: Set category_scores on the report for the NationalServiceReport component
           report.category_scores = categoryScores;
           report.workplaceSubCategories = data.workplaceSubCategories || [];
           report.intellectualSubCategories = data.intellectualSubCategories || [];
 
-          console.log('[Admin Report] Final category_scores count:', report.category_scores.length);
-
-          // Ensure dimensions exist
           if (!report.dimensions) {
             report.dimensions = {
               workplaceReadiness: data.workplaceReadiness || result.workplace_readiness || 0,
@@ -119,21 +127,20 @@ export default function AdminReportView() {
             };
           }
 
-          // Ensure recommendation exists
           if (!report.recommendation) {
             report.recommendation = {
               level: data.recommendation || result.recommendation || 'Not Recommended'
             };
           }
 
-          // Ensure candidateInfo exists
-          if (!report.candidateInfo && result.candidate_profiles) {
+          if (!report.candidateInfo) {
             report.candidateInfo = {
-              fullName: result.candidate_profiles.full_name || 'Candidate',
-              university: result.candidate_profiles.university || '',
-              programme: result.candidate_profiles.programme || '',
-              graduationYear: result.candidate_profiles.graduation_year || '',
-              preferredDepartment: result.candidate_profiles.preferred_department || '',
+              fullName: candidateName,
+              email: candidateEmail,
+              university: candidateUniversity,
+              programme: candidateProgramme,
+              graduationYear: result.candidate_profiles?.graduation_year || '',
+              preferredDepartment: result.candidate_profiles?.preferred_department || '',
               assessmentDate: result.completed_at ? new Date(result.completed_at).toLocaleDateString() : 'N/A'
             };
           }
@@ -149,7 +156,7 @@ export default function AdminReportView() {
         }
 
         // ============================================================
-        // FOR STRATAVAX: Build with category scores, strengths, weaknesses
+        // FOR STRATAVAX - CRITICAL FIX: Pass candidate name
         // ============================================================
         if (!isNS) {
           let categoryScores = [];
@@ -170,11 +177,12 @@ export default function AdminReportView() {
           let weaknesses = result.weaknesses || report.weaknesses || report.developmentAreas || data.weaknesses || [];
           let recommendations = result.recommendations || report.recommendations || data.recommendations || [];
 
+          // Build candidate info with the extracted name
           const candidateInfo = {
-            fullName: result.candidate_profiles?.full_name || report.candidateInfo?.fullName || data.candidateName || 'Candidate',
-            email: result.candidate_profiles?.email || report.candidateInfo?.email || '',
-            university: result.candidate_profiles?.university || report.candidateInfo?.university || '',
-            programme: result.candidate_profiles?.programme || report.candidateInfo?.programme || '',
+            fullName: candidateName,
+            email: candidateEmail,
+            university: candidateUniversity,
+            programme: candidateProgramme,
             graduationYear: result.candidate_profiles?.graduation_year || report.candidateInfo?.graduationYear || '',
             preferredDepartment: result.candidate_profiles?.preferred_department || report.candidateInfo?.preferredDepartment || '',
             assessmentDate: result.completed_at ? new Date(result.completed_at).toLocaleDateString() : 'N/A'
@@ -194,6 +202,7 @@ export default function AdminReportView() {
             executiveSummary: result.executiveSummary || report.executiveSummary || data.executiveSummary || '',
             supervisorImplication: result.supervisorImplication || report.supervisorImplication || data.supervisorImplication || '',
             candidateInfo: candidateInfo,
+            candidateName: candidateName, // Add this for direct access
             reportType: 'stratavax',
             total_questions: result.total_questions || 0,
             answered_questions: result.answered_questions || 0
@@ -203,7 +212,8 @@ export default function AdminReportView() {
         setReportData({
           ...data,
           report: report,
-          result: result
+          result: result,
+          candidateName: candidateName // Add to top level for easy access
         });
         setIsNationalService(isNS);
 
@@ -251,7 +261,6 @@ export default function AdminReportView() {
   // ============================================================
   if (isNationalService && reportData?.report) {
     console.log('[Admin Report] Rendering National Service Report');
-    console.log('[Admin Report] category_scores count:', (reportData.report.category_scores || []).length);
     return (
       <AppLayout background="/images/admin-bg.jpg">
         <div style={styles.breadcrumb}>
@@ -275,9 +284,16 @@ export default function AdminReportView() {
     
     const stratavaxResult = {
       ...reportData.result,
-      candidate_profiles: report.candidateInfo || null,
+      candidate_profiles: {
+        full_name: report.candidateInfo?.fullName || reportData.candidateName || 'Candidate',
+        email: report.candidateInfo?.email || '',
+        university: report.candidateInfo?.university || '',
+        programme: report.candidateInfo?.programme || '',
+        graduation_year: report.candidateInfo?.graduationYear || '',
+        preferred_department: report.candidateInfo?.preferredDepartment || ''
+      },
       assessments: {
-        title: reportData.result?.assessments?.title || 'Assessment',
+        title: reportData.result?.assessments?.title || report.assessmentName || 'Assessment',
         assessment_type: {
           name: reportData.result?.assessments?.assessment_type?.name || 'General'
         }
@@ -293,7 +309,9 @@ export default function AdminReportView() {
       supervisorImplication: report.supervisorImplication || '',
       total_questions: report.total_questions || 0,
       answered_questions: report.answered_questions || 0,
-      completed_at: reportData.result?.completed_at || null
+      completed_at: reportData.result?.completed_at || null,
+      // Pass candidate name directly
+      candidateName: report.candidateInfo?.fullName || reportData.candidateName || 'Candidate'
     };
 
     return (
@@ -307,7 +325,7 @@ export default function AdminReportView() {
         </div>
         <StratavaxReport 
           result={stratavaxResult}
-          candidate={report.candidateInfo || null}
+          candidate={stratavaxResult.candidate_profiles || null}
           assessment={stratavaxResult.assessments || null}
           onBack={handleBack}
         />
