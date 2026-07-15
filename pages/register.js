@@ -1,4 +1,4 @@
-// pages/register.js - WITH STRATAVAX LOGO AND BACKGROUND IMAGE
+// pages/register.js - WITH STRATAVAX LOGO (PNG)
 
 import { useState } from 'react';
 import { useRouter } from 'next/router';
@@ -73,7 +73,6 @@ export default function Register() {
         return;
       }
 
-      // Create candidate profile
       const { error: profileError } = await supabase
         .from('candidate_profiles')
         .insert([
@@ -142,7 +141,7 @@ export default function Register() {
       <div style={styles.card}>
         <div style={styles.logoContainer}>
           <Image 
-            src="/images/stratavax-logo.svg" 
+            src="/images/stratavax-logo.png" 
             alt="Stratavax" 
             width={56} 
             height={56}
