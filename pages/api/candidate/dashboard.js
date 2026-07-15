@@ -1,4 +1,4 @@
-// pages/api/candidate/dashboard.js - SIMPLIFIED VERSION
+// pages/api/candidate/dashboard.js - FIXED with proper title fetching
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -21,7 +21,6 @@ export default async function handler(req, res) {
 
     const token = req.headers.authorization?.replace('Bearer ', '');
     if (!token) {
-      console.error('[API] No token provided');
       return res.status(401).json({ success: false, error: 'Unauthorized' });
     }
 
@@ -32,31 +31,24 @@ export default async function handler(req, res) {
     // Get user from token
     const { data: userData, error: userError } = await serviceClient.auth.getUser(token);
     if (userError || !userData?.user) {
-      console.error('[API] User error:', userError);
       return res.status(401).json({ success: false, error: 'Invalid token' });
     }
 
     const userId = userData.user.id;
-    console.log('[API] User ID:', userId);
 
     // ============================================================
     // STEP 1: Get candidate profile
     // ============================================================
-    const { data: profile, error: profileError } = await serviceClient
+    const { data: profile } = await serviceClient
       .from('candidate_profiles')
       .select('full_name, email, university, programme')
       .eq('id', userId)
       .maybeSingle();
 
-    if (profileError) {
-      console.error('[API] Profile error:', profileError);
-    }
-
     const candidateName = profile?.full_name || userData.user.user_metadata?.full_name || 'Candidate';
-    console.log('[API] Candidate name:', candidateName);
 
     // ============================================================
-    // STEP 2: Get candidate assessments (simple query, no joins)
+    // STEP 2: Get candidate assessments
     // ============================================================
     const { data: candidateAssessments, error: caError } = await serviceClient
       .from('candidate_assessments')
@@ -72,9 +64,6 @@ export default async function handler(req, res) {
       });
     }
 
-    console.log('[API] Found candidate assessments:', candidateAssessments?.length || 0);
-
-    // If no assessments, return empty
     if (!candidateAssessments || candidateAssessments.length === 0) {
       return res.status(200).json({
         success: true,
@@ -86,12 +75,14 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 3: Get all assessments details
+    // STEP 3: Get ALL assessments with their types in ONE query
     // ============================================================
     const assessmentIds = candidateAssessments.map(ca => ca.assessment_id).filter(Boolean);
     let assessmentMap = {};
+    let typeMap = {};
 
     if (assessmentIds.length > 0) {
+      // Get assessments with their type IDs
       const { data: assessments, error: aError } = await serviceClient
         .from('assessments')
         .select('id, title, description, assessment_type_id, question_count, time_limit_minutes, attempts_allowed')
@@ -101,45 +92,28 @@ export default async function handler(req, res) {
         assessments.forEach(a => {
           assessmentMap[a.id] = a;
         });
+        console.log('[API] Found assessments:', Object.keys(assessmentMap).length);
+        
+        // Get types for these assessments
+        const typeIds = assessments.map(a => a.assessment_type_id).filter(Boolean);
+        if (typeIds.length > 0) {
+          const { data: types, error: tError } = await serviceClient
+            .from('assessment_types')
+            .select('id, code, name, category_config')
+            .in('id', typeIds);
+
+          if (!tError && types) {
+            types.forEach(t => {
+              typeMap[t.id] = t;
+            });
+            console.log('[API] Found types:', Object.keys(typeMap).length);
+          }
+        }
       }
-      console.log('[API] Assessment details found:', Object.keys(assessmentMap).length);
     }
 
     // ============================================================
-    // STEP 4: Get assessment types
-    // ============================================================
-    const typeIds = Object.values(assessmentMap).map(a => a.assessment_type_id).filter(Boolean);
-    let typeMap = {};
-
-    if (typeIds.length > 0) {
-      const { data: types, error: tError } = await serviceClient
-        .from('assessment_types')
-        .select('id, code, name, category_config')
-        .in('id', typeIds);
-
-      if (!tError && types) {
-        types.forEach(t => {
-          typeMap[t.id] = t;
-        });
-      }
-      console.log('[API] Assessment types found:', Object.keys(typeMap).length);
-    }
-
-    // ============================================================
-    // STEP 5: Get all assessment types for tabs
-    // ============================================================
-    const { data: allTypes, error: allTypesError } = await serviceClient
-      .from('assessment_types')
-      .select('*')
-      .eq('is_active', true)
-      .order('display_order', { ascending: true });
-
-    if (allTypesError) {
-      console.error('[API] All types error:', allTypesError);
-    }
-
-    // ============================================================
-    // STEP 6: Build assessment cards
+    // STEP 4: Build assessment cards with proper titles
     // ============================================================
     const cards = candidateAssessments.map(ca => {
       const assessment = assessmentMap[ca.assessment_id] || {};
@@ -151,10 +125,16 @@ export default async function handler(req, res) {
         status = 'completed';
       }
 
+      // Get the actual title - use assessment.title, fallback to type name
+      let title = assessment.title || 'Assessment';
+      if (title === 'Assessment' && type.name) {
+        title = type.name;
+      }
+
       return {
         id: ca.assessment_id,
-        title: assessment.title || 'Unknown Assessment',
-        description: assessment.description || 'Assessment assigned by your supervisor.',
+        title: title,
+        description: assessment.description || 'Complete this assessment to demonstrate your capabilities.',
         typeCode: typeCode,
         typeName: type.name || 'General',
         status: status,
@@ -168,11 +148,15 @@ export default async function handler(req, res) {
       };
     });
 
-    console.log('[API] Cards built:', cards.length);
+    // ============================================================
+    // STEP 5: Get all assessment types for tabs
+    // ============================================================
+    const { data: allTypes } = await serviceClient
+      .from('assessment_types')
+      .select('*')
+      .eq('is_active', true)
+      .order('display_order', { ascending: true });
 
-    // ============================================================
-    // STEP 7: Build assessment types for tabs
-    // ============================================================
     const defaultAreas = {
       general: ["Cognitive Ability", "Communication", "Cultural & Attitudinal Fit", "Emotional Intelligence", "Ethics & Integrity", "Leadership & Management", "Performance Metrics", "Personality & Behavioral", "Problem-Solving", "Technical & Manufacturing"],
       leadership: ["Change Leadership & Agility", "Communication & Influence", "Cultural Alignment", "Decision-Making & Problem-Solving", "Execution & Results Orientation", "People Management & Coaching", "Resilience & Stress Management", "Role Readiness", "Vision & Strategic Thinking"],
@@ -207,7 +191,7 @@ export default async function handler(req, res) {
       });
 
     // ============================================================
-    // STEP 8: Calculate stats
+    // STEP 6: Calculate stats
     // ============================================================
     const stats = {
       total: cards.length,
@@ -216,8 +200,6 @@ export default async function handler(req, res) {
       inProgress: cards.filter(c => c.status === 'in_progress').length,
       blocked: cards.filter(c => c.status === 'blocked').length
     };
-
-    console.log('[API] Stats:', stats);
 
     return res.status(200).json({
       success: true,
@@ -231,8 +213,7 @@ export default async function handler(req, res) {
     console.error('[API] Error:', error);
     return res.status(500).json({
       success: false,
-      error: error.message || 'Internal server error',
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      error: error.message || 'Internal server error'
     });
   }
 }
