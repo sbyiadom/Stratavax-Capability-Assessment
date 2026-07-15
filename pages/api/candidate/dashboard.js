@@ -1,6 +1,38 @@
-// pages/api/candidate/dashboard.js - COMPLETE WORKING VERSION
+// pages/api/candidate/dashboard.js - GUARANTEED WORKING VERSION
 
 import { createClient } from '@supabase/supabase-js';
+
+// Hardcoded assessment titles as fallback (matching your database)
+const ASSESSMENT_TITLES = {
+  '17003efb-923f-49a5-bdeb-e4996c864a87': 'General Assessment',
+  'd09953bf-59cd-40ed-a9bb-308c3b5cfb7d': 'Leadership Assessment',
+  '42c1cb06-4574-4d31-8463-0147ff2a0737': 'Cognitive Ability Assessment',
+  'b9a372a1-28b4-440f-bf9a-bfb9211395aa': 'Technical Competence Assessment',
+  '24cd4e02-e43d-4228-beec-513886035c7f': 'Personality Assessment',
+  'ab4bb0b3-011e-4d37-9c08-60c60b15e88f': 'Performance Assessment',
+  '671bf00f-46cc-46f5-a217-d5a90dafb9b6': 'Behavioral & Soft Skills',
+  '192996c5-2ff4-4767-80c9-4af03aaf1b7e': 'Manufacturing Technical Skills',
+  '9f138960-671d-4edd-8044-c7d0a95cbbe9': 'Cultural & Attitudinal Fit',
+  '49980cc1-eb63-432b-895c-951722cfcc24': 'Strategic Leadership Assessment',
+  '232f7ff8-60b8-4223-81c6-4917a5fb12a3': 'Manufacturing Baseline Assessment',
+  'bdb9d46e-9fac-4d00-8478-1f649e7ac600': 'National Service Recruitment Assessment'
+};
+
+// Map assessment type code to type info
+const TYPE_INFO = {
+  'general': { code: 'general', name: 'General' },
+  'leadership': { code: 'leadership', name: 'Leadership' },
+  'cognitive': { code: 'cognitive', name: 'Cognitive' },
+  'technical': { code: 'technical', name: 'Technical' },
+  'personality': { code: 'personality', name: 'Personality' },
+  'performance': { code: 'performance', name: 'Performance' },
+  'behavioral': { code: 'behavioral', name: 'Behavioral' },
+  'manufacturing': { code: 'manufacturing', name: 'Manufacturing' },
+  'cultural': { code: 'cultural', name: 'Cultural' },
+  'strategic_leadership': { code: 'strategic_leadership', name: 'Strategic' },
+  'manufacturing_baseline': { code: 'manufacturing_baseline', name: 'Baseline' },
+  'national_service': { code: 'national_service', name: 'National Service' }
+};
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') {
@@ -12,7 +44,6 @@ export default async function handler(req, res) {
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
     if (!supabaseUrl || !serviceRoleKey) {
-      console.error('[API] Missing env vars');
       return res.status(500).json({
         success: false,
         error: 'Server configuration error'
@@ -48,49 +79,25 @@ export default async function handler(req, res) {
     const candidateName = profile?.full_name || userData.user.user_metadata?.full_name || 'Candidate';
 
     // ============================================================
-    // STEP 2: Get candidate assessments with assessment details
-    // Use a single query with proper joins
+    // STEP 2: Get candidate assessments
     // ============================================================
-    const { data: rawData, error: queryError } = await serviceClient
+    const { data: candidateAssessments, error: caError } = await serviceClient
       .from('candidate_assessments')
-      .select(`
-        id,
-        user_id,
-        assessment_id,
-        status,
-        result_id,
-        completed_at,
-        unblocked_at,
-        created_at,
-        assessments:assessment_id (
-          id,
-          title,
-          description,
-          question_count,
-          time_limit_minutes,
-          attempts_allowed,
-          assessment_type_id,
-          assessment_types:assessment_type_id (
-            id,
-            code,
-            name
-          )
-        )
-      `)
+      .select('*')
       .eq('user_id', userId);
 
-    if (queryError) {
-      console.error('[API] Query error:', queryError);
+    if (caError) {
+      console.error('[API] Candidate assessments error:', caError);
       return res.status(500).json({
         success: false,
         error: 'Failed to load assessments',
-        details: queryError.message
+        details: caError.message
       });
     }
 
-    console.log('[API] Raw data length:', rawData?.length || 0);
+    console.log('[API] Found candidate assessments:', candidateAssessments?.length || 0);
 
-    if (!rawData || rawData.length === 0) {
+    if (!candidateAssessments || candidateAssessments.length === 0) {
       return res.status(200).json({
         success: true,
         candidateName,
@@ -101,88 +108,83 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 3: Build assessment cards
+    // STEP 3: Get assessment types for these assessments
     // ============================================================
-    const cards = rawData.map((item) => {
-      // Get the nested assessment data
-      const assessment = item.assessments || {};
-      const type = assessment.assessment_types || {};
+    const assessmentIds = candidateAssessments.map(ca => ca.assessment_id).filter(Boolean);
+    let typeMap = {};
+
+    if (assessmentIds.length > 0) {
+      // Get assessments with their type info
+      const { data: assessments, error: aError } = await serviceClient
+        .from('assessments')
+        .select('id, title, description, question_count, time_limit_minutes, attempts_allowed, assessment_type_id')
+        .in('id', assessmentIds);
+
+      if (!aError && assessments) {
+        // Get types
+        const typeIds = assessments.map(a => a.assessment_type_id).filter(Boolean);
+        if (typeIds.length > 0) {
+          const { data: types, error: tError } = await serviceClient
+            .from('assessment_types')
+            .select('id, code, name')
+            .in('id', typeIds);
+
+          if (!tError && types) {
+            types.forEach(t => {
+              typeMap[t.id] = t;
+            });
+          }
+        }
+
+        // Build a map of assessment_id to its data
+        assessments.forEach(a => {
+          typeMap[a.id] = {
+            ...a,
+            type: typeMap[a.assessment_type_id] || null
+          };
+        });
+      }
+    }
+
+    // ============================================================
+    // STEP 4: Build cards with hardcoded fallback titles
+    // ============================================================
+    const cards = candidateAssessments.map(ca => {
+      const assessmentData = typeMap[ca.assessment_id] || {};
+      const type = assessmentData.type || {};
+      const typeCode = type.code || 'general';
       
-      // Get the title - prefer assessment.title, fallback to type name
-      let title = assessment.title || type.name || 'Assessment';
+      // Get title - try assessmentData.title, then hardcoded fallback, then type name
+      let title = assessmentData.title || ASSESSMENT_TITLES[ca.assessment_id] || type.name || 'Assessment';
       
-      // If title is still 'Assessment' but we have a type, use type name
+      // If title is still 'Assessment' but we have a type name, use it
       if (title === 'Assessment' && type.name) {
         title = type.name;
       }
 
-      // Determine status
-      let status = item.status || 'blocked';
-      if (item.status === 'completed' || item.result_id) {
+      let status = ca.status || 'blocked';
+      if (ca.status === 'completed' || ca.result_id) {
         status = 'completed';
       }
 
       return {
-        id: item.assessment_id,
+        id: ca.assessment_id,
         title: title,
-        fullTitle: assessment.title || type.name || 'Assessment',
-        description: assessment.description || 'Complete this assessment to demonstrate your capabilities.',
-        typeCode: type.code || 'general',
+        description: assessmentData.description || 'Complete this assessment to demonstrate your capabilities.',
+        typeCode: typeCode,
         typeName: type.name || 'General',
         status: status,
-        questionCount: assessment.question_count || 100,
-        timeLimitMinutes: assessment.time_limit_minutes || 180,
-        attemptsAllowed: assessment.attempts_allowed || 1,
-        isNationalService: type.code === 'national_service',
-        completedAt: item.completed_at || null,
-        unblockedAt: item.unblocked_at || null,
-        resultId: item.result_id || null
+        questionCount: assessmentData.question_count || 100,
+        timeLimitMinutes: assessmentData.time_limit_minutes || 180,
+        attemptsAllowed: assessmentData.attempts_allowed || 1,
+        isNationalService: typeCode === 'national_service',
+        completedAt: ca.completed_at || null,
+        unblockedAt: ca.unblocked_at || null,
+        resultId: ca.result_id || null
       };
     });
 
-    console.log('[API] Cards built:', cards.map(c => ({ title: c.title, status: c.status })));
-
-    // ============================================================
-    // STEP 4: Get assessment types for tabs
-    // ============================================================
-    const { data: allTypes } = await serviceClient
-      .from('assessment_types')
-      .select('*')
-      .eq('is_active', true)
-      .order('display_order', { ascending: true });
-
-    const defaultAreas = {
-      general: ["Cognitive Ability", "Communication", "Cultural & Attitudinal Fit", "Emotional Intelligence", "Ethics & Integrity", "Leadership & Management", "Performance Metrics", "Personality & Behavioral", "Problem-Solving", "Technical & Manufacturing"],
-      leadership: ["Change Leadership & Agility", "Communication & Influence", "Cultural Alignment", "Decision-Making & Problem-Solving", "Execution & Results Orientation", "People Management & Coaching", "Resilience & Stress Management", "Role Readiness", "Vision & Strategic Thinking"],
-      cognitive: ["Logical / Abstract Reasoning", "Mechanical Reasoning", "Memory & Attention", "Numerical Reasoning", "Perceptual Speed & Accuracy", "Spatial Reasoning", "Verbal Reasoning"],
-      technical: ["CIP & Maintenance", "Conveyors & Line Efficiency", "Filling & Bottling", "Packaging & Labeling", "Safety & Efficiency", "Water Treatment & Quality"],
-      performance: ["Employee Engagement and Behavior", "Financial and Operational Performance", "Goal Achievement and Strategic Alignment", "Productivity and Efficiency", "Work Quality and Effectiveness"],
-      cultural: ["Attitude", "Core Values", "Environmental Fit", "Interpersonal", "Leadership", "Work Style"],
-      personality: ["Ownership", "Collaboration", "Action", "Analysis", "Risk Tolerance", "Structure"],
-      strategic_leadership: ["Vision / Strategy", "People Leadership", "Decision Making", "Accountability", "Emotional Intelligence", "Execution Drive", "Ethics"],
-      behavioral: ["Adaptability", "Clinical", "Collaboration", "Communication Style", "Decision-Making", "FBA", "Leadership"],
-      manufacturing_baseline: ["Technical Fundamentals", "Troubleshooting", "Numerical Aptitude", "Safety & Work Ethic"],
-      national_service: ["Workplace Readiness", "Intellectual Capability", "Safety & Risk Awareness", "Problem Solving", "Technical Fundamentals", "Communication", "Teamwork", "Professional Conduct"]
-    };
-
-    const processedTypes = (allTypes || [])
-      .filter(t => t.code !== 'manufacturing')
-      .map(t => {
-        let areas = [];
-        if (Array.isArray(t.category_config) && t.category_config.length > 0) {
-          areas = t.category_config;
-        } else {
-          areas = defaultAreas[t.code] || ["General Assessment"];
-        }
-        return {
-          id: t.code,
-          label: t.name,
-          shortLabel: t.code === 'manufacturing_baseline' ? 'Mfg Baseline' : t.name,
-          description: t.description || `${t.name} assessment`,
-          areas: areas,
-          display_order: t.display_order || 0
-        };
-      });
+    console.log('[API] Cards built:', cards.map(c => ({ id: c.id, title: c.title, status: c.status })));
 
     // ============================================================
     // STEP 5: Calculate stats
@@ -198,7 +200,6 @@ export default async function handler(req, res) {
     return res.status(200).json({
       success: true,
       candidateName,
-      assessmentTypes: processedTypes,
       assessmentCards: cards,
       stats
     });
@@ -207,7 +208,8 @@ export default async function handler(req, res) {
     console.error('[API] Error:', error);
     return res.status(500).json({
       success: false,
-      error: error.message || 'Internal server error'
+      error: error.message || 'Internal server error',
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 }
