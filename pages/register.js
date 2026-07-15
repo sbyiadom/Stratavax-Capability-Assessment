@@ -1,7 +1,8 @@
-// pages/register.js - COMPLETE REGISTRATION PAGE
+// pages/register.js - WITH STRATAVAX LOGO AND BACKGROUND IMAGE
 
 import { useState } from 'react';
 import { useRouter } from 'next/router';
+import Image from 'next/image';
 import Link from 'next/link';
 import { supabase } from '../supabase/client';
 
@@ -33,14 +34,12 @@ export default function Register() {
     setError(null);
     setSuccess(false);
 
-    // Validate passwords match
     if (formData.password !== formData.confirmPassword) {
       setError('Passwords do not match');
       setLoading(false);
       return;
     }
 
-    // Validate password length
     if (formData.password.length < 6) {
       setError('Password must be at least 6 characters');
       setLoading(false);
@@ -48,7 +47,6 @@ export default function Register() {
     }
 
     try {
-      // Step 1: Create user in Supabase Auth
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: formData.email.trim(),
         password: formData.password,
@@ -75,7 +73,7 @@ export default function Register() {
         return;
       }
 
-      // Step 2: Create candidate profile
+      // Create candidate profile
       const { error: profileError } = await supabase
         .from('candidate_profiles')
         .insert([
@@ -92,44 +90,39 @@ export default function Register() {
 
       if (profileError) {
         console.error('Profile creation error:', profileError);
-        // User is created but profile failed - still show success but with warning
         setSuccess(true);
         setError('Account created but profile setup incomplete. Please contact support.');
         setLoading(false);
         return;
       }
 
-      // Step 3: Assign National Service assessment to the candidate
+      // Assign National Service assessment
       try {
-        // Get the National Service assessment ID
-        const { data: assessmentData, error: assessmentError } = await supabase
+        const { data: assessmentData } = await supabase
           .from('assessments')
           .select('id')
           .eq('title', 'National Service Recruitment Assessment')
           .single();
 
-        if (!assessmentError && assessmentData) {
-          // Assign the assessment to the candidate
+        if (assessmentData) {
           await supabase
             .from('candidate_assessments')
             .insert([
               {
                 user_id: authData.user.id,
                 assessment_id: assessmentData.id,
-                status: 'unblocked', // National Service is always unblocked
+                status: 'unblocked',
                 created_at: new Date().toISOString()
               }
             ]);
         }
       } catch (assignError) {
         console.error('Assessment assignment error:', assignError);
-        // Don't fail registration if assignment fails
       }
 
       setSuccess(true);
       setLoading(false);
 
-      // Redirect to login after 3 seconds
       setTimeout(() => {
         router.push('/login');
       }, 3000);
@@ -143,11 +136,18 @@ export default function Register() {
 
   return (
     <div style={styles.container}>
-      <div style={styles.background} />
+      <div style={styles.backgroundImage} />
+      <div style={styles.overlay} />
       
       <div style={styles.card}>
         <div style={styles.logoContainer}>
-          <div style={styles.logoEmoji}>📊</div>
+          <Image 
+            src="/images/stratavax-logo.svg" 
+            alt="Stratavax" 
+            width={56} 
+            height={56}
+            priority
+          />
           <h1 style={styles.title}>Stratavax</h1>
           <p style={styles.subtitle}>Create your candidate account</p>
         </div>
@@ -283,42 +283,51 @@ const styles = {
     position: 'relative',
     overflow: 'hidden'
   },
-  background: {
+  backgroundImage: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
     bottom: 0,
-    background: 'linear-gradient(135deg, #0a1628 0%, #1a237e 50%, #0d47a1 100%)',
-    zIndex: 0
+    backgroundImage: 'url("/images/login-bg.jpg")',
+    backgroundSize: 'cover',
+    backgroundPosition: 'center',
+    backgroundRepeat: 'no-repeat',
+    zIndex: 0,
+    transform: 'scale(1.05)'
+  },
+  overlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    background: 'linear-gradient(135deg, rgba(10, 22, 40, 0.85) 0%, rgba(26, 35, 126, 0.75) 50%, rgba(13, 71, 161, 0.85) 100%)',
+    zIndex: 1
   },
   card: {
     position: 'relative',
-    zIndex: 1,
+    zIndex: 2,
     background: 'rgba(255, 255, 255, 0.95)',
-    backdropFilter: 'blur(10px)',
-    borderRadius: '20px',
-    padding: '40px 36px',
+    backdropFilter: 'blur(12px)',
+    borderRadius: '24px',
+    padding: '36px 32px',
     width: '100%',
     maxWidth: '440px',
-    boxShadow: '0 25px 80px rgba(0,0,0,0.4)',
-    border: '1px solid rgba(255,255,255,0.2)',
+    boxShadow: '0 30px 80px rgba(0,0,0,0.5)',
+    border: '1px solid rgba(255,255,255,0.15)',
     maxHeight: '90vh',
     overflowY: 'auto'
   },
   logoContainer: {
     textAlign: 'center',
-    marginBottom: '28px'
-  },
-  logoEmoji: {
-    fontSize: '48px',
-    marginBottom: '8px'
+    marginBottom: '24px'
   },
   title: {
-    fontSize: '28px',
+    fontSize: '26px',
     fontWeight: '700',
     color: '#1a237e',
-    margin: '0 0 4px 0',
+    margin: '10px 0 4px 0',
     letterSpacing: '-0.5px'
   },
   subtitle: {
