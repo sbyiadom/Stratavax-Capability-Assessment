@@ -1,4 +1,4 @@
-// pages/admin/reports/[resultId].js - FIXED detection logic
+// pages/admin/reports/[resultId].js - FIXED data mapping for Stratavax
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -8,7 +8,6 @@ import NationalServiceReport from '../../../components/reports/NationalServiceRe
 import StratavaxReport from '../../../components/reports/StratavaxReport';
 import AppLayout from '../../../components/AppLayout';
 
-// Hardcoded National Service assessment ID
 const NATIONAL_SERVICE_ASSESSMENT_ID = 'bdb9d46e-9fac-4d00-8478-1f649e7ac600';
 
 export default function AdminReportView() {
@@ -45,20 +44,17 @@ export default function AdminReportView() {
         console.log('[Admin Report] Full data received:', data);
 
         // ============================================================
-        // CRITICAL FIX: Determine if National Service by assessment_id first
+        // DETERMINE IF NATIONAL SERVICE
         // ============================================================
         const assessmentId = data.result?.assessment_id || data.assessment_id || '';
         const assessmentTypeCode = data.assessmentTypeCode || data.result?.assessment_type_code || '';
         
-        // Primary check: assessment_id matches the National Service assessment
         const isNS = 
           assessmentId === NATIONAL_SERVICE_ASSESSMENT_ID ||
           assessmentTypeCode === 'national_service' ||
           data.isNationalService === true;
 
         console.log('[Admin Report] Is National Service:', isNS);
-        console.log('[Admin Report] Assessment ID:', assessmentId);
-        console.log('[Admin Report] Assessment Type Code:', assessmentTypeCode);
 
         // ============================================================
         // BUILD REPORT OBJECT
@@ -66,7 +62,6 @@ export default function AdminReportView() {
         let report = data.report || {};
         let result = data.result || {};
 
-        // If we have report_data in the result, use it
         if (result.report_data && !report.dimensions) {
           report = result.report_data;
         }
@@ -77,7 +72,6 @@ export default function AdminReportView() {
         if (isNS) {
           let allCategoryScores = [];
 
-          // Get category scores from various sources
           if (data.workplaceSubCategories && data.workplaceSubCategories.length > 0) {
             report.workplaceSubCategories = data.workplaceSubCategories;
             allCategoryScores = [...allCategoryScores, ...data.workplaceSubCategories];
@@ -102,7 +96,6 @@ export default function AdminReportView() {
             allCategoryScores = [...allCategoryScores, ...report.categoryScores];
           }
 
-          // Fallback: split from categoryScores
           if (allCategoryScores.length === 0 && data.categoryScores && data.categoryScores.length > 0) {
             const workplaceNames = ['Safety', 'Risk', 'Technical', 'Communication', 'Teamwork', 'Ownership', 'Integrity', 'Workplace', 'Ethics', 'Professional', 'Readiness'];
             const intellectualNames = ['Numerical', 'Logical', 'Reasoning', 'Measurement', 'Engineering', 'Spatial', 'Problem', 'Troubleshooting', 'Analysis', 'Critical', 'Analytical', 'Decision'];
@@ -120,7 +113,6 @@ export default function AdminReportView() {
               } else if (isIntellectual) {
                 intellectual.push(cat);
               } else {
-                // Default: put in intellectual
                 intellectual.push(cat);
               }
             });
@@ -148,7 +140,6 @@ export default function AdminReportView() {
             };
           }
 
-          // Ensure candidateInfo exists
           if (!report.candidateInfo && result.candidate_profiles) {
             report.candidateInfo = {
               fullName: result.candidate_profiles.full_name || 'Candidate',
@@ -169,24 +160,75 @@ export default function AdminReportView() {
         }
 
         // ============================================================
-        // FOR STRATAVAX: Build with category scores, strengths, weaknesses
+        // FOR STRATAVAX: Build with all necessary data
         // ============================================================
         if (!isNS) {
-          // Get category scores
-          let categoryScores = result.categoryScores || result.category_scores || [];
-          if (categoryScores.length === 0 && report.categoryScores) {
+          // Get category scores - try multiple sources
+          let categoryScores = [];
+          
+          // Try result.categoryScores
+          if (result.categoryScores && Array.isArray(result.categoryScores)) {
+            categoryScores = result.categoryScores;
+          } else if (result.category_scores && Array.isArray(result.category_scores)) {
+            categoryScores = result.category_scores;
+          } else if (report.categoryScores && Array.isArray(report.categoryScores)) {
             categoryScores = report.categoryScores;
-          }
-          if (categoryScores.length === 0 && report.category_scores) {
+          } else if (report.category_scores && Array.isArray(report.category_scores)) {
             categoryScores = report.category_scores;
+          } else if (data.categoryScores && Array.isArray(data.categoryScores)) {
+            categoryScores = data.categoryScores;
           }
 
-          // Get strengths and weaknesses
-          let strengths = result.strengths || report.strengths || [];
-          let weaknesses = result.weaknesses || report.weaknesses || report.developmentAreas || [];
-          let recommendations = result.recommendations || report.recommendations || [];
+          // Get strengths - try multiple sources
+          let strengths = [];
+          if (result.strengths && Array.isArray(result.strengths)) {
+            strengths = result.strengths;
+          } else if (report.strengths && Array.isArray(report.strengths)) {
+            strengths = report.strengths;
+          } else if (data.strengths && Array.isArray(data.strengths)) {
+            strengths = data.strengths;
+          }
 
-          // Build the report
+          // Get weaknesses
+          let weaknesses = [];
+          if (result.weaknesses && Array.isArray(result.weaknesses)) {
+            weaknesses = result.weaknesses;
+          } else if (report.weaknesses && Array.isArray(report.weaknesses)) {
+            weaknesses = report.weaknesses;
+          } else if (report.developmentAreas && Array.isArray(report.developmentAreas)) {
+            weaknesses = report.developmentAreas;
+          } else if (data.weaknesses && Array.isArray(data.weaknesses)) {
+            weaknesses = data.weaknesses;
+          }
+
+          // Get recommendations
+          let recommendations = [];
+          if (result.recommendations && Array.isArray(result.recommendations)) {
+            recommendations = result.recommendations;
+          } else if (report.recommendations && Array.isArray(report.recommendations)) {
+            recommendations = report.recommendations;
+          } else if (data.recommendations && Array.isArray(data.recommendations)) {
+            recommendations = data.recommendations;
+          }
+
+          // Get candidate info
+          const candidateInfo = {
+            fullName: result.candidate_profiles?.full_name || report.candidateInfo?.fullName || data.candidateName || 'Candidate',
+            email: result.candidate_profiles?.email || report.candidateInfo?.email || '',
+            university: result.candidate_profiles?.university || report.candidateInfo?.university || '',
+            programme: result.candidate_profiles?.programme || report.candidateInfo?.programme || '',
+            graduationYear: result.candidate_profiles?.graduation_year || report.candidateInfo?.graduationYear || '',
+            preferredDepartment: result.candidate_profiles?.preferred_department || report.candidateInfo?.preferredDepartment || '',
+            assessmentDate: result.completed_at ? new Date(result.completed_at).toLocaleDateString() : 'N/A'
+          };
+
+          // Get assessment info
+          const assessmentInfo = {
+            title: result.assessments?.title || report.assessmentName || data.assessmentName || 'Assessment',
+            type: result.assessments?.assessment_type?.name || report.assessmentType || 'General'
+          };
+
+          // Build the report with all data
           report = {
             ...report,
             categoryScores: categoryScores,
@@ -194,22 +236,27 @@ export default function AdminReportView() {
             strengths: strengths,
             weaknesses: weaknesses,
             recommendations: recommendations,
-            overallScore: result.percentage_score || report.overallScore || 0,
-            percentage_score: result.percentage_score || report.percentage_score || 0,
-            classification: result.classification || report.classification || 'Standard Profile',
-            riskLevel: result.riskLevel || report.riskLevel || result.risk_level || 'Medium',
-            executiveSummary: result.executiveSummary || report.executiveSummary || '',
-            supervisorImplication: result.supervisorImplication || report.supervisorImplication || '',
-            candidateInfo: {
-              fullName: result.candidate_profiles?.full_name || report.candidateInfo?.fullName || 'Candidate',
-              university: result.candidate_profiles?.university || report.candidateInfo?.university || '',
-              programme: result.candidate_profiles?.programme || report.candidateInfo?.programme || '',
-              graduationYear: result.candidate_profiles?.graduation_year || report.candidateInfo?.graduationYear || '',
-              preferredDepartment: result.candidate_profiles?.preferred_department || report.candidateInfo?.preferredDepartment || '',
-              assessmentDate: result.completed_at ? new Date(result.completed_at).toLocaleDateString() : 'N/A'
-            },
-            reportType: 'stratavax'
+            overallScore: result.percentage_score || report.overallScore || data.overallScore || 0,
+            percentage_score: result.percentage_score || report.percentage_score || data.percentage_score || 0,
+            classification: result.classification || report.classification || data.classification || 'Standard Profile',
+            riskLevel: result.riskLevel || report.riskLevel || result.risk_level || data.riskLevel || 'Medium',
+            executiveSummary: result.executiveSummary || report.executiveSummary || data.executiveSummary || '',
+            supervisorImplication: result.supervisorImplication || report.supervisorImplication || data.supervisorImplication || '',
+            candidateInfo: candidateInfo,
+            assessmentInfo: assessmentInfo,
+            reportType: 'stratavax',
+            total_questions: result.total_questions || report.total_questions || 0,
+            answered_questions: result.answered_questions || report.answered_questions || 0
           };
+
+          console.log('[Admin Report] Stratavax report built:', {
+            categoryScores: categoryScores.length,
+            strengths: strengths.length,
+            weaknesses: weaknesses.length,
+            recommendations: recommendations.length,
+            candidateName: candidateInfo.fullName,
+            assessmentTitle: assessmentInfo.title
+          });
         }
 
         setReportData({
@@ -284,6 +331,30 @@ export default function AdminReportView() {
     console.log('[Admin Report] Rendering Stratavax Report');
     const report = reportData.report;
     
+    // Build the result object with all necessary data
+    const stratavaxResult = {
+      ...reportData.result,
+      candidate_profiles: report.candidateInfo || null,
+      assessments: {
+        title: report.assessmentInfo?.title || reportData.result?.assessments?.title || 'Assessment',
+        assessment_type: {
+          name: report.assessmentInfo?.type || reportData.result?.assessments?.assessment_type?.name || 'General'
+        }
+      },
+      percentage_score: report.overallScore || report.percentage_score || 0,
+      classification: report.classification || 'Standard Profile',
+      riskLevel: report.riskLevel || 'Medium',
+      categoryScores: report.categoryScores || report.category_scores || [],
+      strengths: report.strengths || [],
+      weaknesses: report.weaknesses || [],
+      recommendations: report.recommendations || [],
+      executiveSummary: report.executiveSummary || '',
+      supervisorImplication: report.supervisorImplication || '',
+      total_questions: report.total_questions || 0,
+      answered_questions: report.answered_questions || 0,
+      completed_at: reportData.result?.completed_at || null
+    };
+
     return (
       <AppLayout background="/images/admin-bg.jpg">
         <div style={styles.breadcrumb}>
@@ -294,21 +365,9 @@ export default function AdminReportView() {
           <span style={styles.breadcrumbText}>Assessment Report</span>
         </div>
         <StratavaxReport 
-          result={{
-            ...reportData.result,
-            candidate_profiles: report.candidateInfo || null,
-            percentage_score: report.overallScore || report.percentage_score || 0,
-            classification: report.classification || 'Standard Profile',
-            riskLevel: report.riskLevel || 'Medium',
-            categoryScores: report.categoryScores || report.category_scores || [],
-            strengths: report.strengths || [],
-            weaknesses: report.weaknesses || [],
-            recommendations: report.recommendations || [],
-            executiveSummary: report.executiveSummary || '',
-            supervisorImplication: report.supervisorImplication || ''
-          }}
+          result={stratavaxResult}
           candidate={report.candidateInfo || null}
-          assessment={reportData.result?.assessments || null}
+          assessment={stratavaxResult.assessments || null}
           onBack={handleBack}
         />
       </AppLayout>
