@@ -1,4 +1,4 @@
-// pages/api/admin/reports.js - FIXED to show correct scores
+// pages/api/admin/reports.js - COMPLETE FIXED VERSION
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -21,7 +21,7 @@ function getRecommendation(workplaceReadiness, intellectualCapability) {
 }
 
 // ============================================================
-// HELPER: Calculate scores from category_scores
+// HELPER: Calculate scores from category_scores (only used as fallback)
 // ============================================================
 function calculateScoresFromCategories(categoryScores) {
   let workplaceTotal = 0;
@@ -159,7 +159,7 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 5: Build enriched reports with calculated scores
+    // STEP 5: Build enriched reports - USE DATABASE VALUES DIRECTLY
     // ============================================================
     const enrichedReports = results.map((result) => {
       const candidate = candidateMap[result.user_id];
@@ -173,17 +173,21 @@ export default async function handler(req, res) {
         assessment?.title === 'National Service Recruitment Assessment';
 
       // ============================================================
-      // CRITICAL FIX: Use database scores FIRST, only calculate if missing
+      // FIX: USE DATABASE VALUES DIRECTLY - DO NOT RECALCULATE
       // ============================================================
-      let workplaceReadiness = Number(result.workplace_readiness) || 0;
-      let intellectualCapability = Number(result.intellectual_capability) || 0;
-      let overallScore = Number(result.percentage_score) || 0;
+      const workplaceReadiness = Number(result.workplace_readiness) || 0;
+      const intellectualCapability = Number(result.intellectual_capability) || 0;
+      const overallScore = Number(result.percentage_score) || 0;
 
-      // ONLY calculate if ALL scores are missing (0 or null)
-      const hasAnyScore = workplaceReadiness > 0 || intellectualCapability > 0 || overallScore > 0;
+      // ============================================================
+      // ONLY USE FALLBACK IF ALL VALUES ARE ZERO (no data in database)
+      // ============================================================
+      let finalWorkplace = workplaceReadiness;
+      let finalIntellectual = intellectualCapability;
+      let finalOverall = overallScore;
 
-      if (!hasAnyScore) {
-        // Try category_scores from result
+      if (workplaceReadiness === 0 && intellectualCapability === 0 && overallScore === 0) {
+        // Try to get from category_scores as fallback
         let categoryScores = [];
         if (result.category_scores && Array.isArray(result.category_scores)) {
           categoryScores = result.category_scores;
@@ -195,25 +199,19 @@ export default async function handler(req, res) {
 
         if (categoryScores.length > 0) {
           const calculated = calculateScoresFromCategories(categoryScores);
-          if (workplaceReadiness === 0) workplaceReadiness = calculated.workplaceReadiness;
-          if (intellectualCapability === 0) intellectualCapability = calculated.intellectualCapability;
-          // Calculate overall score from workplace and intellectual
-          if (workplaceReadiness > 0 || intellectualCapability > 0) {
-            overallScore = Math.round((workplaceReadiness + intellectualCapability) / 2);
+          finalWorkplace = calculated.workplaceReadiness;
+          finalIntellectual = calculated.intellectualCapability;
+          if (finalWorkplace > 0 || finalIntellectual > 0) {
+            finalOverall = Math.round((finalWorkplace + finalIntellectual) / 2);
           }
         }
-      }
-
-      // If overallScore is still 0 but we have individual scores, calculate it
-      if (overallScore === 0 && (workplaceReadiness > 0 || intellectualCapability > 0)) {
-        overallScore = Math.round((workplaceReadiness + intellectualCapability) / 2);
       }
 
       // Get recommendation
       let recommendation = result.recommendation || 'N/A';
       if (isNationalService) {
         if (!recommendation || recommendation === 'N/A' || recommendation === '') {
-          recommendation = getRecommendation(workplaceReadiness, intellectualCapability);
+          recommendation = getRecommendation(finalWorkplace, finalIntellectual);
         }
       }
 
@@ -240,9 +238,9 @@ export default async function handler(req, res) {
         assessment_type_name: assessmentType?.name || 'General',
         isNationalService: isNationalService,
         typeLabel: isNationalService ? 'National Service' : 'Stratavax',
-        workplace_readiness: workplaceReadiness,
-        intellectual_capability: intellectualCapability,
-        percentage_score: overallScore,
+        workplace_readiness: finalWorkplace,
+        intellectual_capability: finalIntellectual,
+        percentage_score: finalOverall,
         recommendation: recommendation,
         completed_at: result.completed_at,
         total_questions: result.total_questions || 0,
