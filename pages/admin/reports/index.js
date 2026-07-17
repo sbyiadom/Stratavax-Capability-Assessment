@@ -1,8 +1,8 @@
-// pages/admin/reports/index.js - COMPLETE FIXED VERSION
+// pages/admin/reports/index.js - WITH CANDIDATE GROUPING AND FILTERING
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
-import { supabase } from '../../../supabase/client'; // <-- IMPORT THIS
+import { supabase } from '../../../supabase/client';
 import { useRequireAuth } from '../../../utils/requireAuth';
 import AppLayout from '../../../components/AppLayout';
 
@@ -14,7 +14,10 @@ export default function AdminReportsList() {
   const [reports, setReports] = useState([]);
   const [filter, setFilter] = useState('all');
   const [error, setError] = useState(null);
-  const [stats, setStats] = useState({ total: 0, nationalService: 0, stratavax: 0 });
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedCandidate, setSelectedCandidate] = useState(null);
+  const [expandedCandidates, setExpandedCandidates] = useState({});
+  const [candidates, setCandidates] = useState([]);
 
   useEffect(() => {
     if (!session) return;
@@ -26,9 +29,6 @@ export default function AdminReportsList() {
       setLoading(true);
       setError(null);
 
-      console.log('🔍 Fetching reports from API...');
-
-      // Get the session token for authentication
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData?.session?.access_token;
 
@@ -52,28 +52,74 @@ export default function AdminReportsList() {
         throw new Error(data.error || 'Failed to load reports');
       }
 
-      console.log(`✅ Found ${data.reports?.length || 0} reports`);
       setReports(data.reports || []);
-      setStats(data.stats || { total: 0, nationalService: 0, stratavax: 0 });
+      
+      // Build candidate list with their assessments
+      const candidateMap = {};
+      (data.reports || []).forEach(report => {
+        const key = report.user_id || report.candidate_email;
+        if (!candidateMap[key]) {
+          candidateMap[key] = {
+            id: key,
+            name: report.candidate_name || 'Unknown',
+            email: report.candidate_email || '',
+            university: report.candidate_university || '',
+            programme: report.candidate_programme || '',
+            assessments: []
+          };
+        }
+        candidateMap[key].assessments.push(report);
+      });
+      
+      setCandidates(Object.values(candidateMap));
       setLoading(false);
-    } catch (error) {
-      console.error('❌ Error fetching reports:', error);
-      setError(error.message || 'Failed to load reports');
+    } catch (err) {
+      console.error('Error fetching reports:', err);
+      setError(err.message || 'Failed to load reports');
       setLoading(false);
     }
   };
 
-  const getFilteredReports = () => {
+  const toggleCandidate = (candidateId) => {
+    setExpandedCandidates(prev => ({
+      ...prev,
+      [candidateId]: !prev[candidateId]
+    }));
+  };
+
+  const getFilteredCandidates = () => {
+    let filtered = candidates;
+    
+    // Filter by assessment type
     if (filter === 'national_service') {
-      return reports.filter(r => r.isNationalService === true);
+      filtered = filtered.map(c => ({
+        ...c,
+        assessments: c.assessments.filter(r => r.isNationalService === true)
+      })).filter(c => c.assessments.length > 0);
+    } else if (filter === 'stratavax') {
+      filtered = filtered.map(c => ({
+        ...c,
+        assessments: c.assessments.filter(r => r.isNationalService !== true)
+      })).filter(c => c.assessments.length > 0);
     }
-    if (filter === 'stratavax') {
-      return reports.filter(r => r.isNationalService !== true);
+    
+    // Filter by search term
+    if (searchTerm) {
+      const term = searchTerm.toLowerCase();
+      filtered = filtered.filter(c => 
+        c.name.toLowerCase().includes(term) ||
+        c.email.toLowerCase().includes(term) ||
+        c.assessments.some(a => a.assessment_title.toLowerCase().includes(term))
+      );
     }
-    return reports;
+    
+    return filtered;
   };
 
-  const filteredReports = getFilteredReports();
+  const filteredCandidates = getFilteredCandidates();
+  const totalAssessments = reports.length;
+  const nationalServiceCount = reports.filter(r => r.isNationalService === true).length;
+  const stratavaxCount = reports.filter(r => r.isNationalService !== true).length;
 
   const handleViewReport = (resultId) => {
     router.push(`/admin/reports/${resultId}`);
@@ -103,7 +149,7 @@ export default function AdminReportsList() {
 
         <div style={styles.header}>
           <h1 style={styles.title}>Assessment Reports</h1>
-          <p style={styles.subtitle}>All assessment reports from candidates</p>
+          <p style={styles.subtitle}>All assessment reports grouped by candidate</p>
           
           {error && (
             <div style={styles.errorBox}>
@@ -112,6 +158,18 @@ export default function AdminReportsList() {
             </div>
           )}
 
+          {/* Search Bar */}
+          <div style={styles.searchBar}>
+            <input
+              type="text"
+              placeholder="Search by candidate name, email, or assessment..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              style={styles.searchInput}
+            />
+          </div>
+
+          {/* Filter Tabs */}
           <div style={styles.filterTabs}>
             <button
               onClick={() => setFilter('all')}
@@ -122,7 +180,7 @@ export default function AdminReportsList() {
                 border: filter === 'all' ? 'none' : '1px solid #e2e8f0'
               }}
             >
-              All Reports ({stats.total})
+              All Reports ({totalAssessments})
             </button>
             <button
               onClick={() => setFilter('national_service')}
@@ -133,7 +191,7 @@ export default function AdminReportsList() {
                 border: filter === 'national_service' ? 'none' : '1px solid #e2e8f0'
               }}
             >
-              📋 National Service ({stats.nationalService})
+              📋 National Service ({nationalServiceCount})
             </button>
             <button
               onClick={() => setFilter('stratavax')}
@@ -144,7 +202,7 @@ export default function AdminReportsList() {
                 border: filter === 'stratavax' ? 'none' : '1px solid #e2e8f0'
               }}
             >
-              📊 Stratavax ({stats.stratavax})
+              📊 Stratavax ({stratavaxCount})
             </button>
           </div>
         </div>
@@ -153,119 +211,137 @@ export default function AdminReportsList() {
           <table style={styles.table}>
             <thead>
               <tr>
-                <th style={styles.th}>Candidate</th>
-                <th style={styles.th}>Assessment</th>
-                <th style={styles.th}>Type</th>
-                <th style={styles.th}>Score</th>
-                <th style={styles.th}>Recommendation</th>
-                <th style={styles.th}>Completed</th>
-                <th style={styles.th}>Action</th>
+                <th style={{ ...styles.th, width: '30%' }}>Candidate</th>
+                <th style={{ ...styles.th, width: '20%' }}>Type</th>
+                <th style={{ ...styles.th, width: '15%' }}>Total Assessments</th>
+                <th style={{ ...styles.th, width: '20%' }}>Completed</th>
+                <th style={{ ...styles.th, width: '15%' }}>Action</th>
               </tr>
             </thead>
             <tbody>
-              {filteredReports.length === 0 ? (
+              {filteredCandidates.length === 0 ? (
                 <tr>
-                  <td colSpan="7" style={styles.emptyState}>
-                    {error ? '⚠️ Error loading reports' : 'No assessment reports found.'}
+                  <td colSpan="5" style={styles.emptyState}>
+                    {searchTerm ? 'No candidates match your search.' : 'No assessment reports found.'}
                   </td>
                 </tr>
               ) : (
-                filteredReports.map((report) => {
-                  const isNationalService = report.isNationalService;
-                  
+                filteredCandidates.map((candidate) => {
+                  const isExpanded = expandedCandidates[candidate.id];
+                  const completedAssessments = candidate.assessments.filter(a => a.completed_at);
+                  const avgScore = candidate.assessments.length > 0
+                    ? Math.round(candidate.assessments.reduce((sum, a) => sum + (a.percentage_score || 0), 0) / candidate.assessments.length)
+                    : 0;
+
                   return (
-                    <tr key={report.id} style={styles.tr}>
-                      <td style={styles.td}>
-                        <div style={styles.candidateName}>
-                          {report.candidate_name || 'Unknown'}
-                        </div>
-                        <div style={styles.candidateEmail}>
-                          {report.candidate_email || ''}
-                        </div>
-                        {report.candidate_university && (
-                          <div style={styles.candidateSub}>
-                            {report.candidate_university}
-                            {report.candidate_programme ? ` • ${report.candidate_programme}` : ''}
+                    <React.Fragment key={candidate.id}>
+                      <tr 
+                        style={styles.candidateRow}
+                        onClick={() => toggleCandidate(candidate.id)}
+                      >
+                        <td style={styles.td}>
+                          <div style={styles.candidateName}>
+                            {candidate.name || 'Unknown'}
                           </div>
-                        )}
-                      </td>
-                      <td style={styles.td}>
-                        {report.assessment_title || 'N/A'}
-                      </td>
-                      <td style={styles.td}>
-                        <span style={{
-                          ...styles.typeBadge,
-                          background: isNationalService ? '#dbeafe' : '#e8f5e9',
-                          color: isNationalService ? '#1e40af' : '#2e7d32'
-                        }}>
-                          {isNationalService ? '📋 National Service' : '📊 Stratavax'}
-                        </span>
-                      </td>
-                      <td style={styles.td}>
-                        {isNationalService ? (
+                          <div style={styles.candidateEmail}>
+                            {candidate.email || ''}
+                          </div>
+                          {candidate.university && (
+                            <div style={styles.candidateSub}>
+                              {candidate.university}
+                              {candidate.programme ? ` • ${candidate.programme}` : ''}
+                            </div>
+                          )}
+                        </td>
+                        <td style={styles.td}>
+                          <div style={styles.typeTags}>
+                            {candidate.assessments.some(a => a.isNationalService) && (
+                              <span style={{ ...styles.typeBadge, background: '#dbeafe', color: '#1e40af' }}>
+                                📋 National Service
+                              </span>
+                            )}
+                            {candidate.assessments.some(a => !a.isNationalService) && (
+                              <span style={{ ...styles.typeBadge, background: '#e8f5e9', color: '#2e7d32' }}>
+                                📊 Stratavax
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td style={styles.td}>
+                          <span style={styles.statCount}>{candidate.assessments.length}</span>
+                        </td>
+                        <td style={styles.td}>
                           <div>
-                            <div style={styles.scoreRow}>
-                              <span style={styles.scoreLabel}>Overall:</span>
-                              <span style={{
-                                ...styles.scoreBadge,
-                                background: report.percentage_score >= 75 ? '#dcfce7' :
-                                           report.percentage_score >= 65 ? '#fef3c7' : '#fee2e2',
-                                color: report.percentage_score >= 75 ? '#166534' :
-                                       report.percentage_score >= 65 ? '#92400e' : '#991b1b'
-                              }}>
-                                {Math.round(report.percentage_score || 0)}%
-                              </span>
-                            </div>
-                            <div style={styles.scoreRow}>
-                              <span style={styles.scoreLabel}>Workplace:</span>
-                              <span style={styles.scoreSmall}>
-                                {Math.round(report.workplace_readiness || 0)}%
-                              </span>
-                            </div>
-                            <div style={styles.scoreRow}>
-                              <span style={styles.scoreLabel}>Intellectual:</span>
-                              <span style={styles.scoreSmall}>
-                                {Math.round(report.intellectual_capability || 0)}%
-                              </span>
-                            </div>
+                            <span style={styles.statCount}>{candidate.assessments.filter(a => a.completed_at).length}</span>
+                            <span style={styles.statLabel}> completed</span>
                           </div>
-                        ) : (
-                          <span style={{
-                            ...styles.scoreBadge,
-                            background: report.percentage_score >= 75 ? '#dcfce7' :
-                                       report.percentage_score >= 65 ? '#fef3c7' : '#fee2e2',
-                            color: report.percentage_score >= 75 ? '#166534' :
-                                   report.percentage_score >= 65 ? '#92400e' : '#991b1b'
-                          }}>
-                            {Math.round(report.percentage_score || 0)}%
+                          <div style={styles.avgScore}>
+                            Avg Score: <strong>{avgScore}%</strong>
+                          </div>
+                        </td>
+                        <td style={styles.td}>
+                          <span style={styles.expandIcon}>
+                            {isExpanded ? '▲' : '▼'} {isExpanded ? 'Hide' : 'Show'} Assessments
                           </span>
-                        )}
-                      </td>
-                      <td style={styles.td}>
-                        <span style={{
-                          ...styles.recommendationBadge,
-                          background: report.recommendation === 'Highly Recommended' ? '#dcfce7' :
-                                     report.recommendation === 'Recommended' ? '#dbeafe' :
-                                     report.recommendation === 'Reserve Pool' ? '#fef3c7' : '#fee2e2',
-                          color: report.recommendation === 'Highly Recommended' ? '#166534' :
-                                 report.recommendation === 'Recommended' ? '#1e40af' :
-                                 report.recommendation === 'Reserve Pool' ? '#92400e' : '#991b1b'
-                        }}>
-                          {report.recommendation || 'N/A'}
-                        </span>
-                      </td>
-                      <td style={styles.td}>
-                        {report.completed_at ? new Date(report.completed_at).toLocaleDateString() : 'N/A'}
-                      </td>
-                      <td style={styles.td}>
-                        <button
-                          onClick={() => handleViewReport(report.id)}
-                          style={styles.viewButton}
-                        >
-                          View Report
-                        </button>
-                      </td>
-                    </tr>
+                        </td>
+                      </tr>
+                      
+                      {/* Expanded Assessments */}
+                      {isExpanded && (
+                        <tr>
+                          <td colSpan="5" style={styles.expandedRow}>
+                            <div style={styles.assessmentList}>
+                              <h4 style={styles.assessmentListTitle}>
+                                Assessments for {candidate.name}
+                              </h4>
+                              <div style={styles.assessmentGrid}>
+                                {candidate.assessments.map((assessment) => {
+                                  const isNationalService = assessment.isNationalService;
+                                  const score = Math.round(assessment.percentage_score || 0);
+                                  
+                                  return (
+                                    <div key={assessment.id} style={styles.assessmentItem}>
+                                      <div style={styles.assessmentItemHeader}>
+                                        <span style={styles.assessmentItemTitle}>
+                                          {assessment.assessment_title || 'Unknown'}
+                                        </span>
+                                        <span style={{
+                                          ...styles.assessmentTypeTag,
+                                          background: isNationalService ? '#dbeafe' : '#e8f5e9',
+                                          color: isNationalService ? '#1e40af' : '#2e7d32'
+                                        }}>
+                                          {isNationalService ? 'National Service' : 'Stratavax'}
+                                        </span>
+                                      </div>
+                                      <div style={styles.assessmentItemDetails}>
+                                        <span style={styles.scoreBadge}>
+                                          {score}%
+                                        </span>
+                                        <span style={styles.recommendationBadge}>
+                                          {assessment.recommendation || 'N/A'}
+                                        </span>
+                                        <span style={styles.dateBadge}>
+                                          {assessment.completed_at ? new Date(assessment.completed_at).toLocaleDateString() : 'N/A'}
+                                        </span>
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleViewReport(assessment.id);
+                                          }}
+                                          style={styles.viewButton}
+                                        >
+                                          View Report
+                                        </button>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
                   );
                 })
               )}
@@ -343,6 +419,20 @@ const styles = {
     cursor: 'pointer',
     fontSize: '12px'
   },
+  searchBar: {
+    marginBottom: '16px'
+  },
+  searchInput: {
+    width: '100%',
+    maxWidth: '400px',
+    padding: '10px 16px',
+    borderRadius: '8px',
+    border: '1px solid #e2e8f0',
+    fontSize: '14px',
+    outline: 'none',
+    background: 'white',
+    fontFamily: 'inherit'
+  },
   filterTabs: {
     display: 'flex',
     gap: '8px',
@@ -386,7 +476,8 @@ const styles = {
     color: '#1a202c',
     verticalAlign: 'middle'
   },
-  tr: {
+  candidateRow: {
+    cursor: 'pointer',
     transition: 'background 0.2s'
   },
   candidateName: {
@@ -402,54 +493,119 @@ const styles = {
     color: '#94a3b8',
     marginTop: '2px'
   },
+  typeTags: {
+    display: 'flex',
+    gap: '4px',
+    flexWrap: 'wrap'
+  },
   typeBadge: {
     padding: '2px 10px',
     borderRadius: '12px',
-    fontSize: '12px',
+    fontSize: '11px',
     fontWeight: '600',
     display: 'inline-block'
+  },
+  statCount: {
+    fontSize: '18px',
+    fontWeight: '700',
+    color: '#0a1929'
+  },
+  statLabel: {
+    fontSize: '12px',
+    color: '#94a3b8'
+  },
+  avgScore: {
+    fontSize: '12px',
+    color: '#64748b',
+    marginTop: '2px'
+  },
+  expandIcon: {
+    fontSize: '13px',
+    color: '#1a237e',
+    fontWeight: '500',
+    cursor: 'pointer'
+  },
+  expandedRow: {
+    padding: '0',
+    background: '#f8fafc'
+  },
+  assessmentList: {
+    padding: '16px 20px'
+  },
+  assessmentListTitle: {
+    fontSize: '14px',
+    fontWeight: '600',
+    color: '#0a1929',
+    margin: '0 0 12px 0'
+  },
+  assessmentGrid: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px'
+  },
+  assessmentItem: {
+    background: 'white',
+    padding: '12px 16px',
+    borderRadius: '8px',
+    border: '1px solid #e2e8f0',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: '8px'
+  },
+  assessmentItemHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    flexWrap: 'wrap'
+  },
+  assessmentItemTitle: {
+    fontSize: '14px',
+    fontWeight: '500',
+    color: '#0a1929'
+  },
+  assessmentTypeTag: {
+    padding: '2px 8px',
+    borderRadius: '10px',
+    fontSize: '10px',
+    fontWeight: '600'
+  },
+  assessmentItemDetails: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    flexWrap: 'wrap'
   },
   scoreBadge: {
     padding: '2px 10px',
     borderRadius: '12px',
     fontSize: '13px',
     fontWeight: '600',
-    display: 'inline-block'
-  },
-  scoreRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '4px',
-    fontSize: '12px',
-    marginTop: '1px'
-  },
-  scoreLabel: {
-    color: '#94a3b8',
-    fontSize: '11px'
-  },
-  scoreSmall: {
-    fontSize: '12px',
-    fontWeight: '600',
+    background: '#f1f5f9',
     color: '#1a202c'
   },
   recommendationBadge: {
-    padding: '4px 12px',
+    padding: '2px 10px',
     borderRadius: '12px',
-    fontSize: '12px',
+    fontSize: '11px',
     fontWeight: '600',
-    display: 'inline-block',
-    whiteSpace: 'nowrap'
+    background: '#f1f5f9',
+    color: '#475569'
+  },
+  dateBadge: {
+    fontSize: '12px',
+    color: '#94a3b8'
   },
   viewButton: {
-    padding: '6px 16px',
+    padding: '4px 12px',
     background: '#1a237e',
     color: 'white',
     border: 'none',
     borderRadius: '6px',
     cursor: 'pointer',
-    fontSize: '13px',
-    fontWeight: '500',
-    transition: 'background 0.2s'
+    fontSize: '12px',
+    fontWeight: '500'
   },
   emptyState: {
     textAlign: 'center',
