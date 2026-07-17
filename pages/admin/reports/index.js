@@ -1,6 +1,6 @@
-// pages/admin/reports/index.js - WITH CANDIDATE GROUPING AND EXPANDABLE ASSESSMENTS
+// pages/admin/reports/index.js - FIXED VERSION (no React import needed)
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Fragment } from 'react';
 import { useRouter } from 'next/router';
 import { supabase } from '../../../supabase/client';
 import { useRequireAuth } from '../../../utils/requireAuth';
@@ -229,13 +229,12 @@ export default function AdminReportsList() {
               ) : (
                 filteredCandidates.map((candidate) => {
                   const isExpanded = expandedCandidates[candidate.id];
-                  const completedAssessments = candidate.assessments.filter(a => a.completed_at);
                   const avgScore = candidate.assessments.length > 0
                     ? Math.round(candidate.assessments.reduce((sum, a) => sum + (a.percentage_score || 0), 0) / candidate.assessments.length)
                     : 0;
 
                   return (
-                    <React.Fragment key={candidate.id}>
+                    <Fragment key={candidate.id}>
                       <tr 
                         style={styles.candidateRow}
                         onClick={() => toggleCandidate(candidate.id)}
@@ -356,7 +355,7 @@ export default function AdminReportsList() {
                           </td>
                         </tr>
                       )}
-                    </React.Fragment>
+                    </Fragment>
                   );
                 })
               )}
