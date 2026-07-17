@@ -1,6 +1,54 @@
-// pages/api/assessment/submit.js - FIXED with score calculation
+// pages/api/assessment/submit.js - COMPLETE FIX
 
 import { createClient } from "@supabase/supabase-js";
+
+// ============================================================
+// HELPER: Split categories into Workplace and Intellectual
+// ============================================================
+const WORKPLACE_KEYWORDS = [
+  'safety', 'risk', 'technical', 'communication', 'teamwork', 
+  'ownership', 'integrity', 'workplace', 'ethics', 'professional',
+  'readiness', 'conduct', 'attitude', 'work ethic', 'collaboration'
+];
+
+const INTELLECTUAL_KEYWORDS = [
+  'numerical', 'logical', 'reasoning', 'measurement', 'engineering',
+  'spatial', 'problem solving', 'troubleshooting', 'analysis',
+  'critical thinking', 'analytical', 'decision making', 'cognitive',
+  'aptitude', 'intellectual', 'capability'
+];
+
+function calculateScoresFromCategories(categoryScores) {
+  let workplaceTotal = 0;
+  let workplaceCount = 0;
+  let intellectualTotal = 0;
+  let intellectualCount = 0;
+
+  if (!Array.isArray(categoryScores) || categoryScores.length === 0) {
+    return { workplaceReadiness: 0, intellectualCapability: 0 };
+  }
+
+  categoryScores.forEach(cat => {
+    const name = (cat.category || cat.name || '').toLowerCase();
+    const percentage = Number(cat.percentage || cat.score || 0);
+    
+    const isWorkplace = WORKPLACE_KEYWORDS.some(keyword => name.includes(keyword));
+    const isIntellectual = INTELLECTUAL_KEYWORDS.some(keyword => name.includes(keyword));
+
+    if (isWorkplace) {
+      workplaceTotal += percentage;
+      workplaceCount++;
+    } else if (isIntellectual) {
+      intellectualTotal += percentage;
+      intellectualCount++;
+    }
+  });
+
+  const workplaceReadiness = workplaceCount > 0 ? Math.round(workplaceTotal / workplaceCount) : 0;
+  const intellectualCapability = intellectualCount > 0 ? Math.round(intellectualTotal / intellectualCount) : 0;
+
+  return { workplaceReadiness, intellectualCapability };
+}
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -44,7 +92,18 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 2: Get all responses for this session
+    // STEP 2: Get assessment type to check if National Service
+    // ============================================================
+    const { data: assessmentType, error: assessmentTypeError } = await serviceClient
+      .from("assessment_types")
+      .select("code")
+      .eq("id", session.assessment_type_id)
+      .maybeSingle();
+
+    const isNationalService = assessmentType?.code === 'national_service';
+
+    // ============================================================
+    // STEP 3: Get all responses for this session
     // ============================================================
     const { data: responses, error: responsesError } = await serviceClient
       .from("responses")
@@ -56,13 +115,14 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 3: Get all questions with correct answers
+    // STEP 4: Get all questions with answers
     // ============================================================
     const { data: questions, error: questionsError } = await serviceClient
       .from("unique_questions")
       .select(`
         id,
         question_text,
+        section,
         unique_answers (
           id,
           answer_text,
@@ -76,12 +136,10 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 4: Calculate scores
+    // STEP 5: Calculate scores AND build category_scores
     // ============================================================
     let totalEarned = 0;
     let totalMax = 0;
-    let correctCount = 0;
-    let totalQuestions = 0;
 
     // Build a map of responses for quick lookup
     const responseMap = {};
@@ -89,33 +147,72 @@ export default async function handler(req, res) {
       responseMap[r.question_id] = r.answer_id;
     });
 
+    // Category scores map
+    const categoryMap = {};
+    const categoryMaxMap = {};
+
     // Calculate scores for each question
     (questions || []).forEach(q => {
       const answers = q.unique_answers || [];
       const maxScore = answers.reduce((max, a) => Math.max(max, Number(a.score) || 0), 0);
       totalMax += maxScore;
-      totalQuestions++;
+
+      // Get section/category name
+      const section = q.section || "General";
+      
+      // Initialize category tracking
+      if (!categoryMap[section]) {
+        categoryMap[section] = 0;
+        categoryMaxMap[section] = 0;
+      }
+      categoryMaxMap[section] += maxScore;
 
       const userAnswer = responseMap[q.id];
       if (userAnswer) {
-        // Find the selected answer
         const selectedAnswer = answers.find(a => String(a.id) === String(userAnswer));
         if (selectedAnswer) {
           const earned = Number(selectedAnswer.score) || 0;
           totalEarned += earned;
-          if (earned > 0) {
-            correctCount++;
-          }
+          categoryMap[section] += earned;
         }
       }
     });
 
     const percentageScore = totalMax > 0 ? Math.round((totalEarned / totalMax) * 100) : 0;
 
+    // ============================================================
+    // STEP 6: Build category_scores array
+    // ============================================================
+    const categoryScores = Object.keys(categoryMap).map(category => {
+      const earned = categoryMap[category];
+      const max = categoryMaxMap[category] || 1;
+      const percentage = Math.round((earned / max) * 100);
+      return {
+        category: category,
+        earned: earned,
+        max: max,
+        percentage: percentage
+      };
+    });
+
     console.log(`[Submit] Score: ${totalEarned}/${totalMax} = ${percentageScore}%`);
+    console.log(`[Submit] Categories: ${categoryScores.length}`);
 
     // ============================================================
-    // STEP 5: Update session status
+    // STEP 7: Calculate workplace and intellectual scores for National Service
+    // ============================================================
+    let workplaceReadiness = 0;
+    let intellectualCapability = 0;
+
+    if (isNationalService && categoryScores.length > 0) {
+      const calculated = calculateScoresFromCategories(categoryScores);
+      workplaceReadiness = calculated.workplaceReadiness;
+      intellectualCapability = calculated.intellectualCapability;
+      console.log(`[Submit] Workplace: ${workplaceReadiness}%, Intellectual: ${intellectualCapability}%`);
+    }
+
+    // ============================================================
+    // STEP 8: Update session status
     // ============================================================
     await serviceClient
       .from("assessment_sessions")
@@ -127,7 +224,7 @@ export default async function handler(req, res) {
       .eq("id", sessionId);
 
     // ============================================================
-    // STEP 6: Update candidate_assessments
+    // STEP 9: Update candidate_assessments
     // ============================================================
     await serviceClient
       .from("candidate_assessments")
@@ -140,8 +237,35 @@ export default async function handler(req, res) {
       .eq("assessment_id", session.assessment_id);
 
     // ============================================================
-    // STEP 7: Create or update assessment result
+    // STEP 10: Create or update assessment result WITH category_scores
     // ============================================================
+    const resultData = {
+      user_id: session.user_id,
+      assessment_id: session.assessment_id,
+      session_id: sessionId,
+      total_score: totalEarned,
+      max_score: totalMax,
+      percentage_score: percentageScore,
+      completed_at: new Date().toISOString(),
+      is_valid: true,
+      is_auto_submitted: autoSubmitted || false,
+      // ============================================================
+      // FIX: Save category_scores, workplace_readiness, intellectual_capability
+      // ============================================================
+      category_scores: categoryScores,
+      workplace_readiness: workplaceReadiness,
+      intellectual_capability: intellectualCapability,
+      report_data: {
+        categoryScores: categoryScores,
+        totalEarned: totalEarned,
+        totalMax: totalMax,
+        percentageScore: percentageScore,
+        workplaceReadiness: workplaceReadiness,
+        intellectualCapability: intellectualCapability,
+        completedAt: new Date().toISOString()
+      }
+    };
+
     const { data: existingResult, error: resultError } = await serviceClient
       .from("assessment_results")
       .select("id")
@@ -155,49 +279,33 @@ export default async function handler(req, res) {
       // Create new result
       const { data: newResult, error: createResultError } = await serviceClient
         .from("assessment_results")
-        .insert({
-          user_id: session.user_id,
-          assessment_id: session.assessment_id,
-          session_id: sessionId,
-          total_score: totalEarned,
-          max_score: totalMax,
-          percentage_score: percentageScore,
-          completed_at: new Date().toISOString(),
-          is_valid: true,
-          is_auto_submitted: autoSubmitted || false,
-          // Store category scores for National Service
-          workplace_readiness: null,
-          intellectual_capability: null
-        })
+        .insert(resultData)
         .select()
         .single();
 
       if (!createResultError && newResult) {
         resultId = newResult.id;
+      } else {
+        console.error("Create result error:", createResultError);
       }
     } else {
       // Update existing result
       const { data: updatedResult, error: updateResultError } = await serviceClient
         .from("assessment_results")
-        .update({
-          total_score: totalEarned,
-          max_score: totalMax,
-          percentage_score: percentageScore,
-          completed_at: new Date().toISOString(),
-          is_valid: true,
-          is_auto_submitted: autoSubmitted || false
-        })
+        .update(resultData)
         .eq("id", existingResult.id)
         .select()
         .single();
 
       if (!updateResultError && updatedResult) {
         resultId = updatedResult.id;
+      } else {
+        console.error("Update result error:", updateResultError);
       }
     }
 
     // ============================================================
-    // STEP 8: Update candidate_assessments with result_id
+    // STEP 11: Update candidate_assessments with result_id
     // ============================================================
     if (resultId) {
       await serviceClient
@@ -217,6 +325,10 @@ export default async function handler(req, res) {
       score: percentageScore,
       totalEarned: totalEarned,
       totalMax: totalMax,
+      categoryScores: categoryScores,
+      workplaceReadiness: workplaceReadiness,
+      intellectualCapability: intellectualCapability,
+      isNationalService: isNationalService,
       isAutoSubmitted: autoSubmitted || false
     });
 
