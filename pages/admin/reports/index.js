@@ -1,4 +1,4 @@
-// pages/admin/reports/index.js - FIXED VERSION (no React import needed)
+// pages/admin/reports/index.js - WITH DIFFERENT VIEWS PER TAB
 
 import { useState, useEffect, Fragment } from 'react';
 import { useRouter } from 'next/router';
@@ -29,8 +29,6 @@ export default function AdminReportsList() {
       setLoading(true);
       setError(null);
 
-      console.log('🔍 Fetching reports from API...');
-
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData?.session?.access_token;
 
@@ -54,7 +52,6 @@ export default function AdminReportsList() {
         throw new Error(data.error || 'Failed to load reports');
       }
 
-      console.log(`✅ Found ${data.reports?.length || 0} reports`);
       setReports(data.reports || []);
       setStats(data.stats || { total: 0, nationalService: 0, stratavax: 0 });
       
@@ -78,7 +75,7 @@ export default function AdminReportsList() {
       setCandidates(Object.values(candidateMap));
       setLoading(false);
     } catch (error) {
-      console.error('❌ Error fetching reports:', error);
+      console.error('Error fetching reports:', error);
       setError(error.message || 'Failed to load reports');
       setLoading(false);
     }
@@ -94,7 +91,6 @@ export default function AdminReportsList() {
   const getFilteredCandidates = () => {
     let filtered = candidates;
     
-    // Filter by assessment type
     if (filter === 'national_service') {
       filtered = filtered.map(c => ({
         ...c,
@@ -107,7 +103,6 @@ export default function AdminReportsList() {
       })).filter(c => c.assessments.length > 0);
     }
     
-    // Filter by search term
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
       filtered = filtered.filter(c => 
@@ -141,6 +136,394 @@ export default function AdminReportsList() {
     );
   }
 
+  // ============================================================
+  // NATIONAL SERVICE VIEW: Show assessments in a flat list
+  // ============================================================
+  const renderNationalServiceView = () => {
+    const nsReports = reports.filter(r => r.isNationalService === true);
+    
+    return (
+      <div style={styles.tableContainer}>
+        <table style={styles.table}>
+          <thead>
+            <tr>
+              <th style={styles.th}>Candidate</th>
+              <th style={styles.th}>Assessment</th>
+              <th style={styles.th}>Score</th>
+              <th style={styles.th}>Recommendation</th>
+              <th style={styles.th}>Completed</th>
+              <th style={styles.th}>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {nsReports.length === 0 ? (
+              <tr>
+                <td colSpan="6" style={styles.emptyState}>
+                  No National Service assessment reports found.
+                </td>
+              </tr>
+            ) : (
+              nsReports.map((report) => (
+                <tr key={report.id} style={styles.tr}>
+                  <td style={styles.td}>
+                    <div style={styles.candidateName}>
+                      {report.candidate_name || 'Unknown'}
+                    </div>
+                    <div style={styles.candidateEmail}>
+                      {report.candidate_email || ''}
+                    </div>
+                    {report.candidate_university && (
+                      <div style={styles.candidateSub}>
+                        {report.candidate_university}
+                        {report.candidate_programme ? ` • ${report.candidate_programme}` : ''}
+                      </div>
+                    )}
+                  </td>
+                  <td style={styles.td}>
+                    {report.assessment_title || 'N/A'}
+                  </td>
+                  <td style={styles.td}>
+                    <div>
+                      <div style={styles.scoreRow}>
+                        <span style={styles.scoreLabel}>Overall:</span>
+                        <span style={{
+                          ...styles.scoreBadge,
+                          background: report.percentage_score >= 75 ? '#dcfce7' :
+                                     report.percentage_score >= 65 ? '#fef3c7' : '#fee2e2',
+                          color: report.percentage_score >= 75 ? '#166534' :
+                                 report.percentage_score >= 65 ? '#92400e' : '#991b1b'
+                        }}>
+                          {Math.round(report.percentage_score || 0)}%
+                        </span>
+                      </div>
+                      <div style={styles.scoreRow}>
+                        <span style={styles.scoreLabel}>Workplace:</span>
+                        <span style={styles.scoreSmall}>
+                          {Math.round(report.workplace_readiness || 0)}%
+                        </span>
+                      </div>
+                      <div style={styles.scoreRow}>
+                        <span style={styles.scoreLabel}>Intellectual:</span>
+                        <span style={styles.scoreSmall}>
+                          {Math.round(report.intellectual_capability || 0)}%
+                        </span>
+                      </div>
+                    </div>
+                  </td>
+                  <td style={styles.td}>
+                    <span style={{
+                      ...styles.recommendationBadge,
+                      background: report.recommendation === 'Highly Recommended' ? '#dcfce7' :
+                                 report.recommendation === 'Recommended' ? '#dbeafe' :
+                                 report.recommendation === 'Reserve Pool' ? '#fef3c7' : '#fee2e2',
+                      color: report.recommendation === 'Highly Recommended' ? '#166534' :
+                             report.recommendation === 'Recommended' ? '#1e40af' :
+                             report.recommendation === 'Reserve Pool' ? '#92400e' : '#991b1b'
+                    }}>
+                      {report.recommendation || 'N/A'}
+                    </span>
+                  </td>
+                  <td style={styles.td}>
+                    {report.completed_at ? new Date(report.completed_at).toLocaleDateString() : 'N/A'}
+                  </td>
+                  <td style={styles.td}>
+                    <button
+                      onClick={() => handleViewReport(report.id)}
+                      style={styles.viewButton}
+                    >
+                      View Report
+                    </button>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    );
+  };
+
+  // ============================================================
+  // STRATAVAX VIEW: Show candidates grouped with expandable assessments
+  // ============================================================
+  const renderStratavaxView = () => {
+    return (
+      <div style={styles.tableContainer}>
+        <table style={styles.table}>
+          <thead>
+            <tr>
+              <th style={{ ...styles.th, width: '30%' }}>Candidate</th>
+              <th style={{ ...styles.th, width: '20%' }}>Type</th>
+              <th style={{ ...styles.th, width: '15%' }}>Total Assessments</th>
+              <th style={{ ...styles.th, width: '20%' }}>Completed</th>
+              <th style={{ ...styles.th, width: '15%' }}>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredCandidates.length === 0 ? (
+              <tr>
+                <td colSpan="5" style={styles.emptyState}>
+                  {searchTerm ? 'No candidates match your search.' : 'No Stratavax assessment reports found.'}
+                </td>
+              </tr>
+            ) : (
+              filteredCandidates.map((candidate) => {
+                const isExpanded = expandedCandidates[candidate.id];
+                const avgScore = candidate.assessments.length > 0
+                  ? Math.round(candidate.assessments.reduce((sum, a) => sum + (a.percentage_score || 0), 0) / candidate.assessments.length)
+                  : 0;
+
+                return (
+                  <Fragment key={candidate.id}>
+                    <tr 
+                      style={styles.candidateRow}
+                      onClick={() => toggleCandidate(candidate.id)}
+                    >
+                      <td style={styles.td}>
+                        <div style={styles.candidateName}>
+                          {candidate.name || 'Unknown'}
+                        </div>
+                        <div style={styles.candidateEmail}>
+                          {candidate.email || ''}
+                        </div>
+                        {candidate.university && (
+                          <div style={styles.candidateSub}>
+                            {candidate.university}
+                            {candidate.programme ? ` • ${candidate.programme}` : ''}
+                          </div>
+                        )}
+                      </td>
+                      <td style={styles.td}>
+                        <div style={styles.typeTags}>
+                          <span style={{ ...styles.typeBadge, background: '#e8f5e9', color: '#2e7d32' }}>
+                            📊 Stratavax
+                          </span>
+                        </div>
+                      </td>
+                      <td style={styles.td}>
+                        <span style={styles.statCount}>{candidate.assessments.length}</span>
+                      </td>
+                      <td style={styles.td}>
+                        <div>
+                          <span style={styles.statCount}>{candidate.assessments.filter(a => a.completed_at).length}</span>
+                          <span style={styles.statLabel}> completed</span>
+                        </div>
+                        <div style={styles.avgScore}>
+                          Avg Score: <strong>{avgScore}%</strong>
+                        </div>
+                      </td>
+                      <td style={styles.td}>
+                        <span style={styles.expandIcon}>
+                          {isExpanded ? '▲' : '▼'} {isExpanded ? 'Hide' : 'Show'} Assessments
+                        </span>
+                      </td>
+                    </tr>
+                    
+                    {isExpanded && (
+                      <tr>
+                        <td colSpan="5" style={styles.expandedRow}>
+                          <div style={styles.assessmentList}>
+                            <h4 style={styles.assessmentListTitle}>
+                              Assessments for {candidate.name}
+                            </h4>
+                            <div style={styles.assessmentGrid}>
+                              {candidate.assessments.map((assessment) => {
+                                const score = Math.round(assessment.percentage_score || 0);
+                                
+                                return (
+                                  <div key={assessment.id} style={styles.assessmentItem}>
+                                    <div style={styles.assessmentItemHeader}>
+                                      <span style={styles.assessmentItemTitle}>
+                                        {assessment.assessment_title || 'Unknown'}
+                                      </span>
+                                      <span style={{
+                                        ...styles.assessmentTypeTag,
+                                        background: '#e8f5e9',
+                                        color: '#2e7d32'
+                                      }}>
+                                        Stratavax
+                                      </span>
+                                    </div>
+                                    <div style={styles.assessmentItemDetails}>
+                                      <span style={{
+                                        ...styles.scoreBadge,
+                                        background: score >= 75 ? '#dcfce7' :
+                                                   score >= 65 ? '#fef3c7' : '#fee2e2',
+                                        color: score >= 75 ? '#166534' :
+                                               score >= 65 ? '#92400e' : '#991b1b'
+                                      }}>
+                                        {score}%
+                                      </span>
+                                      <span style={{
+                                        ...styles.recommendationBadge,
+                                        background: assessment.recommendation === 'Highly Recommended' ? '#dcfce7' :
+                                                   assessment.recommendation === 'Recommended' ? '#dbeafe' :
+                                                   assessment.recommendation === 'Reserve Pool' ? '#fef3c7' : '#fee2e2',
+                                        color: assessment.recommendation === 'Highly Recommended' ? '#166534' :
+                                               assessment.recommendation === 'Recommended' ? '#1e40af' :
+                                               assessment.recommendation === 'Reserve Pool' ? '#92400e' : '#991b1b'
+                                      }}>
+                                        {assessment.recommendation || 'N/A'}
+                                      </span>
+                                      <span style={styles.dateBadge}>
+                                        {assessment.completed_at ? new Date(assessment.completed_at).toLocaleDateString() : 'N/A'}
+                                      </span>
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleViewReport(assessment.id);
+                                        }}
+                                        style={styles.viewButton}
+                                      >
+                                        View Report
+                                      </button>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+    );
+  };
+
+  // ============================================================
+  // ALL REPORTS VIEW: Show both National Service and Stratavax
+  // ============================================================
+  const renderAllView = () => {
+    return (
+      <div>
+        {reports.filter(r => r.isNationalService === true).length > 0 && (
+          <div style={styles.section}>
+            <h3 style={styles.sectionTitle}>📋 National Service Reports</h3>
+            <div style={styles.sectionContent}>
+              {reports.filter(r => r.isNationalService === true).map((report) => (
+                <div key={report.id} style={styles.miniCard}>
+                  <div style={styles.miniCardLeft}>
+                    <span style={styles.miniCardName}>{report.candidate_name || 'Unknown'}</span>
+                    <span style={styles.miniCardTitle}>{report.assessment_title}</span>
+                    <span style={styles.miniCardScore}>{Math.round(report.percentage_score || 0)}%</span>
+                  </div>
+                  <button
+                    onClick={() => handleViewReport(report.id)}
+                    style={styles.viewButton}
+                  >
+                    View Report
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        
+        {reports.filter(r => r.isNationalService !== true).length > 0 && (
+          <div style={styles.section}>
+            <h3 style={styles.sectionTitle}>📊 Stratavax Reports</h3>
+            <div style={styles.sectionContent}>
+              {/* Show Stratavax in grouped view */}
+              <div style={styles.tableContainer}>
+                <table style={styles.table}>
+                  <thead>
+                    <tr>
+                      <th style={{ ...styles.th, width: '30%' }}>Candidate</th>
+                      <th style={{ ...styles.th, width: '20%' }}>Assessments</th>
+                      <th style={{ ...styles.th, width: '15%' }}>Avg Score</th>
+                      <th style={{ ...styles.th, width: '20%' }}>Completed</th>
+                      <th style={{ ...styles.th, width: '15%' }}>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {candidates
+                      .filter(c => c.assessments.some(a => !a.isNationalService))
+                      .map((candidate) => {
+                        const stratavaxAssessments = candidate.assessments.filter(a => !a.isNationalService);
+                        const isExpanded = expandedCandidates[candidate.id];
+                        const avgScore = stratavaxAssessments.length > 0
+                          ? Math.round(stratavaxAssessments.reduce((sum, a) => sum + (a.percentage_score || 0), 0) / stratavaxAssessments.length)
+                          : 0;
+
+                        return (
+                          <Fragment key={candidate.id}>
+                            <tr 
+                              style={styles.candidateRow}
+                              onClick={() => toggleCandidate(candidate.id)}
+                            >
+                              <td style={styles.td}>
+                                <div style={styles.candidateName}>
+                                  {candidate.name || 'Unknown'}
+                                </div>
+                                <div style={styles.candidateEmail}>
+                                  {candidate.email || ''}
+                                </div>
+                              </td>
+                              <td style={styles.td}>
+                                <span style={styles.statCount}>{stratavaxAssessments.length}</span>
+                              </td>
+                              <td style={styles.td}>
+                                <span style={styles.statCount}>{avgScore}%</span>
+                              </td>
+                              <td style={styles.td}>
+                                <span style={styles.statCount}>{stratavaxAssessments.filter(a => a.completed_at).length}</span>
+                                <span style={styles.statLabel}> completed</span>
+                              </td>
+                              <td style={styles.td}>
+                                <span style={styles.expandIcon}>
+                                  {isExpanded ? '▲' : '▼'}
+                                </span>
+                              </td>
+                            </tr>
+                            {isExpanded && (
+                              <tr>
+                                <td colSpan="5" style={styles.expandedRow}>
+                                  <div style={styles.assessmentList}>
+                                    {stratavaxAssessments.map((assessment) => (
+                                      <div key={assessment.id} style={styles.assessmentItem}>
+                                        <span style={styles.assessmentItemTitle}>
+                                          {assessment.assessment_title || 'Unknown'}
+                                        </span>
+                                        <span style={styles.scoreBadge}>
+                                          {Math.round(assessment.percentage_score || 0)}%
+                                        </span>
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleViewReport(assessment.id);
+                                          }}
+                                          style={styles.viewButton}
+                                        >
+                                          View Report
+                                        </button>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </Fragment>
+                        );
+                      })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // ============================================================
+  // RENDER BASED ON FILTER
+  // ============================================================
   return (
     <AppLayout background="/images/admin-bg.jpg">
       <div style={styles.container}>
@@ -150,7 +533,7 @@ export default function AdminReportsList() {
 
         <div style={styles.header}>
           <h1 style={styles.title}>Assessment Reports</h1>
-          <p style={styles.subtitle}>All assessment reports grouped by candidate</p>
+          <p style={styles.subtitle}>All assessment reports from candidates</p>
           
           {error && (
             <div style={styles.errorBox}>
@@ -163,7 +546,9 @@ export default function AdminReportsList() {
           <div style={styles.searchBar}>
             <input
               type="text"
-              placeholder="Search by candidate name, email, or assessment..."
+              placeholder={filter === 'national_service' ? 'Search National Service reports...' : 
+                           filter === 'stratavax' ? 'Search candidate name, email, or assessment...' : 
+                           'Search reports...'}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               style={styles.searchInput}
@@ -208,160 +593,9 @@ export default function AdminReportsList() {
           </div>
         </div>
 
-        <div style={styles.tableContainer}>
-          <table style={styles.table}>
-            <thead>
-              <tr>
-                <th style={{ ...styles.th, width: '30%' }}>Candidate</th>
-                <th style={{ ...styles.th, width: '20%' }}>Type</th>
-                <th style={{ ...styles.th, width: '15%' }}>Total Assessments</th>
-                <th style={{ ...styles.th, width: '20%' }}>Completed</th>
-                <th style={{ ...styles.th, width: '15%' }}>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredCandidates.length === 0 ? (
-                <tr>
-                  <td colSpan="5" style={styles.emptyState}>
-                    {searchTerm ? 'No candidates match your search.' : 'No assessment reports found.'}
-                  </td>
-                </tr>
-              ) : (
-                filteredCandidates.map((candidate) => {
-                  const isExpanded = expandedCandidates[candidate.id];
-                  const avgScore = candidate.assessments.length > 0
-                    ? Math.round(candidate.assessments.reduce((sum, a) => sum + (a.percentage_score || 0), 0) / candidate.assessments.length)
-                    : 0;
-
-                  return (
-                    <Fragment key={candidate.id}>
-                      <tr 
-                        style={styles.candidateRow}
-                        onClick={() => toggleCandidate(candidate.id)}
-                      >
-                        <td style={styles.td}>
-                          <div style={styles.candidateName}>
-                            {candidate.name || 'Unknown'}
-                          </div>
-                          <div style={styles.candidateEmail}>
-                            {candidate.email || ''}
-                          </div>
-                          {candidate.university && (
-                            <div style={styles.candidateSub}>
-                              {candidate.university}
-                              {candidate.programme ? ` • ${candidate.programme}` : ''}
-                            </div>
-                          )}
-                        </td>
-                        <td style={styles.td}>
-                          <div style={styles.typeTags}>
-                            {candidate.assessments.some(a => a.isNationalService) && (
-                              <span style={{ ...styles.typeBadge, background: '#dbeafe', color: '#1e40af' }}>
-                                📋 National Service
-                              </span>
-                            )}
-                            {candidate.assessments.some(a => !a.isNationalService) && (
-                              <span style={{ ...styles.typeBadge, background: '#e8f5e9', color: '#2e7d32' }}>
-                                📊 Stratavax
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                        <td style={styles.td}>
-                          <span style={styles.statCount}>{candidate.assessments.length}</span>
-                        </td>
-                        <td style={styles.td}>
-                          <div>
-                            <span style={styles.statCount}>{candidate.assessments.filter(a => a.completed_at).length}</span>
-                            <span style={styles.statLabel}> completed</span>
-                          </div>
-                          <div style={styles.avgScore}>
-                            Avg Score: <strong>{avgScore}%</strong>
-                          </div>
-                        </td>
-                        <td style={styles.td}>
-                          <span style={styles.expandIcon}>
-                            {isExpanded ? '▲' : '▼'} {isExpanded ? 'Hide' : 'Show'} Assessments
-                          </span>
-                        </td>
-                      </tr>
-                      
-                      {/* Expanded Assessments */}
-                      {isExpanded && (
-                        <tr>
-                          <td colSpan="5" style={styles.expandedRow}>
-                            <div style={styles.assessmentList}>
-                              <h4 style={styles.assessmentListTitle}>
-                                Assessments for {candidate.name}
-                              </h4>
-                              <div style={styles.assessmentGrid}>
-                                {candidate.assessments.map((assessment) => {
-                                  const isNationalService = assessment.isNationalService;
-                                  const score = Math.round(assessment.percentage_score || 0);
-                                  
-                                  return (
-                                    <div key={assessment.id} style={styles.assessmentItem}>
-                                      <div style={styles.assessmentItemHeader}>
-                                        <span style={styles.assessmentItemTitle}>
-                                          {assessment.assessment_title || 'Unknown'}
-                                        </span>
-                                        <span style={{
-                                          ...styles.assessmentTypeTag,
-                                          background: isNationalService ? '#dbeafe' : '#e8f5e9',
-                                          color: isNationalService ? '#1e40af' : '#2e7d32'
-                                        }}>
-                                          {isNationalService ? 'National Service' : 'Stratavax'}
-                                        </span>
-                                      </div>
-                                      <div style={styles.assessmentItemDetails}>
-                                        <span style={{
-                                          ...styles.scoreBadge,
-                                          background: score >= 75 ? '#dcfce7' :
-                                                     score >= 65 ? '#fef3c7' : '#fee2e2',
-                                          color: score >= 75 ? '#166534' :
-                                                 score >= 65 ? '#92400e' : '#991b1b'
-                                        }}>
-                                          {score}%
-                                        </span>
-                                        <span style={{
-                                          ...styles.recommendationBadge,
-                                          background: assessment.recommendation === 'Highly Recommended' ? '#dcfce7' :
-                                                     assessment.recommendation === 'Recommended' ? '#dbeafe' :
-                                                     assessment.recommendation === 'Reserve Pool' ? '#fef3c7' : '#fee2e2',
-                                          color: assessment.recommendation === 'Highly Recommended' ? '#166534' :
-                                                 assessment.recommendation === 'Recommended' ? '#1e40af' :
-                                                 assessment.recommendation === 'Reserve Pool' ? '#92400e' : '#991b1b'
-                                        }}>
-                                          {assessment.recommendation || 'N/A'}
-                                        </span>
-                                        <span style={styles.dateBadge}>
-                                          {assessment.completed_at ? new Date(assessment.completed_at).toLocaleDateString() : 'N/A'}
-                                        </span>
-                                        <button
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            handleViewReport(assessment.id);
-                                          }}
-                                          style={styles.viewButton}
-                                        >
-                                          View Report
-                                        </button>
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          </td>
-                        </tr>
-                      )}
-                    </Fragment>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
+        {filter === 'national_service' && renderNationalServiceView()}
+        {filter === 'stratavax' && renderStratavaxView()}
+        {filter === 'all' && renderAllView()}
       </div>
     </AppLayout>
   );
@@ -463,6 +697,50 @@ const styles = {
     background: 'white',
     border: '1px solid #e2e8f0'
   },
+  section: {
+    marginBottom: '30px'
+  },
+  sectionTitle: {
+    fontSize: '18px',
+    fontWeight: '600',
+    color: '#0a1929',
+    margin: '0 0 12px 0',
+    padding: '8px 12px',
+    background: '#f8fafc',
+    borderRadius: '8px'
+  },
+  sectionContent: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px'
+  },
+  miniCard: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '10px 16px',
+    background: 'white',
+    borderRadius: '8px',
+    border: '1px solid #e2e8f0'
+  },
+  miniCardLeft: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '16px',
+    flexWrap: 'wrap'
+  },
+  miniCardName: {
+    fontWeight: '500',
+    color: '#0a1929'
+  },
+  miniCardTitle: {
+    color: '#64748b',
+    fontSize: '13px'
+  },
+  miniCardScore: {
+    fontWeight: '600',
+    color: '#1a237e'
+  },
   tableContainer: {
     background: 'white',
     borderRadius: '12px',
@@ -489,6 +767,9 @@ const styles = {
     borderBottom: '1px solid #e2e8f0',
     color: '#1a202c',
     verticalAlign: 'middle'
+  },
+  tr: {
+    transition: 'background 0.2s'
   },
   candidateRow: {
     cursor: 'pointer',
@@ -544,7 +825,10 @@ const styles = {
     background: '#f8fafc'
   },
   assessmentList: {
-    padding: '16px 20px'
+    padding: '16px 20px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px'
   },
   assessmentListTitle: {
     fontSize: '14px',
@@ -559,7 +843,7 @@ const styles = {
   },
   assessmentItem: {
     background: 'white',
-    padding: '12px 16px',
+    padding: '10px 16px',
     borderRadius: '8px',
     border: '1px solid #e2e8f0',
     display: 'flex',
