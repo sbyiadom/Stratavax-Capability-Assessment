@@ -1,4 +1,4 @@
-// pages/admin/reports/index.js - WITH DIFFERENT VIEWS PER TAB
+// pages/admin/reports/index.js - CLEAN ALL REPORTS VIEW
 
 import { useState, useEffect, Fragment } from 'react';
 import { useRouter } from 'next/router';
@@ -137,7 +137,7 @@ export default function AdminReportsList() {
   }
 
   // ============================================================
-  // NATIONAL SERVICE VIEW: Show assessments in a flat list
+  // NATIONAL SERVICE VIEW: Simple flat list
   // ============================================================
   const renderNationalServiceView = () => {
     const nsReports = reports.filter(r => r.isNationalService === true);
@@ -244,7 +244,7 @@ export default function AdminReportsList() {
   };
 
   // ============================================================
-  // STRATAVAX VIEW: Show candidates grouped with expandable assessments
+  // STRATAVAX VIEW: Candidate grouping with expandable assessments
   // ============================================================
   const renderStratavaxView = () => {
     return (
@@ -253,10 +253,10 @@ export default function AdminReportsList() {
           <thead>
             <tr>
               <th style={{ ...styles.th, width: '30%' }}>Candidate</th>
-              <th style={{ ...styles.th, width: '20%' }}>Type</th>
-              <th style={{ ...styles.th, width: '15%' }}>Total Assessments</th>
-              <th style={{ ...styles.th, width: '20%' }}>Completed</th>
-              <th style={{ ...styles.th, width: '15%' }}>Action</th>
+              <th style={{ ...styles.th, width: '15%' }}>Assessments</th>
+              <th style={{ ...styles.th, width: '15%' }}>Avg Score</th>
+              <th style={{ ...styles.th, width: '15%' }}>Completed</th>
+              <th style={{ ...styles.th, width: '25%' }}>Action</th>
             </tr>
           </thead>
           <tbody>
@@ -294,27 +294,26 @@ export default function AdminReportsList() {
                         )}
                       </td>
                       <td style={styles.td}>
-                        <div style={styles.typeTags}>
-                          <span style={{ ...styles.typeBadge, background: '#e8f5e9', color: '#2e7d32' }}>
-                            📊 Stratavax
-                          </span>
-                        </div>
-                      </td>
-                      <td style={styles.td}>
                         <span style={styles.statCount}>{candidate.assessments.length}</span>
                       </td>
                       <td style={styles.td}>
-                        <div>
-                          <span style={styles.statCount}>{candidate.assessments.filter(a => a.completed_at).length}</span>
-                          <span style={styles.statLabel}> completed</span>
-                        </div>
-                        <div style={styles.avgScore}>
-                          Avg Score: <strong>{avgScore}%</strong>
-                        </div>
+                        <span style={{
+                          ...styles.avgScoreBadge,
+                          background: avgScore >= 75 ? '#dcfce7' :
+                                     avgScore >= 65 ? '#fef3c7' : '#fee2e2',
+                          color: avgScore >= 75 ? '#166534' :
+                                 avgScore >= 65 ? '#92400e' : '#991b1b'
+                        }}>
+                          {avgScore}%
+                        </span>
+                      </td>
+                      <td style={styles.td}>
+                        <span style={styles.statCount}>{candidate.assessments.filter(a => a.completed_at).length}</span>
+                        <span style={styles.statLabel}> completed</span>
                       </td>
                       <td style={styles.td}>
                         <span style={styles.expandIcon}>
-                          {isExpanded ? '▲' : '▼'} {isExpanded ? 'Hide' : 'Show'} Assessments
+                          {isExpanded ? '▲ Hide' : '▼ Show'} Assessments
                         </span>
                       </td>
                     </tr>
@@ -323,65 +322,43 @@ export default function AdminReportsList() {
                       <tr>
                         <td colSpan="5" style={styles.expandedRow}>
                           <div style={styles.assessmentList}>
-                            <h4 style={styles.assessmentListTitle}>
-                              Assessments for {candidate.name}
-                            </h4>
-                            <div style={styles.assessmentGrid}>
-                              {candidate.assessments.map((assessment) => {
-                                const score = Math.round(assessment.percentage_score || 0);
-                                
-                                return (
-                                  <div key={assessment.id} style={styles.assessmentItem}>
-                                    <div style={styles.assessmentItemHeader}>
-                                      <span style={styles.assessmentItemTitle}>
-                                        {assessment.assessment_title || 'Unknown'}
-                                      </span>
-                                      <span style={{
-                                        ...styles.assessmentTypeTag,
-                                        background: '#e8f5e9',
-                                        color: '#2e7d32'
-                                      }}>
-                                        Stratavax
-                                      </span>
-                                    </div>
-                                    <div style={styles.assessmentItemDetails}>
-                                      <span style={{
-                                        ...styles.scoreBadge,
-                                        background: score >= 75 ? '#dcfce7' :
-                                                   score >= 65 ? '#fef3c7' : '#fee2e2',
-                                        color: score >= 75 ? '#166534' :
-                                               score >= 65 ? '#92400e' : '#991b1b'
-                                      }}>
-                                        {score}%
-                                      </span>
-                                      <span style={{
-                                        ...styles.recommendationBadge,
-                                        background: assessment.recommendation === 'Highly Recommended' ? '#dcfce7' :
-                                                   assessment.recommendation === 'Recommended' ? '#dbeafe' :
-                                                   assessment.recommendation === 'Reserve Pool' ? '#fef3c7' : '#fee2e2',
-                                        color: assessment.recommendation === 'Highly Recommended' ? '#166534' :
-                                               assessment.recommendation === 'Recommended' ? '#1e40af' :
-                                               assessment.recommendation === 'Reserve Pool' ? '#92400e' : '#991b1b'
-                                      }}>
-                                        {assessment.recommendation || 'N/A'}
-                                      </span>
-                                      <span style={styles.dateBadge}>
-                                        {assessment.completed_at ? new Date(assessment.completed_at).toLocaleDateString() : 'N/A'}
-                                      </span>
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handleViewReport(assessment.id);
-                                        }}
-                                        style={styles.viewButton}
-                                      >
-                                        View Report
-                                      </button>
-                                    </div>
+                            {candidate.assessments.map((assessment) => {
+                              const score = Math.round(assessment.percentage_score || 0);
+                              
+                              return (
+                                <div key={assessment.id} style={styles.assessmentItem}>
+                                  <div style={styles.assessmentItemLeft}>
+                                    <span style={styles.assessmentItemTitle}>
+                                      {assessment.assessment_title || 'Unknown'}
+                                    </span>
+                                    <span style={{
+                                      ...styles.assessmentScoreBadge,
+                                      background: score >= 75 ? '#dcfce7' :
+                                                 score >= 65 ? '#fef3c7' : '#fee2e2',
+                                      color: score >= 75 ? '#166534' :
+                                             score >= 65 ? '#92400e' : '#991b1b'
+                                    }}>
+                                      {score}%
+                                    </span>
+                                    <span style={styles.assessmentRecommendation}>
+                                      {assessment.recommendation || 'N/A'}
+                                    </span>
+                                    <span style={styles.assessmentDate}>
+                                      {assessment.completed_at ? new Date(assessment.completed_at).toLocaleDateString() : 'N/A'}
+                                    </span>
                                   </div>
-                                );
-                              })}
-                            </div>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleViewReport(assessment.id);
+                                    }}
+                                    style={styles.viewButton}
+                                  >
+                                    View Report
+                                  </button>
+                                </div>
+                              );
+                            })}
                           </div>
                         </td>
                       </tr>
@@ -397,21 +374,44 @@ export default function AdminReportsList() {
   };
 
   // ============================================================
-  // ALL REPORTS VIEW: Show both National Service and Stratavax
+  // ALL REPORTS VIEW: Clean combined view with sections
   // ============================================================
   const renderAllView = () => {
+    const nsReports = reports.filter(r => r.isNationalService === true);
+    const stratavaxCandidates = candidates.filter(c => c.assessments.some(a => !a.isNationalService));
+
     return (
-      <div>
-        {reports.filter(r => r.isNationalService === true).length > 0 && (
+      <div style={styles.allReportsContainer}>
+        {/* National Service Section */}
+        {nsReports.length > 0 && (
           <div style={styles.section}>
-            <h3 style={styles.sectionTitle}>📋 National Service Reports</h3>
-            <div style={styles.sectionContent}>
-              {reports.filter(r => r.isNationalService === true).map((report) => (
-                <div key={report.id} style={styles.miniCard}>
-                  <div style={styles.miniCardLeft}>
-                    <span style={styles.miniCardName}>{report.candidate_name || 'Unknown'}</span>
-                    <span style={styles.miniCardTitle}>{report.assessment_title}</span>
-                    <span style={styles.miniCardScore}>{Math.round(report.percentage_score || 0)}%</span>
+            <div style={styles.sectionHeader}>
+              <h3 style={styles.sectionTitle}>📋 National Service Reports</h3>
+              <span style={styles.sectionCount}>{nsReports.length} reports</span>
+            </div>
+            <div style={styles.nsGrid}>
+              {nsReports.map((report) => (
+                <div key={report.id} style={styles.nsCard}>
+                  <div style={styles.nsCardHeader}>
+                    <span style={styles.nsCardName}>{report.candidate_name || 'Unknown'}</span>
+                    <span style={{
+                      ...styles.nsCardScore,
+                      background: report.percentage_score >= 75 ? '#dcfce7' :
+                                 report.percentage_score >= 65 ? '#fef3c7' : '#fee2e2',
+                      color: report.percentage_score >= 75 ? '#166534' :
+                             report.percentage_score >= 65 ? '#92400e' : '#991b1b'
+                    }}>
+                      {Math.round(report.percentage_score || 0)}%
+                    </span>
+                  </div>
+                  <div style={styles.nsCardBody}>
+                    <span style={styles.nsCardTitle}>{report.assessment_title}</span>
+                    <span style={styles.nsCardRecommendation}>
+                      {report.recommendation || 'N/A'}
+                    </span>
+                    <span style={styles.nsCardDate}>
+                      {report.completed_at ? new Date(report.completed_at).toLocaleDateString() : 'N/A'}
+                    </span>
                   </div>
                   <button
                     onClick={() => handleViewReport(report.id)}
@@ -424,96 +424,86 @@ export default function AdminReportsList() {
             </div>
           </div>
         )}
-        
-        {reports.filter(r => r.isNationalService !== true).length > 0 && (
-          <div style={styles.section}>
-            <h3 style={styles.sectionTitle}>📊 Stratavax Reports</h3>
-            <div style={styles.sectionContent}>
-              {/* Show Stratavax in grouped view */}
-              <div style={styles.tableContainer}>
-                <table style={styles.table}>
-                  <thead>
-                    <tr>
-                      <th style={{ ...styles.th, width: '30%' }}>Candidate</th>
-                      <th style={{ ...styles.th, width: '20%' }}>Assessments</th>
-                      <th style={{ ...styles.th, width: '15%' }}>Avg Score</th>
-                      <th style={{ ...styles.th, width: '20%' }}>Completed</th>
-                      <th style={{ ...styles.th, width: '15%' }}>Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {candidates
-                      .filter(c => c.assessments.some(a => !a.isNationalService))
-                      .map((candidate) => {
-                        const stratavaxAssessments = candidate.assessments.filter(a => !a.isNationalService);
-                        const isExpanded = expandedCandidates[candidate.id];
-                        const avgScore = stratavaxAssessments.length > 0
-                          ? Math.round(stratavaxAssessments.reduce((sum, a) => sum + (a.percentage_score || 0), 0) / stratavaxAssessments.length)
-                          : 0;
 
-                        return (
-                          <Fragment key={candidate.id}>
-                            <tr 
-                              style={styles.candidateRow}
-                              onClick={() => toggleCandidate(candidate.id)}
+        {/* Stratavax Section */}
+        {stratavaxCandidates.length > 0 && (
+          <div style={styles.section}>
+            <div style={styles.sectionHeader}>
+              <h3 style={styles.sectionTitle}>📊 Stratavax Reports</h3>
+              <span style={styles.sectionCount}>{stratavaxCandidates.length} candidates</span>
+            </div>
+            <div style={styles.stratavaxGrid}>
+              {stratavaxCandidates.map((candidate) => {
+                const isExpanded = expandedCandidates[candidate.id];
+                const stratavaxAssessments = candidate.assessments.filter(a => !a.isNationalService);
+                const avgScore = stratavaxAssessments.length > 0
+                  ? Math.round(stratavaxAssessments.reduce((sum, a) => sum + (a.percentage_score || 0), 0) / stratavaxAssessments.length)
+                  : 0;
+
+                return (
+                  <div key={candidate.id} style={styles.stratavaxCard}>
+                    <div 
+                      style={styles.stratavaxCardHeader}
+                      onClick={() => toggleCandidate(candidate.id)}
+                    >
+                      <div style={styles.stratavaxCardLeft}>
+                        <span style={styles.stratavaxCardName}>{candidate.name || 'Unknown'}</span>
+                        <span style={styles.stratavaxCardEmail}>{candidate.email || ''}</span>
+                      </div>
+                      <div style={styles.stratavaxCardStats}>
+                        <span style={styles.stratavaxCardStat}>
+                          <strong>{stratavaxAssessments.length}</strong> assessments
+                        </span>
+                        <span style={{
+                          ...styles.stratavaxCardScore,
+                          background: avgScore >= 75 ? '#dcfce7' :
+                                     avgScore >= 65 ? '#fef3c7' : '#fee2e2',
+                          color: avgScore >= 75 ? '#166534' :
+                                 avgScore >= 65 ? '#92400e' : '#991b1b'
+                        }}>
+                          {avgScore}% avg
+                        </span>
+                        <span style={styles.stratavaxCardExpand}>
+                          {isExpanded ? '▲' : '▼'}
+                        </span>
+                      </div>
+                    </div>
+                    
+                    {isExpanded && (
+                      <div style={styles.stratavaxCardBody}>
+                        {stratavaxAssessments.map((assessment) => (
+                          <div key={assessment.id} style={styles.stratavaxAssessmentItem}>
+                            <span style={styles.stratavaxAssessmentTitle}>
+                              {assessment.assessment_title || 'Unknown'}
+                            </span>
+                            <span style={{
+                              ...styles.stratavaxAssessmentScore,
+                              background: assessment.percentage_score >= 75 ? '#dcfce7' :
+                                         assessment.percentage_score >= 65 ? '#fef3c7' : '#fee2e2',
+                              color: assessment.percentage_score >= 75 ? '#166534' :
+                                     assessment.percentage_score >= 65 ? '#92400e' : '#991b1b'
+                            }}>
+                              {Math.round(assessment.percentage_score || 0)}%
+                            </span>
+                            <span style={styles.stratavaxAssessmentRec}>
+                              {assessment.recommendation || 'N/A'}
+                            </span>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleViewReport(assessment.id);
+                              }}
+                              style={styles.viewButton}
                             >
-                              <td style={styles.td}>
-                                <div style={styles.candidateName}>
-                                  {candidate.name || 'Unknown'}
-                                </div>
-                                <div style={styles.candidateEmail}>
-                                  {candidate.email || ''}
-                                </div>
-                              </td>
-                              <td style={styles.td}>
-                                <span style={styles.statCount}>{stratavaxAssessments.length}</span>
-                              </td>
-                              <td style={styles.td}>
-                                <span style={styles.statCount}>{avgScore}%</span>
-                              </td>
-                              <td style={styles.td}>
-                                <span style={styles.statCount}>{stratavaxAssessments.filter(a => a.completed_at).length}</span>
-                                <span style={styles.statLabel}> completed</span>
-                              </td>
-                              <td style={styles.td}>
-                                <span style={styles.expandIcon}>
-                                  {isExpanded ? '▲' : '▼'}
-                                </span>
-                              </td>
-                            </tr>
-                            {isExpanded && (
-                              <tr>
-                                <td colSpan="5" style={styles.expandedRow}>
-                                  <div style={styles.assessmentList}>
-                                    {stratavaxAssessments.map((assessment) => (
-                                      <div key={assessment.id} style={styles.assessmentItem}>
-                                        <span style={styles.assessmentItemTitle}>
-                                          {assessment.assessment_title || 'Unknown'}
-                                        </span>
-                                        <span style={styles.scoreBadge}>
-                                          {Math.round(assessment.percentage_score || 0)}%
-                                        </span>
-                                        <button
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            handleViewReport(assessment.id);
-                                          }}
-                                          style={styles.viewButton}
-                                        >
-                                          View Report
-                                        </button>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </td>
-                              </tr>
-                            )}
-                          </Fragment>
-                        );
-                      })}
-                  </tbody>
-                </table>
-              </div>
+                              View Report
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
@@ -546,9 +536,7 @@ export default function AdminReportsList() {
           <div style={styles.searchBar}>
             <input
               type="text"
-              placeholder={filter === 'national_service' ? 'Search National Service reports...' : 
-                           filter === 'stratavax' ? 'Search candidate name, email, or assessment...' : 
-                           'Search reports...'}
+              placeholder="Search reports..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               style={styles.searchInput}
@@ -697,50 +685,6 @@ const styles = {
     background: 'white',
     border: '1px solid #e2e8f0'
   },
-  section: {
-    marginBottom: '30px'
-  },
-  sectionTitle: {
-    fontSize: '18px',
-    fontWeight: '600',
-    color: '#0a1929',
-    margin: '0 0 12px 0',
-    padding: '8px 12px',
-    background: '#f8fafc',
-    borderRadius: '8px'
-  },
-  sectionContent: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '8px'
-  },
-  miniCard: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: '10px 16px',
-    background: 'white',
-    borderRadius: '8px',
-    border: '1px solid #e2e8f0'
-  },
-  miniCardLeft: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '16px',
-    flexWrap: 'wrap'
-  },
-  miniCardName: {
-    fontWeight: '500',
-    color: '#0a1929'
-  },
-  miniCardTitle: {
-    color: '#64748b',
-    fontSize: '13px'
-  },
-  miniCardScore: {
-    fontWeight: '600',
-    color: '#1a237e'
-  },
   tableContainer: {
     background: 'white',
     borderRadius: '12px',
@@ -809,10 +753,12 @@ const styles = {
     fontSize: '12px',
     color: '#94a3b8'
   },
-  avgScore: {
-    fontSize: '12px',
-    color: '#64748b',
-    marginTop: '2px'
+  avgScoreBadge: {
+    padding: '2px 10px',
+    borderRadius: '12px',
+    fontSize: '13px',
+    fontWeight: '600',
+    display: 'inline-block'
   },
   expandIcon: {
     fontSize: '13px',
@@ -830,50 +776,42 @@ const styles = {
     flexDirection: 'column',
     gap: '8px'
   },
-  assessmentListTitle: {
-    fontSize: '14px',
-    fontWeight: '600',
-    color: '#0a1929',
-    margin: '0 0 12px 0'
-  },
-  assessmentGrid: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '10px'
-  },
   assessmentItem: {
-    background: 'white',
-    padding: '10px 16px',
-    borderRadius: '8px',
-    border: '1px solid #e2e8f0',
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
+    padding: '8px 12px',
+    background: 'white',
+    borderRadius: '6px',
+    border: '1px solid #e2e8f0',
     flexWrap: 'wrap',
     gap: '8px'
   },
-  assessmentItemHeader: {
+  assessmentItemLeft: {
     display: 'flex',
     alignItems: 'center',
-    gap: '10px',
+    gap: '12px',
     flexWrap: 'wrap'
   },
   assessmentItemTitle: {
-    fontSize: '14px',
+    fontSize: '13px',
     fontWeight: '500',
     color: '#0a1929'
   },
-  assessmentTypeTag: {
+  assessmentScoreBadge: {
     padding: '2px 8px',
     borderRadius: '10px',
-    fontSize: '10px',
-    fontWeight: '600'
+    fontSize: '12px',
+    fontWeight: '600',
+    display: 'inline-block'
   },
-  assessmentItemDetails: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px',
-    flexWrap: 'wrap'
+  assessmentRecommendation: {
+    fontSize: '12px',
+    color: '#64748b'
+  },
+  assessmentDate: {
+    fontSize: '12px',
+    color: '#94a3b8'
   },
   scoreBadge: {
     padding: '2px 10px',
@@ -882,16 +820,28 @@ const styles = {
     fontWeight: '600',
     display: 'inline-block'
   },
+  scoreRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '4px',
+    fontSize: '12px',
+    marginTop: '1px'
+  },
+  scoreLabel: {
+    color: '#94a3b8',
+    fontSize: '11px'
+  },
+  scoreSmall: {
+    fontSize: '12px',
+    fontWeight: '600',
+    color: '#1a202c'
+  },
   recommendationBadge: {
     padding: '2px 10px',
     borderRadius: '12px',
     fontSize: '11px',
     fontWeight: '600',
     display: 'inline-block'
-  },
-  dateBadge: {
-    fontSize: '12px',
-    color: '#94a3b8'
   },
   viewButton: {
     padding: '4px 12px',
@@ -907,6 +857,188 @@ const styles = {
     textAlign: 'center',
     padding: '40px',
     color: '#94a3b8'
+  },
+  
+  // ============================================================
+  // ALL REPORTS VIEW STYLES
+  // ============================================================
+  allReportsContainer: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '32px'
+  },
+  section: {
+    background: 'white',
+    borderRadius: '12px',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+    border: '1px solid #e2e8f0',
+    overflow: 'hidden'
+  },
+  sectionHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '14px 20px',
+    background: '#f8fafc',
+    borderBottom: '1px solid #e2e8f0'
+  },
+  sectionTitle: {
+    fontSize: '16px',
+    fontWeight: '600',
+    color: '#0a1929',
+    margin: 0
+  },
+  sectionCount: {
+    fontSize: '13px',
+    color: '#94a3b8'
+  },
+  
+  // National Service Cards
+  nsGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+    gap: '12px',
+    padding: '16px'
+  },
+  nsCard: {
+    background: 'white',
+    borderRadius: '10px',
+    border: '1px solid #eef2f7',
+    padding: '14px 16px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+    transition: 'box-shadow 0.2s'
+  },
+  nsCardHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center'
+  },
+  nsCardName: {
+    fontSize: '14px',
+    fontWeight: '600',
+    color: '#0a1929'
+  },
+  nsCardScore: {
+    padding: '2px 10px',
+    borderRadius: '12px',
+    fontSize: '14px',
+    fontWeight: '700',
+    display: 'inline-block'
+  },
+  nsCardBody: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    flexWrap: 'wrap',
+    fontSize: '13px',
+    color: '#64748b'
+  },
+  nsCardTitle: {
+    color: '#1a202c',
+    fontWeight: '500'
+  },
+  nsCardRecommendation: {
+    fontSize: '12px',
+    padding: '1px 8px',
+    borderRadius: '10px',
+    background: '#f1f5f9',
+    color: '#475569'
+  },
+  nsCardDate: {
+    fontSize: '12px',
+    color: '#94a3b8'
+  },
+  
+  // Stratavax Cards
+  stratavaxGrid: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+    padding: '16px'
+  },
+  stratavaxCard: {
+    background: 'white',
+    borderRadius: '10px',
+    border: '1px solid #eef2f7',
+    overflow: 'hidden'
+  },
+  stratavaxCardHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '12px 16px',
+    cursor: 'pointer',
+    transition: 'background 0.2s'
+  },
+  stratavaxCardLeft: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    flexWrap: 'wrap'
+  },
+  stratavaxCardName: {
+    fontSize: '14px',
+    fontWeight: '600',
+    color: '#0a1929'
+  },
+  stratavaxCardEmail: {
+    fontSize: '12px',
+    color: '#94a3b8'
+  },
+  stratavaxCardStats: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '16px'
+  },
+  stratavaxCardStat: {
+    fontSize: '13px',
+    color: '#64748b'
+  },
+  stratavaxCardScore: {
+    padding: '2px 10px',
+    borderRadius: '12px',
+    fontSize: '13px',
+    fontWeight: '600',
+    display: 'inline-block'
+  },
+  stratavaxCardExpand: {
+    fontSize: '14px',
+    color: '#94a3b8'
+  },
+  stratavaxCardBody: {
+    padding: '12px 16px',
+    borderTop: '1px solid #eef2f7',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px'
+  },
+  stratavaxAssessmentItem: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    padding: '8px 12px',
+    background: '#f8fafc',
+    borderRadius: '6px',
+    flexWrap: 'wrap'
+  },
+  stratavaxAssessmentTitle: {
+    fontSize: '13px',
+    fontWeight: '500',
+    color: '#0a1929',
+    flex: 1
+  },
+  stratavaxAssessmentScore: {
+    padding: '1px 8px',
+    borderRadius: '10px',
+    fontSize: '12px',
+    fontWeight: '600',
+    display: 'inline-block'
+  },
+  stratavaxAssessmentRec: {
+    fontSize: '12px',
+    color: '#64748b'
   }
 };
 
