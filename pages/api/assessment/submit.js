@@ -1,4 +1,6 @@
-// pages/api/assessment/submit.js - COMPLETE FIX
+// pages/api/assessment/submit.js - COMPLETE FIXED VERSION
+// Handles assessment submission with correct scoring (1 mark per correct answer)
+// Saves category_scores, workplace_readiness, and intellectual_capability
 
 import { createClient } from "@supabase/supabase-js";
 
@@ -136,7 +138,7 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 5: Calculate scores AND build category_scores
+    // STEP 5: Calculate scores (1 mark per correct answer)
     // ============================================================
     let totalEarned = 0;
     let totalMax = 0;
@@ -151,10 +153,11 @@ export default async function handler(req, res) {
     const categoryMap = {};
     const categoryMaxMap = {};
 
-    // Calculate scores for each question
+    // Calculate scores for each question - 1 mark per correct answer
     (questions || []).forEach(q => {
       const answers = q.unique_answers || [];
-      const maxScore = answers.reduce((max, a) => Math.max(max, Number(a.score) || 0), 0);
+      // Each question is worth 1 mark
+      const maxScore = 1;
       totalMax += maxScore;
 
       // Get section/category name
@@ -171,7 +174,8 @@ export default async function handler(req, res) {
       if (userAnswer) {
         const selectedAnswer = answers.find(a => String(a.id) === String(userAnswer));
         if (selectedAnswer) {
-          const earned = Number(selectedAnswer.score) || 0;
+          // Correct if score > 0, earns 1 mark
+          const earned = Number(selectedAnswer.score) > 0 ? 1 : 0;
           totalEarned += earned;
           categoryMap[section] += earned;
         }
@@ -255,6 +259,12 @@ export default async function handler(req, res) {
       category_scores: categoryScores,
       workplace_readiness: workplaceReadiness,
       intellectual_capability: intellectualCapability,
+      // For National Service, calculate recommendation
+      recommendation: isNationalService ? 
+        (workplaceReadiness >= 85 && intellectualCapability >= 85 ? 'Highly Recommended' :
+         workplaceReadiness >= 75 && intellectualCapability >= 75 ? 'Recommended' :
+         workplaceReadiness >= 65 && intellectualCapability >= 65 ? 'Reserve Pool' : 'Not Recommended')
+        : null,
       report_data: {
         categoryScores: categoryScores,
         totalEarned: totalEarned,
@@ -262,6 +272,11 @@ export default async function handler(req, res) {
         percentageScore: percentageScore,
         workplaceReadiness: workplaceReadiness,
         intellectualCapability: intellectualCapability,
+        recommendation: isNationalService ? 
+          (workplaceReadiness >= 85 && intellectualCapability >= 85 ? 'Highly Recommended' :
+           workplaceReadiness >= 75 && intellectualCapability >= 75 ? 'Recommended' :
+           workplaceReadiness >= 65 && intellectualCapability >= 65 ? 'Reserve Pool' : 'Not Recommended')
+          : null,
         completedAt: new Date().toISOString()
       }
     };
@@ -328,6 +343,7 @@ export default async function handler(req, res) {
       categoryScores: categoryScores,
       workplaceReadiness: workplaceReadiness,
       intellectualCapability: intellectualCapability,
+      recommendation: resultData.recommendation,
       isNationalService: isNationalService,
       isAutoSubmitted: autoSubmitted || false
     });
