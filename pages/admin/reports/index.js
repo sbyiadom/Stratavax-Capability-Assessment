@@ -1,4 +1,4 @@
-// pages/admin/reports/index.js - WITH CANDIDATE GROUPING AND FILTERING
+// pages/admin/reports/index.js - WITH CANDIDATE GROUPING AND EXPANDABLE ASSESSMENTS
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -14,8 +14,8 @@ export default function AdminReportsList() {
   const [reports, setReports] = useState([]);
   const [filter, setFilter] = useState('all');
   const [error, setError] = useState(null);
+  const [stats, setStats] = useState({ total: 0, nationalService: 0, stratavax: 0 });
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedCandidate, setSelectedCandidate] = useState(null);
   const [expandedCandidates, setExpandedCandidates] = useState({});
   const [candidates, setCandidates] = useState([]);
 
@@ -28,6 +28,8 @@ export default function AdminReportsList() {
     try {
       setLoading(true);
       setError(null);
+
+      console.log('🔍 Fetching reports from API...');
 
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData?.session?.access_token;
@@ -52,7 +54,9 @@ export default function AdminReportsList() {
         throw new Error(data.error || 'Failed to load reports');
       }
 
+      console.log(`✅ Found ${data.reports?.length || 0} reports`);
       setReports(data.reports || []);
+      setStats(data.stats || { total: 0, nationalService: 0, stratavax: 0 });
       
       // Build candidate list with their assessments
       const candidateMap = {};
@@ -73,9 +77,9 @@ export default function AdminReportsList() {
       
       setCandidates(Object.values(candidateMap));
       setLoading(false);
-    } catch (err) {
-      console.error('Error fetching reports:', err);
-      setError(err.message || 'Failed to load reports');
+    } catch (error) {
+      console.error('❌ Error fetching reports:', error);
+      setError(error.message || 'Failed to load reports');
       setLoading(false);
     }
   };
@@ -117,9 +121,6 @@ export default function AdminReportsList() {
   };
 
   const filteredCandidates = getFilteredCandidates();
-  const totalAssessments = reports.length;
-  const nationalServiceCount = reports.filter(r => r.isNationalService === true).length;
-  const stratavaxCount = reports.filter(r => r.isNationalService !== true).length;
 
   const handleViewReport = (resultId) => {
     router.push(`/admin/reports/${resultId}`);
@@ -180,7 +181,7 @@ export default function AdminReportsList() {
                 border: filter === 'all' ? 'none' : '1px solid #e2e8f0'
               }}
             >
-              All Reports ({totalAssessments})
+              All Reports ({stats.total})
             </button>
             <button
               onClick={() => setFilter('national_service')}
@@ -191,7 +192,7 @@ export default function AdminReportsList() {
                 border: filter === 'national_service' ? 'none' : '1px solid #e2e8f0'
               }}
             >
-              📋 National Service ({nationalServiceCount})
+              📋 National Service ({stats.nationalService})
             </button>
             <button
               onClick={() => setFilter('stratavax')}
@@ -202,7 +203,7 @@ export default function AdminReportsList() {
                 border: filter === 'stratavax' ? 'none' : '1px solid #e2e8f0'
               }}
             >
-              📊 Stratavax ({stratavaxCount})
+              📊 Stratavax ({stats.stratavax})
             </button>
           </div>
         </div>
@@ -314,10 +315,24 @@ export default function AdminReportsList() {
                                         </span>
                                       </div>
                                       <div style={styles.assessmentItemDetails}>
-                                        <span style={styles.scoreBadge}>
+                                        <span style={{
+                                          ...styles.scoreBadge,
+                                          background: score >= 75 ? '#dcfce7' :
+                                                     score >= 65 ? '#fef3c7' : '#fee2e2',
+                                          color: score >= 75 ? '#166534' :
+                                                 score >= 65 ? '#92400e' : '#991b1b'
+                                        }}>
                                           {score}%
                                         </span>
-                                        <span style={styles.recommendationBadge}>
+                                        <span style={{
+                                          ...styles.recommendationBadge,
+                                          background: assessment.recommendation === 'Highly Recommended' ? '#dcfce7' :
+                                                     assessment.recommendation === 'Recommended' ? '#dbeafe' :
+                                                     assessment.recommendation === 'Reserve Pool' ? '#fef3c7' : '#fee2e2',
+                                          color: assessment.recommendation === 'Highly Recommended' ? '#166534' :
+                                                 assessment.recommendation === 'Recommended' ? '#1e40af' :
+                                                 assessment.recommendation === 'Reserve Pool' ? '#92400e' : '#991b1b'
+                                        }}>
                                           {assessment.recommendation || 'N/A'}
                                         </span>
                                         <span style={styles.dateBadge}>
@@ -582,16 +597,14 @@ const styles = {
     borderRadius: '12px',
     fontSize: '13px',
     fontWeight: '600',
-    background: '#f1f5f9',
-    color: '#1a202c'
+    display: 'inline-block'
   },
   recommendationBadge: {
     padding: '2px 10px',
     borderRadius: '12px',
     fontSize: '11px',
     fontWeight: '600',
-    background: '#f1f5f9',
-    color: '#475569'
+    display: 'inline-block'
   },
   dateBadge: {
     fontSize: '12px',
