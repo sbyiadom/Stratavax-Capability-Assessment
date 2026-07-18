@@ -82,6 +82,27 @@ export default function CandidateDashboard() {
     setSelectedAssessment(assessment);
   }
 
+  // ============================================================
+  // Helper functions for display values
+  // ============================================================
+  const isNationalServiceAssessment = (assessment) => {
+    return assessment?.isNationalService || assessment?.typeCode === 'national_service';
+  };
+
+  const getDisplayQuestionCount = (assessment) => {
+    if (isNationalServiceAssessment(assessment)) {
+      return assessment.questionCount || 80;
+    }
+    return assessment.questionCount || 100;
+  };
+
+  const getDisplayTimeLimitMinutes = (assessment) => {
+    if (isNationalServiceAssessment(assessment)) {
+      return assessment.timeLimitMinutes || 90;
+    }
+    return assessment.timeLimitMinutes || 120;
+  };
+
   if (authLoading || loading) {
     return (
       <div style={styles.loadingContainer}>
@@ -284,32 +305,32 @@ export default function CandidateDashboard() {
           </div>
         </div>
 
-        {/* Stats Cards */}
+        {/* Stats Cards - UPDATED with solid backgrounds and white text */}
         <div style={styles.statsBar}>
           <div style={styles.statsGrid}>
-            <div style={{ ...styles.statCard, background: 'rgba(34, 197, 94, 0.12)', borderColor: '#22c55e' }}>
-              <div style={{ ...styles.statIcon, color: '#16a34a' }}>✓</div>
+            <div style={{ ...styles.statCard, background: '#16a34a', borderColor: '#16a34a' }}>
+              <div style={{ ...styles.statIcon, color: '#ffffff' }}>✓</div>
               <div>
                 <div style={styles.statNumber}>{stats.completed}</div>
                 <div style={styles.statLabel}>Completed</div>
               </div>
             </div>
-            <div style={{ ...styles.statCard, background: 'rgba(59, 130, 246, 0.12)', borderColor: '#3b82f6' }}>
-              <div style={{ ...styles.statIcon, color: '#2563eb' }}>□</div>
+            <div style={{ ...styles.statCard, background: '#2563eb', borderColor: '#2563eb' }}>
+              <div style={{ ...styles.statIcon, color: '#ffffff' }}>□</div>
               <div>
                 <div style={styles.statNumber}>{stats.ready}</div>
                 <div style={styles.statLabel}>Ready</div>
               </div>
             </div>
-            <div style={{ ...styles.statCard, background: 'rgba(251, 191, 36, 0.12)', borderColor: '#f59e0b' }}>
-              <div style={{ ...styles.statIcon, color: '#d97706' }}>◉</div>
+            <div style={{ ...styles.statCard, background: '#d97706', borderColor: '#d97706' }}>
+              <div style={{ ...styles.statIcon, color: '#ffffff' }}>◉</div>
               <div>
                 <div style={styles.statNumber}>{stats.inProgress}</div>
                 <div style={styles.statLabel}>In Progress</div>
               </div>
             </div>
-            <div style={{ ...styles.statCard, background: 'rgba(148, 163, 184, 0.12)', borderColor: '#94a3b8' }}>
-              <div style={{ ...styles.statIcon, color: '#64748b' }}>●</div>
+            <div style={{ ...styles.statCard, background: '#64748b', borderColor: '#64748b' }}>
+              <div style={{ ...styles.statIcon, color: '#ffffff' }}>●</div>
               <div>
                 <div style={styles.statNumber}>{stats.blocked}</div>
                 <div style={styles.statLabel}>Blocked</div>
@@ -465,14 +486,15 @@ export default function CandidateDashboard() {
                       </div>
                     </div>
 
+                    {/* UPDATED: Time Limit and Questions using helper functions */}
                     <div style={styles.detailInfo}>
                       <div style={styles.detailInfoItem}>
                         <span style={styles.detailInfoLabel}>Time Limit</span>
-                        <span style={styles.detailInfoValue}>{selectedAssessment.timeLimitMinutes || 180} minutes</span>
+                        <span style={styles.detailInfoValue}>{getDisplayTimeLimitMinutes(selectedAssessment)} minutes</span>
                       </div>
                       <div style={styles.detailInfoItem}>
                         <span style={styles.detailInfoLabel}>Questions</span>
-                        <span style={styles.detailInfoValue}>{selectedAssessment.questionCount || 100}</span>
+                        <span style={styles.detailInfoValue}>{getDisplayQuestionCount(selectedAssessment)}</span>
                       </div>
                       <div style={styles.detailInfoItem}>
                         <span style={styles.detailInfoLabel}>Attempts</span>
@@ -496,7 +518,7 @@ export default function CandidateDashboard() {
                 <div style={styles.guidelineIcon}>⏱</div>
                 <div>
                   <h4 style={styles.guidelineCardTitle}>Time Limit</h4>
-                  <p style={styles.guidelineCardText}>All assessments have a 3-hour time limit. The timer starts when you begin.</p>
+                  <p style={styles.guidelineCardText}>Assessment time limits depend on the assessment type. National Service is 90 minutes; other assessments are 120 minutes.</p>
                 </div>
               </div>
               <div style={styles.guidelineCard}>
@@ -679,19 +701,44 @@ const styles = {
   
   statsBar: { maxWidth: "1280px", margin: "0 auto 24px", padding: "0 32px" },
   statsGrid: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "12px" },
+  
+  // UPDATED statCard with better spacing
   statCard: { 
-    padding: "16px 20px", 
-    borderRadius: "12px", 
+    padding: "18px 22px", 
+    borderRadius: "14px", 
     display: "flex", 
     alignItems: "center", 
-    gap: "14px",
-    border: "2px solid",
-    background: "white",
-    transition: "all 0.3s"
+    gap: "16px", 
+    border: "2px solid", 
+    transition: "all 0.3s", 
+    boxShadow: "0 10px 25px rgba(0,0,0,0.18)", 
+    minHeight: "86px" 
   },
-  statIcon: { fontSize: "24px" },
-  statNumber: { fontSize: "24px", fontWeight: "700", color: "#0a1929" },
-  statLabel: { fontSize: "12px", color: "#64748b", marginTop: "0px" },
+  
+  // UPDATED statIcon - white text
+  statIcon: { 
+    fontSize: "32px", 
+    color: "#ffffff", 
+    fontWeight: "700", 
+    lineHeight: "1" 
+  },
+  
+  // UPDATED statNumber - white text
+  statNumber: { 
+    fontSize: "34px", 
+    fontWeight: "800", 
+    color: "#ffffff", 
+    lineHeight: "1" 
+  },
+  
+  // UPDATED statLabel - white text
+  statLabel: { 
+    fontSize: "14px", 
+    color: "#ffffff", 
+    fontWeight: "700", 
+    marginTop: "4px", 
+    letterSpacing: "0.2px" 
+  },
   
   mainContent: { maxWidth: "1280px", margin: "0 auto", padding: "0 32px 40px", flex: 1 },
   errorBox: { marginBottom: "16px", padding: "12px 16px", borderRadius: "12px", background: "rgba(239, 68, 68, 0.1)", border: "1px solid rgba(239, 68, 68, 0.2)", color: "#ef4444", display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: "14px" },
