@@ -1,4 +1,4 @@
-// components/AppLayout.js
+// components/AppLayout.js - PROFESSIONAL VERSION (No Emojis)
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
@@ -27,9 +27,9 @@ function getDashboardHref(role) {
 }
 
 function getRoleLabel(role) {
-  if (role === "admin") return "👑 Admin";
-  if (role === "supervisor") return "👔 Supervisor";
-  if (role === "candidate") return "👤 Candidate";
+  if (role === "admin") return "Admin";
+  if (role === "supervisor") return "Supervisor";
+  if (role === "candidate") return "Candidate";
   return "Account";
 }
 
@@ -119,23 +119,23 @@ export default function AppLayout({ children, background, showNavigation = true 
   function getNavLinks() {
     if (userRole === "admin") {
       return [
-        { href: "/admin", label: "📊 Dashboard" },
-        { href: "/admin/batch-manage", label: "📋 Batch Manage" },
-        { href: "/admin/add-candidate", label: "👤 Add Candidate" }
+        { href: "/admin", label: "Dashboard" },
+        { href: "/admin/batch-manage", label: "Batch Manage" },
+        { href: "/admin/add-candidate", label: "Add Candidate" }
       ];
     }
 
     if (userRole === "supervisor") {
       return [
-        { href: "/supervisor", label: "📊 Dashboard" },
-        { href: "/supervisor/batch-manage", label: "📋 Batch Manage" }
+        { href: "/supervisor", label: "Dashboard" },
+        { href: "/supervisor/batch-manage", label: "Batch Manage" }
       ];
     }
 
     if (userRole === "candidate") {
       return [
-        { href: "/candidate/dashboard", label: "📋 Dashboard" },
-        { href: "/candidate/profile", label: "👤 Profile" }
+        { href: "/candidate/dashboard", label: "Dashboard" },
+        { href: "/candidate/profile", label: "Profile" }
       ];
     }
 
@@ -266,13 +266,6 @@ const styles = {
     fontSize: "18px",
     fontWeight: 700,
     color: "#0a1929",
-    letterSpacing: "1px"
-  },
-  logo: {
-    fontSize: "18px",
-    fontWeight: 700,
-    color: "#0a1929",
-    textDecoration: "none",
     letterSpacing: "1px"
   },
   navLinks: {
