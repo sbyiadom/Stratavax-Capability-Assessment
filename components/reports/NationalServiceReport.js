@@ -1,4 +1,4 @@
-// components/reports/NationalServiceReport.js
+// components/reports/NationalServiceReport.js - FIXED SUGGESTED PLACEMENT
 
 import React, { useEffect } from 'react';
 
@@ -178,6 +178,35 @@ export default function NationalServiceReport({ report, onBack }) {
   const developmentAreas = [...allSubCategories]
     .filter(c => (c.percentage || 0) > 0 && (c.percentage || 0) < 60)
     .sort((a, b) => (a.percentage || 0) - (b.percentage || 0));
+
+  // ============================================================
+  // FIX: Calculate Suggested Placement based on scores
+  // ============================================================
+  const getSuggestedPlacements = () => {
+    // Use report.suggestedPlacement if available
+    if (report.suggestedPlacement && report.suggestedPlacement.length > 0) {
+      return report.suggestedPlacement;
+    }
+    
+    // Otherwise calculate based on scores
+    const workplace = workplaceScore || 0;
+    const intellectual = intellectualScore || 0;
+    const overall = (workplace + intellectual) / 2;
+    
+    if (workplace >= 85 && intellectual >= 85) {
+      return ['Operations & Production Management', 'Quality Assurance & Control', 'Supply Chain & Logistics', 'Technical Services'];
+    } else if (workplace >= 75 && intellectual >= 75) {
+      return ['Production Support', 'Maintenance & Engineering', 'Quality Control', 'Warehouse & Distribution'];
+    } else if (workplace >= 65 && intellectual >= 65) {
+      return ['General Operations', 'Administrative Support', 'Entry-Level Technical Roles'];
+    } else if (overall >= 50) {
+      return ['Structured Training Programs', 'Supervised Development Roles'];
+    } else {
+      return ['Foundation Training', 'Supervised Onboarding'];
+    }
+  };
+
+  const suggestedPlacements = getSuggestedPlacements();
 
   return (
     <div style={styles.container}>
@@ -396,7 +425,7 @@ export default function NationalServiceReport({ report, onBack }) {
       )}
 
       {/* ============================================================
-          SUGGESTED PLACEMENT
+          SUGGESTED PLACEMENT - FIXED
           ============================================================ */}
       <div style={styles.section}>
         <h2 style={styles.sectionTitle}>🎯 Suggested Placement</h2>
@@ -405,25 +434,12 @@ export default function NationalServiceReport({ report, onBack }) {
             Based on the candidate's performance profile, the following recommendations are suggested:
           </p>
           <div style={styles.placementGrid}>
-            {report.suggestedPlacement && report.suggestedPlacement.length > 0 ? (
-              report.suggestedPlacement.map((dept, index) => (
-                <div key={index} style={styles.placementCard}>
-                  <span style={styles.placementIcon}>📌</span>
-                  <span style={styles.placementName}>{dept}</span>
-                </div>
-              ))
-            ) : report.recommendations && report.recommendations.length > 0 ? (
-              report.recommendations.slice(0, 4).map((rec, index) => (
-                <div key={index} style={styles.placementCard}>
-                  <span style={styles.placementIcon}>📌</span>
-                  <span style={styles.placementName}>{rec.category || rec.recommendation}</span>
-                </div>
-              ))
-            ) : (
-              <div style={styles.placementEmpty}>
-                <p>Based on the current scores, the candidate would benefit from structured training and development before departmental placement.</p>
+            {suggestedPlacements.map((dept, index) => (
+              <div key={index} style={styles.placementCard}>
+                <span style={styles.placementIcon}>📌</span>
+                <span style={styles.placementName}>{dept}</span>
               </div>
-            )}
+            ))}
           </div>
         </div>
       </div>
@@ -552,7 +568,7 @@ const styles = {
     borderRadius: '12px', 
     boxShadow: '0 2px 8px rgba(0,0,0,0.1)', 
     textAlign: 'center',
-    border: '1px solid #e2e8f0'
+    border: '1px solid #e2e8f0' 
   },
   scoreLabel: { 
     fontSize: '14px', 
