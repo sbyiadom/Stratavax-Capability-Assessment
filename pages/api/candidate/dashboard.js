@@ -1,4 +1,4 @@
-// pages/api/candidate/dashboard.js - UPDATED WITH CORRECT FALLBACK VALUES
+// pages/api/candidate/dashboard.js - FORCED CORRECT VALUES FOR NATIONAL SERVICE
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -34,21 +34,8 @@ const TYPE_INFO = {
   'national_service': { code: 'national_service', name: 'National Service' }
 };
 
-// ============================================================
-// ASSESSMENT CONFIGURATION - CORRECT FALLBACK VALUES
-// ============================================================
-const ASSESSMENT_CONFIG = {
-  // National Service specific config
-  'national_service': {
-    questionCount: 80,
-    timeLimitMinutes: 90
-  },
-  // Default for all other assessments
-  'default': {
-    questionCount: 100,
-    timeLimitMinutes: 120
-  }
-};
+// National Service assessment ID for forced override
+const NATIONAL_SERVICE_ASSESSMENT_ID = 'bdb9d46e-9fac-4d00-8478-1f649e7ac600';
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') {
@@ -163,7 +150,7 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 4: Build cards with CORRECT fallback values
+    // STEP 4: Build cards with FORCED CORRECT values for National Service
     // ============================================================
     const cards = candidateAssessments.map(ca => {
       const assessmentData = typeMap[ca.assessment_id] || {};
@@ -184,14 +171,22 @@ export default async function handler(req, res) {
       }
 
       // ============================================================
-      // FIX: Use correct fallback values based on assessment type
+      // FORCE CORRECT VALUES FOR NATIONAL SERVICE
       // ============================================================
-      const isNationalService = typeCode === 'national_service';
-      const config = isNationalService ? ASSESSMENT_CONFIG['national_service'] : ASSESSMENT_CONFIG['default'];
+      const isNationalService = typeCode === 'national_service' || ca.assessment_id === NATIONAL_SERVICE_ASSESSMENT_ID;
       
-      // Use database values if they exist, otherwise use the correct config values
-      const questionCount = assessmentData.question_count || config.questionCount;
-      const timeLimitMinutes = assessmentData.time_limit_minutes || config.timeLimitMinutes;
+      let questionCount;
+      let timeLimitMinutes;
+      
+      if (isNationalService) {
+        // FORCE National Service values - IGNORE database
+        questionCount = 80;
+        timeLimitMinutes = 90;
+      } else {
+        // For all other assessments, use database or fallback to 100/120
+        questionCount = assessmentData.question_count || 100;
+        timeLimitMinutes = assessmentData.time_limit_minutes || 120;
+      }
 
       return {
         id: ca.assessment_id,
