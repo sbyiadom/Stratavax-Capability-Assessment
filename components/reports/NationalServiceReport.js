@@ -122,51 +122,103 @@ export default function NationalServiceReport({ report, onBack }) {
   console.log('[Report] Intellectual sub-categories:', intellectualSubCategories.length);
 
   // ============================================================
-  // FIX: CALCULATE AVERAGES FROM SUB-CATEGORIES
+  // CALCULATE AVERAGES FROM SUB-CATEGORIES
   // ============================================================
-  const workplaceAvg = workplaceSubCategories.length > 0 
+  const displayWorkplace = workplaceSubCategories.length > 0 
     ? Math.round(workplaceSubCategories.reduce((sum, cat) => sum + (cat.percentage || 0), 0) / workplaceSubCategories.length)
     : 0;
 
-  const intellectualAvg = intellectualSubCategories.length > 0 
+  const displayIntellectual = intellectualSubCategories.length > 0 
     ? Math.round(intellectualSubCategories.reduce((sum, cat) => sum + (cat.percentage || 0), 0) / intellectualSubCategories.length)
     : 0;
 
   const allCategories = [...workplaceSubCategories, ...intellectualSubCategories];
-  const overallAvg = allCategories.length > 0 
+  const displayOverall = allCategories.length > 0 
     ? Math.round(allCategories.reduce((sum, cat) => sum + (cat.percentage || 0), 0) / allCategories.length)
     : 0;
-
-  // Use calculated values
-  const displayWorkplace = workplaceAvg;
-  const displayIntellectual = intellectualAvg;
-  const displayOverall = overallAvg;
 
   console.log('[Report] Calculated Workplace:', displayWorkplace);
   console.log('[Report] Calculated Intellectual:', displayIntellectual);
   console.log('[Report] Calculated Overall:', displayOverall);
 
   // ============================================================
-  // RECOMMENDATION
+  // RECOMMENDATION LOGIC - FIXED
   // ============================================================
   let recommendationLevel = 'Not Recommended';
-  
-  if (reportData.recommendation) {
-    recommendationLevel = safeString(reportData.recommendation);
-  } else if (report.recommendation) {
-    recommendationLevel = safeString(report.recommendation);
+
+  // Determine recommendation based on scores
+  if (displayWorkplace >= 90 && displayIntellectual >= 75 && displayOverall >= 80) {
+    recommendationLevel = 'Highly Recommended';
+  } else if (displayWorkplace >= 75 && displayIntellectual >= 70 && displayOverall >= 70) {
+    recommendationLevel = 'Recommended';
+  } else if (displayWorkplace >= 65 && displayIntellectual >= 65 && displayOverall >= 65) {
+    recommendationLevel = 'Reserve Pool';
+  } else if (displayWorkplace >= 50 || displayIntellectual >= 50 || displayOverall >= 50) {
+    recommendationLevel = 'Consider for Development';
   } else {
-    // Calculate based on scores
-    if (displayWorkplace >= 85 && displayIntellectual >= 85) {
-      recommendationLevel = 'Highly Recommended';
-    } else if (displayWorkplace >= 75 && displayIntellectual >= 75) {
-      recommendationLevel = 'Recommended';
-    } else if (displayWorkplace >= 65 && displayIntellectual >= 65) {
-      recommendationLevel = 'Reserve Pool';
-    } else {
-      recommendationLevel = 'Not Recommended';
-    }
+    recommendationLevel = 'Not Recommended';
   }
+
+  // Override if recommendation came from the report
+  if (reportData.recommendation && reportData.recommendation !== 'N/A') {
+    recommendationLevel = safeString(reportData.recommendation);
+  } else if (report.recommendation && report.recommendation !== 'N/A') {
+    recommendationLevel = safeString(report.recommendation);
+  }
+
+  // ============================================================
+  // RECOMMENDATION DETAILS
+  // ============================================================
+  const getRecommendationDetails = (level, workplace, intellectual, overall) => {
+    const details = {
+      'Highly Recommended': {
+        label: 'Highly Recommended',
+        color: '#2e7d32',
+        bg: '#e8f5e9',
+        icon: '★',
+        narrative: `This candidate demonstrates exceptional workplace readiness (${workplace}%) and strong intellectual capability (${intellectual}%). With an overall score of ${overall}%, they are strongly recommended for immediate placement. The candidate shows outstanding performance in safety awareness, technical fundamentals, and teamwork.`
+      },
+      'Recommended': {
+        label: 'Recommended',
+        color: '#1565c0',
+        bg: '#e3f2fd',
+        icon: '✓',
+        narrative: `This candidate demonstrates strong workplace readiness (${workplace}%) and solid intellectual capability (${intellectual}%). With an overall score of ${overall}%, they are recommended for placement with standard supervision. The candidate has shown competence across multiple assessment areas.`
+      },
+      'Reserve Pool': {
+        label: 'Reserve Pool',
+        color: '#f57c00',
+        bg: '#fff3e0',
+        icon: '●',
+        narrative: `This candidate demonstrates adequate workplace readiness (${workplace}%) and intellectual capability (${intellectual}%). With an overall score of ${overall}%, they may be considered for the reserve pool. Further development in specific areas would strengthen their profile.`
+      },
+      'Consider for Development': {
+        label: 'Consider for Development',
+        color: '#ea580c',
+        bg: '#fff8e1',
+        icon: '○',
+        narrative: `This candidate shows potential with ${workplace}% workplace readiness and ${intellectual}% intellectual capability. While the overall score of ${overall}% indicates areas for growth, the candidate could benefit from structured development programs and supervised training.`
+      },
+      'Not Recommended': {
+        label: 'Not Recommended',
+        color: '#c62828',
+        bg: '#ffebee',
+        icon: '⚠',
+        narrative: `This candidate does not currently meet the required thresholds for placement. With ${workplace}% workplace readiness and ${intellectual}% intellectual capability, targeted development in key areas is recommended before reconsideration.`
+      }
+    };
+
+    // Return the matching details or a default
+    return details[level] || {
+      label: 'Review Required',
+      color: '#64748b',
+      bg: '#f1f5f9',
+      icon: '?',
+      narrative: `Assessment results indicate that the candidate's profile should be reviewed by the hiring team.`
+    };
+  };
+
+  const recommendationDetails = getRecommendationDetails(recommendationLevel, displayWorkplace, displayIntellectual, displayOverall);
 
   // ============================================================
   // RENDER HELPERS
@@ -180,24 +232,6 @@ export default function NationalServiceReport({ report, onBack }) {
     return { text: 'Critical Gap', color: '#c62828' };
   };
 
-  const getRecommendationColor = (level) => {
-    const l = safeString(level).toLowerCase();
-    if (l.includes('highly')) return '#2e7d32';
-    if (l.includes('recommend')) return '#1565c0';
-    if (l.includes('reserve')) return '#f57c00';
-    if (l.includes('not')) return '#c62828';
-    return '#333';
-  };
-
-  const getRecommendationBg = (level) => {
-    const l = safeString(level).toLowerCase();
-    if (l.includes('highly')) return '#e8f5e9';
-    if (l.includes('recommend')) return '#e3f2fd';
-    if (l.includes('reserve')) return '#fff3e0';
-    if (l.includes('not')) return '#ffebee';
-    return '#f5f5f5';
-  };
-
   const getBandColor = (band) => {
     const b = safeString(band).toLowerCase();
     if (b === 'excellent' || b === 'exceptional' || b === 'ready') return '#2e7d32';
@@ -206,27 +240,6 @@ export default function NationalServiceReport({ report, onBack }) {
     if (b === 'needs improvement' || b === 'development required') return '#c62828';
     return '#333';
   };
-
-  const getRecommendationNarrative = (level) => {
-    const l = safeString(level).toLowerCase();
-    if (l.includes('highly')) {
-      return 'This candidate demonstrates exceptional workplace readiness and intellectual capability. They are strongly recommended for immediate placement.';
-    }
-    if (l.includes('recommend')) {
-      return 'This candidate demonstrates strong workplace readiness and intellectual capability. They are recommended for placement with standard supervision.';
-    }
-    if (l.includes('reserve')) {
-      return 'This candidate demonstrates adequate workplace readiness and intellectual capability. They may be considered for the reserve pool.';
-    }
-    if (l.includes('not')) {
-      return 'This candidate does not currently meet the required thresholds. Targeted development in key areas is recommended.';
-    }
-    return 'Assessment results indicate that the candidate\'s profile should be reviewed by the hiring team.';
-  };
-
-  const recommendationColor = getRecommendationColor(recommendationLevel);
-  const recommendationBg = getRecommendationBg(recommendationLevel);
-  const recommendationNarrative = getRecommendationNarrative(recommendationLevel);
 
   // Sort categories
   const sortedWorkplace = [...workplaceSubCategories].sort((a, b) => (b.percentage || 0) - (a.percentage || 0));
@@ -297,22 +310,22 @@ export default function NationalServiceReport({ report, onBack }) {
         </div>
       </div>
 
-      {/* Recommendation Banner */}
-      <div style={{ ...styles.banner, background: recommendationBg, border: `3px solid ${recommendationColor}` }}>
+      {/* Recommendation Banner - FIXED */}
+      <div style={{ ...styles.banner, background: recommendationDetails.bg, border: `3px solid ${recommendationDetails.color}` }}>
         <div style={styles.bannerContent}>
-          <div style={{ ...styles.bannerIcon, color: recommendationColor }}>
-            {recommendationLevel.includes('Highly') ? '★' :
-             recommendationLevel.includes('Recommend') ? '✓' :
-             recommendationLevel.includes('Reserve') ? '●' : '⚠'}
+          <div style={{ ...styles.bannerIcon, color: recommendationDetails.color }}>
+            {recommendationDetails.icon}
           </div>
           <div>
-            <div style={{ ...styles.bannerTitle, color: recommendationColor }}>{recommendationLevel}</div>
-            <div style={styles.bannerNarrative}>{recommendationNarrative}</div>
+            <div style={{ ...styles.bannerTitle, color: recommendationDetails.color }}>
+              {recommendationDetails.label}
+            </div>
+            <div style={styles.bannerNarrative}>{recommendationDetails.narrative}</div>
           </div>
         </div>
       </div>
 
-      {/* Score Cards - FIXED: Display calculated averages */}
+      {/* Score Cards */}
       <div style={styles.scoreGrid}>
         <div style={styles.scoreCard}>
           <div style={styles.scoreLabel}>Workplace Readiness</div>
