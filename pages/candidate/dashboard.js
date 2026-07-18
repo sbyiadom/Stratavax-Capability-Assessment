@@ -1,4 +1,4 @@
-// pages/candidate/dashboard.js - PROFESSIONAL REDESIGN
+// pages/candidate/dashboard.js - PROFESSIONAL VERSION (No Emojis)
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
@@ -100,13 +100,13 @@ export default function CandidateDashboard() {
   const getStatusInfo = (status) => {
     switch(status) {
       case 'unblocked': 
-        return { bg: 'rgba(34, 197, 94, 0.15)', color: '#16a34a', label: 'Ready to Start', icon: '🚀' };
+        return { bg: 'rgba(34, 197, 94, 0.15)', color: '#16a34a', label: 'Ready to Start' };
       case 'in_progress': 
-        return { bg: 'rgba(251, 191, 36, 0.15)', color: '#d97706', label: 'In Progress', icon: '⏳' };
+        return { bg: 'rgba(251, 191, 36, 0.15)', color: '#d97706', label: 'In Progress' };
       case 'completed': 
-        return { bg: 'rgba(59, 130, 246, 0.15)', color: '#2563eb', label: 'Completed', icon: '✅' };
+        return { bg: 'rgba(59, 130, 246, 0.15)', color: '#2563eb', label: 'Completed' };
       default: 
-        return { bg: 'rgba(148, 163, 184, 0.15)', color: '#64748b', label: 'Blocked', icon: '🔒' };
+        return { bg: 'rgba(148, 163, 184, 0.15)', color: '#64748b', label: 'Blocked' };
     }
   };
 
@@ -288,28 +288,28 @@ export default function CandidateDashboard() {
         <div style={styles.statsBar}>
           <div style={styles.statsGrid}>
             <div style={{ ...styles.statCard, background: 'rgba(34, 197, 94, 0.12)', borderColor: '#22c55e' }}>
-              <div style={{ ...styles.statIcon, color: '#16a34a' }}>✅</div>
+              <div style={{ ...styles.statIcon, color: '#16a34a' }}>✓</div>
               <div>
                 <div style={styles.statNumber}>{stats.completed}</div>
                 <div style={styles.statLabel}>Completed</div>
               </div>
             </div>
             <div style={{ ...styles.statCard, background: 'rgba(59, 130, 246, 0.12)', borderColor: '#3b82f6' }}>
-              <div style={{ ...styles.statIcon, color: '#2563eb' }}>📋</div>
+              <div style={{ ...styles.statIcon, color: '#2563eb' }}>□</div>
               <div>
                 <div style={styles.statNumber}>{stats.ready}</div>
                 <div style={styles.statLabel}>Ready</div>
               </div>
             </div>
             <div style={{ ...styles.statCard, background: 'rgba(251, 191, 36, 0.12)', borderColor: '#f59e0b' }}>
-              <div style={{ ...styles.statIcon, color: '#d97706' }}>⏳</div>
+              <div style={{ ...styles.statIcon, color: '#d97706' }}>◉</div>
               <div>
                 <div style={styles.statNumber}>{stats.inProgress}</div>
                 <div style={styles.statLabel}>In Progress</div>
               </div>
             </div>
             <div style={{ ...styles.statCard, background: 'rgba(148, 163, 184, 0.12)', borderColor: '#94a3b8' }}>
-              <div style={{ ...styles.statIcon, color: '#64748b' }}>🔒</div>
+              <div style={{ ...styles.statIcon, color: '#64748b' }}>●</div>
               <div>
                 <div style={styles.statNumber}>{stats.blocked}</div>
                 <div style={styles.statLabel}>Blocked</div>
@@ -322,7 +322,7 @@ export default function CandidateDashboard() {
         <div style={styles.mainContent}>
           {error && (
             <div style={styles.errorBox}>
-              ⚠️ {error}
+              ⚠ {error}
               <button onClick={fetchDashboardData} style={styles.retryButton}>Retry</button>
             </div>
           )}
@@ -332,20 +332,19 @@ export default function CandidateDashboard() {
             <div style={styles.sectionHeader}>
               <div>
                 <h3 style={styles.sectionTitle}>Your Assessments</h3>
-                <p style={styles.sectionSubtitle}>Click an assessment to view details</p>
+                <p style={styles.sectionSubtitle}>Select an assessment to view details</p>
               </div>
               <span style={styles.sectionCount}>{assessments.length} available</span>
             </div>
             
             {assessments.length === 0 ? (
               <div style={styles.emptyState}>
-                <div style={styles.emptyIcon}>📋</div>
+                <div style={styles.emptyIcon}>○</div>
                 <p style={styles.emptyTitle}>No assessments available</p>
                 <p style={styles.emptySub}>Contact your supervisor to get assessments assigned to you.</p>
               </div>
             ) : (
               <>
-                {/* Compact Cards */}
                 <div style={styles.compactGrid}>
                   {assessments.map((assessment) => {
                     const colors = getAssessmentColor(assessment.typeCode);
@@ -383,7 +382,7 @@ export default function CandidateDashboard() {
                         <div style={{ ...styles.compactGradient, background: colors.gradient }} />
                         <div style={styles.compactContent}>
                           <div style={styles.compactLeft}>
-                            <span style={styles.compactIcon}>{isNationalService ? '🇬🇭' : '📊'}</span>
+                            <span style={styles.compactIcon}>{isNationalService ? 'NS' : 'AS'}</span>
                             <span style={{ 
                               ...styles.compactName, 
                               color: isSelected ? colors.border : '#0a1929',
@@ -406,7 +405,6 @@ export default function CandidateDashboard() {
                   })}
                 </div>
 
-                {/* Selected Assessment Detail Card */}
                 {selectedAssessment && (
                   <div style={styles.detailSection}>
                     <div style={styles.detailHeader}>
@@ -428,37 +426,35 @@ export default function CandidateDashboard() {
                               e.currentTarget.style.boxShadow = '0 4px 12px rgba(26, 35, 126, 0.2)';
                             }}
                           >
-                            {selectedAssessment.status === 'in_progress' ? 'Continue Assessment →' : 'Start Assessment →'}
+                            {selectedAssessment.status === 'in_progress' ? 'Continue Assessment' : 'Start Assessment'}
                           </button>
                         ) : selectedAssessment.status === 'completed' ? (
-                          <span style={styles.detailCompleted}>✅ Completed</span>
+                          <span style={styles.detailCompleted}>Completed</span>
                         ) : (
                           <span style={styles.detailBlocked}>
-                            🔒 {selectedAssessment.isNationalService ? 'Contact support' : 'Contact supervisor to unlock'}
+                            {selectedAssessment.isNationalService ? 'Contact support' : 'Contact supervisor to unlock'}
                           </span>
                         )}
                       </div>
                     </div>
 
-                    {/* Status and Description */}
                     <div style={styles.detailStatusRow}>
                       {(() => {
                         const status = getStatusInfo(selectedAssessment.status);
                         return (
                           <span style={{ ...styles.detailStatusBadge, background: status.bg, color: status.color }}>
-                            {status.icon} {status.label}
+                            {status.label}
                           </span>
                         );
                       })()}
                       {selectedAssessment.isNationalService && (
-                        <span style={styles.detailNsBadge}>🇬🇭 National Service (Always Available)</span>
+                        <span style={styles.detailNsBadge}>National Service (Always Available)</span>
                       )}
                     </div>
                     <p style={styles.detailDescription}>{selectedAssessment.description}</p>
 
-                    {/* Assessment Areas */}
                     <div style={styles.detailAreas}>
-                      <h4 style={styles.detailAreasTitle}>📋 Assessment Areas</h4>
+                      <h4 style={styles.detailAreasTitle}>Assessment Areas</h4>
                       <div style={styles.detailAreasGrid}>
                         {getDefaultAreas(selectedAssessment.typeCode).map((area, index) => (
                           <div key={index} style={styles.detailAreaItem}>
@@ -469,22 +465,21 @@ export default function CandidateDashboard() {
                       </div>
                     </div>
 
-                    {/* Assessment Info */}
                     <div style={styles.detailInfo}>
                       <div style={styles.detailInfoItem}>
-                        <span style={styles.detailInfoLabel}>⏱️ Time Limit</span>
+                        <span style={styles.detailInfoLabel}>Time Limit</span>
                         <span style={styles.detailInfoValue}>{selectedAssessment.timeLimitMinutes || 180} minutes</span>
                       </div>
                       <div style={styles.detailInfoItem}>
-                        <span style={styles.detailInfoLabel}>📋 Questions</span>
+                        <span style={styles.detailInfoLabel}>Questions</span>
                         <span style={styles.detailInfoValue}>{selectedAssessment.questionCount || 100}</span>
                       </div>
                       <div style={styles.detailInfoItem}>
-                        <span style={styles.detailInfoLabel}>🔄 Attempts</span>
+                        <span style={styles.detailInfoLabel}>Attempts</span>
                         <span style={styles.detailInfoValue}>{selectedAssessment.attemptsAllowed === 1 ? 'Single attempt' : `${selectedAssessment.attemptsAllowed} attempts`}</span>
                       </div>
                       <div style={styles.detailInfoItem}>
-                        <span style={styles.detailInfoLabel}>📂 Type</span>
+                        <span style={styles.detailInfoLabel}>Type</span>
                         <span style={styles.detailInfoValue}>{selectedAssessment.typeName}</span>
                       </div>
                     </div>
@@ -494,47 +489,46 @@ export default function CandidateDashboard() {
             )}
           </div>
 
-          {/* Guidelines and Regulations */}
           <div style={styles.guidelinesSection}>
-            <h3 style={styles.guidelinesTitle}>📋 Assessment Guidelines & Regulations</h3>
+            <h3 style={styles.guidelinesTitle}>Assessment Guidelines & Regulations</h3>
             <div style={styles.guidelinesGrid}>
               <div style={styles.guidelineCard}>
-                <div style={styles.guidelineIcon}>⏱️</div>
+                <div style={styles.guidelineIcon}>⏱</div>
                 <div>
                   <h4 style={styles.guidelineCardTitle}>Time Limit</h4>
                   <p style={styles.guidelineCardText}>All assessments have a 3-hour time limit. The timer starts when you begin.</p>
                 </div>
               </div>
               <div style={styles.guidelineCard}>
-                <div style={styles.guidelineIcon}>🔄</div>
+                <div style={styles.guidelineIcon}>↻</div>
                 <div>
                   <h4 style={styles.guidelineCardTitle}>Single Attempt</h4>
                   <p style={styles.guidelineCardText}>Each assessment can only be taken once. Results are final upon submission.</p>
                 </div>
               </div>
               <div style={styles.guidelineCard}>
-                <div style={styles.guidelineIcon}>🔓</div>
+                <div style={styles.guidelineIcon}>◉</div>
                 <div>
                   <h4 style={styles.guidelineCardTitle}>Supervisor Approval</h4>
                   <p style={styles.guidelineCardText}>Most assessments require supervisor approval. National Service is always available.</p>
                 </div>
               </div>
               <div style={styles.guidelineCard}>
-                <div style={styles.guidelineIcon}>💾</div>
+                <div style={styles.guidelineIcon}>◈</div>
                 <div>
                   <h4 style={styles.guidelineCardTitle}>Auto-Save</h4>
                   <p style={styles.guidelineCardText}>Your answers are automatically saved. Resume in-progress assessments anytime.</p>
                 </div>
               </div>
               <div style={styles.guidelineCard}>
-                <div style={styles.guidelineIcon}>🔒</div>
+                <div style={styles.guidelineIcon}>◒</div>
                 <div>
                   <h4 style={styles.guidelineCardTitle}>Data Privacy</h4>
                   <p style={styles.guidelineCardText}>Your assessment data is encrypted. Results are only shared with authorized supervisors.</p>
                 </div>
               </div>
               <div style={styles.guidelineCard}>
-                <div style={styles.guidelineIcon}>⚖️</div>
+                <div style={styles.guidelineIcon}>◐</div>
                 <div>
                   <h4 style={styles.guidelineCardTitle}>Fair Assessment</h4>
                   <p style={styles.guidelineCardText}>All candidates are assessed using the same standardized criteria.</p>
@@ -543,9 +537,8 @@ export default function CandidateDashboard() {
             </div>
           </div>
 
-          {/* Info Note */}
           <div style={styles.infoNote}>
-            <span style={styles.infoIcon}>ℹ️</span>
+            <span style={styles.infoIcon}>i</span>
             <span>
               <strong>Note:</strong> The <strong>National Service Assessment</strong> is always available to all candidates. 
               Other assessments must be <strong>unblocked by your supervisor</strong> before starting. 
@@ -554,7 +547,6 @@ export default function CandidateDashboard() {
           </div>
         </div>
 
-        {/* Footer */}
         <footer style={styles.footer}>
           <div style={styles.footerContent}>
             <div style={styles.footerLeft}>
