@@ -1,23 +1,27 @@
-// pages/api/admin/reports.js - FIXED VERSION (NO JOINS)
+// pages/api/admin/reports.js - COMPLETE FIXED VERSION
 
 import { createClient } from '@supabase/supabase-js';
 
 const NATIONAL_SERVICE_ASSESSMENT_ID = 'bdb9d46e-9fac-4d00-8478-1f649e7ac600';
 
-function getRecommendation(workplaceReadiness, intellectualCapability) {
+// ============================================================
+// FIXED: RECOMMENDATION LOGIC
+// ============================================================
+function getRecommendation(workplaceReadiness, intellectualCapability, overallScore) {
   const workplace = Number(workplaceReadiness) || 0;
   const intellectual = Number(intellectualCapability) || 0;
+  const overall = Number(overallScore) || 0;
 
-  if (workplace >= 85 && intellectual >= 85) {
+  // Use overall score as the primary factor
+  if (overall >= 85) {
     return 'Highly Recommended';
-  }
-  if (workplace >= 75 && intellectual >= 75) {
+  } else if (overall >= 70) {
     return 'Recommended';
-  }
-  if (workplace >= 65 && intellectual >= 65) {
+  } else if (overall >= 50) {
     return 'Reserve Pool';
+  } else {
+    return 'Not Recommended';
   }
-  return 'Not Recommended';
 }
 
 export default async function handler(req, res) {
@@ -65,7 +69,7 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 2: Get all candidate profiles (for user_id mapping)
+    // STEP 2: Get all candidate profiles
     // ============================================================
     const userIds = results.map(r => r.user_id).filter(Boolean);
     let candidateMap = {};
@@ -81,8 +85,6 @@ export default async function handler(req, res) {
           candidateMap[c.id] = c;
         });
         console.log(`[Report API] Loaded ${candidates.length} candidate profiles`);
-      } else if (candidatesError) {
-        console.error('Candidates error:', candidatesError);
       }
     }
 
@@ -102,9 +104,6 @@ export default async function handler(req, res) {
         assessments.forEach(a => {
           assessmentMap[a.id] = a;
         });
-        console.log(`[Report API] Loaded ${assessments.length} assessments`);
-      } else if (assessmentsError) {
-        console.error('Assessments error:', assessmentsError);
       }
     }
 
@@ -124,20 +123,14 @@ export default async function handler(req, res) {
         types.forEach(t => {
           typeMap[t.id] = t;
         });
-        console.log(`[Report API] Loaded ${types.length} assessment types`);
-      } else if (typesError) {
-        console.error('Types error:', typesError);
       }
     }
 
     // ============================================================
-    // STEP 5: Build enriched reports by joining data manually
+    // STEP 5: Build enriched reports
     // ============================================================
     const enrichedReports = results.map((result) => {
-      // Get candidate from map
       const profile = candidateMap[result.user_id] || {};
-      
-      // Get assessment from map
       const assessment = assessmentMap[result.assessment_id] || {};
       const assessmentType = assessment ? typeMap[assessment.assessment_type_id] : null;
 
@@ -157,24 +150,24 @@ export default async function handler(req, res) {
         categoryScores = result.category_scores;
       } else if (result.report_data && result.report_data.categoryBreakdown) {
         categoryScores = result.report_data.categoryBreakdown;
-      } else if (result.report_data && result.report_data.category_scores) {
-        categoryScores = result.report_data.category_scores;
       }
 
-      // Get recommendation
-      let recommendation = result.recommendation || 'Not Recommended';
-      if (isNationalService && (!recommendation || recommendation === 'N/A' || recommendation === '')) {
-        recommendation = getRecommendation(workplaceReadiness, intellectualCapability);
+      // ============================================================
+      // FIX: Calculate recommendation using the new logic
+      // ============================================================
+      let recommendation = result.recommendation || null;
+      
+      // If recommendation is missing or invalid, calculate it
+      if (!recommendation || recommendation === 'N/A' || recommendation === '') {
+        recommendation = getRecommendation(workplaceReadiness, intellectualCapability, overallScore);
       }
 
-      // Build the report object
       return {
         id: result.id,
         user_id: result.user_id,
         assessment_id: result.assessment_id,
-        session_id: result.session_id,
         
-        // Candidate info - from profile map
+        // Candidate info
         candidate_name: profile?.full_name || 'Unknown',
         candidate_email: profile?.email || '',
         university: profile?.university || '',
@@ -182,7 +175,7 @@ export default async function handler(req, res) {
         graduation_year: profile?.graduation_year || '',
         preferred_department: profile?.preferred_department || '',
         
-        // Assessment info - from assessment map
+        // Assessment info
         assessment_title: assessment?.title || 'Unknown',
         assessment_type_code: assessmentType?.code || null,
         assessment_type_name: assessmentType?.name || 'General',
@@ -200,7 +193,7 @@ export default async function handler(req, res) {
         categoryScores: categoryScores,
         categoryBreakdown: categoryScores,
         
-        // Recommendation
+        // Recommendation - FIXED
         recommendation: recommendation,
         recommendationLevel: recommendation,
         
@@ -209,22 +202,6 @@ export default async function handler(req, res) {
         total_questions: result.total_questions || 0,
         answered_questions: result.answered_questions || 0,
         correct_answers: result.correct_answers || 0,
-        is_valid: result.is_valid || false,
-        is_auto_submitted: result.is_auto_submitted || false,
-        
-        // Dimensions for the report component
-        dimensions: {
-          workplaceReadiness: workplaceReadiness,
-          intellectualCapability: intellectualCapability,
-          overallScore: overallScore
-        },
-        
-        // Statistics for the report component
-        statistics: {
-          totalQuestions: result.total_questions || 0,
-          answeredQuestions: result.answered_questions || 0,
-          correctAnswers: result.correct_answers || 0
-        },
         
         // Candidate info for the report component
         candidateInfo: {
@@ -242,15 +219,6 @@ export default async function handler(req, res) {
     const nationalServiceReports = enrichedReports.filter(r => r.isNationalService === true);
     const nationalServiceCount = nationalServiceReports.length;
     const stratavaxCount = enrichedReports.length - nationalServiceCount;
-
-    console.log(`[Report API] Returning ${enrichedReports.length} reports`);
-    console.log(`[Report API] National Service: ${nationalServiceCount}, Stratavax: ${stratavaxCount}`);
-    
-    // Log sample data for debugging
-    const sample = enrichedReports[0];
-    if (sample) {
-      console.log(`[Report API] Sample: ${sample.candidate_name} - ${sample.assessment_title} - ${sample.percentage_score}%`);
-    }
 
     return res.status(200).json({
       success: true,
