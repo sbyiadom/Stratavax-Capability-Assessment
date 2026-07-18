@@ -1,4 +1,5 @@
-// pages/assessment/[id].js - FIXED: National Service ALWAYS single selection
+// pages/assessment/[id].js - FULLY CORRECTED VERSION
+// FIXES: National Service single selection, randomized answers, correct time limits
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
@@ -53,10 +54,12 @@ function isMultipleCorrectQuestion(question, assessmentTypeCode) {
 }
 
 function getAssessmentDuration(assessmentTypeCode) {
+  // National Service: 90 minutes (FIXED from 120)
   if (assessmentTypeCode === 'national_service') {
-    return 120;
+    return 90;
   }
-  return 180;
+  // All other assessments: 120 minutes
+  return 120;
 }
 
 // ============================================================
@@ -93,8 +96,13 @@ async function fetchAccess(assessmentId) {
   return result.access;
 }
 
-async function fetchQuestions(assessmentTypeId) {
-  const result = await apiCall(`/api/assessment/questions?assessmentTypeId=${assessmentTypeId}`);
+// UPDATED: Pass assessmentTypeCode for randomization
+async function fetchQuestions(assessmentTypeId, assessmentTypeCode) {
+  const params = new URLSearchParams({ 
+    assessmentTypeId,
+    ...(assessmentTypeCode && { assessmentTypeCode })
+  });
+  const result = await apiCall(`/api/assessment/questions?${params.toString()}`);
   return result.questions || [];
 }
 
@@ -151,7 +159,7 @@ function AssessmentContent() {
   const [saveStatus, setSaveStatus] = useState({});
 
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
-  const [timeLimitSeconds, setTimeLimitSeconds] = useState(10800);
+  const [timeLimitSeconds, setTimeLimitSeconds] = useState(7200); // Default 120 mins
   const [questionStartTime, setQuestionStartTime] = useState(Date.now());
 
   const [violationCount, setViolationCount] = useState(0);
@@ -412,6 +420,7 @@ function AssessmentContent() {
         setAssessmentType(assessmentInfo.assessment_type || null);
         setAssessmentTypeCode(assessmentInfo.assessment_type?.code || null);
         
+        // FIXED: Use correct duration (90 for National Service, 120 for others)
         const durationMinutes = getAssessmentDuration(assessmentInfo.assessment_type?.code || null);
         const durationSeconds = durationMinutes * 60;
         setTimeLimitSeconds(durationSeconds);
@@ -431,8 +440,11 @@ function AssessmentContent() {
           return;
         }
 
-        // STEP 3: Get questions
-        const questionData = await fetchQuestions(assessmentInfo.assessment_type_id);
+        // STEP 3: Get questions with randomization for National Service
+        const questionData = await fetchQuestions(
+          assessmentInfo.assessment_type_id,
+          assessmentInfo.assessment_type?.code
+        );
         setQuestions(questionData || []);
 
         // STEP 4: Create or get session
