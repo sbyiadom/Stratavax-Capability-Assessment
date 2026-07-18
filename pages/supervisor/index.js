@@ -1,6 +1,4 @@
-// pages/supervisor/index.js
-// Supervisor Dashboard corrected to load data from /api/supervisor/dashboard
-// This avoids browser-side RLS returning 0 candidates for valid supervisors.
+// pages/supervisor/index.js - PROFESSIONAL VERSION (No Emojis)
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -221,10 +219,10 @@ export default function SupervisorDashboard() {
 
         <div style={styles.statsGrid}>
           <StatCard icon="👥" label="Total Candidates" value={stats.totalCandidates} />
-          <StatCard icon="✅" label="Completed" value={stats.completedAssessments} />
-          <StatCard icon="⏳" label="Pending Review" value={stats.pendingReviews} />
+          <StatCard icon="✓" label="Completed" value={stats.completedAssessments} />
+          <StatCard icon="◉" label="Pending Review" value={stats.pendingReviews} />
           <div style={{ ...styles.statCard, background: '#1a237e' }}>
-            <div style={{ ...styles.statIcon, color: 'white' }}>📋</div>
+            <div style={{ ...styles.statIcon, color: 'white' }}>●</div>
             <div>
               <div style={{ ...styles.statLabel, color: 'rgba(255,255,255,0.8)' }}>National Service Reports</div>
               <div style={{ ...styles.statValue, color: 'white' }}>{stats.nationalServiceReports}</div>
@@ -243,17 +241,17 @@ export default function SupervisorDashboard() {
           <TabButton
             active={activeTab === 'national_service'}
             onClick={() => setActiveTab('national_service')}
-            label={`📋 National Service (${nationalServiceReports.length})`}
+            label={`National Service (${nationalServiceReports.length})`}
           />
           <TabButton
             active={activeTab === 'other'}
             onClick={() => setActiveTab('other')}
-            label={`📊 Other Assessments (${otherReports.length})`}
+            label={`Other Assessments (${otherReports.length})`}
           />
           <TabButton
             active={activeTab === 'candidates'}
             onClick={() => setActiveTab('candidates')}
-            label={`👥 All Candidates (${candidates.length})`}
+            label={`All Candidates (${candidates.length})`}
           />
         </div>
 
@@ -327,7 +325,7 @@ function NationalServiceTab({ reports, getScoreColor, getScoreTextColor, getReco
   return (
     <div style={styles.tabPanel}>
       <div style={styles.tabDescription}>
-        <p>📋 All National Service assessment reports assigned to this supervisor.</p>
+        <p>All National Service assessment reports assigned to this supervisor.</p>
       </div>
       {reports.length === 0 ? (
         <div style={styles.emptyState}>
@@ -369,7 +367,7 @@ function NationalServiceTab({ reports, getScoreColor, getScoreTextColor, getReco
                         background: isCompleted ? '#dcfce7' : '#fef3c7',
                         color: isCompleted ? '#166534' : '#92400e'
                       }}>
-                        {isCompleted ? '✅ Completed' : '⏳ In Progress'}
+                        {isCompleted ? 'Completed' : 'In Progress'}
                       </span>
                     </td>
                     <td style={styles.td}>
@@ -394,7 +392,7 @@ function NationalServiceTab({ reports, getScoreColor, getScoreTextColor, getReco
                     </td>
                     <td style={styles.td}>
                       {isCompleted && report.result_id ? (
-                        <button onClick={() => onViewReport(report.result_id)} style={styles.viewButton}>📄 View Report</button>
+                        <button onClick={() => onViewReport(report.result_id)} style={styles.viewButton}>View Report</button>
                       ) : (
                         <span style={styles.pendingText}>Awaiting completion</span>
                       )}
@@ -414,7 +412,7 @@ function OtherAssessmentsTab({ reports, onViewReport }) {
   return (
     <div style={styles.tabPanel}>
       <div style={styles.tabDescription}>
-        <p>📊 All other completed assessments for candidates under your supervision.</p>
+        <p>All other completed assessments for candidates under your supervision.</p>
       </div>
       {reports.length === 0 ? (
         <div style={styles.emptyState}>
@@ -444,7 +442,7 @@ function OtherAssessmentsTab({ reports, onViewReport }) {
                   </td>
                   <td style={styles.td}>
                     {report.result_id ? (
-                      <button onClick={() => onViewReport(report.result_id)} style={styles.viewButton}>📄 View Report</button>
+                      <button onClick={() => onViewReport(report.result_id)} style={styles.viewButton}>View Report</button>
                     ) : (
                       <span style={styles.pendingText}>No result</span>
                     )}
@@ -463,7 +461,7 @@ function CandidatesTab({ candidates, selectedAssessments, onAssessmentChange, on
   return (
     <div style={styles.tabPanel}>
       <div style={styles.tabDescription}>
-        <p>👥 All candidates with assessment status and ability to view individual reports.</p>
+        <p>All candidates with assessment status and ability to view individual reports.</p>
       </div>
       {candidates.length === 0 ? (
         <div style={styles.emptyState}>
@@ -528,7 +526,7 @@ function CandidatesTab({ candidates, selectedAssessments, onAssessmentChange, on
                         style={styles.viewReportButtonSmall}
                         disabled={completedAssessments.length === 0}
                       >
-                        📄 View Report
+                        View Report
                       </button>
                     </td>
                   </tr>
