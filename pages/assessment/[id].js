@@ -1,5 +1,4 @@
-// pages/assessment/[id].js - FULLY CORRECTED VERSION
-// FIXES: National Service single selection, randomized answers, correct time limits
+// pages/assessment/[id].js - TIMER FIX FOR NATIONAL SERVICE
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
@@ -39,7 +38,7 @@ function countAnswered(answerMap) {
 }
 
 // ============================================================
-// FIXED: National Service ALWAYS uses single selection
+// FIX: National Service ALWAYS uses single selection
 // ============================================================
 function isMultipleCorrectQuestion(question, assessmentTypeCode) {
   // National Service assessment: ALWAYS single selection
@@ -53,12 +52,15 @@ function isMultipleCorrectQuestion(question, assessmentTypeCode) {
   return correctAnswers.length > 1;
 }
 
+// ============================================================
+// FIX: National Service = 90 minutes, others = 120 minutes
+// ============================================================
 function getAssessmentDuration(assessmentTypeCode) {
-  // National Service: 90 minutes (FIXED from 120)
+  // National Service: 90 minutes (1.5 hours)
   if (assessmentTypeCode === 'national_service') {
     return 90;
   }
-  // All other assessments: 120 minutes
+  // All other assessments: 120 minutes (2 hours)
   return 120;
 }
 
@@ -96,7 +98,6 @@ async function fetchAccess(assessmentId) {
   return result.access;
 }
 
-// UPDATED: Pass assessmentTypeCode for randomization
 async function fetchQuestions(assessmentTypeId, assessmentTypeCode) {
   const params = new URLSearchParams({ 
     assessmentTypeId,
@@ -189,7 +190,6 @@ function AssessmentContent() {
   const isNationalService = assessmentTypeCode === 'national_service' || 
     (assessment && assessment.title && assessment.title.toLowerCase().includes('national service'));
 
-  // FIXED: For National Service, ALWAYS single selection
   const isMultipleCorrect = isNationalService ? false : isMultipleCorrectQuestion(currentQuestion, assessmentTypeCode);
   
   const totalAnswered = countAnswered(answers);
@@ -274,7 +274,7 @@ function AssessmentContent() {
   }
 
   // ============================================================
-  // ANSWER HANDLER - FORCES SINGLE SELECTION FOR NATIONAL SERVICE
+  // ANSWER HANDLER
   // ============================================================
   async function handleAnswerSelect(questionId, answerId, multipleCorrect) {
     if (isTimeExpired || elapsedSeconds >= timeLimitSeconds) {
@@ -284,7 +284,6 @@ function AssessmentContent() {
     
     if (alreadySubmitted || !session || !user || !questionId || !answerId || accessDenied || isAutoSubmitting) return;
 
-    // FORCE single selection for National Service
     const isNationalServiceType = assessmentTypeCode === 'national_service';
     const actualMultipleCorrect = multipleCorrect && !isNationalServiceType;
 
@@ -294,7 +293,6 @@ function AssessmentContent() {
     let isFirstAnswer = false;
 
     if (actualMultipleCorrect) {
-      // Multiple selection logic
       const currentSelected = getSelectedAnswersForQuestion(questionId);
       if (currentSelected.map(String).includes(String(answerId))) {
         newSelectedAnswer = currentSelected.filter((id) => String(id) !== String(answerId));
@@ -304,7 +302,6 @@ function AssessmentContent() {
       isFirstAnswer = currentSelected.length === 0 && newSelectedAnswer.length > 0;
       isAnswerChange = !isFirstAnswer && currentSelected.map(String).join(",") !== newSelectedAnswer.map(String).join(",");
     } else {
-      // Single selection logic - ALWAYS replace the answer
       const previousAnswer = answers[questionId];
       newSelectedAnswer = answerId;
       isFirstAnswer = previousAnswer === undefined || previousAnswer === null || previousAnswer === "";
@@ -420,10 +417,13 @@ function AssessmentContent() {
         setAssessmentType(assessmentInfo.assessment_type || null);
         setAssessmentTypeCode(assessmentInfo.assessment_type?.code || null);
         
-        // FIXED: Use correct duration (90 for National Service, 120 for others)
+        // FIX: Get correct duration (90 for National Service, 120 for others)
         const durationMinutes = getAssessmentDuration(assessmentInfo.assessment_type?.code || null);
         const durationSeconds = durationMinutes * 60;
         setTimeLimitSeconds(durationSeconds);
+        
+        console.log(`[Assessment] Type: ${assessmentInfo.assessment_type?.code || 'unknown'}`);
+        console.log(`[Assessment] Duration: ${durationMinutes} minutes (${durationSeconds} seconds)`);
 
         // STEP 2: Check access
         const accessData = await fetchAccess(assessmentId);
@@ -440,7 +440,7 @@ function AssessmentContent() {
           return;
         }
 
-        // STEP 3: Get questions with randomization for National Service
+        // STEP 3: Get questions with randomization
         const questionData = await fetchQuestions(
           assessmentInfo.assessment_type_id,
           assessmentInfo.assessment_type?.code
@@ -735,7 +735,6 @@ function AssessmentContent() {
             <span style={styles.headerMetaItem}>Question {currentIndex + 1}</span>
             <span style={styles.headerMetaDivider}>•</span>
             <span style={styles.headerMetaItem}>{currentQuestion.section || "General"}</span>
-            {/* FIXED: Only show "Select one or more answers" for non-National Service */}
             {isMultipleCorrect && !isNationalService && (
               <>
                 <span style={styles.headerMetaDivider}>•</span>
@@ -780,7 +779,6 @@ function AssessmentContent() {
                 {currentQuestion.question_text}
               </div>
 
-              {/* FIXED: Only show "Select one or more answers" for non-National Service */}
               {isMultipleCorrect && !isNationalService && (
                 <div style={styles.multipleHint}>
                   💡 Select one or more answers
@@ -966,667 +964,6 @@ function AssessmentContent() {
 }
 
 // ============================================================
-// STYLES
+// STYLES (trimmed for brevity - keep your existing styles)
 // ============================================================
-
-const styles = {
-  loadingContainer: { 
-    minHeight: "100vh", 
-    display: "flex", 
-    flexDirection: "column", 
-    alignItems: "center", 
-    justifyContent: "center", 
-    background: "linear-gradient(135deg, #f8fafc 0%, #e8eaf6 100%)", 
-    gap: "20px" 
-  },
-  loadingSpinner: { 
-    width: "50px", 
-    height: "50px", 
-    border: "4px solid #e2e8f0", 
-    borderTop: "4px solid #0b2a4e", 
-    borderRadius: "50%", 
-    animation: "spin 1s linear infinite" 
-  },
-  messageContainer: { 
-    minHeight: "100vh", 
-    display: "flex", 
-    alignItems: "center", 
-    justifyContent: "center", 
-    background: "#f8fafc", 
-    padding: "20px" 
-  },
-  messageCard: { 
-    background: "white", 
-    padding: "40px", 
-    borderRadius: "16px", 
-    maxWidth: "500px", 
-    textAlign: "center", 
-    boxShadow: "0 2px 12px rgba(0,0,0,0.08)" 
-  },
-  errorIcon: { fontSize: "64px", marginBottom: "20px" },
-  successIcon: { fontSize: "64px", marginBottom: "20px" },
-  successIconLarge: { 
-    width: "80px", 
-    height: "80px", 
-    background: "#2e7d32", 
-    borderRadius: "50%", 
-    display: "flex", 
-    alignItems: "center", 
-    justifyContent: "center", 
-    margin: "0 auto 20px", 
-    fontSize: "40px", 
-    color: "white" 
-  },
-  primaryButton: { 
-    padding: "12px 30px", 
-    background: "#0b2a4e", 
-    color: "white", 
-    border: "none", 
-    borderRadius: "8px", 
-    cursor: "pointer", 
-    fontSize: "14px" 
-  },
-  
-  violationBanner: { 
-    position: "fixed", 
-    top: "20px", 
-    left: "50%", 
-    transform: "translateX(-50%)", 
-    background: "#c62828", 
-    color: "white", 
-    padding: "12px 24px", 
-    borderRadius: "8px", 
-    fontWeight: "bold", 
-    zIndex: 10001, 
-    fontSize: "14px", 
-    boxShadow: "0 4px 12px rgba(0,0,0,0.2)", 
-    display: "flex", 
-    alignItems: "center", 
-    gap: "10px" 
-  },
-  
-  autoSubmitOverlay: { 
-    position: "fixed", 
-    top: 0, 
-    left: 0, 
-    right: 0, 
-    bottom: 0, 
-    background: "rgba(0,0,0,0.7)", 
-    display: "flex", 
-    alignItems: "center", 
-    justifyContent: "center", 
-    zIndex: 10002 
-  },
-  autoSubmitCard: { 
-    background: "white", 
-    padding: "30px", 
-    borderRadius: "16px", 
-    textAlign: "center", 
-    maxWidth: "400px" 
-  },
-  autoSubmitSpinner: { 
-    width: "40px", 
-    height: "40px", 
-    border: "4px solid #e2e8f0", 
-    borderTop: "4px solid #c62828", 
-    borderRadius: "50%", 
-    animation: "spin 1s linear infinite", 
-    margin: "0 auto 20px" 
-  },
-  
-  container: { 
-    minHeight: "100vh", 
-    background: "#f4f7fc", 
-    display: "flex", 
-    flexDirection: "column" 
-  },
-  
-  header: { 
-    position: "sticky", 
-    top: 0, 
-    zIndex: 100, 
-    background: "linear-gradient(135deg, #0b2a4e 0%, #1b4a7a 100%)", 
-    borderBottom: "3px solid #f9b83a", 
-    boxShadow: "0 4px 12px rgba(0,0,0,0.1)", 
-    flexShrink: 0 
-  },
-  
-  headerContent: { 
-    maxWidth: "1400px", 
-    margin: "0 auto", 
-    padding: "10px 24px", 
-    display: "flex", 
-    justifyContent: "space-between", 
-    alignItems: "center", 
-    flexWrap: "wrap", 
-    gap: "8px" 
-  },
-  
-  headerMetaBar: {
-    maxWidth: "1400px",
-    margin: "0 auto",
-    padding: "4px 24px 8px 24px",
-    display: "flex",
-    alignItems: "center",
-    gap: "6px",
-    flexWrap: "wrap",
-    borderTop: "1px solid rgba(255,255,255,0.08)"
-  },
-  
-  headerLeft: { display: "flex", alignItems: "center", gap: "12px" },
-  headerRight: { display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" },
-  
-  backButton: { 
-    width: "36px", 
-    height: "36px", 
-    background: "rgba(255,255,255,0.1)", 
-    border: "1px solid rgba(255,255,255,0.2)", 
-    borderRadius: "8px", 
-    color: "white", 
-    fontSize: "16px", 
-    cursor: "pointer",
-    transition: "0.2s",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center"
-  },
-  
-  brandSection: {
-    display: "flex",
-    alignItems: "center",
-    gap: "16px",
-    flexWrap: "wrap"
-  },
-  
-  logoContainer: {
-    display: "flex",
-    alignItems: "center"
-  },
-  
-  logoText: {
-    display: "flex",
-    flexDirection: "column",
-    lineHeight: 1.1
-  },
-  
-  logoMain: {
-    fontSize: "18px",
-    fontWeight: 700,
-    color: "white",
-    letterSpacing: "1px"
-  },
-  
-  logoSub: {
-    fontSize: "9px",
-    fontWeight: 300,
-    color: "rgba(255,255,255,0.7)",
-    letterSpacing: "2px",
-    textTransform: "uppercase"
-  },
-  
-  nationalBadge: {
-    display: "flex",
-    alignItems: "center",
-    gap: "6px",
-    background: "rgba(255,255,255,0.12)",
-    padding: "4px 14px 4px 10px",
-    borderRadius: "40px",
-    border: "1px solid rgba(255,255,255,0.15)",
-    backdropFilter: "blur(4px)"
-  },
-  
-  nationalBadgeIcon: {
-    fontSize: "16px"
-  },
-  
-  nationalBadgeText: {
-    fontSize: "11px",
-    fontWeight: 500,
-    color: "white",
-    letterSpacing: "0.3px"
-  },
-  
-  headerMetaItem: { 
-    color: "rgba(255,255,255,0.7)",
-    fontSize: "12px"
-  },
-  headerMetaDivider: { 
-    color: "rgba(255,255,255,0.3)",
-    fontSize: "12px"
-  },
-  
-  timer: { 
-    textAlign: "right" 
-  },
-  
-  timerLabel: { 
-    fontSize: "9px", 
-    fontWeight: 600, 
-    textTransform: "uppercase", 
-    letterSpacing: "0.5px", 
-    color: "rgba(255,255,255,0.6)" 
-  },
-  
-  timerValue: { 
-    fontSize: "20px", 
-    fontWeight: 700, 
-    fontFamily: "monospace",
-    color: "#f9b83a"
-  },
-  
-  mainContent: { 
-    maxWidth: "1400px", 
-    margin: "0 auto", 
-    padding: "20px 24px", 
-    display: "grid", 
-    gridTemplateColumns: "180px 1fr 220px", 
-    gap: "20px",
-    flex: 1,
-    minHeight: 0,
-    height: "calc(100vh - 100px)",
-    maxHeight: "calc(100vh - 100px)",
-    overflow: "hidden",
-    boxSizing: "border-box"
-  },
-  
-  leftSidebar: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "12px",
-    height: "100%",
-    overflow: "hidden",
-    flexShrink: 0
-  },
-  
-  statusCard: {
-    background: "white",
-    borderRadius: "12px",
-    padding: "14px 16px",
-    border: "1px solid #e2e8f0",
-    flexShrink: 0
-  },
-  
-  statusNumber: {
-    fontSize: "16px",
-    fontWeight: 600,
-    color: "#0f172a"
-  },
-  
-  statusBadge: {
-    fontSize: "12px",
-    color: "#64748b",
-    fontStyle: "italic",
-    marginTop: "2px"
-  },
-  
-  statsCard: {
-    background: "white",
-    borderRadius: "12px",
-    padding: "14px 16px",
-    border: "1px solid #e2e8f0",
-    flexShrink: 0
-  },
-  
-  statsRow: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: "3px 0"
-  },
-  
-  statsLabel: {
-    fontSize: "13px",
-    color: "#64748b"
-  },
-  
-  statsValue: {
-    fontSize: "14px",
-    fontWeight: 600,
-    color: "#0f172a"
-  },
-  
-  statsDivider: {
-    height: "1px",
-    background: "#e2e8f0",
-    margin: "6px 0"
-  },
-  
-  progressBar: {
-    height: "4px",
-    background: "#e2e8f0",
-    borderRadius: "4px",
-    overflow: "hidden",
-    marginTop: "4px"
-  },
-  
-  progressFill: {
-    height: "100%",
-    background: "linear-gradient(90deg, #f9b83a, #f5a623)",
-    borderRadius: "4px",
-    transition: "width 0.3s ease"
-  },
-  
-  metaCard: {
-    background: "white",
-    borderRadius: "12px",
-    padding: "12px 16px",
-    border: "1px solid #e2e8f0",
-    flexShrink: 0
-  },
-  
-  metaItem: {
-    fontSize: "13px",
-    color: "#64748b",
-    padding: "2px 0"
-  },
-  
-  middleColumn: {
-    display: "flex",
-    flexDirection: "column",
-    height: "100%",
-    overflow: "hidden",
-    gap: "12px",
-    minWidth: 0
-  },
-  
-  questionCard: {
-    background: "white",
-    borderRadius: "12px",
-    padding: "20px 24px",
-    border: "1px solid #e2e8f0",
-    display: "flex",
-    flexDirection: "column",
-    flex: 1,
-    overflow: "hidden",
-    boxShadow: "0 2px 8px rgba(0,0,0,0.05)"
-  },
-  
-  questionText: { 
-    fontSize: "16px", 
-    lineHeight: "1.7", 
-    color: "#0f172a", 
-    fontWeight: 500,
-    padding: "0 4px 12px 4px",
-    flexShrink: 0
-  },
-  
-  multipleHint: { 
-    padding: "8px 14px", 
-    background: "#f0f4ff", 
-    borderRadius: "8px", 
-    fontSize: "13px", 
-    color: "#0b2a4e",
-    flexShrink: 0,
-    marginBottom: "12px",
-    borderLeft: "3px solid #f9b83a"
-  },
-  
-  answersContainer: { 
-    display: "flex", 
-    flexDirection: "column", 
-    gap: "8px",
-    flex: 1,
-    overflowY: "auto",
-    paddingRight: "4px",
-    scrollbarWidth: "thin"
-  },
-  
-  answerCard: { 
-    padding: "10px 14px",
-    border: "2px solid", 
-    borderRadius: "8px", 
-    cursor: "pointer", 
-    textAlign: "left", 
-    display: "flex", 
-    alignItems: "center", 
-    gap: "12px", 
-    transition: "all 0.2s ease", 
-    fontSize: "15px",
-    flexShrink: 0,
-    minHeight: "44px",
-    background: "white"
-  },
-  
-  answerCheckbox: { 
-    width: "22px", 
-    height: "22px", 
-    borderRadius: "4px", 
-    border: "2px solid", 
-    display: "flex", 
-    alignItems: "center", 
-    justifyContent: "center", 
-    flexShrink: 0,
-    transition: "all 0.2s ease"
-  },
-  
-  navButtons: {
-    display: "flex",
-    gap: "8px",
-    flexShrink: 0
-  },
-  
-  navButton: { 
-    flex: 1,
-    padding: "10px 16px", 
-    borderRadius: "8px", 
-    fontSize: "14px", 
-    fontWeight: 500, 
-    border: "2px solid #e2e8f0", 
-    background: "white", 
-    color: "#475569", 
-    cursor: "pointer",
-    transition: "0.2s ease"
-  },
-  
-  nextButton: { 
-    flex: 1,
-    padding: "10px 16px", 
-    borderRadius: "8px", 
-    fontSize: "14px", 
-    fontWeight: 500, 
-    border: "none", 
-    background: "#0b2a4e", 
-    color: "white", 
-    cursor: "pointer",
-    transition: "0.2s ease"
-  },
-  
-  submitButton: { 
-    flex: 1,
-    padding: "10px 16px", 
-    borderRadius: "8px", 
-    fontSize: "14px", 
-    fontWeight: 500, 
-    border: "none", 
-    background: "#2e7d32", 
-    color: "white", 
-    cursor: "pointer",
-    transition: "0.2s ease"
-  },
-  
-  rightColumn: {
-    display: "flex",
-    flexDirection: "column",
-    height: "100%",
-    overflow: "hidden",
-    flexShrink: 0
-  },
-  
-  navigatorCard: { 
-    background: "white", 
-    borderRadius: "12px", 
-    padding: "16px", 
-    border: "1px solid #e2e8f0",
-    display: "flex",
-    flexDirection: "column",
-    flex: 1,
-    overflow: "hidden",
-    boxShadow: "0 2px 8px rgba(0,0,0,0.05)"
-  },
-  
-  navigatorHeader: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: "12px",
-    flexShrink: 0
-  },
-  
-  navigatorTitle: { 
-    fontSize: "14px", 
-    fontWeight: 600, 
-    color: "#0f172a"
-  },
-  
-  questionGrid: { 
-    display: "grid", 
-    gridTemplateColumns: "repeat(10, 1fr)", 
-    gap: "4px", 
-    flex: 1,
-    overflowY: "auto",
-    padding: "2px",
-    alignContent: "start"
-  },
-  
-  gridItem: { 
-    aspectRatio: "1", 
-    border: "2px solid", 
-    borderRadius: "6px", 
-    fontSize: "11px", 
-    fontWeight: 500, 
-    display: "flex", 
-    alignItems: "center", 
-    justifyContent: "center", 
-    cursor: "pointer",
-    transition: "all 0.15s ease",
-    minWidth: "0",
-    minHeight: "0",
-    position: "relative"
-  },
-  
-  legend: { 
-    display: "flex", 
-    justifyContent: "space-between", 
-    padding: "8px 0 0", 
-    borderTop: "1px solid #e2e8f0", 
-    flexWrap: "wrap", 
-    gap: "4px",
-    flexShrink: 0,
-    marginTop: "8px"
-  },
-  
-  legendItem: { 
-    display: "flex", 
-    alignItems: "center", 
-    gap: "4px", 
-    fontSize: "9px", 
-    color: "#64748b" 
-  },
-  
-  legendDot: { 
-    width: "10px", 
-    height: "10px", 
-    borderRadius: "4px" 
-  },
-  
-  navigatorTimer: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: "8px",
-    padding: "8px 0 0",
-    borderTop: "1px solid #e2e8f0",
-    marginTop: "8px",
-    flexShrink: 0
-  },
-  
-  navigatorTimerLabel: {
-    fontSize: "14px"
-  },
-  
-  navigatorTimerValue: {
-    fontSize: "16px",
-    fontWeight: 700,
-    color: "#0b2a4e",
-    fontFamily: "monospace"
-  },
-  
-  modalOverlay: { 
-    position: "fixed", 
-    top: 0, 
-    left: 0, 
-    right: 0, 
-    bottom: 0, 
-    background: "rgba(0,0,0,0.5)", 
-    display: "flex", 
-    alignItems: "center", 
-    justifyContent: "center", 
-    zIndex: 1000, 
-    backdropFilter: "blur(4px)" 
-  },
-  
-  modalContent: { 
-    background: "white", 
-    padding: "32px", 
-    borderRadius: "20px", 
-    maxWidth: "440px", 
-    width: "90%", 
-    boxShadow: "0 20px 60px rgba(0,0,0,0.2)" 
-  },
-  
-  modalIcon: { fontSize: "48px", textAlign: "center", marginBottom: "16px" },
-  modalTitle: { fontSize: "22px", fontWeight: 700, textAlign: "center", marginBottom: "20px", color: "#0f172a" },
-  
-  modalStats: { 
-    background: "#f8fafc", 
-    padding: "16px", 
-    borderRadius: "12px", 
-    marginBottom: "20px" 
-  },
-  
-  modalStat: { 
-    display: "flex", 
-    justifyContent: "space-between", 
-    marginBottom: "8px",
-    fontSize: "14px"
-  },
-  
-  modalWarning: { 
-    display: "flex", 
-    gap: "10px", 
-    padding: "12px", 
-    background: "#fff8e1", 
-    borderRadius: "10px", 
-    fontSize: "13px", 
-    marginBottom: "20px",
-    borderLeft: "3px solid #f9b83a"
-  },
-  
-  modalActions: { 
-    display: "flex", 
-    gap: "12px" 
-  },
-  
-  modalSecondaryButton: { 
-    flex: 1, 
-    padding: "12px", 
-    background: "#f1f5f9", 
-    border: "none", 
-    borderRadius: "10px", 
-    cursor: "pointer", 
-    fontWeight: 500 
-  },
-  
-  modalPrimaryButton: { 
-    flex: 1, 
-    padding: "12px", 
-    background: "#2e7d32", 
-    color: "white", 
-    border: "none", 
-    borderRadius: "10px", 
-    cursor: "pointer", 
-    fontWeight: 500 
-  }
-};
-
-export default AssessmentPage;
+// ... keep your existing styles object ...
