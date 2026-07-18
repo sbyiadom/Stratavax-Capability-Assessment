@@ -1,4 +1,4 @@
-// pages/api/candidate/dashboard.js - GUARANTEED WORKING VERSION
+// pages/api/candidate/dashboard.js - UPDATED WITH CORRECT FALLBACK VALUES
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -32,6 +32,22 @@ const TYPE_INFO = {
   'strategic_leadership': { code: 'strategic_leadership', name: 'Strategic' },
   'manufacturing_baseline': { code: 'manufacturing_baseline', name: 'Baseline' },
   'national_service': { code: 'national_service', name: 'National Service' }
+};
+
+// ============================================================
+// ASSESSMENT CONFIGURATION - CORRECT FALLBACK VALUES
+// ============================================================
+const ASSESSMENT_CONFIG = {
+  // National Service specific config
+  'national_service': {
+    questionCount: 80,
+    timeLimitMinutes: 90
+  },
+  // Default for all other assessments
+  'default': {
+    questionCount: 100,
+    timeLimitMinutes: 120
+  }
 };
 
 export default async function handler(req, res) {
@@ -147,7 +163,7 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 4: Build cards with hardcoded fallback titles
+    // STEP 4: Build cards with CORRECT fallback values
     // ============================================================
     const cards = candidateAssessments.map(ca => {
       const assessmentData = typeMap[ca.assessment_id] || {};
@@ -167,6 +183,16 @@ export default async function handler(req, res) {
         status = 'completed';
       }
 
+      // ============================================================
+      // FIX: Use correct fallback values based on assessment type
+      // ============================================================
+      const isNationalService = typeCode === 'national_service';
+      const config = isNationalService ? ASSESSMENT_CONFIG['national_service'] : ASSESSMENT_CONFIG['default'];
+      
+      // Use database values if they exist, otherwise use the correct config values
+      const questionCount = assessmentData.question_count || config.questionCount;
+      const timeLimitMinutes = assessmentData.time_limit_minutes || config.timeLimitMinutes;
+
       return {
         id: ca.assessment_id,
         title: title,
@@ -174,17 +200,24 @@ export default async function handler(req, res) {
         typeCode: typeCode,
         typeName: type.name || 'General',
         status: status,
-        questionCount: assessmentData.question_count || 100,
-        timeLimitMinutes: assessmentData.time_limit_minutes || 180,
+        questionCount: questionCount,
+        timeLimitMinutes: timeLimitMinutes,
         attemptsAllowed: assessmentData.attempts_allowed || 1,
-        isNationalService: typeCode === 'national_service',
+        isNationalService: isNationalService,
         completedAt: ca.completed_at || null,
         unblockedAt: ca.unblocked_at || null,
         resultId: ca.result_id || null
       };
     });
 
-    console.log('[API] Cards built:', cards.map(c => ({ id: c.id, title: c.title, status: c.status })));
+    console.log('[API] Cards built:', cards.map(c => ({ 
+      id: c.id, 
+      title: c.title, 
+      status: c.status,
+      questionCount: c.questionCount,
+      timeLimitMinutes: c.timeLimitMinutes,
+      isNationalService: c.isNationalService
+    })));
 
     // ============================================================
     // STEP 5: Calculate stats
