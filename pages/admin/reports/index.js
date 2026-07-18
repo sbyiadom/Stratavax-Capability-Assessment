@@ -1,4 +1,4 @@
-// pages/admin/reports/index.js - PROFESSIONAL ALL REPORTS VIEW
+// pages/admin/reports/index.js - PROFESSIONAL ALL REPORTS VIEW (No Emojis)
 
 import { useState, useEffect, Fragment } from 'react';
 import { useRouter } from 'next/router';
@@ -283,7 +283,7 @@ export default function AdminReportsList() {
                       </td>
                       <td style={styles.td}>
                         <span style={styles.expandIcon}>
-                          {isExpanded ? '▲ Hide' : '▼ Show'} Assessments
+                          {isExpanded ? 'Hide Assessments' : 'Show Assessments'}
                         </span>
                       </td>
                     </tr>
@@ -342,9 +342,7 @@ export default function AdminReportsList() {
   // ALL REPORTS VIEW: Unified table with type column
   // ============================================================
   const renderAllView = () => {
-    // Show all reports in a single table with a Type column
     const allReports = [...reports].sort((a, b) => {
-      // Sort by type (National Service first, then Stratavax)
       if (a.isNationalService && !b.isNationalService) return -1;
       if (!a.isNationalService && b.isNationalService) return 1;
       return (a.candidate_name || '').localeCompare(b.candidate_name || '');
@@ -394,7 +392,7 @@ export default function AdminReportsList() {
                         background: isNationalService ? '#dbeafe' : '#e8f5e9',
                         color: isNationalService ? '#1e40af' : '#2e7d32'
                       }}>
-                        {isNationalService ? '📋 National Service' : '📊 Stratavax'}
+                        {isNationalService ? 'National Service' : 'Stratavax'}
                       </span>
                     </td>
                     <td style={styles.td}>
@@ -455,12 +453,11 @@ export default function AdminReportsList() {
           
           {error && (
             <div style={styles.errorBox}>
-              <strong>⚠️ Error:</strong> {error}
+              <strong>Error:</strong> {error}
               <button onClick={fetchReports} style={styles.retryButton}>Retry</button>
             </div>
           )}
 
-          {/* Search Bar */}
           <div style={styles.searchBar}>
             <input
               type="text"
@@ -471,7 +468,6 @@ export default function AdminReportsList() {
             />
           </div>
 
-          {/* Filter Tabs */}
           <div style={styles.filterTabs}>
             <button
               onClick={() => setFilter('all')}
@@ -493,7 +489,7 @@ export default function AdminReportsList() {
                 border: filter === 'national_service' ? 'none' : '1px solid #e2e8f0'
               }}
             >
-              📋 National Service ({stats.nationalService})
+              National Service ({stats.nationalService})
             </button>
             <button
               onClick={() => setFilter('stratavax')}
@@ -504,7 +500,7 @@ export default function AdminReportsList() {
                 border: filter === 'stratavax' ? 'none' : '1px solid #e2e8f0'
               }}
             >
-              📊 Stratavax ({stats.stratavax})
+              Stratavax ({stats.stratavax})
             </button>
           </div>
         </div>
@@ -692,7 +688,6 @@ const styles = {
     color: '#94a3b8'
   },
   
-  // Stratavax specific styles
   statCount: {
     fontSize: '18px',
     fontWeight: '700',
