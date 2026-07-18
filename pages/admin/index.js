@@ -1,4 +1,4 @@
-// pages/admin/index.js
+// pages/admin/index.js - PROFESSIONAL VERSION (No Emojis)
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
@@ -200,7 +200,7 @@ export default function AdminDashboard() {
   if (authError) {
     return (
       <div style={styles.checkingContainer}>
-        <div style={styles.errorIcon}>⚠️</div>
+        <div style={styles.errorIcon}>!</div>
         <p style={styles.errorText}>Authentication Error</p>
         <p style={styles.errorDetail}>{authError}</p>
         <button onClick={() => router.push("/supervisor")} style={styles.backButton}>Back to Dashboard</button>
@@ -228,22 +228,22 @@ export default function AdminDashboard() {
           <StatCard icon="👑" label="Supervisors" value={stats.totalSupervisors} />
           <StatCard icon="👥" label="Candidates" value={stats.totalCandidates} />
           <StatCard icon="📋" label="Active Assessments" value={stats.totalAssessments} />
-          <StatCard icon="✅" label="Completed" value={stats.completedAssessments} />
-          <StatCard icon="🔓" label="Unblocked" value={stats.unblockedAssessments} />
-          <StatCard icon="🔒" label="Blocked" value={stats.blockedAssessments} />
-          <StatCard icon="⏳" label="In Progress" value={stats.inProgressSessions} />
-          <StatCard icon="📊" label="Result Records" value={stats.totalResults} />
+          <StatCard icon="✓" label="Completed" value={stats.completedAssessments} />
+          <StatCard icon="○" label="Unblocked" value={stats.unblockedAssessments} />
+          <StatCard icon="●" label="Blocked" value={stats.blockedAssessments} />
+          <StatCard icon="◉" label="In Progress" value={stats.inProgressSessions} />
+          <StatCard icon="▤" label="Result Records" value={stats.totalResults} />
         </div>
 
         <div style={styles.actionCardsGrid}>
-          <ActionCard href="/admin/add-supervisor" icon="➕" title="Add Supervisor" description="Create new supervisor accounts with dashboard access." />
+          <ActionCard href="/admin/add-supervisor" icon="+" title="Add Supervisor" description="Create new supervisor accounts with dashboard access." />
           <ActionCard href="/admin/manage-supervisors" icon="👥" title="Manage Supervisors" description="View, activate, deactivate, or update supervisor accounts." />
           <ActionCard href="/admin/manage-candidates" icon="🎓" title="Manage Candidates" description="View candidate profiles, reset access, and review activity." />
           <ActionCard href="/admin/assign-candidates" icon="🔗" title="Assign Supervisors" description="Assign candidates to specific supervisors for management." />
           <ActionCard href="/admin/assign-assessments" icon="📋" title="Assign Assessments" description="Assign, unblock, or block candidate assessments." />
           <ActionCard href="/admin/batch-manage" icon="📦" title="Batch Manage" description="Perform bulk administrative actions and candidate updates." />
-          <ActionCard href="/admin/audit-logs" icon="📊" title="Audit Logs" description="View system activity, access events, and administrative actions." />
-          <ActionCard href="/admin/system-settings" icon="⚙️" title="System Settings" description="Configure platform settings and assessment parameters." />
+          <ActionCard href="/admin/audit-logs" icon="▤" title="Audit Logs" description="View system activity, access events, and administrative actions." />
+          <ActionCard href="/admin/system-settings" icon="⚙" title="System Settings" description="Configure platform settings and assessment parameters." />
           
           {/* NEW: Reports Card */}
           <ActionCard href="/admin/reports" icon="📄" title="Assessment Reports" description="View detailed assessment reports for all candidates." />
