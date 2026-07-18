@@ -1,4 +1,4 @@
-// pages/api/admin/reports.js - COMPLETE FIXED VERSION
+// pages/api/admin/reports.js - FIXED to properly read category data
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -18,44 +18,6 @@ function getRecommendation(workplaceReadiness, intellectualCapability) {
     return 'Reserve Pool';
   }
   return 'Not Recommended';
-}
-
-// ============================================================
-// HELPER: Calculate scores from category_scores (only used as fallback)
-// ============================================================
-function calculateScoresFromCategories(categoryScores) {
-  let workplaceTotal = 0;
-  let workplaceCount = 0;
-  let intellectualTotal = 0;
-  let intellectualCount = 0;
-
-  const workplaceKeywords = ['safety', 'risk', 'technical', 'communication', 'teamwork', 'ownership', 'integrity', 'workplace', 'ethics', 'professional', 'readiness', 'conduct', 'attitude', 'work ethic'];
-  const intellectualKeywords = ['numerical', 'logical', 'reasoning', 'measurement', 'engineering', 'spatial', 'problem', 'troubleshooting', 'analysis', 'critical', 'analytical', 'decision', 'cognitive', 'aptitude', 'intellectual'];
-
-  if (!Array.isArray(categoryScores) || categoryScores.length === 0) {
-    return { workplaceReadiness: 0, intellectualCapability: 0 };
-  }
-
-  categoryScores.forEach(cat => {
-    const name = (cat.category || cat.name || '').toLowerCase();
-    const percentage = Number(cat.percentage || cat.score || 0);
-    
-    const isWorkplace = workplaceKeywords.some(keyword => name.includes(keyword));
-    const isIntellectual = intellectualKeywords.some(keyword => name.includes(keyword));
-
-    if (isWorkplace) {
-      workplaceTotal += percentage;
-      workplaceCount++;
-    } else if (isIntellectual) {
-      intellectualTotal += percentage;
-      intellectualCount++;
-    }
-  });
-
-  const workplaceReadiness = workplaceCount > 0 ? Math.round(workplaceTotal / workplaceCount) : 0;
-  const intellectualCapability = intellectualCount > 0 ? Math.round(intellectualTotal / intellectualCount) : 0;
-
-  return { workplaceReadiness, intellectualCapability };
 }
 
 export default async function handler(req, res) {
@@ -110,7 +72,7 @@ export default async function handler(req, res) {
     if (userIds.length > 0) {
       const { data: candidates, error: candidatesError } = await serviceClient
         .from('candidate_profiles')
-        .select('id, full_name, email, university, programme')
+        .select('id, full_name, email, university, programme, preferred_department, graduation_year')
         .in('id', userIds);
 
       if (!candidatesError && candidates) {
@@ -159,7 +121,7 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 5: Build enriched reports - USE DATABASE VALUES DIRECTLY
+    // STEP 5: Build enriched reports - READ DATA FROM DATABASE
     // ============================================================
     const enrichedReports = results.map((result) => {
       const candidate = candidateMap[result.user_id];
@@ -173,86 +135,128 @@ export default async function handler(req, res) {
         assessment?.title === 'National Service Recruitment Assessment';
 
       // ============================================================
-      // FIX: USE DATABASE VALUES DIRECTLY - DO NOT RECALCULATE
+      // READ DATA DIRECTLY FROM THE RESULT OBJECT
       // ============================================================
+      
+      // Get category_scores - this is the key data we need
+      let categoryScores = [];
+      
+      // Try result.category_scores first (direct column)
+      if (result.category_scores && Array.isArray(result.category_scores) && result.category_scores.length > 0) {
+        categoryScores = result.category_scores;
+        console.log(`[Report] Using category_scores from result: ${categoryScores.length} categories`);
+      } 
+      // Try result.report_data.categoryBreakdown
+      else if (result.report_data && result.report_data.categoryBreakdown) {
+        categoryScores = result.report_data.categoryBreakdown;
+        console.log(`[Report] Using categoryBreakdown from report_data: ${categoryScores.length} categories`);
+      }
+      // Try result.report_data.category_scores
+      else if (result.report_data && result.report_data.category_scores) {
+        categoryScores = result.report_data.category_scores;
+        console.log(`[Report] Using category_scores from report_data: ${categoryScores.length} categories`);
+      }
+      // Try result.report_data.categories
+      else if (result.report_data && result.report_data.categories) {
+        categoryScores = result.report_data.categories;
+        console.log(`[Report] Using categories from report_data: ${categoryScores.length} categories`);
+      }
+
+      // Get scores - read directly from database
       const workplaceReadiness = Number(result.workplace_readiness) || 0;
       const intellectualCapability = Number(result.intellectual_capability) || 0;
       const overallScore = Number(result.percentage_score) || 0;
 
-      // ============================================================
-      // ONLY USE FALLBACK IF ALL VALUES ARE ZERO (no data in database)
-      // ============================================================
-      let finalWorkplace = workplaceReadiness;
-      let finalIntellectual = intellectualCapability;
-      let finalOverall = overallScore;
-
-      if (workplaceReadiness === 0 && intellectualCapability === 0 && overallScore === 0) {
-        // Try to get from category_scores as fallback
-        let categoryScores = [];
-        if (result.category_scores && Array.isArray(result.category_scores)) {
-          categoryScores = result.category_scores;
-        } else if (result.report_data && result.report_data.categoryScores) {
-          categoryScores = result.report_data.categoryScores;
-        } else if (result.report_data && result.report_data.category_scores) {
-          categoryScores = result.report_data.category_scores;
-        }
-
-        if (categoryScores.length > 0) {
-          const calculated = calculateScoresFromCategories(categoryScores);
-          finalWorkplace = calculated.workplaceReadiness;
-          finalIntellectual = calculated.intellectualCapability;
-          if (finalWorkplace > 0 || finalIntellectual > 0) {
-            finalOverall = Math.round((finalWorkplace + finalIntellectual) / 2);
-          }
-        }
-      }
-
       // Get recommendation
-      let recommendation = result.recommendation || 'N/A';
-      if (isNationalService) {
-        if (!recommendation || recommendation === 'N/A' || recommendation === '') {
-          recommendation = getRecommendation(finalWorkplace, finalIntellectual);
-        }
+      let recommendation = result.recommendation || 'Not Recommended';
+      if (isNationalService && (!recommendation || recommendation === 'N/A' || recommendation === '')) {
+        recommendation = getRecommendation(workplaceReadiness, intellectualCapability);
       }
 
-      // Get category_scores for the report view
-      let categoryScores = [];
-      if (result.category_scores && Array.isArray(result.category_scores)) {
-        categoryScores = result.category_scores;
-      } else if (result.report_data && result.report_data.categoryScores) {
-        categoryScores = result.report_data.categoryScores;
-      } else if (result.report_data && result.report_data.category_scores) {
-        categoryScores = result.report_data.category_scores;
-      }
-
-      return {
-        id: result.id,
-        user_id: result.user_id,
-        assessment_id: result.assessment_id,
-        candidate_name: candidate?.full_name || 'Unknown',
-        candidate_email: candidate?.email || '',
-        candidate_university: candidate?.university || '',
-        candidate_programme: candidate?.programme || '',
-        assessment_title: assessment?.title || 'Unknown',
-        assessment_type_code: assessmentType?.code || null,
-        assessment_type_name: assessmentType?.name || 'General',
+      // Build the report object with ALL data
+      const reportData = {
+        // Candidate info
+        candidateName: candidate?.full_name || 'Unknown',
+        candidateEmail: candidate?.email || '',
+        university: candidate?.university || '',
+        programme: candidate?.programme || '',
+        graduationYear: candidate?.graduation_year || '',
+        preferredDepartment: candidate?.preferred_department || '',
+        
+        // Assessment info
+        assessmentTitle: assessment?.title || 'Unknown',
+        assessmentTypeCode: assessmentType?.code || null,
+        assessmentTypeName: assessmentType?.name || 'General',
         isNationalService: isNationalService,
         typeLabel: isNationalService ? 'National Service' : 'Stratavax',
-        workplace_readiness: finalWorkplace,
-        intellectual_capability: finalIntellectual,
-        percentage_score: finalOverall,
+        
+        // Scores - READ FROM DATABASE
+        workplace_readiness: workplaceReadiness,
+        intellectual_capability: intellectualCapability,
+        percentage_score: overallScore,
+        overallScore: overallScore,
+        
+        // Category scores - READ FROM DATABASE
+        category_scores: categoryScores,
+        categoryScores: categoryScores,
+        categoryBreakdown: categoryScores,
+        
+        // Recommendation
         recommendation: recommendation,
+        recommendationLevel: recommendation,
+        
+        // Metadata
         completed_at: result.completed_at,
         total_questions: result.total_questions || 0,
         answered_questions: result.answered_questions || 0,
-        category_scores: categoryScores
+        
+        // Dimensions for the report component
+        dimensions: {
+          workplaceReadiness: workplaceReadiness,
+          intellectualCapability: intellectualCapability,
+          overallScore: overallScore
+        },
+        
+        // Statistics for the report component
+        statistics: {
+          totalQuestions: result.total_questions || 0,
+          answeredQuestions: result.answered_questions || 0,
+          correctAnswers: result.correct_answers || 0
+        },
+        
+        // Candidate info for the report component
+        candidateInfo: {
+          fullName: candidate?.full_name || 'Unknown',
+          university: candidate?.university || '',
+          programme: candidate?.programme || '',
+          graduationYear: candidate?.graduation_year || '',
+          preferredDepartment: candidate?.preferred_department || '',
+          assessmentDate: result.completed_at ? new Date(result.completed_at).toLocaleDateString() : 'N/A'
+        }
       };
+
+      // If this is National Service and we have category scores, also add the full report_data
+      if (isNationalService && result.report_data) {
+        reportData.fullReport = result.report_data;
+      }
+
+      return reportData;
     });
 
     // Count National Service reports
     const nationalServiceReports = enrichedReports.filter(r => r.isNationalService === true);
     const nationalServiceCount = nationalServiceReports.length;
     const stratavaxCount = enrichedReports.length - nationalServiceCount;
+
+    // Log what we're returning
+    console.log(`[Report API] Returning ${enrichedReports.length} reports`);
+    console.log(`[Report API] National Service: ${nationalServiceCount}, Stratavax: ${stratavaxCount}`);
+    
+    // Log sample category data for debugging
+    const sampleNS = enrichedReports.find(r => r.isNationalService && r.category_scores?.length > 0);
+    if (sampleNS) {
+      console.log(`[Report API] Sample NS report: ${sampleNS.candidateName}, category_scores: ${sampleNS.category_scores.length}`);
+    }
 
     return res.status(200).json({
       success: true,
