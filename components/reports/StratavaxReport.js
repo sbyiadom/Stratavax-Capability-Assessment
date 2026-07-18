@@ -1,5 +1,4 @@
-// components/reports/StratavaxReport.js - IMPROVED VERSION
-// Uses the phrase library properly, removes evidence section, generates robust analysis
+// components/reports/StratavaxReport.js - PROFESSIONAL VERSION (No Emojis)
 
 import React from 'react';
 import {
@@ -45,16 +44,6 @@ function getLevelColor(score) {
   return '#b71c1c';
 }
 
-function getLevelEmoji(score) {
-  const value = safeNumber(score, 0);
-  if (value >= 85) return '🌟';
-  if (value >= 75) return '✅';
-  if (value >= 65) return '⚡';
-  if (value >= 55) return '📈';
-  if (value >= 40) return '🔸';
-  return '🔴';
-}
-
 function getGrade(score) {
   const value = safeNumber(score, 0);
   if (value >= 85) return 'A';
@@ -62,16 +51,6 @@ function getGrade(score) {
   if (value >= 65) return 'C';
   if (value >= 55) return 'D';
   return 'F';
-}
-
-function getScoreBand(score) {
-  const value = safeNumber(score, 0);
-  if (value >= 85) return 'Exceptional Performance';
-  if (value >= 75) return 'Strong Performance';
-  if (value >= 65) return 'Adequate Performance';
-  if (value >= 55) return 'Developing Performance';
-  if (value >= 40) return 'Priority Development';
-  return 'Critical Gap';
 }
 
 function formatDate(dateString) {
@@ -126,10 +105,8 @@ export default function StratavaxReport({ result, candidate, assessment, onBack 
     const percentage = safeNumber(score, 0);
     const levelKey = getScoreLevelKey(percentage);
     const levelLabel = getLevelLabel(percentage);
-    const levelEmoji = getLevelEmoji(percentage);
     const grade = getGrade(percentage);
     
-    // Get phrases from the library
     const summaryPhrases = scoreLevelPhrases[levelKey]?.summary || [];
     const supervisorPhrases = scoreLevelPhrases[levelKey]?.supervisor || [];
     
@@ -146,7 +123,6 @@ export default function StratavaxReport({ result, candidate, assessment, onBack 
     return {
       level: levelKey,
       label: levelLabel,
-      emoji: levelEmoji,
       grade: grade,
       summary: replaceVariables(summary, { 
         area: category,
@@ -180,7 +156,6 @@ export default function StratavaxReport({ result, candidate, assessment, onBack 
       summary = `${candidateName} completed the ${assessmentName} with a score of ${Math.round(overallScore)}%, indicating significant development opportunities. `;
     }
     
-    // Add strengths
     if (strengthCount > 0) {
       const topStrengths = strengthNames.length > 0 ? strengthNames.join(', ') : '';
       summary += `Key strengths include ${topStrengths}. `;
@@ -188,7 +163,6 @@ export default function StratavaxReport({ result, candidate, assessment, onBack 
       summary += `No dominant strength areas were identified above the current threshold. `;
     }
     
-    // Add development areas
     if (weaknessCount > 0) {
       const topWeaknesses = weaknessNames.length > 0 ? weaknessNames.join(' and ') : '';
       summary += `Development opportunities include ${topWeaknesses}. `;
@@ -196,7 +170,6 @@ export default function StratavaxReport({ result, candidate, assessment, onBack 
       summary += `No major development areas were identified below the current threshold. `;
     }
     
-    // Add overall guidance
     if (overallScore >= 75) {
       summary += `This profile suggests strong potential for professional growth and increased responsibility.`;
     } else if (overallScore >= 65) {
@@ -289,9 +262,7 @@ export default function StratavaxReport({ result, candidate, assessment, onBack 
             return (
               <div key={index} style={styles.categoryCard}>
                 <div style={styles.categoryHeader}>
-                  <span style={styles.categoryName}>
-                    {analysis.emoji} {name}
-                  </span>
+                  <span style={styles.categoryName}>{name}</span>
                   <span style={{ ...styles.categoryScore, color: getLevelColor(percentage) }}>
                     {Math.round(percentage)}%
                   </span>
@@ -415,7 +386,7 @@ export default function StratavaxReport({ result, candidate, assessment, onBack 
       {/* Print Button */}
       <div style={styles.actions}>
         <button onClick={() => window.print()} style={styles.printButton}>
-          🖨️ Print Report
+          Print Report
         </button>
       </div>
     </div>
