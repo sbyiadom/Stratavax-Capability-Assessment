@@ -1,4 +1,4 @@
-// pages/api/assessment/questions.js - RANDOMIZED CORRECT ANSWERS
+// pages/api/assessment/questions.js - FULL RANDOMIZATION
 
 import { createClient } from "@supabase/supabase-js";
 
@@ -17,35 +17,27 @@ function shuffleArray(array) {
 // ============================================================
 // HELPER: Randomize answers for a question
 // ============================================================
-function randomizeAnswers(question, assessmentTypeCode) {
-  // Only randomize for National Service assessments
-  if (assessmentTypeCode !== 'national_service') {
-    return question;
-  }
-
+function randomizeAnswers(question) {
   if (!question || !Array.isArray(question.answers) || question.answers.length === 0) {
     return question;
   }
 
   // Find which answers are correct (score === 1)
-  const correctAnswers = question.answers.filter(a => a.score === 1);
-  const wrongAnswers = question.answers.filter(a => a.score !== 1);
+  const correctAnswerIds = new Set(
+    question.answers.filter(a => a.score === 1).map(a => a.id)
+  );
 
   // If no correct answers found, return original
-  if (correctAnswers.length === 0) {
+  if (correctAnswerIds.size === 0) {
     return question;
   }
 
-  // Store the IDs of correct answers
-  const correctAnswerIds = new Set(correctAnswers.map(a => a.id));
-
-  // Shuffle ALL answers (both correct and wrong)
+  // Shuffle ALL answers
   const shuffledAnswers = shuffleArray(question.answers);
 
   // Reset scores based on shuffled positions
   const randomizedAnswers = shuffledAnswers.map(answer => ({
     ...answer,
-    // If this answer was originally correct, keep it as correct
     score: correctAnswerIds.has(answer.id) ? 1 : 0
   }));
 
@@ -115,30 +107,35 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 2: Format the response with randomization for National Service
+    // STEP 2: Format and randomize questions
     // ============================================================
-    const formattedQuestions = questions.map((q) => {
-      const question = {
-        id: q.id,
-        question_text: q.question_text,
-        section: q.section || "General",
-        subsection: q.subsection || "",
-        display_order: q.display_order || 0,
-        answers: (q.unique_answers || []).map((a) => ({
-          id: a.id,
-          answer_text: a.answer_text,
-          score: a.score || 0,
-          display_order: a.display_order || 0
-        }))
-      };
+    let formattedQuestions = questions.map((q) => ({
+      id: q.id,
+      question_text: q.question_text,
+      section: q.section || "General",
+      subsection: q.subsection || "",
+      display_order: q.display_order || 0,
+      answers: (q.unique_answers || []).map((a) => ({
+        id: a.id,
+        answer_text: a.answer_text,
+        score: a.score || 0,
+        display_order: a.display_order || 0
+      }))
+    }));
 
-      // Randomize answers for National Service
-      return randomizeAnswers(question, assessmentTypeCode);
-    });
+    // ============================================================
+    // STEP 3: Apply randomization for ALL assessments
+    // ============================================================
+    // Randomize answer options for ALL questions
+    formattedQuestions = formattedQuestions.map(q => randomizeAnswers(q));
 
-    console.log(`[API] Found ${formattedQuestions.length} questions with answers`);
+    // Randomize the order of questions
+    formattedQuestions = shuffleArray(formattedQuestions);
+
+    console.log(`[API] Found ${formattedQuestions.length} questions`);
     console.log(`[API] Assessment type code: ${assessmentTypeCode || 'unknown'}`);
-    console.log(`[API] Randomized: ${assessmentTypeCode === 'national_service' ? 'YES' : 'NO'}`);
+    console.log(`[API] Questions randomized: YES`);
+    console.log(`[API] Answers randomized: YES`);
 
     return res.status(200).json({
       success: true,
