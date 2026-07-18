@@ -1,4 +1,4 @@
-// pages/api/admin/reports.js - FIXED VERSION
+// pages/api/admin/reports.js - FIXED VERSION (NO JOINS)
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -41,32 +41,11 @@ export default async function handler(req, res) {
     });
 
     // ============================================================
-    // STEP 1: Get all assessment results with JOINs
+    // STEP 1: Get all assessment results
     // ============================================================
     const { data: results, error: resultsError } = await serviceClient
       .from('assessment_results')
-      .select(`
-        *,
-        candidate_profiles!inner (
-          id,
-          full_name,
-          email,
-          university,
-          programme,
-          preferred_department,
-          graduation_year
-        ),
-        assessments!inner (
-          id,
-          title,
-          assessment_type_id,
-          assessment_types!inner (
-            id,
-            code,
-            name
-          )
-        )
-      `)
+      .select('*')
       .order('completed_at', { ascending: false });
 
     if (resultsError) {
@@ -86,13 +65,81 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 2: Build enriched reports with data from JOINs
+    // STEP 2: Get all candidate profiles (for user_id mapping)
+    // ============================================================
+    const userIds = results.map(r => r.user_id).filter(Boolean);
+    let candidateMap = {};
+
+    if (userIds.length > 0) {
+      const { data: candidates, error: candidatesError } = await serviceClient
+        .from('candidate_profiles')
+        .select('id, full_name, email, university, programme, preferred_department, graduation_year')
+        .in('id', userIds);
+
+      if (!candidatesError && candidates) {
+        candidates.forEach(c => {
+          candidateMap[c.id] = c;
+        });
+        console.log(`[Report API] Loaded ${candidates.length} candidate profiles`);
+      } else if (candidatesError) {
+        console.error('Candidates error:', candidatesError);
+      }
+    }
+
+    // ============================================================
+    // STEP 3: Get all assessment details
+    // ============================================================
+    const assessmentIds = results.map(r => r.assessment_id).filter(Boolean);
+    let assessmentMap = {};
+
+    if (assessmentIds.length > 0) {
+      const { data: assessments, error: assessmentsError } = await serviceClient
+        .from('assessments')
+        .select('id, title, assessment_type_id')
+        .in('id', assessmentIds);
+
+      if (!assessmentsError && assessments) {
+        assessments.forEach(a => {
+          assessmentMap[a.id] = a;
+        });
+        console.log(`[Report API] Loaded ${assessments.length} assessments`);
+      } else if (assessmentsError) {
+        console.error('Assessments error:', assessmentsError);
+      }
+    }
+
+    // ============================================================
+    // STEP 4: Get assessment types
+    // ============================================================
+    const typeIds = Object.values(assessmentMap).map(a => a.assessment_type_id).filter(Boolean);
+    let typeMap = {};
+
+    if (typeIds.length > 0) {
+      const { data: types, error: typesError } = await serviceClient
+        .from('assessment_types')
+        .select('id, code, name')
+        .in('id', typeIds);
+
+      if (!typesError && types) {
+        types.forEach(t => {
+          typeMap[t.id] = t;
+        });
+        console.log(`[Report API] Loaded ${types.length} assessment types`);
+      } else if (typesError) {
+        console.error('Types error:', typesError);
+      }
+    }
+
+    // ============================================================
+    // STEP 5: Build enriched reports by joining data manually
     // ============================================================
     const enrichedReports = results.map((result) => {
-      // Extract data from the joined tables
-      const profile = result.candidate_profiles || {};
-      const assessment = result.assessments || {};
-      const assessmentType = assessment.assessment_types || {};
+      // Get candidate from map
+      const profile = candidateMap[result.user_id] || {};
+      
+      // Get assessment from map
+      const assessment = assessmentMap[result.assessment_id] || {};
+      const assessmentType = assessment ? typeMap[assessment.assessment_type_id] : null;
 
       const isNationalService = 
         result.assessment_id === NATIONAL_SERVICE_ASSESSMENT_ID ||
@@ -120,14 +167,14 @@ export default async function handler(req, res) {
         recommendation = getRecommendation(workplaceReadiness, intellectualCapability);
       }
 
-      // Build the report object with ALL data from the JOINs
+      // Build the report object
       return {
         id: result.id,
         user_id: result.user_id,
         assessment_id: result.assessment_id,
         session_id: result.session_id,
         
-        // Candidate info - from joined profile
+        // Candidate info - from profile map
         candidate_name: profile?.full_name || 'Unknown',
         candidate_email: profile?.email || '',
         university: profile?.university || '',
@@ -135,7 +182,7 @@ export default async function handler(req, res) {
         graduation_year: profile?.graduation_year || '',
         preferred_department: profile?.preferred_department || '',
         
-        // Assessment info - from joined assessment
+        // Assessment info - from assessment map
         assessment_title: assessment?.title || 'Unknown',
         assessment_type_code: assessmentType?.code || null,
         assessment_type_name: assessmentType?.name || 'General',
