@@ -1,4 +1,4 @@
-// components/reports/NationalServiceReport.js - FIXED SUGGESTED PLACEMENT
+// components/reports/NationalServiceReport.js - PROFESSIONAL VERSION (No Emojis)
 
 import React, { useEffect } from 'react';
 
@@ -42,7 +42,6 @@ export default function NationalServiceReport({ report, onBack }) {
   const workplaceSubCategories = [];
   const intellectualSubCategories = [];
 
-  // Define which categories belong to Workplace Readiness
   const workplaceCategoryNames = [
     'Safety & Risk Awareness',
     'Technical Fundamentals',
@@ -51,7 +50,6 @@ export default function NationalServiceReport({ report, onBack }) {
     'Workplace Ethics'
   ];
 
-  // Define which categories belong to Intellectual Capability
   const intellectualCategoryNames = [
     'Problem Solving & Troubleshooting',
     'Logical Reasoning',
@@ -60,17 +58,14 @@ export default function NationalServiceReport({ report, onBack }) {
     'Learning Agility'
   ];
 
-  // Process the category_scores
   if (category_scores && Array.isArray(category_scores) && category_scores.length > 0) {
     category_scores.forEach(cat => {
       const categoryName = cat.category || cat.name || '';
       
-      // Check if it's a Workplace category
       const isWorkplace = workplaceCategoryNames.some(name => 
         categoryName.toLowerCase().includes(name.toLowerCase())
       );
       
-      // Check if it's an Intellectual category
       const isIntellectual = intellectualCategoryNames.some(name => 
         categoryName.toLowerCase().includes(name.toLowerCase())
       );
@@ -80,7 +75,6 @@ export default function NationalServiceReport({ report, onBack }) {
       } else if (isIntellectual) {
         intellectualSubCategories.push(cat);
       } else {
-        // If uncertain, try to detect from the name
         const lowerName = categoryName.toLowerCase();
         if (lowerName.includes('safety') || lowerName.includes('technical') || 
             lowerName.includes('communication') || lowerName.includes('teamwork') ||
@@ -101,11 +95,11 @@ export default function NationalServiceReport({ report, onBack }) {
   // RENDER HELPERS
   // ============================================================
   const getCategoryComment = (percentage) => {
-    if (percentage >= 80) return { text: 'Exceptional', color: '#2e7d32', emoji: '🌟' };
-    if (percentage >= 70) return { text: 'Strong', color: '#2e7d32', emoji: '✅' };
-    if (percentage >= 60) return { text: 'Adequate', color: '#f57c00', emoji: '⚡' };
-    if (percentage >= 50) return { text: 'Development Area', color: '#ea580c', emoji: '🔸' };
-    return { text: 'Critical Gap', color: '#c62828', emoji: '🔴' };
+    if (percentage >= 80) return { text: 'Exceptional', color: '#2e7d32' };
+    if (percentage >= 70) return { text: 'Strong', color: '#2e7d32' };
+    if (percentage >= 60) return { text: 'Adequate', color: '#f57c00' };
+    if (percentage >= 50) return { text: 'Development Area', color: '#ea580c' };
+    return { text: 'Critical Gap', color: '#c62828' };
   };
 
   const getRecommendationColor = (level) => {
@@ -164,11 +158,9 @@ export default function NationalServiceReport({ report, onBack }) {
   const graduationYear = candidateInfo?.graduationYear || 'N/A';
   const preferredDepartment = candidateInfo?.preferredDepartment || 'Not Specified';
 
-  // Sort sub-categories by percentage (highest first)
   const sortedWorkplace = [...workplaceSubCategories].sort((a, b) => (b.percentage || 0) - (a.percentage || 0));
   const sortedIntellectual = [...intellectualSubCategories].sort((a, b) => (b.percentage || 0) - (a.percentage || 0));
 
-  // Find top strengths and development areas from sub-categories
   const allSubCategories = [...workplaceSubCategories, ...intellectualSubCategories];
   const topStrengths = [...allSubCategories]
     .filter(c => (c.percentage || 0) > 0)
@@ -179,16 +171,11 @@ export default function NationalServiceReport({ report, onBack }) {
     .filter(c => (c.percentage || 0) > 0 && (c.percentage || 0) < 60)
     .sort((a, b) => (a.percentage || 0) - (b.percentage || 0));
 
-  // ============================================================
-  // FIX: Calculate Suggested Placement based on scores
-  // ============================================================
   const getSuggestedPlacements = () => {
-    // Use report.suggestedPlacement if available
     if (report.suggestedPlacement && report.suggestedPlacement.length > 0) {
       return report.suggestedPlacement;
     }
     
-    // Otherwise calculate based on scores
     const workplace = workplaceScore || 0;
     const intellectual = intellectualScore || 0;
     const overall = (workplace + intellectual) / 2;
@@ -235,9 +222,9 @@ export default function NationalServiceReport({ report, onBack }) {
       <div style={{ ...styles.banner, background: recommendationBg, border: `3px solid ${recommendationColor}` }}>
         <div style={styles.bannerContent}>
           <div style={{ ...styles.bannerIcon, color: recommendationColor }}>
-            {recommendationLevel === 'Highly Recommended' ? '⭐' :
-             recommendationLevel === 'Recommended' ? '✅' :
-             recommendationLevel === 'Reserve Pool' ? '📋' : '⚠️'}
+            {recommendationLevel === 'Highly Recommended' ? '★' :
+             recommendationLevel === 'Recommended' ? '✓' :
+             recommendationLevel === 'Reserve Pool' ? '●' : '⚠'}
           </div>
           <div>
             <div style={{ ...styles.bannerTitle, color: recommendationColor }}>{recommendationLevel}</div>
@@ -272,17 +259,15 @@ export default function NationalServiceReport({ report, onBack }) {
           <div style={styles.scoreLabel}>Overall Score</div>
           <div style={styles.scoreValue}>{Math.round(overallScore)}%</div>
           <div style={{ ...styles.scoreBand, color: overallScore >= 70 ? '#2e7d32' : overallScore >= 50 ? '#f57c00' : '#c62828' }}>
-            {overallScore >= 70 ? '✅ Recommended' : overallScore >= 50 ? '⚠️ Conditional' : '❌ Not Recommended'}
+            {overallScore >= 70 ? 'Recommended' : overallScore >= 50 ? 'Conditional' : 'Not Recommended'}
           </div>
         </div>
       </div>
 
-      {/* ============================================================
-          WORKPLACE READINESS - SUB-CATEGORY BREAKDOWN
-          ============================================================ */}
+      {/* Workplace Readiness - Sub-Category Breakdown */}
       <div style={styles.section}>
         <div style={styles.sectionHeader}>
-          <h2 style={styles.sectionTitle}>🛠️ Workplace Readiness - Sub-Category Breakdown</h2>
+          <h2 style={styles.sectionTitle}>Workplace Readiness - Sub-Category Breakdown</h2>
           <span style={styles.sectionScore}>{Math.round(workplaceScore)}%</span>
         </div>
         {sortedWorkplace.length > 0 ? (
@@ -309,7 +294,7 @@ export default function NationalServiceReport({ report, onBack }) {
                     {Math.round(score)} / {Math.round(maxScore)} points
                   </div>
                   <div style={{ ...styles.categoryComment, color: comment.color }}>
-                    {comment.emoji} {comment.text}
+                    {comment.text}
                   </div>
                 </div>
               );
@@ -322,12 +307,10 @@ export default function NationalServiceReport({ report, onBack }) {
         )}
       </div>
 
-      {/* ============================================================
-          INTELLECTUAL CAPABILITY - SUB-CATEGORY BREAKDOWN
-          ============================================================ */}
+      {/* Intellectual Capability - Sub-Category Breakdown */}
       <div style={styles.section}>
         <div style={styles.sectionHeader}>
-          <h2 style={styles.sectionTitle}>🧠 Intellectual Capability - Sub-Category Breakdown</h2>
+          <h2 style={styles.sectionTitle}>Intellectual Capability - Sub-Category Breakdown</h2>
           <span style={styles.sectionScore}>{Math.round(intellectualScore)}%</span>
         </div>
         {sortedIntellectual.length > 0 ? (
@@ -354,7 +337,7 @@ export default function NationalServiceReport({ report, onBack }) {
                     {Math.round(score)} / {Math.round(maxScore)} points
                   </div>
                   <div style={{ ...styles.categoryComment, color: comment.color }}>
-                    {comment.emoji} {comment.text}
+                    {comment.text}
                   </div>
                 </div>
               );
@@ -367,12 +350,10 @@ export default function NationalServiceReport({ report, onBack }) {
         )}
       </div>
 
-      {/* ============================================================
-          TOP STRENGTHS
-          ============================================================ */}
+      {/* Top Strengths */}
       {topStrengths.length > 0 && topStrengths[0].percentage > 0 && (
         <div style={styles.section}>
-          <h2 style={styles.sectionTitle}>🌟 Top Strengths</h2>
+          <h2 style={styles.sectionTitle}>Top Strengths</h2>
           <div style={styles.strengthGrid}>
             {topStrengths.map((strength, index) => {
               const percentage = strength.percentage || 0;
@@ -394,12 +375,10 @@ export default function NationalServiceReport({ report, onBack }) {
         </div>
       )}
 
-      {/* ============================================================
-          DEVELOPMENT AREAS
-          ============================================================ */}
+      {/* Development Areas */}
       {developmentAreas.length > 0 && (
         <div style={styles.section}>
-          <h2 style={styles.sectionTitle}>📈 Development Areas</h2>
+          <h2 style={styles.sectionTitle}>Development Areas</h2>
           <div style={styles.developmentGrid}>
             {developmentAreas.map((area, index) => {
               const percentage = area.percentage || 0;
@@ -424,11 +403,9 @@ export default function NationalServiceReport({ report, onBack }) {
         </div>
       )}
 
-      {/* ============================================================
-          SUGGESTED PLACEMENT - FIXED
-          ============================================================ */}
+      {/* Suggested Placement */}
       <div style={styles.section}>
-        <h2 style={styles.sectionTitle}>🎯 Suggested Placement</h2>
+        <h2 style={styles.sectionTitle}>Suggested Placement</h2>
         <div style={styles.placementContainer}>
           <p style={styles.placementDescription}>
             Based on the candidate's performance profile, the following recommendations are suggested:
@@ -436,7 +413,7 @@ export default function NationalServiceReport({ report, onBack }) {
           <div style={styles.placementGrid}>
             {suggestedPlacements.map((dept, index) => (
               <div key={index} style={styles.placementCard}>
-                <span style={styles.placementIcon}>📌</span>
+                <span style={styles.placementIcon}>•</span>
                 <span style={styles.placementName}>{dept}</span>
               </div>
             ))}
@@ -444,11 +421,9 @@ export default function NationalServiceReport({ report, onBack }) {
         </div>
       </div>
 
-      {/* ============================================================
-          ASSESSMENT STATISTICS
-          ============================================================ */}
+      {/* Assessment Statistics */}
       <div style={styles.section}>
-        <h2 style={styles.sectionTitle}>📊 Assessment Statistics</h2>
+        <h2 style={styles.sectionTitle}>Assessment Statistics</h2>
         <div style={styles.statsGrid}>
           <div style={styles.statCard}>
             <div style={styles.statValue}>{Math.round(workplaceScore)}%</div>
@@ -471,7 +446,7 @@ export default function NationalServiceReport({ report, onBack }) {
 
       <div style={styles.actions}>
         <button onClick={() => window.print()} style={styles.printButton}>
-          🖨️ Print Report
+          Print Report
         </button>
       </div>
     </div>
