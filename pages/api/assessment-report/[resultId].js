@@ -1,4 +1,4 @@
-// pages/api/assessment-report/[resultId].js - FIXED with recommendations
+// pages/api/assessment-report/[resultId].js - COMPLETE FIXED VERSION
 
 import { createClient } from "@supabase/supabase-js";
 
@@ -22,7 +22,6 @@ function generateRecommendations(categoryScores, overallScore) {
   const recommendations = [];
   
   if (!categoryScores || categoryScores.length === 0) {
-    // If no category scores, generate general recommendations based on overall score
     if (overallScore < 55) {
       recommendations.push({
         priority: 'High',
@@ -48,17 +47,14 @@ function generateRecommendations(categoryScores, overallScore) {
     return recommendations;
   }
 
-  // Sort categories by score (lowest first) to identify development areas
   const sortedCategories = [...categoryScores].sort((a, b) => 
     (a.percentage || a.score || 0) - (b.percentage || b.score || 0)
   );
 
-  // Generate recommendations for low-scoring categories
   sortedCategories.forEach((cat, index) => {
     const percentage = safeNumber(cat.percentage || cat.score || 0);
     const categoryName = cat.category || cat.name || 'Unknown';
     
-    // Only generate recommendations for categories below 65%
     if (percentage < 65) {
       let priority = 'High';
       if (percentage >= 55) priority = 'Medium';
@@ -94,7 +90,6 @@ function generateRecommendations(categoryScores, overallScore) {
     }
   });
 
-  // If there are no low-scoring categories but overall score is below 70, add general recommendation
   if (recommendations.length === 0 && overallScore < 70) {
     recommendations.push({
       priority: 'Medium',
@@ -104,7 +99,6 @@ function generateRecommendations(categoryScores, overallScore) {
     });
   }
 
-  // If we have no recommendations at all, add a general one
   if (recommendations.length === 0) {
     recommendations.push({
       priority: 'Low',
@@ -114,7 +108,6 @@ function generateRecommendations(categoryScores, overallScore) {
     });
   }
 
-  // Limit to top 5 recommendations
   return recommendations.slice(0, 5);
 }
 
@@ -197,6 +190,26 @@ function splitCategoryScores(categoryScores) {
   });
 
   return { workplace, intellectual };
+}
+
+// ============================================================
+// HELPER: Get Suggested Placement based on scores
+// ============================================================
+function getSuggestedPlacement(workplace, intellectual) {
+  const w = Number(workplace) || 0;
+  const i = Number(intellectual) || 0;
+  
+  if (w >= 85 && i >= 85) {
+    return ['Operations & Production Management', 'Quality Assurance & Control', 'Supply Chain & Logistics', 'Technical Services'];
+  } else if (w >= 75 && i >= 75) {
+    return ['Production Support', 'Maintenance & Engineering', 'Quality Control', 'Warehouse & Distribution'];
+  } else if (w >= 65 && i >= 65) {
+    return ['General Operations', 'Administrative Support', 'Entry-Level Technical Roles'];
+  } else if (w >= 50 || i >= 50) {
+    return ['Structured Training Programs', 'Supervised Development Roles'];
+  } else {
+    return ['Foundation Training', 'Supervised Onboarding'];
+  }
 }
 
 // ============================================================
@@ -354,7 +367,6 @@ export default async function handler(req, res) {
     let recommendations = [];
 
     if (!isNationalService) {
-      // Identify strengths and weaknesses
       categoryScores.forEach(cat => {
         const percentage = safeNumber(cat.percentage || cat.score || 0);
         const name = cat.category || cat.name || 'Unknown';
@@ -378,11 +390,9 @@ export default async function handler(req, res) {
         }
       });
 
-      // Sort strengths and weaknesses
       strengths.sort((a, b) => (b.percentage || 0) - (a.percentage || 0));
       weaknesses.sort((a, b) => (a.percentage || 0) - (b.percentage || 0));
 
-      // Generate recommendations
       recommendations = generateRecommendations(categoryScores, overallScore);
     }
 
@@ -392,6 +402,11 @@ export default async function handler(req, res) {
     let report = {};
 
     if (isNationalService) {
+      // ============================================================
+      // FIX: Get suggested placement
+      // ============================================================
+      const suggestedPlacement = getSuggestedPlacement(workplaceReadiness, intellectualCapability);
+
       report = {
         dimensions: {
           workplaceReadiness: workplaceReadiness,
@@ -417,6 +432,10 @@ export default async function handler(req, res) {
           preferredDepartment: candidateProfile?.preferred_department || '',
           assessmentDate: result.completed_at ? new Date(result.completed_at).toLocaleDateString() : 'N/A'
         },
+        // ============================================================
+        // ADD SUGGESTED PLACEMENT
+        // ============================================================
+        suggestedPlacement: suggestedPlacement,
         reportType: 'national_service'
       };
     } else {
@@ -441,7 +460,6 @@ export default async function handler(req, res) {
         category_scores: categoryScores,
         strengths: strengths,
         weaknesses: weaknesses,
-        // CRITICAL: Pass recommendations to frontend
         recommendations: recommendations,
         executiveSummary: result.executive_summary || result.executiveSummary || '',
         supervisorImplication: result.supervisor_implication || result.supervisorImplication || '',
@@ -477,8 +495,11 @@ export default async function handler(req, res) {
       intellectualCapability: intellectualCapability,
       overallScore: overallScore,
       recommendation: recommendation,
-      // Include recommendations at top level for easy access
-      recommendations: recommendations
+      recommendations: recommendations,
+      // ============================================================
+      // INCLUDE SUGGESTED PLACEMENT IN TOP-LEVEL RESPONSE
+      // ============================================================
+      suggestedPlacement: report.suggestedPlacement || []
     });
 
   } catch (error) {
