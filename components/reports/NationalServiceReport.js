@@ -1,40 +1,112 @@
-// components/reports/NationalServiceReport.js - PROFESSIONAL VERSION (No Emojis)
+// components/reports/NationalServiceReport.js - FIXED VERSION
 
 import React, { useEffect } from 'react';
 
 export default function NationalServiceReport({ report, onBack }) {
   useEffect(() => {
     console.log('[NationalServiceReport] Report received:', report);
+    console.log('[NationalServiceReport] Report keys:', Object.keys(report || {}));
     console.log('[NationalServiceReport] category_scores:', report?.category_scores);
+    console.log('[NationalServiceReport] report_data?:', report?.report_data);
   }, [report]);
 
   if (!report) {
     return <div style={styles.loading}>Loading report...</div>;
   }
 
-  // Extract data from the report
-  const {
-    candidateName = 'Candidate',
-    dimensions = {},
-    recommendation = {},
-    statistics = {},
-    executiveSummary = {},
-    candidateInfo = {},
-    category_scores = [],
-    workplace_readiness = 0,
-    intellectual_capability = 0,
-    percentage_score = 0,
-    recommendation: recommendationText = 'Not Available',
-    completed_at = null,
-    university = '',
-    programme = '',
-  } = report;
-
-  const workplaceScore = dimensions.workplaceReadiness || workplace_readiness || 0;
-  const intellectualScore = dimensions.intellectualCapability || intellectual_capability || 0;
-  const overallScore = dimensions.overallScore || percentage_score || 0;
-
-  const recommendationLevel = recommendation.level || recommendationText || 'Not Recommended';
+  // ============================================================
+  // FIX: Extract data from multiple possible locations
+  // ============================================================
+  // Try to get data from report.report_data if it exists (nested format)
+  const reportData = report.report_data || report;
+  
+  // Extract candidate info
+  const candidateInfo = reportData.candidateInfo || report.candidateInfo || {};
+  const candidateName = reportData.candidateName || candidateInfo.fullName || report.candidateName || 'Candidate';
+  const university = reportData.university || candidateInfo.university || report.university || 'N/A';
+  const programme = reportData.programme || candidateInfo.programme || report.programme || 'N/A';
+  const graduationYear = reportData.graduationYear || candidateInfo.graduationYear || report.graduationYear || 'N/A';
+  const preferredDepartment = reportData.preferredDepartment || candidateInfo.preferredDepartment || report.preferredDepartment || 'Not Specified';
+  
+  // Extract scores - try multiple locations
+  const workplace_readiness = 
+    reportData.workplace_readiness !== undefined ? reportData.workplace_readiness :
+    reportData.workplaceReadiness !== undefined ? reportData.workplaceReadiness :
+    report.workplace_readiness !== undefined ? report.workplace_readiness :
+    report.dimensions?.workplaceReadiness || 0;
+  
+  const intellectual_capability = 
+    reportData.intellectual_capability !== undefined ? reportData.intellectual_capability :
+    reportData.intellectualCapability !== undefined ? reportData.intellectualCapability :
+    report.intellectual_capability !== undefined ? report.intellectual_capability :
+    report.dimensions?.intellectualCapability || 0;
+  
+  const percentage_score = 
+    reportData.percentage_score !== undefined ? reportData.percentage_score :
+    reportData.overallScore !== undefined ? reportData.overallScore :
+    report.percentage_score !== undefined ? report.percentage_score :
+    report.overallScore || 0;
+  
+  // Extract recommendation
+  const recommendationLevel = 
+    reportData.recommendation || 
+    report.recommendation || 
+    report.recommendationLevel || 
+    'Not Recommended';
+  
+  // Extract completion date
+  const completed_at = reportData.completed_at || report.completed_at || null;
+  const assessmentDate = candidateInfo.assessmentDate || 
+    (completed_at ? new Date(completed_at).toLocaleDateString() : 'N/A');
+  
+  // ============================================================
+  // FIX: Extract category_scores from multiple possible locations
+  // ============================================================
+  let categoryScores = [];
+  
+  // Try reportData.category_scores (from the API)
+  if (reportData.category_scores && Array.isArray(reportData.category_scores) && reportData.category_scores.length > 0) {
+    categoryScores = reportData.category_scores;
+    console.log('[Report] Using reportData.category_scores:', categoryScores.length);
+  } 
+  // Try report.category_scores
+  else if (report.category_scores && Array.isArray(report.category_scores) && report.category_scores.length > 0) {
+    categoryScores = report.category_scores;
+    console.log('[Report] Using report.category_scores:', categoryScores.length);
+  }
+  // Try reportData.categoryBreakdown
+  else if (reportData.categoryBreakdown && Array.isArray(reportData.categoryBreakdown) && reportData.categoryBreakdown.length > 0) {
+    categoryScores = reportData.categoryBreakdown;
+    console.log('[Report] Using reportData.categoryBreakdown:', categoryScores.length);
+  }
+  // Try report.categoryBreakdown
+  else if (report.categoryBreakdown && Array.isArray(report.categoryBreakdown) && report.categoryBreakdown.length > 0) {
+    categoryScores = report.categoryBreakdown;
+    console.log('[Report] Using report.categoryBreakdown:', categoryScores.length);
+  }
+  // Try reportData.categoryScores
+  else if (reportData.categoryScores && Array.isArray(reportData.categoryScores) && reportData.categoryScores.length > 0) {
+    categoryScores = reportData.categoryScores;
+    console.log('[Report] Using reportData.categoryScores:', categoryScores.length);
+  }
+  // Try report.categoryScores
+  else if (report.categoryScores && Array.isArray(report.categoryScores) && report.categoryScores.length > 0) {
+    categoryScores = report.categoryScores;
+    console.log('[Report] Using report.categoryScores:', categoryScores.length);
+  }
+  // Fallback: try to find category data in the report data
+  else {
+    // Check if there's a categories or dimensions object
+    if (reportData.categories && Array.isArray(reportData.categories)) {
+      categoryScores = reportData.categories;
+    } else if (reportData.dimensions && reportData.dimensions.categories) {
+      categoryScores = reportData.dimensions.categories;
+    } else if (reportData.subCategories) {
+      categoryScores = reportData.subCategories;
+    } else if (report.dimensions && report.dimensions.categories) {
+      categoryScores = report.dimensions.categories;
+    }
+  }
 
   // ============================================================
   // SPLIT SUB-CATEGORIES INTO WORKPLACE AND INTELLECTUAL
@@ -47,7 +119,9 @@ export default function NationalServiceReport({ report, onBack }) {
     'Technical Fundamentals',
     'Communication & Teamwork',
     'Ownership & Integrity',
-    'Workplace Ethics'
+    'Workplace Ethics',
+    'Professional Conduct',
+    'Work Ethic'
   ];
 
   const intellectualCategoryNames = [
@@ -55,11 +129,13 @@ export default function NationalServiceReport({ report, onBack }) {
     'Logical Reasoning',
     'Numerical Reasoning',
     'Measurement & Engineering Units',
-    'Learning Agility'
+    'Learning Agility',
+    'Cognitive Ability',
+    'Analytical Thinking'
   ];
 
-  if (category_scores && Array.isArray(category_scores) && category_scores.length > 0) {
-    category_scores.forEach(cat => {
+  if (categoryScores && categoryScores.length > 0) {
+    categoryScores.forEach(cat => {
       const categoryName = cat.category || cat.name || '';
       
       const isWorkplace = workplaceCategoryNames.some(name => 
@@ -79,10 +155,25 @@ export default function NationalServiceReport({ report, onBack }) {
         if (lowerName.includes('safety') || lowerName.includes('technical') || 
             lowerName.includes('communication') || lowerName.includes('teamwork') ||
             lowerName.includes('ownership') || lowerName.includes('integrity') ||
-            lowerName.includes('workplace') || lowerName.includes('ethics')) {
+            lowerName.includes('workplace') || lowerName.includes('ethics') ||
+            lowerName.includes('professional') || lowerName.includes('conduct')) {
           workplaceSubCategories.push(cat);
-        } else {
+        } else if (lowerName.includes('problem') || lowerName.includes('logical') ||
+                   lowerName.includes('numerical') || lowerName.includes('measurement') ||
+                   lowerName.includes('engineering') || lowerName.includes('learning') ||
+                   lowerName.includes('cognitive') || lowerName.includes('analytical')) {
           intellectualSubCategories.push(cat);
+        } else {
+          // Default: put it in the category it most likely belongs to
+          // If it has a dimension field, use that
+          if (cat.dimension === 'workplace') {
+            workplaceSubCategories.push(cat);
+          } else if (cat.dimension === 'intellectual') {
+            intellectualSubCategories.push(cat);
+          } else {
+            // Unknown - put in both? No, just put in intellectual
+            intellectualSubCategories.push(cat);
+          }
         }
       }
     });
@@ -90,77 +181,83 @@ export default function NationalServiceReport({ report, onBack }) {
 
   console.log('[Report] Workplace sub-categories:', workplaceSubCategories.length);
   console.log('[Report] Intellectual sub-categories:', intellectualSubCategories.length);
+  console.log('[Report] Workplace score:', workplace_readiness);
+  console.log('[Report] Intellectual score:', intellectual_capability);
 
   // ============================================================
   // RENDER HELPERS
   // ============================================================
   const getCategoryComment = (percentage) => {
-    if (percentage >= 80) return { text: 'Exceptional', color: '#2e7d32' };
-    if (percentage >= 70) return { text: 'Strong', color: '#2e7d32' };
+    if (percentage >= 90) return { text: 'Exceptional', color: '#2e7d32' };
+    if (percentage >= 80) return { text: 'Strong', color: '#2e7d32' };
+    if (percentage >= 70) return { text: 'Competent', color: '#1565c0' };
     if (percentage >= 60) return { text: 'Adequate', color: '#f57c00' };
-    if (percentage >= 50) return { text: 'Development Area', color: '#ea580c' };
+    if (percentage >= 50) return { text: 'Development Required', color: '#ea580c' };
     return { text: 'Critical Gap', color: '#c62828' };
   };
 
   const getRecommendationColor = (level) => {
-    switch (level) {
-      case 'Highly Recommended': return '#2e7d32';
-      case 'Recommended': return '#1565c0';
-      case 'Reserve Pool': return '#f57c00';
-      case 'Not Recommended': return '#c62828';
-      default: return '#333';
-    }
+    if (!level) return '#333';
+    const l = level.toLowerCase();
+    if (l.includes('highly')) return '#2e7d32';
+    if (l.includes('recommend')) return '#1565c0';
+    if (l.includes('reserve')) return '#f57c00';
+    if (l.includes('not')) return '#c62828';
+    return '#333';
   };
 
   const getRecommendationBg = (level) => {
-    switch (level) {
-      case 'Highly Recommended': return '#e8f5e9';
-      case 'Recommended': return '#e3f2fd';
-      case 'Reserve Pool': return '#fff3e0';
-      case 'Not Recommended': return '#ffebee';
-      default: return '#f5f5f5';
-    }
+    if (!level) return '#f5f5f5';
+    const l = level.toLowerCase();
+    if (l.includes('highly')) return '#e8f5e9';
+    if (l.includes('recommend')) return '#e3f2fd';
+    if (l.includes('reserve')) return '#fff3e0';
+    if (l.includes('not')) return '#ffebee';
+    return '#f5f5f5';
   };
 
   const getBandColor = (band) => {
     if (!band) return '#333';
     const b = band.toString().toLowerCase();
-    if (b === 'excellent' || b === 'exceptional') return '#2e7d32';
-    if (b === 'ready' || b === 'high potential') return '#1565c0';
+    if (b === 'excellent' || b === 'exceptional' || b === 'ready') return '#2e7d32';
+    if (b === 'strong' || b === 'high potential') return '#1565c0';
     if (b === 'developing' || b === 'moderate potential') return '#f57c00';
     if (b === 'needs improvement' || b === 'development required') return '#c62828';
     return '#333';
   };
 
   const getRecommendationNarrative = (level) => {
-    switch (level) {
-      case 'Highly Recommended':
-        return 'This candidate demonstrates exceptional workplace readiness and intellectual capability. They are strongly recommended for immediate placement.';
-      case 'Recommended':
-        return 'This candidate demonstrates strong workplace readiness and intellectual capability. They are recommended for placement with standard supervision.';
-      case 'Reserve Pool':
-        return 'This candidate demonstrates adequate workplace readiness and intellectual capability. They may be considered for the reserve pool.';
-      case 'Not Recommended':
-        return 'This candidate does not currently meet the required thresholds. Targeted development in key areas is recommended.';
-      default:
-        return 'Assessment results indicate that the candidate\'s profile should be reviewed by the hiring team.';
+    if (!level) return 'Assessment results indicate that the candidate\'s profile should be reviewed by the hiring team.';
+    const l = level.toLowerCase();
+    if (l.includes('highly')) {
+      return 'This candidate demonstrates exceptional workplace readiness and intellectual capability. They are strongly recommended for immediate placement.';
     }
+    if (l.includes('recommend')) {
+      return 'This candidate demonstrates strong workplace readiness and intellectual capability. They are recommended for placement with standard supervision.';
+    }
+    if (l.includes('reserve')) {
+      return 'This candidate demonstrates adequate workplace readiness and intellectual capability. They may be considered for the reserve pool.';
+    }
+    if (l.includes('not')) {
+      return 'This candidate does not currently meet the required thresholds. Targeted development in key areas is recommended.';
+    }
+    return 'Assessment results indicate that the candidate\'s profile should be reviewed by the hiring team.';
   };
 
   const recommendationColor = getRecommendationColor(recommendationLevel);
   const recommendationBg = getRecommendationBg(recommendationLevel);
   const recommendationNarrative = getRecommendationNarrative(recommendationLevel);
 
-  const candidateFullName = candidateInfo?.fullName || candidateName || 'Candidate';
-  const candidateUniversity = candidateInfo?.university || university || 'N/A';
-  const candidateProgramme = candidateInfo?.programme || programme || 'N/A';
-  const assessmentDate = candidateInfo?.assessmentDate || (completed_at ? new Date(completed_at).toLocaleDateString() : 'N/A');
-  const graduationYear = candidateInfo?.graduationYear || 'N/A';
-  const preferredDepartment = candidateInfo?.preferredDepartment || 'Not Specified';
+  // Calculate overall score
+  const overallScore = workplace_readiness > 0 || intellectual_capability > 0 
+    ? Math.round((Number(workplace_readiness) + Number(intellectual_capability)) / 2) 
+    : Number(percentage_score);
 
+  // Sort categories
   const sortedWorkplace = [...workplaceSubCategories].sort((a, b) => (b.percentage || 0) - (a.percentage || 0));
   const sortedIntellectual = [...intellectualSubCategories].sort((a, b) => (b.percentage || 0) - (a.percentage || 0));
 
+  // Get top strengths and development areas
   const allSubCategories = [...workplaceSubCategories, ...intellectualSubCategories];
   const topStrengths = [...allSubCategories]
     .filter(c => (c.percentage || 0) > 0)
@@ -171,13 +268,17 @@ export default function NationalServiceReport({ report, onBack }) {
     .filter(c => (c.percentage || 0) > 0 && (c.percentage || 0) < 60)
     .sort((a, b) => (a.percentage || 0) - (b.percentage || 0));
 
+  // Get suggested placements
   const getSuggestedPlacements = () => {
     if (report.suggestedPlacement && report.suggestedPlacement.length > 0) {
       return report.suggestedPlacement;
     }
+    if (reportData.suggestedDepartments && reportData.suggestedDepartments.length > 0) {
+      return reportData.suggestedDepartments;
+    }
     
-    const workplace = workplaceScore || 0;
-    const intellectual = intellectualScore || 0;
+    const workplace = Number(workplace_readiness) || 0;
+    const intellectual = Number(intellectual_capability) || 0;
     const overall = (workplace + intellectual) / 2;
     
     if (workplace >= 85 && intellectual >= 85) {
@@ -208,9 +309,9 @@ export default function NationalServiceReport({ report, onBack }) {
         <h1 style={styles.title}>National Service Recruitment Assessment</h1>
         <div style={styles.candidateInfo}>
           <div style={styles.candidateInfoGrid}>
-            <div><span style={styles.infoLabel}>Candidate:</span><span style={styles.infoValue}>{candidateFullName}</span></div>
-            <div><span style={styles.infoLabel}>University:</span><span style={styles.infoValue}>{candidateUniversity}</span></div>
-            <div><span style={styles.infoLabel}>Programme:</span><span style={styles.infoValue}>{candidateProgramme}</span></div>
+            <div><span style={styles.infoLabel}>Candidate:</span><span style={styles.infoValue}>{candidateName}</span></div>
+            <div><span style={styles.infoLabel}>University:</span><span style={styles.infoValue}>{university}</span></div>
+            <div><span style={styles.infoLabel}>Programme:</span><span style={styles.infoValue}>{programme}</span></div>
             <div><span style={styles.infoLabel}>Graduation Year:</span><span style={styles.infoValue}>{graduationYear}</span></div>
             <div><span style={styles.infoLabel}>Preferred Department:</span><span style={styles.infoValue}>{preferredDepartment}</span></div>
             <div><span style={styles.infoLabel}>Assessment Date:</span><span style={styles.infoValue}>{assessmentDate}</span></div>
@@ -222,9 +323,9 @@ export default function NationalServiceReport({ report, onBack }) {
       <div style={{ ...styles.banner, background: recommendationBg, border: `3px solid ${recommendationColor}` }}>
         <div style={styles.bannerContent}>
           <div style={{ ...styles.bannerIcon, color: recommendationColor }}>
-            {recommendationLevel === 'Highly Recommended' ? '★' :
-             recommendationLevel === 'Recommended' ? '✓' :
-             recommendationLevel === 'Reserve Pool' ? '●' : '⚠'}
+            {recommendationLevel.includes('Highly') ? '★' :
+             recommendationLevel.includes('Recommend') ? '✓' :
+             recommendationLevel.includes('Reserve') ? '●' : '⚠'}
           </div>
           <div>
             <div style={{ ...styles.bannerTitle, color: recommendationColor }}>{recommendationLevel}</div>
@@ -237,9 +338,9 @@ export default function NationalServiceReport({ report, onBack }) {
       <div style={styles.scoreGrid}>
         <div style={styles.scoreCard}>
           <div style={styles.scoreLabel}>Workplace Readiness</div>
-          <div style={styles.scoreValue}>{Math.round(workplaceScore)}%</div>
-          <div style={{ ...styles.scoreBand, color: getBandColor(executiveSummary?.workplaceBand) }}>
-            {executiveSummary?.workplaceBand || (workplaceScore >= 70 ? 'Ready' : workplaceScore >= 50 ? 'Developing' : 'Needs Improvement')}
+          <div style={styles.scoreValue}>{Math.round(workplace_readiness)}%</div>
+          <div style={{ ...styles.scoreBand, color: getBandColor(workplace_readiness >= 70 ? 'Ready' : workplace_readiness >= 50 ? 'Developing' : 'Needs Improvement') }}>
+            {workplace_readiness >= 70 ? 'Ready' : workplace_readiness >= 50 ? 'Developing' : 'Needs Improvement'}
           </div>
           <div style={styles.subCategoryCount}>
             {sortedWorkplace.length} sub-categories assessed
@@ -247,9 +348,9 @@ export default function NationalServiceReport({ report, onBack }) {
         </div>
         <div style={styles.scoreCard}>
           <div style={styles.scoreLabel}>Intellectual Capability</div>
-          <div style={styles.scoreValue}>{Math.round(intellectualScore)}%</div>
-          <div style={{ ...styles.scoreBand, color: getBandColor(executiveSummary?.intellectualBand) }}>
-            {executiveSummary?.intellectualBand || (intellectualScore >= 70 ? 'Ready' : intellectualScore >= 50 ? 'Developing' : 'Development Required')}
+          <div style={styles.scoreValue}>{Math.round(intellectual_capability)}%</div>
+          <div style={{ ...styles.scoreBand, color: getBandColor(intellectual_capability >= 70 ? 'Ready' : intellectual_capability >= 50 ? 'Developing' : 'Development Required') }}>
+            {intellectual_capability >= 70 ? 'Ready' : intellectual_capability >= 50 ? 'Developing' : 'Development Required'}
           </div>
           <div style={styles.subCategoryCount}>
             {sortedIntellectual.length} sub-categories assessed
@@ -268,7 +369,7 @@ export default function NationalServiceReport({ report, onBack }) {
       <div style={styles.section}>
         <div style={styles.sectionHeader}>
           <h2 style={styles.sectionTitle}>Workplace Readiness - Sub-Category Breakdown</h2>
-          <span style={styles.sectionScore}>{Math.round(workplaceScore)}%</span>
+          <span style={styles.sectionScore}>{Math.round(workplace_readiness)}%</span>
         </div>
         {sortedWorkplace.length > 0 ? (
           <div style={styles.categoryGrid}>
@@ -303,6 +404,9 @@ export default function NationalServiceReport({ report, onBack }) {
         ) : (
           <div style={styles.emptyState}>
             <p>No sub-category data available for Workplace Readiness.</p>
+            <p style={{ fontSize: '12px', color: '#94a3b8', marginTop: '8px' }}>
+              Category scores will appear here once available.
+            </p>
           </div>
         )}
       </div>
@@ -311,7 +415,7 @@ export default function NationalServiceReport({ report, onBack }) {
       <div style={styles.section}>
         <div style={styles.sectionHeader}>
           <h2 style={styles.sectionTitle}>Intellectual Capability - Sub-Category Breakdown</h2>
-          <span style={styles.sectionScore}>{Math.round(intellectualScore)}%</span>
+          <span style={styles.sectionScore}>{Math.round(intellectual_capability)}%</span>
         </div>
         {sortedIntellectual.length > 0 ? (
           <div style={styles.categoryGrid}>
@@ -346,6 +450,9 @@ export default function NationalServiceReport({ report, onBack }) {
         ) : (
           <div style={styles.emptyState}>
             <p>No sub-category data available for Intellectual Capability.</p>
+            <p style={{ fontSize: '12px', color: '#94a3b8', marginTop: '8px' }}>
+              Category scores will appear here once available.
+            </p>
           </div>
         )}
       </div>
@@ -426,11 +533,11 @@ export default function NationalServiceReport({ report, onBack }) {
         <h2 style={styles.sectionTitle}>Assessment Statistics</h2>
         <div style={styles.statsGrid}>
           <div style={styles.statCard}>
-            <div style={styles.statValue}>{Math.round(workplaceScore)}%</div>
+            <div style={styles.statValue}>{Math.round(workplace_readiness)}%</div>
             <div style={styles.statLabel}>Workplace Readiness</div>
           </div>
           <div style={styles.statCard}>
-            <div style={styles.statValue}>{Math.round(intellectualScore)}%</div>
+            <div style={styles.statValue}>{Math.round(intellectual_capability)}%</div>
             <div style={styles.statLabel}>Intellectual Capability</div>
           </div>
           <div style={styles.statCard}>
@@ -790,12 +897,6 @@ const styles = {
     fontSize: '14px', 
     fontWeight: '500', 
     color: '#1a202c' 
-  },
-  placementEmpty: { 
-    padding: '16px', 
-    background: '#fef3c7', 
-    borderRadius: '8px', 
-    color: '#92400e' 
   },
   statsGrid: { 
     display: 'grid', 
