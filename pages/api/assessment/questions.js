@@ -1,6 +1,59 @@
-// pages/api/assessment/questions.js - FIXED VERSION
+// pages/api/assessment/questions.js - RANDOMIZED CORRECT ANSWERS
 
 import { createClient } from "@supabase/supabase-js";
+
+// ============================================================
+// HELPER: Shuffle array using Fisher-Yates algorithm
+// ============================================================
+function shuffleArray(array) {
+  const shuffled = [...array];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
+}
+
+// ============================================================
+// HELPER: Randomize answers for a question
+// ============================================================
+function randomizeAnswers(question, assessmentTypeCode) {
+  // Only randomize for National Service assessments
+  if (assessmentTypeCode !== 'national_service') {
+    return question;
+  }
+
+  if (!question || !Array.isArray(question.answers) || question.answers.length === 0) {
+    return question;
+  }
+
+  // Find which answers are correct (score === 1)
+  const correctAnswers = question.answers.filter(a => a.score === 1);
+  const wrongAnswers = question.answers.filter(a => a.score !== 1);
+
+  // If no correct answers found, return original
+  if (correctAnswers.length === 0) {
+    return question;
+  }
+
+  // Store the IDs of correct answers
+  const correctAnswerIds = new Set(correctAnswers.map(a => a.id));
+
+  // Shuffle ALL answers (both correct and wrong)
+  const shuffledAnswers = shuffleArray(question.answers);
+
+  // Reset scores based on shuffled positions
+  const randomizedAnswers = shuffledAnswers.map(answer => ({
+    ...answer,
+    // If this answer was originally correct, keep it as correct
+    score: correctAnswerIds.has(answer.id) ? 1 : 0
+  }));
+
+  return {
+    ...question,
+    answers: randomizedAnswers
+  };
+}
 
 export default async function handler(req, res) {
   if (req.method !== "GET") {
@@ -8,7 +61,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { assessmentTypeId } = req.query;
+    const { assessmentTypeId, assessmentTypeCode } = req.query;
     if (!assessmentTypeId) {
       return res.status(400).json({ success: false, error: "Missing assessmentTypeId" });
     }
@@ -62,23 +115,30 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 2: Format the response
+    // STEP 2: Format the response with randomization for National Service
     // ============================================================
-    const formattedQuestions = questions.map((q) => ({
-      id: q.id,
-      question_text: q.question_text,
-      section: q.section || "General",
-      subsection: q.subsection || "",
-      display_order: q.display_order || 0,
-      answers: (q.unique_answers || []).map((a) => ({
-        id: a.id,
-        answer_text: a.answer_text,
-        score: a.score || 0,
-        display_order: a.display_order || 0
-      }))
-    }));
+    const formattedQuestions = questions.map((q) => {
+      const question = {
+        id: q.id,
+        question_text: q.question_text,
+        section: q.section || "General",
+        subsection: q.subsection || "",
+        display_order: q.display_order || 0,
+        answers: (q.unique_answers || []).map((a) => ({
+          id: a.id,
+          answer_text: a.answer_text,
+          score: a.score || 0,
+          display_order: a.display_order || 0
+        }))
+      };
+
+      // Randomize answers for National Service
+      return randomizeAnswers(question, assessmentTypeCode);
+    });
 
     console.log(`[API] Found ${formattedQuestions.length} questions with answers`);
+    console.log(`[API] Assessment type code: ${assessmentTypeCode || 'unknown'}`);
+    console.log(`[API] Randomized: ${assessmentTypeCode === 'national_service' ? 'YES' : 'NO'}`);
 
     return res.status(200).json({
       success: true,
