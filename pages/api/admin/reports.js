@@ -1,4 +1,4 @@
-// pages/api/admin/reports.js - FIXED to properly read category data
+// pages/api/admin/reports.js - FIXED VERSION
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -41,14 +41,36 @@ export default async function handler(req, res) {
     });
 
     // ============================================================
-    // STEP 1: Get all assessment results
+    // STEP 1: Get all assessment results with JOINs
     // ============================================================
     const { data: results, error: resultsError } = await serviceClient
       .from('assessment_results')
-      .select('*')
+      .select(`
+        *,
+        candidate_profiles!inner (
+          id,
+          full_name,
+          email,
+          university,
+          programme,
+          preferred_department,
+          graduation_year
+        ),
+        assessments!inner (
+          id,
+          title,
+          assessment_type_id,
+          assessment_types!inner (
+            id,
+            code,
+            name
+          )
+        )
+      `)
       .order('completed_at', { ascending: false });
 
     if (resultsError) {
+      console.error('Results error:', resultsError);
       return res.status(500).json({
         success: false,
         error: `Failed to load results: ${resultsError.message}`
@@ -64,108 +86,33 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 2: Get candidate profiles
-    // ============================================================
-    const userIds = results.map(r => r.user_id).filter(Boolean);
-    let candidateMap = {};
-
-    if (userIds.length > 0) {
-      const { data: candidates, error: candidatesError } = await serviceClient
-        .from('candidate_profiles')
-        .select('id, full_name, email, university, programme, preferred_department, graduation_year')
-        .in('id', userIds);
-
-      if (!candidatesError && candidates) {
-        candidates.forEach(c => {
-          candidateMap[c.id] = c;
-        });
-      }
-    }
-
-    // ============================================================
-    // STEP 3: Get assessment details
-    // ============================================================
-    const assessmentIds = results.map(r => r.assessment_id).filter(Boolean);
-    let assessmentMap = {};
-
-    if (assessmentIds.length > 0) {
-      const { data: assessments, error: assessmentsError } = await serviceClient
-        .from('assessments')
-        .select('id, title, assessment_type_id')
-        .in('id', assessmentIds);
-
-      if (!assessmentsError && assessments) {
-        assessments.forEach(a => {
-          assessmentMap[a.id] = a;
-        });
-      }
-    }
-
-    // ============================================================
-    // STEP 4: Get assessment types
-    // ============================================================
-    const typeIds = Object.values(assessmentMap).map(a => a.assessment_type_id).filter(Boolean);
-    let typeMap = {};
-
-    if (typeIds.length > 0) {
-      const { data: types, error: typesError } = await serviceClient
-        .from('assessment_types')
-        .select('id, code, name')
-        .in('id', typeIds);
-
-      if (!typesError && types) {
-        types.forEach(t => {
-          typeMap[t.id] = t;
-        });
-      }
-    }
-
-    // ============================================================
-    // STEP 5: Build enriched reports - READ DATA FROM DATABASE
+    // STEP 2: Build enriched reports with data from JOINs
     // ============================================================
     const enrichedReports = results.map((result) => {
-      const candidate = candidateMap[result.user_id];
-      const assessment = assessmentMap[result.assessment_id] || null;
-      const assessmentType = assessment ? typeMap[assessment.assessment_type_id] : null;
-      
+      // Extract data from the joined tables
+      const profile = result.candidate_profiles || {};
+      const assessment = result.assessments || {};
+      const assessmentType = assessment.assessment_types || {};
+
       const isNationalService = 
         result.assessment_id === NATIONAL_SERVICE_ASSESSMENT_ID ||
         assessmentType?.code === 'national_service' ||
-        assessmentType?.name === 'National Service Recruitment Assessment' ||
         assessment?.title === 'National Service Recruitment Assessment';
 
-      // ============================================================
-      // READ DATA DIRECTLY FROM THE RESULT OBJECT
-      // ============================================================
-      
-      // Get category_scores - this is the key data we need
-      let categoryScores = [];
-      
-      // Try result.category_scores first (direct column)
-      if (result.category_scores && Array.isArray(result.category_scores) && result.category_scores.length > 0) {
-        categoryScores = result.category_scores;
-        console.log(`[Report] Using category_scores from result: ${categoryScores.length} categories`);
-      } 
-      // Try result.report_data.categoryBreakdown
-      else if (result.report_data && result.report_data.categoryBreakdown) {
-        categoryScores = result.report_data.categoryBreakdown;
-        console.log(`[Report] Using categoryBreakdown from report_data: ${categoryScores.length} categories`);
-      }
-      // Try result.report_data.category_scores
-      else if (result.report_data && result.report_data.category_scores) {
-        categoryScores = result.report_data.category_scores;
-        console.log(`[Report] Using category_scores from report_data: ${categoryScores.length} categories`);
-      }
-      // Try result.report_data.categories
-      else if (result.report_data && result.report_data.categories) {
-        categoryScores = result.report_data.categories;
-        console.log(`[Report] Using categories from report_data: ${categoryScores.length} categories`);
-      }
-
-      // Get scores - read directly from database
+      // Get scores
       const workplaceReadiness = Number(result.workplace_readiness) || 0;
       const intellectualCapability = Number(result.intellectual_capability) || 0;
       const overallScore = Number(result.percentage_score) || 0;
+
+      // Get category scores
+      let categoryScores = [];
+      if (result.category_scores && Array.isArray(result.category_scores) && result.category_scores.length > 0) {
+        categoryScores = result.category_scores;
+      } else if (result.report_data && result.report_data.categoryBreakdown) {
+        categoryScores = result.report_data.categoryBreakdown;
+      } else if (result.report_data && result.report_data.category_scores) {
+        categoryScores = result.report_data.category_scores;
+      }
 
       // Get recommendation
       let recommendation = result.recommendation || 'Not Recommended';
@@ -173,30 +120,35 @@ export default async function handler(req, res) {
         recommendation = getRecommendation(workplaceReadiness, intellectualCapability);
       }
 
-      // Build the report object with ALL data
-      const reportData = {
-        // Candidate info
-        candidateName: candidate?.full_name || 'Unknown',
-        candidateEmail: candidate?.email || '',
-        university: candidate?.university || '',
-        programme: candidate?.programme || '',
-        graduationYear: candidate?.graduation_year || '',
-        preferredDepartment: candidate?.preferred_department || '',
+      // Build the report object with ALL data from the JOINs
+      return {
+        id: result.id,
+        user_id: result.user_id,
+        assessment_id: result.assessment_id,
+        session_id: result.session_id,
         
-        // Assessment info
-        assessmentTitle: assessment?.title || 'Unknown',
-        assessmentTypeCode: assessmentType?.code || null,
-        assessmentTypeName: assessmentType?.name || 'General',
+        // Candidate info - from joined profile
+        candidate_name: profile?.full_name || 'Unknown',
+        candidate_email: profile?.email || '',
+        university: profile?.university || '',
+        programme: profile?.programme || '',
+        graduation_year: profile?.graduation_year || '',
+        preferred_department: profile?.preferred_department || '',
+        
+        // Assessment info - from joined assessment
+        assessment_title: assessment?.title || 'Unknown',
+        assessment_type_code: assessmentType?.code || null,
+        assessment_type_name: assessmentType?.name || 'General',
         isNationalService: isNationalService,
         typeLabel: isNationalService ? 'National Service' : 'Stratavax',
         
-        // Scores - READ FROM DATABASE
+        // Scores
         workplace_readiness: workplaceReadiness,
         intellectual_capability: intellectualCapability,
         percentage_score: overallScore,
         overallScore: overallScore,
         
-        // Category scores - READ FROM DATABASE
+        // Category scores
         category_scores: categoryScores,
         categoryScores: categoryScores,
         categoryBreakdown: categoryScores,
@@ -209,6 +161,9 @@ export default async function handler(req, res) {
         completed_at: result.completed_at,
         total_questions: result.total_questions || 0,
         answered_questions: result.answered_questions || 0,
+        correct_answers: result.correct_answers || 0,
+        is_valid: result.is_valid || false,
+        is_auto_submitted: result.is_auto_submitted || false,
         
         // Dimensions for the report component
         dimensions: {
@@ -226,21 +181,14 @@ export default async function handler(req, res) {
         
         // Candidate info for the report component
         candidateInfo: {
-          fullName: candidate?.full_name || 'Unknown',
-          university: candidate?.university || '',
-          programme: candidate?.programme || '',
-          graduationYear: candidate?.graduation_year || '',
-          preferredDepartment: candidate?.preferred_department || '',
+          fullName: profile?.full_name || 'Unknown',
+          university: profile?.university || '',
+          programme: profile?.programme || '',
+          graduationYear: profile?.graduation_year || '',
+          preferredDepartment: profile?.preferred_department || '',
           assessmentDate: result.completed_at ? new Date(result.completed_at).toLocaleDateString() : 'N/A'
         }
       };
-
-      // If this is National Service and we have category scores, also add the full report_data
-      if (isNationalService && result.report_data) {
-        reportData.fullReport = result.report_data;
-      }
-
-      return reportData;
     });
 
     // Count National Service reports
@@ -248,14 +196,13 @@ export default async function handler(req, res) {
     const nationalServiceCount = nationalServiceReports.length;
     const stratavaxCount = enrichedReports.length - nationalServiceCount;
 
-    // Log what we're returning
     console.log(`[Report API] Returning ${enrichedReports.length} reports`);
     console.log(`[Report API] National Service: ${nationalServiceCount}, Stratavax: ${stratavaxCount}`);
     
-    // Log sample category data for debugging
-    const sampleNS = enrichedReports.find(r => r.isNationalService && r.category_scores?.length > 0);
-    if (sampleNS) {
-      console.log(`[Report API] Sample NS report: ${sampleNS.candidateName}, category_scores: ${sampleNS.category_scores.length}`);
+    // Log sample data for debugging
+    const sample = enrichedReports[0];
+    if (sample) {
+      console.log(`[Report API] Sample: ${sample.candidate_name} - ${sample.assessment_title} - ${sample.percentage_score}%`);
     }
 
     return res.status(200).json({
