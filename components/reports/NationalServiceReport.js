@@ -5,7 +5,6 @@ import React, { useEffect } from 'react';
 export default function NationalServiceReport({ report, onBack }) {
   useEffect(() => {
     console.log('[NationalServiceReport] Report received:', report);
-    console.log('[NationalServiceReport] category_scores:', report?.category_scores);
   }, [report]);
 
   if (!report) {
@@ -13,7 +12,7 @@ export default function NationalServiceReport({ report, onBack }) {
   }
 
   // ============================================================
-  // SAFE STRING CONVERSION HELPER
+  // SAFE STRING CONVERSION
   // ============================================================
   const safeString = (value) => {
     if (value === null || value === undefined) return '';
@@ -29,11 +28,10 @@ export default function NationalServiceReport({ report, onBack }) {
   };
 
   // ============================================================
-  // Extract data from multiple possible locations
+  // EXTRACT DATA
   // ============================================================
   const reportData = report.report_data || report;
   
-  // Candidate info
   const candidateInfo = reportData.candidateInfo || report.candidateInfo || {};
   const candidateName = reportData.candidateName || candidateInfo.fullName || report.candidateName || 'Candidate';
   const university = reportData.university || candidateInfo.university || report.university || 'N/A';
@@ -41,57 +39,13 @@ export default function NationalServiceReport({ report, onBack }) {
   const graduationYear = reportData.graduationYear || candidateInfo.graduationYear || report.graduationYear || 'N/A';
   const preferredDepartment = reportData.preferredDepartment || candidateInfo.preferredDepartment || report.preferredDepartment || 'Not Specified';
   
-  // Scores
-  const workplace_readiness = 
-    reportData.workplace_readiness !== undefined ? reportData.workplace_readiness :
-    reportData.workplaceReadiness !== undefined ? reportData.workplaceReadiness :
-    report.workplace_readiness !== undefined ? report.workplace_readiness :
-    report.dimensions?.workplaceReadiness || 0;
-  
-  const intellectual_capability = 
-    reportData.intellectual_capability !== undefined ? reportData.intellectual_capability :
-    reportData.intellectualCapability !== undefined ? reportData.intellectualCapability :
-    report.intellectual_capability !== undefined ? report.intellectual_capability :
-    report.dimensions?.intellectualCapability || 0;
-  
-  const percentage_score = 
-    reportData.percentage_score !== undefined ? reportData.percentage_score :
-    reportData.overallScore !== undefined ? reportData.overallScore :
-    report.percentage_score !== undefined ? report.percentage_score :
-    report.overallScore || 0;
-
-  // Recommendation
-  let recommendationLevel = 'Not Recommended';
-  
-  if (reportData.recommendation) {
-    recommendationLevel = safeString(reportData.recommendation);
-  } else if (report.recommendation) {
-    recommendationLevel = safeString(report.recommendation);
-  } else if (reportData.recommendationLevel) {
-    recommendationLevel = safeString(reportData.recommendationLevel);
-  } else if (report.recommendationLevel) {
-    recommendationLevel = safeString(report.recommendationLevel);
-  } else {
-    // Calculate based on scores
-    const workplace = Number(workplace_readiness) || 0;
-    const intellectual = Number(intellectual_capability) || 0;
-    if (workplace >= 85 && intellectual >= 85) {
-      recommendationLevel = 'Highly Recommended';
-    } else if (workplace >= 75 && intellectual >= 75) {
-      recommendationLevel = 'Recommended';
-    } else if (workplace >= 65 && intellectual >= 65) {
-      recommendationLevel = 'Reserve Pool';
-    } else {
-      recommendationLevel = 'Not Recommended';
-    }
-  }
-
-  // Completion date
   const completed_at = reportData.completed_at || report.completed_at || null;
   const assessmentDate = candidateInfo.assessmentDate || 
     (completed_at ? new Date(completed_at).toLocaleDateString() : 'N/A');
 
-  // Category scores
+  // ============================================================
+  // EXTRACT CATEGORY SCORES
+  // ============================================================
   let categoryScores = [];
   
   if (reportData.category_scores && Array.isArray(reportData.category_scores) && reportData.category_scores.length > 0) {
@@ -102,15 +56,13 @@ export default function NationalServiceReport({ report, onBack }) {
     categoryScores = reportData.categoryBreakdown;
   } else if (report.categoryBreakdown && Array.isArray(report.categoryBreakdown) && report.categoryBreakdown.length > 0) {
     categoryScores = report.categoryBreakdown;
-  } else if (reportData.categoryScores && Array.isArray(reportData.categoryScores) && reportData.categoryScores.length > 0) {
-    categoryScores = reportData.categoryScores;
-  } else if (report.categoryScores && Array.isArray(report.categoryScores) && report.categoryScores.length > 0) {
-    categoryScores = report.categoryScores;
   }
 
   console.log('[Report] category_scores count:', categoryScores.length);
 
-  // Split into Workplace and Intellectual
+  // ============================================================
+  // SPLIT INTO WORKPLACE AND INTELLECTUAL
+  // ============================================================
   const workplaceSubCategories = [];
   const intellectualSubCategories = [];
 
@@ -168,6 +120,53 @@ export default function NationalServiceReport({ report, onBack }) {
 
   console.log('[Report] Workplace sub-categories:', workplaceSubCategories.length);
   console.log('[Report] Intellectual sub-categories:', intellectualSubCategories.length);
+
+  // ============================================================
+  // FIX: CALCULATE AVERAGES FROM SUB-CATEGORIES
+  // ============================================================
+  const workplaceAvg = workplaceSubCategories.length > 0 
+    ? Math.round(workplaceSubCategories.reduce((sum, cat) => sum + (cat.percentage || 0), 0) / workplaceSubCategories.length)
+    : 0;
+
+  const intellectualAvg = intellectualSubCategories.length > 0 
+    ? Math.round(intellectualSubCategories.reduce((sum, cat) => sum + (cat.percentage || 0), 0) / intellectualSubCategories.length)
+    : 0;
+
+  const allCategories = [...workplaceSubCategories, ...intellectualSubCategories];
+  const overallAvg = allCategories.length > 0 
+    ? Math.round(allCategories.reduce((sum, cat) => sum + (cat.percentage || 0), 0) / allCategories.length)
+    : 0;
+
+  // Use calculated values
+  const displayWorkplace = workplaceAvg;
+  const displayIntellectual = intellectualAvg;
+  const displayOverall = overallAvg;
+
+  console.log('[Report] Calculated Workplace:', displayWorkplace);
+  console.log('[Report] Calculated Intellectual:', displayIntellectual);
+  console.log('[Report] Calculated Overall:', displayOverall);
+
+  // ============================================================
+  // RECOMMENDATION
+  // ============================================================
+  let recommendationLevel = 'Not Recommended';
+  
+  if (reportData.recommendation) {
+    recommendationLevel = safeString(reportData.recommendation);
+  } else if (report.recommendation) {
+    recommendationLevel = safeString(report.recommendation);
+  } else {
+    // Calculate based on scores
+    if (displayWorkplace >= 85 && displayIntellectual >= 85) {
+      recommendationLevel = 'Highly Recommended';
+    } else if (displayWorkplace >= 75 && displayIntellectual >= 75) {
+      recommendationLevel = 'Recommended';
+    } else if (displayWorkplace >= 65 && displayIntellectual >= 65) {
+      recommendationLevel = 'Reserve Pool';
+    } else {
+      recommendationLevel = 'Not Recommended';
+    }
+  }
 
   // ============================================================
   // RENDER HELPERS
@@ -229,11 +228,6 @@ export default function NationalServiceReport({ report, onBack }) {
   const recommendationBg = getRecommendationBg(recommendationLevel);
   const recommendationNarrative = getRecommendationNarrative(recommendationLevel);
 
-  // Calculate overall score
-  const overallScore = workplace_readiness > 0 || intellectual_capability > 0 
-    ? Math.round((Number(workplace_readiness) + Number(intellectual_capability)) / 2) 
-    : Number(percentage_score);
-
   // Sort categories
   const sortedWorkplace = [...workplaceSubCategories].sort((a, b) => (b.percentage || 0) - (a.percentage || 0));
   const sortedIntellectual = [...intellectualSubCategories].sort((a, b) => (b.percentage || 0) - (a.percentage || 0));
@@ -258,8 +252,8 @@ export default function NationalServiceReport({ report, onBack }) {
       return reportData.suggestedDepartments;
     }
     
-    const workplace = Number(workplace_readiness) || 0;
-    const intellectual = Number(intellectual_capability) || 0;
+    const workplace = displayWorkplace;
+    const intellectual = displayIntellectual;
     const overall = (workplace + intellectual) / 2;
     
     if (workplace >= 85 && intellectual >= 85) {
@@ -318,13 +312,13 @@ export default function NationalServiceReport({ report, onBack }) {
         </div>
       </div>
 
-      {/* Score Cards */}
+      {/* Score Cards - FIXED: Display calculated averages */}
       <div style={styles.scoreGrid}>
         <div style={styles.scoreCard}>
           <div style={styles.scoreLabel}>Workplace Readiness</div>
-          <div style={styles.scoreValue}>{Math.round(workplace_readiness)}%</div>
-          <div style={{ ...styles.scoreBand, color: getBandColor(workplace_readiness >= 70 ? 'Ready' : workplace_readiness >= 50 ? 'Developing' : 'Needs Improvement') }}>
-            {workplace_readiness >= 70 ? 'Ready' : workplace_readiness >= 50 ? 'Developing' : 'Needs Improvement'}
+          <div style={styles.scoreValue}>{displayWorkplace}%</div>
+          <div style={{ ...styles.scoreBand, color: displayWorkplace >= 70 ? '#2e7d32' : displayWorkplace >= 50 ? '#f57c00' : '#c62828' }}>
+            {displayWorkplace >= 70 ? 'Ready' : displayWorkplace >= 50 ? 'Developing' : 'Needs Improvement'}
           </div>
           <div style={styles.subCategoryCount}>
             {sortedWorkplace.length} sub-categories assessed
@@ -332,9 +326,9 @@ export default function NationalServiceReport({ report, onBack }) {
         </div>
         <div style={styles.scoreCard}>
           <div style={styles.scoreLabel}>Intellectual Capability</div>
-          <div style={styles.scoreValue}>{Math.round(intellectual_capability)}%</div>
-          <div style={{ ...styles.scoreBand, color: getBandColor(intellectual_capability >= 70 ? 'Ready' : intellectual_capability >= 50 ? 'Developing' : 'Development Required') }}>
-            {intellectual_capability >= 70 ? 'Ready' : intellectual_capability >= 50 ? 'Developing' : 'Development Required'}
+          <div style={styles.scoreValue}>{displayIntellectual}%</div>
+          <div style={{ ...styles.scoreBand, color: displayIntellectual >= 70 ? '#2e7d32' : displayIntellectual >= 50 ? '#f57c00' : '#c62828' }}>
+            {displayIntellectual >= 70 ? 'Ready' : displayIntellectual >= 50 ? 'Developing' : 'Development Required'}
           </div>
           <div style={styles.subCategoryCount}>
             {sortedIntellectual.length} sub-categories assessed
@@ -342,9 +336,9 @@ export default function NationalServiceReport({ report, onBack }) {
         </div>
         <div style={styles.scoreCard}>
           <div style={styles.scoreLabel}>Overall Score</div>
-          <div style={styles.scoreValue}>{Math.round(overallScore)}%</div>
-          <div style={{ ...styles.scoreBand, color: overallScore >= 70 ? '#2e7d32' : overallScore >= 50 ? '#f57c00' : '#c62828' }}>
-            {overallScore >= 70 ? 'Recommended' : overallScore >= 50 ? 'Conditional' : 'Not Recommended'}
+          <div style={styles.scoreValue}>{displayOverall}%</div>
+          <div style={{ ...styles.scoreBand, color: displayOverall >= 70 ? '#2e7d32' : displayOverall >= 50 ? '#f57c00' : '#c62828' }}>
+            {displayOverall >= 70 ? 'Recommended' : displayOverall >= 50 ? 'Conditional' : 'Not Recommended'}
           </div>
         </div>
       </div>
@@ -353,7 +347,7 @@ export default function NationalServiceReport({ report, onBack }) {
       <div style={styles.section}>
         <div style={styles.sectionHeader}>
           <h2 style={styles.sectionTitle}>Workplace Readiness - Sub-Category Breakdown</h2>
-          <span style={styles.sectionScore}>{Math.round(workplace_readiness)}%</span>
+          <span style={styles.sectionScore}>{displayWorkplace}%</span>
         </div>
         {sortedWorkplace.length > 0 ? (
           <div style={styles.categoryGrid}>
@@ -396,7 +390,7 @@ export default function NationalServiceReport({ report, onBack }) {
       <div style={styles.section}>
         <div style={styles.sectionHeader}>
           <h2 style={styles.sectionTitle}>Intellectual Capability - Sub-Category Breakdown</h2>
-          <span style={styles.sectionScore}>{Math.round(intellectual_capability)}%</span>
+          <span style={styles.sectionScore}>{displayIntellectual}%</span>
         </div>
         {sortedIntellectual.length > 0 ? (
           <div style={styles.categoryGrid}>
@@ -511,15 +505,15 @@ export default function NationalServiceReport({ report, onBack }) {
         <h2 style={styles.sectionTitle}>Assessment Statistics</h2>
         <div style={styles.statsGrid}>
           <div style={styles.statCard}>
-            <div style={styles.statValue}>{Math.round(workplace_readiness)}%</div>
+            <div style={styles.statValue}>{displayWorkplace}%</div>
             <div style={styles.statLabel}>Workplace Readiness</div>
           </div>
           <div style={styles.statCard}>
-            <div style={styles.statValue}>{Math.round(intellectual_capability)}%</div>
+            <div style={styles.statValue}>{displayIntellectual}%</div>
             <div style={styles.statLabel}>Intellectual Capability</div>
           </div>
           <div style={styles.statCard}>
-            <div style={styles.statValue}>{Math.round(overallScore)}%</div>
+            <div style={styles.statValue}>{displayOverall}%</div>
             <div style={styles.statLabel}>Overall Score</div>
           </div>
           <div style={styles.statCard}>
@@ -539,7 +533,7 @@ export default function NationalServiceReport({ report, onBack }) {
 }
 
 // ============================================================
-// STYLES - MUST BE DEFINED HERE
+// STYLES
 // ============================================================
 const styles = {
   container: { 
