@@ -1,4 +1,4 @@
-// pages/assessment/[id].js - COMPLETE WORKING VERSION WITH ALL FIXES
+// pages/assessment/[id].js - COMPLETE WORKING VERSION WITH TIMER PERSISTENCE
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
@@ -426,6 +426,18 @@ function AssessmentContent() {
           sessionIdRef.current = sessionData.id;
         }
 
+        // Restore timer from localStorage after session is set
+        if (sessionData && sessionData.id) {
+          const savedTimer = localStorage.getItem(`timer_${sessionData.id}`);
+          if (savedTimer) {
+            const elapsed = parseInt(savedTimer, 10);
+            if (elapsed > 0 && elapsed < durationSeconds) {
+              setElapsedSeconds(elapsed);
+              console.log(`[Timer] Restored: ${elapsed}s from localStorage`);
+            }
+          }
+        }
+
         if (sessionData && sessionData.id) {
           const responses = await getSessionResponses(sessionData.id);
           const restoredAnswers = {};
@@ -472,12 +484,20 @@ function AssessmentContent() {
     if (assessmentId) init();
   }, [assessmentId, router]);
 
+  // ============================================================
+  // TIMER EFFECT - Main timer with localStorage persistence
+  // ============================================================
   useEffect(() => {
     if (loading || alreadySubmitted || accessDenied || !session || isAutoSubmitting || questions.length === 0 || isTimeExpired) return;
     
     const timer = setInterval(() => {
       setElapsedSeconds((previous) => {
         const next = previous + 1;
+        
+        // Save to localStorage on every tick
+        if (sessionIdRef.current) {
+          localStorage.setItem(`timer_${sessionIdRef.current}`, String(next));
+        }
         
         if (timeLimitSeconds > 0 && next >= timeLimitSeconds) {
           setIsTimeExpired(true);
@@ -491,8 +511,21 @@ function AssessmentContent() {
     }, 1000);
     
     return () => clearInterval(timer);
-  }, [loading, alreadySubmitted, accessDenied, session, isAutoSubmitting, timeLimitSeconds, user, assessmentId, currentIndex, questions, isTimeExpired]);
+  }, [loading, alreadySubmitted, accessDenied, session, isAutoSubmitting, timeLimitSeconds, isTimeExpired]);
 
+  // ============================================================
+  // TIMER CLEANUP - Remove from localStorage when done
+  // ============================================================
+  useEffect(() => {
+    if ((alreadySubmitted || isTimeExpired) && sessionIdRef.current) {
+      localStorage.removeItem(`timer_${sessionIdRef.current}`);
+      console.log(`[Timer] Cleared localStorage for session ${sessionIdRef.current}`);
+    }
+  }, [alreadySubmitted, isTimeExpired, sessionIdRef.current]);
+
+  // ============================================================
+  // ANTI-CHEAT EFFECT
+  // ============================================================
   useEffect(() => {
     if (loading || alreadySubmitted || accessDenied || !session || isTimeExpired) return;
 
