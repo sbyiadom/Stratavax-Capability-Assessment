@@ -9,7 +9,6 @@ export default function AssessmentExpiration() {
   const [message, setMessage] = useState(null);
   const [currentExpiration, setCurrentExpiration] = useState(null);
 
-  // Fetch current expiration date
   useEffect(() => {
     fetchCurrentExpiration();
   }, []);
