@@ -1,10 +1,11 @@
-// pages/admin/index.js - FIXED VERSION
+// pages/admin/index.js - COMPLETE FIXED VERSION WITH EXPIRATION SETTING
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import AppLayout from "../../components/AppLayout";
 import { supabase } from "../../supabase/client";
+import AssessmentExpiration from "../../components/admin/AssessmentExpiration";
 
 function toNumber(value, fallback = 0) {
   const numberValue = Number(value);
@@ -83,10 +84,8 @@ export default function AdminDashboard() {
       const userId = activeSession.user.id;
       const metadataRole = activeSession.user.user_metadata?.role || null;
 
-      // Check if user is admin (either in supervisor_profiles or user_metadata)
       let isAdminUser = false;
 
-      // First check supervisor_profiles
       const { data: profile, error: profileError } = await supabase
         .from("supervisor_profiles")
         .select("id, email, full_name, role, is_active")
@@ -97,7 +96,6 @@ export default function AdminDashboard() {
 
       const resolvedRole = profile?.role || metadataRole;
 
-      // Also check if user has admin role in candidate_profiles (if supervisor_profiles is empty)
       if (!profile) {
         const { data: candidateProfile } = await supabase
           .from("candidate_profiles")
@@ -139,7 +137,6 @@ export default function AdminDashboard() {
     try {
       console.log("Fetching dashboard data...");
 
-      // Get all counts in parallel with better error handling
       const [
         supervisorCount,
         candidateCount,
@@ -190,7 +187,6 @@ export default function AdminDashboard() {
       if (candidatesResponse?.error) console.error("Recent candidates warning:", candidatesResponse.error);
       if (resultsResponse?.error) console.error("Recent results warning:", resultsResponse.error);
 
-      // Log the actual data
       console.log("Candidates data:", candidatesResponse?.data);
       console.log("Results data:", resultsResponse?.data);
 
@@ -281,6 +277,10 @@ export default function AdminDashboard() {
           <ActionCard href="/admin/audit-logs" icon="▤" title="Audit Logs" description="View system activity, access events, and administrative actions." />
           <ActionCard href="/admin/system-settings" icon="⚙" title="System Settings" description="Configure platform settings and assessment parameters." />
           <ActionCard href="/admin/reports" icon="📄" title="Assessment Reports" description="View detailed assessment reports for all candidates." />
+        </div>
+
+        <div style={styles.sectionContainer}>
+          <AssessmentExpiration />
         </div>
 
         <div style={styles.lowerGrid}>
@@ -410,6 +410,7 @@ const styles = {
   actionCardIcon: { fontSize: "32px" },
   actionCardTitle: { margin: 0, fontSize: "16px", fontWeight: 800, color: "#0a1929" },
   actionCardDesc: { margin: "5px 0 0", fontSize: "12px", color: "#718096", lineHeight: 1.45 },
+  sectionContainer: { marginBottom: "30px" },
   lowerGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "20px", marginBottom: "30px" },
   panel: { background: "white", borderRadius: "16px", padding: "22px", boxShadow: "0 4px 12px rgba(0,0,0,0.08)", border: "1px solid #eef2f7" },
   panelTitle: { margin: "0 0 16px", fontSize: "18px", color: "#0a1929", fontWeight: 800 },
