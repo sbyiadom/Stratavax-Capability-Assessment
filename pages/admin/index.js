@@ -1,4 +1,4 @@
-// pages/admin/index.js - PROFESSIONAL VERSION (No Emojis)
+// pages/admin/index.js - FIXED VERSION
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
@@ -83,6 +83,10 @@ export default function AdminDashboard() {
       const userId = activeSession.user.id;
       const metadataRole = activeSession.user.user_metadata?.role || null;
 
+      // Check if user is admin (either in supervisor_profiles or user_metadata)
+      let isAdminUser = false;
+
+      // First check supervisor_profiles
       const { data: profile, error: profileError } = await supabase
         .from("supervisor_profiles")
         .select("id, email, full_name, role, is_active")
@@ -93,7 +97,20 @@ export default function AdminDashboard() {
 
       const resolvedRole = profile?.role || metadataRole;
 
-      if (resolvedRole !== "admin") {
+      // Also check if user has admin role in candidate_profiles (if supervisor_profiles is empty)
+      if (!profile) {
+        const { data: candidateProfile } = await supabase
+          .from("candidate_profiles")
+          .select("role")
+          .eq("id", userId)
+          .maybeSingle();
+        
+        if (candidateProfile?.role === "admin") {
+          isAdminUser = true;
+        }
+      }
+
+      if (resolvedRole !== "admin" && !isAdminUser) {
         setAuthError("Admin access is required for this page.");
         router.push("/supervisor");
         return;
@@ -120,6 +137,9 @@ export default function AdminDashboard() {
 
   async function fetchDashboardData() {
     try {
+      console.log("Fetching dashboard data...");
+
+      // Get all counts in parallel with better error handling
       const [
         supervisorCount,
         candidateCount,
@@ -145,32 +165,48 @@ export default function AdminDashboard() {
           .limit(6),
         supabase
           .from("assessment_results")
-          .select("id, user_id, assessment_id, total_score, max_score, percentage_score, completed_at, candidate_profiles(full_name, email), assessments(title)")
+          .select(`
+            id, 
+            user_id, 
+            assessment_id, 
+            total_score, 
+            max_score, 
+            percentage_score, 
+            completed_at,
+            candidate_profiles:user_id(full_name, email),
+            assessments:assessment_id(title)
+          `)
           .order("completed_at", { ascending: false })
           .limit(6)
       ]);
 
-      const accessRows = safeArray(accessResponse.data);
+      console.log("Counts:", { supervisorCount, candidateCount, assessmentCount, completedCount, resultCount, inProgressCount });
+
+      const accessRows = safeArray(accessResponse?.data || []);
       const unblockedCount = accessRows.filter((item) => item.status === "unblocked").length;
       const blockedCount = accessRows.filter((item) => item.status === "blocked").length;
 
-      if (accessResponse.error) console.error("Access status warning:", accessResponse.error);
-      if (candidatesResponse.error) console.error("Recent candidates warning:", candidatesResponse.error);
-      if (resultsResponse.error) console.error("Recent results warning:", resultsResponse.error);
+      if (accessResponse?.error) console.error("Access status warning:", accessResponse.error);
+      if (candidatesResponse?.error) console.error("Recent candidates warning:", candidatesResponse.error);
+      if (resultsResponse?.error) console.error("Recent results warning:", resultsResponse.error);
+
+      // Log the actual data
+      console.log("Candidates data:", candidatesResponse?.data);
+      console.log("Results data:", resultsResponse?.data);
 
       setStats({
-        totalSupervisors: supervisorCount,
-        totalCandidates: candidateCount,
-        totalAssessments: assessmentCount,
-        completedAssessments: completedCount,
-        unblockedAssessments: unblockedCount,
-        blockedAssessments: blockedCount,
-        inProgressSessions: inProgressCount,
-        totalResults: resultCount
+        totalSupervisors: supervisorCount || 0,
+        totalCandidates: candidateCount || 0,
+        totalAssessments: assessmentCount || 0,
+        completedAssessments: completedCount || 0,
+        unblockedAssessments: unblockedCount || 0,
+        blockedAssessments: blockedCount || 0,
+        inProgressSessions: inProgressCount || 0,
+        totalResults: resultCount || 0
       });
 
-      setRecentCandidates(candidatesResponse.data || []);
-      setRecentResults(resultsResponse.data || []);
+      setRecentCandidates(candidatesResponse?.data || []);
+      setRecentResults(resultsResponse?.data || []);
     } catch (error) {
       console.error("Error fetching admin dashboard data:", error);
     }
@@ -244,8 +280,6 @@ export default function AdminDashboard() {
           <ActionCard href="/admin/batch-manage" icon="📦" title="Batch Manage" description="Perform bulk administrative actions and candidate updates." />
           <ActionCard href="/admin/audit-logs" icon="▤" title="Audit Logs" description="View system activity, access events, and administrative actions." />
           <ActionCard href="/admin/system-settings" icon="⚙" title="System Settings" description="Configure platform settings and assessment parameters." />
-          
-          {/* NEW: Reports Card */}
           <ActionCard href="/admin/reports" icon="📄" title="Assessment Reports" description="View detailed assessment reports for all candidates." />
         </div>
 
@@ -278,10 +312,18 @@ export default function AdminDashboard() {
                 {recentResults.map((result) => (
                   <div key={result.id} style={styles.listItem}>
                     <div>
-                      <div style={styles.listTitle}>{result.candidate_profiles?.full_name || result.candidate_profiles?.email || "Candidate"}</div>
-                      <div style={styles.listMeta}>{result.assessments?.title || "Assessment"} • {formatDate(result.completed_at)}</div>
+                      <div style={styles.listTitle}>
+                        {result.candidate_profiles?.full_name || 
+                         result.candidate_profiles?.email || 
+                         "Candidate"}
+                      </div>
+                      <div style={styles.listMeta}>
+                        {result.assessments?.title || "Assessment"} • {formatDate(result.completed_at)}
+                      </div>
                     </div>
-                    <div style={styles.scoreBadge}>{Math.round(toNumber(result.percentage_score, 0))}%</div>
+                    <div style={styles.scoreBadge}>
+                      {Math.round(toNumber(result.percentage_score, 0))}%
+                    </div>
                   </div>
                 ))}
               </div>
