@@ -1,4 +1,4 @@
-// pages/admin/reports/index.js - PROFESSIONAL ALL REPORTS VIEW (No Emojis)
+// pages/admin/reports/index.js - COMPLETE WITH EXPORT
 
 import { useState, useEffect, Fragment } from 'react';
 import { useRouter } from 'next/router';
@@ -16,6 +16,7 @@ export default function AdminReportsList() {
   const [error, setError] = useState(null);
   const [stats, setStats] = useState({ total: 0, nationalService: 0, stratavax: 0 });
   const [searchTerm, setSearchTerm] = useState('');
+  const [exporting, setExporting] = useState(false);
   const [expandedCandidates, setExpandedCandidates] = useState({});
   const [candidates, setCandidates] = useState([]);
 
@@ -77,6 +78,49 @@ export default function AdminReportsList() {
       console.error('Error fetching reports:', error);
       setError(error.message || 'Failed to load reports');
       setLoading(false);
+    }
+  };
+
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      const token = session?.session?.access_token;
+
+      if (!token) {
+        throw new Error('Not authenticated');
+      }
+
+      let exportType = 'all';
+      if (filter === 'national_service') exportType = 'national_service';
+      else if (filter === 'stratavax') exportType = 'stratavax';
+
+      const response = await fetch(`/api/admin/export-reports?type=${exportType}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Export failed');
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `assessment-reports-${new Date().toISOString().split('T')[0]}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+
+    } catch (error) {
+      console.error('Export error:', error);
+      alert('Failed to export: ' + error.message);
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -503,6 +547,21 @@ export default function AdminReportsList() {
               Stratavax ({stats.stratavax})
             </button>
           </div>
+
+          {/* EXPORT BUTTON - ADDED HERE */}
+          <div style={styles.exportContainer}>
+            <button
+              onClick={handleExport}
+              disabled={exporting}
+              style={{
+                ...styles.exportButton,
+                opacity: exporting ? 0.6 : 1,
+                cursor: exporting ? 'not-allowed' : 'pointer'
+              }}
+            >
+              {exporting ? '⏳ Exporting...' : '📊 Export to Excel'}
+            </button>
+          </div>
         </div>
 
         {filter === 'national_service' && renderNationalServiceView()}
@@ -609,6 +668,24 @@ const styles = {
     background: 'white',
     border: '1px solid #e2e8f0'
   },
+  exportContainer: {
+    marginTop: '12px'
+  },
+  exportButton: {
+    padding: '10px 24px',
+    background: '#16a34a',
+    color: 'white',
+    border: 'none',
+    borderRadius: '8px',
+    fontSize: '14px',
+    fontWeight: '600',
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    fontFamily: 'inherit'
+  },
   tableContainer: {
     background: 'white',
     borderRadius: '12px',
@@ -687,7 +764,6 @@ const styles = {
     padding: '40px',
     color: '#94a3b8'
   },
-  
   statCount: {
     fontSize: '18px',
     fontWeight: '700',
