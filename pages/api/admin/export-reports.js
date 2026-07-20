@@ -1,4 +1,4 @@
-// pages/api/admin/export-reports.js - FIXED ADMIN CHECK
+// pages/api/admin/export-reports.js - FIXED QUERY
 
 import { createClient } from '@supabase/supabase-js';
 import XLSX from 'xlsx';
@@ -31,7 +31,6 @@ export default async function handler(req, res) {
     // ============================================================
     let isAdmin = false;
 
-    // 1. Check supervisor_profiles
     const { data: supervisorProfile } = await supabase
       .from('supervisor_profiles')
       .select('role, is_active')
@@ -42,7 +41,6 @@ export default async function handler(req, res) {
       isAdmin = true;
     }
 
-    // 2. Check candidate_profiles
     if (!isAdmin) {
       const { data: candidateProfile } = await supabase
         .from('candidate_profiles')
@@ -55,7 +53,6 @@ export default async function handler(req, res) {
       }
     }
 
-    // 3. Check user_metadata
     if (!isAdmin) {
       const metadataRole = userData.user.user_metadata?.role;
       if (metadataRole === 'admin') {
@@ -74,67 +71,14 @@ export default async function handler(req, res) {
     const { type } = req.query;
 
     // ============================================================
-    // FETCH DATA
+    // FETCH DATA - FIXED QUERY
     // ============================================================
     
+    // First, get all assessment results
     let query = supabase
       .from('assessment_results')
-      .select(`
-        id,
-        user_id,
-        assessment_id,
-        percentage_score,
-        total_score,
-        max_score,
-        workplace_readiness,
-        intellectual_capability,
-        recommendation,
-        completed_at,
-        category_scores,
-        report_data,
-        candidate_profiles:user_id (
-          id,
-          full_name,
-          email,
-          university,
-          programme,
-          graduation_year,
-          preferred_department
-        ),
-        assessments:assessment_id (
-          id,
-          title,
-          assessment_types (
-            id,
-            code,
-            name
-          )
-        )
-      `)
+      .select('*')
       .order('completed_at', { ascending: false });
-
-    // Apply filter if specified
-    if (type === 'national_service') {
-      const { data: nsAssessment } = await supabase
-        .from('assessments')
-        .select('id')
-        .eq('title', 'National Service Recruitment Assessment')
-        .single();
-      
-      if (nsAssessment) {
-        query = query.eq('assessment_id', nsAssessment.id);
-      }
-    } else if (type === 'stratavax') {
-      const { data: nsAssessment } = await supabase
-        .from('assessments')
-        .select('id')
-        .eq('title', 'National Service Recruitment Assessment')
-        .single();
-      
-      if (nsAssessment) {
-        query = query.neq('assessment_id', nsAssessment.id);
-      }
-    }
 
     const { data: results, error } = await query;
 
@@ -147,14 +91,80 @@ export default async function handler(req, res) {
       return res.status(404).json({ success: false, error: 'No results found' });
     }
 
+    // Get all unique user IDs from results
+    const userIds = results.map(r => r.user_id).filter(Boolean);
+    let candidateMap = {};
+    if (userIds.length > 0) {
+      const { data: candidates } = await supabase
+        .from('candidate_profiles')
+        .select('id, full_name, email, university, programme, graduation_year, preferred_department')
+        .in('id', userIds);
+      
+      if (candidates) {
+        candidates.forEach(c => {
+          candidateMap[c.id] = c;
+        });
+      }
+    }
+
+    // Get all unique assessment IDs from results
+    const assessmentIds = results.map(r => r.assessment_id).filter(Boolean);
+    let assessmentMap = {};
+    if (assessmentIds.length > 0) {
+      const { data: assessments } = await supabase
+        .from('assessments')
+        .select('id, title, assessment_type_id')
+        .in('id', assessmentIds);
+      
+      if (assessments) {
+        assessments.forEach(a => {
+          assessmentMap[a.id] = a;
+        });
+      }
+    }
+
+    // Get assessment types
+    const typeIds = Object.values(assessmentMap).map(a => a.assessment_type_id).filter(Boolean);
+    let typeMap = {};
+    if (typeIds.length > 0) {
+      const { data: types } = await supabase
+        .from('assessment_types')
+        .select('id, code, name')
+        .in('id', typeIds);
+      
+      if (types) {
+        types.forEach(t => {
+          typeMap[t.id] = t;
+        });
+      }
+    }
+
+    // Apply filter if specified
+    let filteredResults = results;
+    if (type === 'national_service') {
+      const nsAssessment = Object.values(assessmentMap).find(a => a.title === 'National Service Recruitment Assessment');
+      if (nsAssessment) {
+        filteredResults = results.filter(r => r.assessment_id === nsAssessment.id);
+      }
+    } else if (type === 'stratavax') {
+      const nsAssessment = Object.values(assessmentMap).find(a => a.title === 'National Service Recruitment Assessment');
+      if (nsAssessment) {
+        filteredResults = results.filter(r => r.assessment_id !== nsAssessment.id);
+      }
+    }
+
+    if (filteredResults.length === 0) {
+      return res.status(404).json({ success: false, error: 'No results found for the selected filter' });
+    }
+
     // ============================================================
     // FORMAT DATA FOR EXCEL
     // ============================================================
     
-    const excelData = results.map((result) => {
-      const candidate = result.candidate_profiles || {};
-      const assessment = result.assessments || {};
-      const assessmentType = assessment.assessment_types || {};
+    const excelData = filteredResults.map((result) => {
+      const candidate = candidateMap[result.user_id] || {};
+      const assessment = assessmentMap[result.assessment_id] || {};
+      const assessmentType = assessment ? typeMap[assessment.assessment_type_id] : null;
       
       const isNationalService = assessment.title === 'National Service Recruitment Assessment';
       
