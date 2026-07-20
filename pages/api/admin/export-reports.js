@@ -1,4 +1,4 @@
-// pages/api/admin/export-reports.js
+// pages/api/admin/export-reports.js - FIXED ADMIN CHECK
 
 import { createClient } from '@supabase/supabase-js';
 import XLSX from 'xlsx';
@@ -18,21 +18,56 @@ export default async function handler(req, res) {
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Verify admin access
+    // Verify user
     const { data: userData, error: authError } = await supabase.auth.getUser(token);
     if (authError || !userData?.user) {
       return res.status(401).json({ success: false, error: 'Invalid token' });
     }
 
-    // Check admin status
-    const { data: profile } = await supabase
+    const userId = userData.user.id;
+
+    // ============================================================
+    // CHECK ADMIN ACCESS - MULTIPLE SOURCES
+    // ============================================================
+    let isAdmin = false;
+
+    // 1. Check supervisor_profiles
+    const { data: supervisorProfile } = await supabase
       .from('supervisor_profiles')
-      .select('role')
-      .eq('id', userData.user.id)
+      .select('role, is_active')
+      .eq('id', userId)
       .maybeSingle();
 
-    if (profile?.role !== 'admin') {
-      return res.status(403).json({ success: false, error: 'Admin access required' });
+    if (supervisorProfile?.role === 'admin' && supervisorProfile?.is_active !== false) {
+      isAdmin = true;
+    }
+
+    // 2. Check candidate_profiles
+    if (!isAdmin) {
+      const { data: candidateProfile } = await supabase
+        .from('candidate_profiles')
+        .select('role')
+        .eq('id', userId)
+        .maybeSingle();
+
+      if (candidateProfile?.role === 'admin') {
+        isAdmin = true;
+      }
+    }
+
+    // 3. Check user_metadata
+    if (!isAdmin) {
+      const metadataRole = userData.user.user_metadata?.role;
+      if (metadataRole === 'admin') {
+        isAdmin = true;
+      }
+    }
+
+    if (!isAdmin) {
+      return res.status(403).json({ 
+        success: false, 
+        error: 'Admin access required' 
+      });
     }
 
     // Get filter from query
@@ -123,7 +158,6 @@ export default async function handler(req, res) {
       
       const isNationalService = assessment.title === 'National Service Recruitment Assessment';
       
-      // Extract category scores
       let categoryBreakdown = '';
       if (result.category_scores && Array.isArray(result.category_scores)) {
         categoryBreakdown = result.category_scores
@@ -131,7 +165,6 @@ export default async function handler(req, res) {
           .join('; ');
       }
 
-      // Get recommendation
       let recommendation = result.recommendation || 'N/A';
       if (isNationalService && (recommendation === 'N/A' || !recommendation)) {
         const workplace = Number(result.workplace_readiness) || 0;
@@ -169,7 +202,6 @@ export default async function handler(req, res) {
     
     const worksheet = XLSX.utils.json_to_sheet(excelData);
     
-    // Auto-size columns
     const colWidths = [
       { wch: 25 }, // Candidate Name
       { wch: 30 }, // Email
