@@ -1,8 +1,8 @@
-// pages/api/candidate/dashboard.js - WITH EXPIRES_AT
+// pages/api/candidate/dashboard.js - UPDATED WITH EXPIRES_AT
 
 import { createClient } from '@supabase/supabase-js';
 
-// Hardcoded assessment titles as fallback (matching your database)
+// Hardcoded assessment titles as fallback
 const ASSESSMENT_TITLES = {
   '17003efb-923f-49a5-bdeb-e4996c864a87': 'General Assessment',
   'd09953bf-59cd-40ed-a9bb-308c3b5cfb7d': 'Leadership Assessment',
