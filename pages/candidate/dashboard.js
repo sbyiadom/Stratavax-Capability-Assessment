@@ -1,4 +1,4 @@
-// pages/candidate/dashboard.js - PROFESSIONAL VERSION (No Emojis)
+// pages/candidate/dashboard.js - COMPLETE WITH EXPIRATION COUNTDOWN
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
@@ -101,6 +101,18 @@ export default function CandidateDashboard() {
       return assessment.timeLimitMinutes || 90;
     }
     return assessment.timeLimitMinutes || 120;
+  };
+
+  // ============================================================
+  // Expiration countdown helper
+  // ============================================================
+  const getDaysRemaining = (expiresAt) => {
+    if (!expiresAt) return null;
+    const now = new Date();
+    const expiry = new Date(expiresAt);
+    const diffTime = expiry - now;
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return diffDays;
   };
 
   if (authLoading || loading) {
@@ -305,7 +317,7 @@ export default function CandidateDashboard() {
           </div>
         </div>
 
-        {/* Stats Cards - UPDATED with solid backgrounds and white text */}
+        {/* Stats Cards */}
         <div style={styles.statsBar}>
           <div style={styles.statsGrid}>
             <div style={{ ...styles.statCard, background: '#16a34a', borderColor: '#16a34a' }}>
@@ -372,6 +384,7 @@ export default function CandidateDashboard() {
                     const isSelected = selectedAssessment?.id === assessment.id;
                     const isNationalService = assessment.isNationalService || assessment.typeCode === 'national_service';
                     const displayName = getShortName(assessment.title, isNationalService);
+                    const daysRemaining = getDaysRemaining(assessment.expires_at);
 
                     return (
                       <div 
@@ -413,6 +426,14 @@ export default function CandidateDashboard() {
                           <div style={styles.compactRight}>
                             {isNationalService && (
                               <span style={styles.compactNsTag}>NS</span>
+                            )}
+                            {assessment.expires_at && daysRemaining !== null && (
+                              <span style={{
+                                ...styles.compactExpiry,
+                                color: daysRemaining < 0 || daysRemaining <= 7 ? '#dc2626' : '#64748b'
+                              }}>
+                                {daysRemaining < 0 ? 'EXP' : daysRemaining <= 7 ? `⚠${daysRemaining}d` : `${daysRemaining}d`}
+                              </span>
                             )}
                             <span style={{ 
                               ...styles.compactArrow, 
@@ -486,7 +507,6 @@ export default function CandidateDashboard() {
                       </div>
                     </div>
 
-                    {/* UPDATED: Time Limit and Questions using helper functions */}
                     <div style={styles.detailInfo}>
                       <div style={styles.detailInfoItem}>
                         <span style={styles.detailInfoLabel}>Time Limit</span>
@@ -504,6 +524,35 @@ export default function CandidateDashboard() {
                         <span style={styles.detailInfoLabel}>Type</span>
                         <span style={styles.detailInfoValue}>{selectedAssessment.typeName}</span>
                       </div>
+                      {selectedAssessment.expires_at && (
+                        <div style={styles.detailInfoItem}>
+                          <span style={styles.detailInfoLabel}>Expires</span>
+                          <span style={{
+                            ...styles.detailInfoValue,
+                            color: (() => {
+                              const days = getDaysRemaining(selectedAssessment.expires_at);
+                              if (days === null) return '#0a1929';
+                              if (days < 0 || days <= 7) return '#dc2626';
+                              return '#0a1929';
+                            })(),
+                            fontWeight: (() => {
+                              const days = getDaysRemaining(selectedAssessment.expires_at);
+                              if (days === null) return '500';
+                              if (days < 0 || days <= 7) return '700';
+                              return '500';
+                            })()
+                          }}>
+                            {(() => {
+                              const days = getDaysRemaining(selectedAssessment.expires_at);
+                              if (days === null) return 'N/A';
+                              if (days < 0) return 'EXPIRED';
+                              if (days === 0) return 'Today';
+                              if (days <= 7) return `⚠ ${days} days`;
+                              return `${days} days`;
+                            })()}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
@@ -702,7 +751,6 @@ const styles = {
   statsBar: { maxWidth: "1280px", margin: "0 auto 24px", padding: "0 32px" },
   statsGrid: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "12px" },
   
-  // UPDATED statCard with better spacing
   statCard: { 
     padding: "18px 22px", 
     borderRadius: "14px", 
@@ -715,7 +763,6 @@ const styles = {
     minHeight: "86px" 
   },
   
-  // UPDATED statIcon - white text
   statIcon: { 
     fontSize: "32px", 
     color: "#ffffff", 
@@ -723,7 +770,6 @@ const styles = {
     lineHeight: "1" 
   },
   
-  // UPDATED statNumber - white text
   statNumber: { 
     fontSize: "34px", 
     fontWeight: "800", 
@@ -731,7 +777,6 @@ const styles = {
     lineHeight: "1" 
   },
   
-  // UPDATED statLabel - white text
   statLabel: { 
     fontSize: "14px", 
     color: "#ffffff", 
@@ -784,6 +829,15 @@ const styles = {
     background: "rgba(29, 78, 216, 0.15)", 
     color: "#1d4ed8", 
     borderRadius: "4px" 
+  },
+  compactExpiry: {
+    fontSize: "9px",
+    fontWeight: "700",
+    padding: "2px 6px",
+    borderRadius: "4px",
+    background: "rgba(0,0,0,0.06)",
+    marginRight: "4px",
+    fontFamily: "monospace"
   },
   compactArrow: { fontSize: "12px", transition: "transform 0.3s" },
   
