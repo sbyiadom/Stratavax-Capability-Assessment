@@ -1,4 +1,4 @@
-// pages/api/candidate/dashboard.js - UPDATED WITH EXPIRES_AT
+// pages/api/candidate/dashboard.js - WITH EXPIRES_AT
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -18,23 +18,6 @@ const ASSESSMENT_TITLES = {
   'bdb9d46e-9fac-4d00-8478-1f649e7ac600': 'National Service Recruitment Assessment'
 };
 
-// Map assessment type code to type info
-const TYPE_INFO = {
-  'general': { code: 'general', name: 'General' },
-  'leadership': { code: 'leadership', name: 'Leadership' },
-  'cognitive': { code: 'cognitive', name: 'Cognitive' },
-  'technical': { code: 'technical', name: 'Technical' },
-  'personality': { code: 'personality', name: 'Personality' },
-  'performance': { code: 'performance', name: 'Performance' },
-  'behavioral': { code: 'behavioral', name: 'Behavioral' },
-  'manufacturing': { code: 'manufacturing', name: 'Manufacturing' },
-  'cultural': { code: 'cultural', name: 'Cultural' },
-  'strategic_leadership': { code: 'strategic_leadership', name: 'Strategic' },
-  'manufacturing_baseline': { code: 'manufacturing_baseline', name: 'Baseline' },
-  'national_service': { code: 'national_service', name: 'National Service' }
-};
-
-// National Service assessment ID for forced override
 const NATIONAL_SERVICE_ASSESSMENT_ID = 'bdb9d46e-9fac-4d00-8478-1f649e7ac600';
 
 export default async function handler(req, res) {
@@ -62,7 +45,6 @@ export default async function handler(req, res) {
       auth: { persistSession: false }
     });
 
-    // Get user from token
     const { data: userData, error: userError } = await serviceClient.auth.getUser(token);
     if (userError || !userData?.user) {
       return res.status(401).json({ success: false, error: 'Invalid token' });
@@ -70,9 +52,7 @@ export default async function handler(req, res) {
 
     const userId = userData.user.id;
 
-    // ============================================================
     // STEP 1: Get candidate profile
-    // ============================================================
     const { data: profile } = await serviceClient
       .from('candidate_profiles')
       .select('full_name')
@@ -81,9 +61,7 @@ export default async function handler(req, res) {
 
     const candidateName = profile?.full_name || userData.user.user_metadata?.full_name || 'Candidate';
 
-    // ============================================================
     // STEP 2: Get candidate assessments
-    // ============================================================
     const { data: candidateAssessments, error: caError } = await serviceClient
       .from('candidate_assessments')
       .select('*')
@@ -98,8 +76,6 @@ export default async function handler(req, res) {
       });
     }
 
-    console.log('[API] Found candidate assessments:', candidateAssessments?.length || 0);
-
     if (!candidateAssessments || candidateAssessments.length === 0) {
       return res.status(200).json({
         success: true,
@@ -110,21 +86,18 @@ export default async function handler(req, res) {
       });
     }
 
-    // ============================================================
-    // STEP 3: Get assessment types for these assessments
-    // ============================================================
+    // STEP 3: Get assessment types with expires_at
     const assessmentIds = candidateAssessments.map(ca => ca.assessment_id).filter(Boolean);
     let typeMap = {};
 
     if (assessmentIds.length > 0) {
-      // Get assessments with their type info - ADDED expires_at
+      // FIX: Added expires_at to the select query
       const { data: assessments, error: aError } = await serviceClient
         .from('assessments')
         .select('id, title, description, question_count, time_limit_minutes, attempts_allowed, assessment_type_id, expires_at')
         .in('id', assessmentIds);
 
       if (!aError && assessments) {
-        // Get types
         const typeIds = assessments.map(a => a.assessment_type_id).filter(Boolean);
         if (typeIds.length > 0) {
           const { data: types, error: tError } = await serviceClient
@@ -139,7 +112,6 @@ export default async function handler(req, res) {
           }
         }
 
-        // Build a map of assessment_id to its data
         assessments.forEach(a => {
           typeMap[a.id] = {
             ...a,
@@ -149,18 +121,13 @@ export default async function handler(req, res) {
       }
     }
 
-    // ============================================================
-    // STEP 4: Build cards with FORCED CORRECT values for National Service
-    // ============================================================
+    // STEP 4: Build cards with expires_at
     const cards = candidateAssessments.map(ca => {
       const assessmentData = typeMap[ca.assessment_id] || {};
       const type = assessmentData.type || {};
       const typeCode = type.code || 'general';
       
-      // Get title - try assessmentData.title, then hardcoded fallback, then type name
       let title = assessmentData.title || ASSESSMENT_TITLES[ca.assessment_id] || type.name || 'Assessment';
-      
-      // If title is still 'Assessment' but we have a type name, use it
       if (title === 'Assessment' && type.name) {
         title = type.name;
       }
@@ -170,27 +137,20 @@ export default async function handler(req, res) {
         status = 'completed';
       }
 
-      // ============================================================
-      // FORCE CORRECT VALUES FOR NATIONAL SERVICE
-      // ============================================================
       const isNationalService = typeCode === 'national_service' || ca.assessment_id === NATIONAL_SERVICE_ASSESSMENT_ID;
       
       let questionCount;
       let timeLimitMinutes;
       
       if (isNationalService) {
-        // FORCE National Service values - IGNORE database
         questionCount = 80;
         timeLimitMinutes = 90;
       } else {
-        // For all other assessments, use database or fallback to 100/120
         questionCount = assessmentData.question_count || 100;
         timeLimitMinutes = assessmentData.time_limit_minutes || 120;
       }
 
-      // ============================================================
-      // ADD expires_at to the response
-      // ============================================================
+      // FIX: Added expires_at to the return object
       return {
         id: ca.assessment_id,
         title: title,
@@ -202,26 +162,20 @@ export default async function handler(req, res) {
         timeLimitMinutes: timeLimitMinutes,
         attemptsAllowed: assessmentData.attempts_allowed || 1,
         isNationalService: isNationalService,
-        expires_at: assessmentData.expires_at || null,  // ADD THIS LINE
+        expires_at: assessmentData.expires_at || null,  // THIS IS THE KEY LINE
         completedAt: ca.completed_at || null,
         unblockedAt: ca.unblocked_at || null,
         resultId: ca.result_id || null
       };
     });
 
-    console.log('[API] Cards built:', cards.map(c => ({ 
+    // Log expires_at for debugging
+    console.log('[API] Cards built with expires_at:', cards.map(c => ({ 
       id: c.id, 
-      title: c.title, 
-      status: c.status,
-      questionCount: c.questionCount,
-      timeLimitMinutes: c.timeLimitMinutes,
-      isNationalService: c.isNationalService,
-      expires_at: c.expires_at  // ADDED to log
+      title: c.title,
+      expires_at: c.expires_at
     })));
 
-    // ============================================================
-    // STEP 5: Calculate stats
-    // ============================================================
     const stats = {
       total: cards.length,
       completed: cards.filter(c => c.status === 'completed').length,
