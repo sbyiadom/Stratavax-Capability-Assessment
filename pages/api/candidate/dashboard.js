@@ -1,4 +1,4 @@
-// pages/api/candidate/dashboard.js - FORCED CORRECT VALUES FOR NATIONAL SERVICE
+// pages/api/candidate/dashboard.js - UPDATED WITH EXPIRES_AT
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -117,10 +117,10 @@ export default async function handler(req, res) {
     let typeMap = {};
 
     if (assessmentIds.length > 0) {
-      // Get assessments with their type info
+      // Get assessments with their type info - ADDED expires_at
       const { data: assessments, error: aError } = await serviceClient
         .from('assessments')
-        .select('id, title, description, question_count, time_limit_minutes, attempts_allowed, assessment_type_id')
+        .select('id, title, description, question_count, time_limit_minutes, attempts_allowed, assessment_type_id, expires_at')
         .in('id', assessmentIds);
 
       if (!aError && assessments) {
@@ -188,6 +188,9 @@ export default async function handler(req, res) {
         timeLimitMinutes = assessmentData.time_limit_minutes || 120;
       }
 
+      // ============================================================
+      // ADD expires_at to the response
+      // ============================================================
       return {
         id: ca.assessment_id,
         title: title,
@@ -199,6 +202,7 @@ export default async function handler(req, res) {
         timeLimitMinutes: timeLimitMinutes,
         attemptsAllowed: assessmentData.attempts_allowed || 1,
         isNationalService: isNationalService,
+        expires_at: assessmentData.expires_at || null,  // ADD THIS LINE
         completedAt: ca.completed_at || null,
         unblockedAt: ca.unblocked_at || null,
         resultId: ca.result_id || null
@@ -211,7 +215,8 @@ export default async function handler(req, res) {
       status: c.status,
       questionCount: c.questionCount,
       timeLimitMinutes: c.timeLimitMinutes,
-      isNationalService: c.isNationalService
+      isNationalService: c.isNationalService,
+      expires_at: c.expires_at  // ADDED to log
     })));
 
     // ============================================================
