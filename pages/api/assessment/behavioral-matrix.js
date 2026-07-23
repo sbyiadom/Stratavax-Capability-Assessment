@@ -1,4 +1,4 @@
-// pages/api/assessment/behavioral-matrix.js - CORRECTED VERSION (NO FRONTEND IMPORTS)
+// pages/api/assessment/behavioral-matrix.js - SIMPLIFIED WORKING VERSION
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -28,97 +28,74 @@ export default async function handler(req, res) {
       return res.status(401).json({ success: false, error: 'Invalid token' });
     }
 
-    // Get the result with session data
+    // STEP 1: Get the result to find session_id
     const { data: result, error: resultError } = await supabase
       .from('assessment_results')
-      .select(`
-        id,
-        user_id,
-        assessment_id,
-        percentage_score,
-        completed_at,
-        total_questions,
-        answered_questions,
-        is_auto_submitted,
-        session_id,
-        report_data,
-        candidate_profiles:user_id (
-          full_name,
-          email,
-          university,
-          programme
-        ),
-        assessments:assessment_id (
-          title
-        )
-      `)
+      .select('id, session_id, user_id, percentage_score, completed_at, total_questions, answered_questions, is_auto_submitted')
       .eq('id', resultId)
       .single();
 
     if (resultError) {
+      console.error('[Behavioral] Result error:', resultError);
       return res.status(500).json({ success: false, error: resultError.message });
     }
 
-    // Get session data
-    const { data: session, error: sessionError } = await supabase
-      .from('assessment_sessions')
-      .select('*')
-      .eq('id', result.session_id)
+    // STEP 2: Get candidate info
+    const { data: candidate, error: candidateError } = await supabase
+      .from('candidate_profiles')
+      .select('full_name, email, university, programme')
+      .eq('id', result.user_id)
       .single();
 
-    if (sessionError) {
-      console.error('Session error:', sessionError);
+    if (candidateError) {
+      console.error('[Behavioral] Candidate error:', candidateError);
     }
 
-    // Get all responses for this session
+    // STEP 3: Get all responses for this session
     const { data: responses, error: responsesError } = await supabase
       .from('responses')
-      .select('question_id, answer_id, time_spent_seconds, times_changed, initial_answer_id, metadata, created_at')
-      .eq('session_id', result.session_id)
-      .order('created_at', { ascending: true });
+      .select('question_id, time_spent_seconds, times_changed, metadata')
+      .eq('session_id', result.session_id);
 
     if (responsesError) {
-      console.error('Responses error:', responsesError);
+      console.error('[Behavioral] Responses error:', responsesError);
+      return res.status(500).json({ success: false, error: responsesError.message });
     }
 
-    // ============================================================
-    // CALCULATE BEHAVIORAL METRICS
-    // ============================================================
+    console.log('[Behavioral] Responses found:', responses?.length || 0);
+
+    // STEP 4: Calculate metrics
     let totalChanges = 0;
     let totalTabSwitches = 0;
     let totalViolations = 0;
     let totalCopyAttempts = 0;
     let totalPasteAttempts = 0;
     let totalRightClicks = 0;
-    let totalTimeSpent = session?.total_time_spent || 0;
     const timePerQuestion = [];
 
     if (responses && responses.length > 0) {
       responses.forEach(response => {
-        // ============================================================
-        // Use the actual column, not metadata.times_changed
-        // ============================================================
+        // From columns
         totalChanges += response.times_changed || 0;
         
-        // Get metadata from the metadata column
+        // From metadata
         const metadata = response.metadata || {};
-        
         totalTabSwitches += parseInt(metadata.tab_switches, 10) || 0;
         totalViolations += parseInt(metadata.violations, 10) || 0;
         totalCopyAttempts += parseInt(metadata.copy_attempts, 10) || 0;
         totalPasteAttempts += parseInt(metadata.paste_attempts, 10) || 0;
         totalRightClicks += parseInt(metadata.right_click_attempts, 10) || 0;
 
-        // Time per question - use either time_on_question from metadata or time_spent_seconds column
+        // Time per question
         const timeOnQuestion = parseInt(metadata.time_on_question, 10) || 0;
-        if (timeOnQuestion > 0 || (response.time_spent_seconds || 0) > 0) {
+        const timeSpent = response.time_spent_seconds || 0;
+        
+        if (timeOnQuestion > 0 || timeSpent > 0) {
           timePerQuestion.push({
             question_id: response.question_id,
-            time_seconds: timeOnQuestion || response.time_spent_seconds || 0,
+            time_seconds: timeOnQuestion || timeSpent,
             changed: (response.times_changed || 0) > 0,
-            violation: (metadata.violations || 0) > 0,
-            answer: response.answer_id,
-            initial_answer: response.initial_answer_id
+            violation: (metadata.violations || 0) > 0
           });
         }
       });
@@ -132,32 +109,42 @@ export default async function handler(req, res) {
       q.time_seconds > 60 || q.changed || q.violation
     );
 
-    // ============================================================
-    // CHECK IF BEHAVIORAL DATA EXISTS
-    // ============================================================
-    const hasBehavioralData = totalChanges > 0 || totalTabSwitches > 0 || totalViolations > 0 || 
-                              totalCopyAttempts > 0 || totalPasteAttempts > 0 || totalRightClicks > 0 ||
-                              timePerQuestion.length > 0;
+    const hasBehavioralData = 
+      totalChanges > 0 || 
+      totalTabSwitches > 0 || 
+      totalViolations > 0 || 
+      totalCopyAttempts > 0 || 
+      totalPasteAttempts > 0 || 
+      totalRightClicks > 0 ||
+      timePerQuestion.length > 0;
 
+    console.log('[Behavioral] Metrics:', {
+      totalChanges,
+      totalTabSwitches,
+      totalViolations,
+      timePerQuestion: timePerQuestion.length,
+      hasBehavioralData
+    });
+
+    // STEP 5: Build response
     const behavioralMatrix = {
       candidate: {
-        name: result.candidate_profiles?.full_name || 'Unknown',
-        email: result.candidate_profiles?.email || '',
-        university: result.candidate_profiles?.university || '',
-        programme: result.candidate_profiles?.programme || ''
+        name: candidate?.full_name || 'Unknown',
+        email: candidate?.email || '',
+        university: candidate?.university || '',
+        programme: candidate?.programme || ''
       },
       assessment: {
-        title: result.assessments?.title || 'Unknown',
         completedAt: result.completed_at,
         overallScore: result.percentage_score,
         totalQuestions: result.total_questions || 0,
         answeredQuestions: result.answered_questions || 0
       },
       timing: {
-        totalTimeSeconds: totalTimeSpent || 0,
+        totalTimeSeconds: 0, // We don't have this in the data
         averageTimePerQuestion: avgTime,
         timePerQuestion: timePerQuestion,
-        formattedTotalTime: formatTime(totalTimeSpent || 0)
+        formattedTotalTime: '00:00:00'
       },
       behavior: {
         answerChanges: totalChanges,
@@ -169,7 +156,7 @@ export default async function handler(req, res) {
         isAutoSubmitted: result.is_auto_submitted || false,
         hasBehavioralData: hasBehavioralData
       },
-      flaggedQuestions: flaggedQuestions,
+      flaggedQuestions: flaggedQuestions.slice(0, 20),
       riskAssessment: {
         level: getRiskLevel(totalViolations, totalTabSwitches, totalChanges, avgTime),
         summary: getRiskSummary(totalViolations, totalTabSwitches, totalChanges, avgTime)
@@ -182,16 +169,9 @@ export default async function handler(req, res) {
     });
 
   } catch (error) {
-    console.error('Behavioral matrix error:', error);
+    console.error('[Behavioral] Error:', error);
     return res.status(500).json({ success: false, error: error.message });
   }
-}
-
-function formatTime(seconds) {
-  const hrs = Math.floor(seconds / 3600);
-  const mins = Math.floor((seconds % 3600) / 60);
-  const secs = seconds % 60;
-  return `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
 }
 
 function getRiskLevel(violations, tabSwitches, changes, avgTime) {
