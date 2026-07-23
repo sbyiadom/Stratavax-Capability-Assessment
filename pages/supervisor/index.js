@@ -68,10 +68,6 @@ export default function SupervisorDashboard() {
       const otherRows = Array.isArray(payload.otherReports) ? payload.otherReports : [];
       const dashboardStats = payload.stats || {};
 
-      console.log('[Supervisor] National Service reports:', nsRows.length);
-      console.log('[Supervisor] Other reports:', otherRows.length);
-      console.log('[Supervisor] Sample NS report:', nsRows.length > 0 ? nsRows[0] : 'None');
-
       setCandidates(candidateRows);
       setNationalServiceReports(nsRows);
       setOtherReports(otherRows);
