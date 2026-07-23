@@ -1,11 +1,59 @@
-// components/reports/NationalServiceReport.js - COMPLETE FIXED VERSION
+// components/reports/NationalServiceReport.js - COMPLETE WITH BEHAVIORAL MATRIX
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
+import { supabase } from '../../supabase/client';
 
-export default function NationalServiceReport({ report, onBack }) {
+export default function NationalServiceReport({ report, onBack, resultId }) {
+  const [behavioralMatrix, setBehavioralMatrix] = useState(null);
+  const [showBehavioral, setShowBehavioral] = useState(false);
+
   useEffect(() => {
     console.log('[NationalServiceReport] Report received:', report);
-  }, [report]);
+    if (resultId) {
+      fetchBehavioralMatrix(resultId);
+    }
+  }, [report, resultId]);
+
+  // ============================================================
+  // FETCH BEHAVIORAL MATRIX
+  // ============================================================
+  const fetchBehavioralMatrix = async (id) => {
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      const token = session?.session?.access_token;
+
+      if (!token) return;
+
+      const response = await fetch(`/api/assessment/behavioral-matrix?resultId=${id}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        setBehavioralMatrix(data.behavioralMatrix);
+        console.log('[Behavioral Matrix] Data loaded:', data.behavioralMatrix);
+      }
+    } catch (error) {
+      console.error('Error fetching behavioral matrix:', error);
+    }
+  };
+
+  const toggleBehavioral = () => {
+    setShowBehavioral(!showBehavioral);
+  };
+
+  // ============================================================
+  // FORMAT TIME HELPER
+  // ============================================================
+  const formatTime = (seconds) => {
+    if (!seconds) return 'N/A';
+    const hrs = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+    return `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  };
 
   if (!report) {
     return <div style={styles.loading}>Loading report...</div>;
@@ -142,11 +190,10 @@ export default function NationalServiceReport({ report, onBack }) {
   console.log('[Report] Calculated Overall:', displayOverall);
 
   // ============================================================
-  // RECOMMENDATION LOGIC - FIXED
+  // RECOMMENDATION LOGIC
   // ============================================================
   let recommendationLevel = 'Not Recommended';
 
-  // Determine recommendation based on scores
   if (displayWorkplace >= 90 && displayIntellectual >= 75 && displayOverall >= 80) {
     recommendationLevel = 'Highly Recommended';
   } else if (displayWorkplace >= 75 && displayIntellectual >= 70 && displayOverall >= 70) {
@@ -159,7 +206,6 @@ export default function NationalServiceReport({ report, onBack }) {
     recommendationLevel = 'Not Recommended';
   }
 
-  // Override if recommendation came from the report
   if (reportData.recommendation && reportData.recommendation !== 'N/A') {
     recommendationLevel = safeString(reportData.recommendation);
   } else if (report.recommendation && report.recommendation !== 'N/A') {
@@ -208,7 +254,6 @@ export default function NationalServiceReport({ report, onBack }) {
       }
     };
 
-    // Return the matching details or a default
     return details[level] || {
       label: 'Review Required',
       color: '#64748b',
@@ -284,6 +329,9 @@ export default function NationalServiceReport({ report, onBack }) {
 
   const suggestedPlacements = getSuggestedPlacements();
 
+  // Check if behavioral data exists
+  const hasBehavioralData = behavioralMatrix?.behavior?.hasBehavioralData || false;
+
   // ============================================================
   // RENDER
   // ============================================================
@@ -310,7 +358,7 @@ export default function NationalServiceReport({ report, onBack }) {
         </div>
       </div>
 
-      {/* Recommendation Banner - FIXED */}
+      {/* Recommendation Banner */}
       <div style={{ ...styles.banner, background: recommendationDetails.bg, border: `3px solid ${recommendationDetails.color}` }}>
         <div style={styles.bannerContent}>
           <div style={{ ...styles.bannerIcon, color: recommendationDetails.color }}>
@@ -512,6 +560,112 @@ export default function NationalServiceReport({ report, onBack }) {
           </div>
         </div>
       </div>
+
+      {/* ============================================================
+          BEHAVIORAL MATRIX SECTION - ADDED
+          ============================================================ */}
+      <div style={styles.behavioralToggleContainer}>
+        <button onClick={toggleBehavioral} style={styles.behavioralToggleButton}>
+          {showBehavioral ? 'Hide Behavioral Matrix' : 'Show Behavioral Matrix'}
+        </button>
+      </div>
+
+      {showBehavioral && (
+        <div style={styles.behavioralSection}>
+          <h3 style={styles.behavioralTitle}>Behavioral Matrix</h3>
+          
+          {behavioralMatrix && hasBehavioralData ? (
+            <>
+              <div style={styles.behavioralStats}>
+                <div style={styles.behavioralStat}>
+                  <span style={styles.behavioralLabel}>Total Time</span>
+                  <span style={styles.behavioralValue}>
+                    {formatTime(behavioralMatrix.timing?.totalTimeSeconds)}
+                  </span>
+                </div>
+                <div style={styles.behavioralStat}>
+                  <span style={styles.behavioralLabel}>Avg Time per Question</span>
+                  <span style={styles.behavioralValue}>
+                    {behavioralMatrix.timing?.averageTimePerQuestion || 0}s
+                  </span>
+                </div>
+                <div style={styles.behavioralStat}>
+                  <span style={styles.behavioralLabel}>Answer Changes</span>
+                  <span style={styles.behavioralValue}>
+                    {behavioralMatrix.behavior?.answerChanges || 0}
+                  </span>
+                </div>
+                <div style={styles.behavioralStat}>
+                  <span style={styles.behavioralLabel}>Tab Switches</span>
+                  <span style={styles.behavioralValue}>
+                    {behavioralMatrix.behavior?.tabSwitches || 0}
+                  </span>
+                </div>
+                <div style={styles.behavioralStat}>
+                  <span style={styles.behavioralLabel}>Violations</span>
+                  <span style={styles.behavioralValue}>
+                    {behavioralMatrix.behavior?.violations || 0}
+                  </span>
+                </div>
+                <div style={styles.behavioralStat}>
+                  <span style={styles.behavioralLabel}>Copy/Paste Attempts</span>
+                  <span style={styles.behavioralValue}>
+                    {(behavioralMatrix.behavior?.copyAttempts || 0) + (behavioralMatrix.behavior?.pasteAttempts || 0)}
+                  </span>
+                </div>
+                <div style={styles.behavioralStat}>
+                  <span style={styles.behavioralLabel}>Right-Click Attempts</span>
+                  <span style={styles.behavioralValue}>
+                    {behavioralMatrix.behavior?.rightClickAttempts || 0}
+                  </span>
+                </div>
+                <div style={styles.behavioralStat}>
+                  <span style={styles.behavioralLabel}>Risk Level</span>
+                  <span style={{
+                    ...styles.riskBadge,
+                    background: behavioralMatrix.riskAssessment?.level === 'High Risk' ? '#fee2e2' :
+                               behavioralMatrix.riskAssessment?.level === 'Medium Risk' ? '#fef3c7' : '#dcfce7',
+                    color: behavioralMatrix.riskAssessment?.level === 'High Risk' ? '#991b1b' :
+                           behavioralMatrix.riskAssessment?.level === 'Medium Risk' ? '#92400e' : '#166534'
+                  }}>
+                    {behavioralMatrix.riskAssessment?.level || 'Unknown'}
+                  </span>
+                </div>
+              </div>
+              
+              <div style={styles.riskSummary}>
+                <p>{behavioralMatrix.riskAssessment?.summary || 'No behavioral concerns detected.'}</p>
+              </div>
+              
+              {behavioralMatrix.flaggedQuestions && behavioralMatrix.flaggedQuestions.length > 0 && (
+                <div style={styles.flaggedQuestions}>
+                  <h4 style={styles.flaggedTitle}>Flagged Questions</h4>
+                  <ul style={styles.flaggedList}>
+                    {behavioralMatrix.flaggedQuestions.slice(0, 10).map((q, index) => (
+                      <li key={index} style={styles.flaggedItem}>
+                        Question {q.question_id}: {q.time_seconds}s
+                        {q.changed ? ' - Changed' : ''}
+                        {q.violation ? ' - Violation' : ''}
+                      </li>
+                    ))}
+                    {behavioralMatrix.flaggedQuestions.length > 10 && (
+                      <li style={styles.flaggedItem}>... and {behavioralMatrix.flaggedQuestions.length - 10} more</li>
+                    )}
+                  </ul>
+                </div>
+              )}
+            </>
+          ) : (
+            <div style={styles.noBehavioralData}>
+              <p>No behavioral data is available for this assessment.</p>
+              <p style={styles.noBehavioralSubtext}>
+                Behavioral data (tab switches, violations, answer changes, etc.) 
+                is only tracked for assessments completed after the behavioral tracking feature was implemented.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Assessment Statistics */}
       <div style={styles.section}>
@@ -928,5 +1082,111 @@ const styles = {
     padding: '40px', 
     fontSize: '18px', 
     color: '#64748b' 
+  },
+  // ============================================================
+  // BEHAVIORAL MATRIX STYLES
+  // ============================================================
+  behavioralToggleContainer: {
+    marginTop: '24px',
+    textAlign: 'center'
+  },
+  behavioralToggleButton: {
+    padding: '10px 24px',
+    background: '#1a237e',
+    color: 'white',
+    border: 'none',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    fontSize: '14px',
+    fontWeight: '600'
+  },
+  behavioralSection: {
+    marginTop: '24px',
+    padding: '20px',
+    background: '#f8fafc',
+    borderRadius: '12px',
+    border: '1px solid #e2e8f0'
+  },
+  behavioralTitle: {
+    fontSize: '18px',
+    fontWeight: '600',
+    color: '#0a1929',
+    margin: '0 0 16px 0',
+    paddingBottom: '12px',
+    borderBottom: '2px solid #e2e8f0'
+  },
+  behavioralStats: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+    gap: '12px',
+    marginBottom: '16px'
+  },
+  behavioralStat: {
+    background: 'white',
+    padding: '12px 16px',
+    borderRadius: '8px',
+    border: '1px solid #e2e8f0',
+    textAlign: 'center'
+  },
+  behavioralLabel: {
+    display: 'block',
+    fontSize: '11px',
+    color: '#94a3b8',
+    textTransform: 'uppercase',
+    letterSpacing: '0.04em',
+    marginBottom: '4px'
+  },
+  behavioralValue: {
+    fontSize: '18px',
+    fontWeight: '700',
+    color: '#0a1929'
+  },
+  riskBadge: {
+    display: 'inline-block',
+    padding: '4px 12px',
+    borderRadius: '12px',
+    fontSize: '13px',
+    fontWeight: '600'
+  },
+  riskSummary: {
+    padding: '12px 16px',
+    background: 'white',
+    borderRadius: '8px',
+    border: '1px solid #e2e8f0',
+    marginBottom: '12px',
+    fontSize: '14px',
+    color: '#475569'
+  },
+  flaggedQuestions: {
+    marginTop: '12px'
+  },
+  flaggedTitle: {
+    fontSize: '14px',
+    fontWeight: '600',
+    color: '#0a1929',
+    marginBottom: '8px'
+  },
+  flaggedList: {
+    listStyle: 'none',
+    padding: '0',
+    margin: '0'
+  },
+  flaggedItem: {
+    padding: '6px 12px',
+    background: 'white',
+    borderRadius: '4px',
+    borderBottom: '1px solid #f1f5f9',
+    fontSize: '13px',
+    color: '#475569'
+  },
+  noBehavioralData: {
+    textAlign: 'center',
+    padding: '30px 20px',
+    color: '#64748b'
+  },
+  noBehavioralSubtext: {
+    fontSize: '13px',
+    color: '#94a3b8',
+    marginTop: '8px'
   }
 };
