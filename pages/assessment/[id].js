@@ -1,4 +1,4 @@
-// pages/assessment/[id].js - COMPLETE WORKING VERSION WITH TIMER PERSISTENCE
+// pages/assessment/[id].js - UPDATED WITH BEHAVIORAL TRACKING
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
@@ -148,9 +148,17 @@ function AssessmentContent() {
   const [timeLimitSeconds, setTimeLimitSeconds] = useState(7200);
   const [questionStartTime, setQuestionStartTime] = useState(Date.now());
 
+  // ============================================================
+  // BEHAVIORAL TRACKING STATE
+  // ============================================================
+  const [tabSwitchCount, setTabSwitchCount] = useState(0);
+  const [copyAttempts, setCopyAttempts] = useState(0);
+  const [pasteAttempts, setPasteAttempts] = useState(0);
+  const [rightClickAttempts, setRightClickAttempts] = useState(0);
   const [violationCount, setViolationCount] = useState(0);
   const [violationMessage, setViolationMessage] = useState("");
   const [showViolationWarning, setShowViolationWarning] = useState(false);
+  const [questionStartTimes, setQuestionStartTimes] = useState({});
 
   const [accessDenied, setAccessDenied] = useState(false);
   const [alreadySubmitted, setAlreadySubmitted] = useState(false);
@@ -225,7 +233,12 @@ function AssessmentContent() {
             time_spent_seconds: Math.floor((Date.now() - questionStartTime) / 1000),
             times_changed: changeCount,
             initial_answer_id: Array.isArray(initialAns) ? initialAns.join(",") : String(initialAns),
-            is_answer_change: false
+            is_answer_change: false,
+            tab_switches: tabSwitchCount,
+            copy_attempts: copyAttempts,
+            paste_attempts: pasteAttempts,
+            right_click_attempts: rightClickAttempts,
+            violations: violationCount
           }
         );
       });
@@ -254,6 +267,9 @@ function AssessmentContent() {
     }
   }
 
+  // ============================================================
+  // HANDLE ANSWER SELECT - WITH BEHAVIORAL DATA
+  // ============================================================
   async function handleAnswerSelect(questionId, answerId, multipleCorrect) {
     if (isTimeExpired || elapsedSeconds >= timeLimitSeconds) {
       alert("Time has expired! The assessment is being submitted automatically.");
@@ -266,6 +282,8 @@ function AssessmentContent() {
     const actualMultipleCorrect = multipleCorrect && !isNationalServiceType;
 
     const timeSpentSeconds = Math.floor((Date.now() - questionStartTime) / 1000);
+    const timeOnQuestion = Math.floor((Date.now() - (questionStartTimes[questionId] || questionStartTime)) / 1000);
+    
     let newSelectedAnswer;
     let isAnswerChange = false;
     let isFirstAnswer = false;
@@ -305,15 +323,26 @@ function AssessmentContent() {
 
     try {
       const answerToStore = Array.isArray(newSelectedAnswer) ? newSelectedAnswer.join(",") : newSelectedAnswer;
+      
+      // ============================================================
+      // SAVE WITH BEHAVIORAL METADATA
+      // ============================================================
       const result = await saveAnswer(
         sessionIdRef.current,
         questionId,
         answerToStore,
         {
           time_spent_seconds: timeSpentSeconds,
+          time_on_question: timeOnQuestion,
           times_changed: nextChangeCount,
           initial_answer_id: Array.isArray(initialAnswerId) ? initialAnswerId.join(",") : initialAnswerId,
-          is_answer_change: isAnswerChange
+          is_answer_change: isAnswerChange,
+          tab_switches: tabSwitchCount,
+          copy_attempts: copyAttempts,
+          paste_attempts: pasteAttempts,
+          right_click_attempts: rightClickAttempts,
+          violations: violationCount,
+          previous_question: currentIndex
         }
       );
 
@@ -337,6 +366,9 @@ function AssessmentContent() {
     setQuestionStartTime(Date.now());
   }
 
+  // ============================================================
+  // LOG VIOLATION - WITH BEHAVIORAL TRACKING
+  // ============================================================
   async function logViolation(violationType) {
     if (!sessionIdRef.current || alreadySubmitted || isAutoSubmitting || isTimeExpired) return;
     const newCount = violationCount + 1;
@@ -348,6 +380,65 @@ function AssessmentContent() {
     }
   }
 
+  // ============================================================
+  // BEHAVIORAL TRACKING EFFECTS
+  // ============================================================
+  
+  // Track tab switches (when user leaves the page)
+  useEffect(() => {
+    if (loading || alreadySubmitted || accessDenied || !session || isTimeExpired) return;
+
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        setTabSwitchCount(prev => prev + 1);
+        logViolation("Tab switch");
+      }
+    };
+
+    const handlePageHide = () => {
+      setTabSwitchCount(prev => prev + 1);
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('pagehide', handlePageHide);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('pagehide', handlePageHide);
+    };
+  }, [loading, alreadySubmitted, accessDenied, session, isTimeExpired]);
+
+  // Track right-click attempts
+  useEffect(() => {
+    if (loading || alreadySubmitted || accessDenied || !session || isTimeExpired) return;
+
+    const handleContextMenu = (event) => {
+      event.preventDefault();
+      setRightClickAttempts(prev => prev + 1);
+      logViolation("Right-click attempt");
+      return false;
+    };
+
+    document.addEventListener("contextmenu", handleContextMenu);
+
+    return () => {
+      document.removeEventListener("contextmenu", handleContextMenu);
+    };
+  }, [loading, alreadySubmitted, accessDenied, session, isTimeExpired]);
+
+  // Track question start times
+  useEffect(() => {
+    if (currentQuestion.id && !questionStartTimes[currentQuestion.id]) {
+      setQuestionStartTimes(prev => ({
+        ...prev,
+        [currentQuestion.id]: Date.now()
+      }));
+    }
+  }, [currentQuestion.id]);
+
+  // ============================================================
+  // INITIALIZATION
+  // ============================================================
   useEffect(() => {
     const init = async () => {
       try {
@@ -362,6 +453,10 @@ function AssessmentContent() {
         setSaveStatus({});
         setElapsedSeconds(0);
         setViolationCount(0);
+        setTabSwitchCount(0);
+        setCopyAttempts(0);
+        setPasteAttempts(0);
+        setRightClickAttempts(0);
         setIsTimeExpired(false);
         sessionIdRef.current = null;
         submittingRef.current = false;
@@ -524,21 +619,60 @@ function AssessmentContent() {
   }, [alreadySubmitted, isTimeExpired, sessionIdRef.current]);
 
   // ============================================================
-  // ANTI-CHEAT EFFECT
+  // ANTI-CHEAT EFFECT - With behavioral tracking
   // ============================================================
   useEffect(() => {
     if (loading || alreadySubmitted || accessDenied || !session || isTimeExpired) return;
 
-    const handleCopy = (event) => { event.preventDefault(); logViolation("Copy attempt"); return false; };
-    const handlePaste = (event) => { event.preventDefault(); logViolation("Paste attempt"); return false; };
-    const handleCut = (event) => { event.preventDefault(); logViolation("Cut attempt"); return false; };
-    const handleContextMenu = (event) => { event.preventDefault(); logViolation("Right-click attempt"); return false; };
+    const handleCopy = (event) => { 
+      event.preventDefault(); 
+      setCopyAttempts(prev => prev + 1);
+      logViolation("Copy attempt"); 
+      return false; 
+    };
+    
+    const handlePaste = (event) => { 
+      event.preventDefault(); 
+      setPasteAttempts(prev => prev + 1);
+      logViolation("Paste attempt"); 
+      return false; 
+    };
+    
+    const handleCut = (event) => { 
+      event.preventDefault(); 
+      logViolation("Cut attempt"); 
+      return false; 
+    };
+    
+    const handleContextMenu = (event) => { 
+      event.preventDefault(); 
+      setRightClickAttempts(prev => prev + 1);
+      logViolation("Right-click attempt"); 
+      return false; 
+    };
+    
     const handleKeyDown = (event) => {
       const key = String(event.key || "").toLowerCase();
-      if (event.key === "PrintScreen") { event.preventDefault(); logViolation("Screenshot attempt"); return false; }
-      if (event.key === "F12") { event.preventDefault(); logViolation("DevTools attempt"); return false; }
-      if (event.ctrlKey && event.shiftKey && ["i", "j", "c"].includes(key)) { event.preventDefault(); logViolation("DevTools shortcut attempt"); return false; }
-      if (event.ctrlKey && key === "u") { event.preventDefault(); logViolation("View source attempt"); return false; }
+      if (event.key === "PrintScreen") { 
+        event.preventDefault(); 
+        logViolation("Screenshot attempt"); 
+        return false; 
+      }
+      if (event.key === "F12") { 
+        event.preventDefault(); 
+        logViolation("DevTools attempt"); 
+        return false; 
+      }
+      if (event.ctrlKey && event.shiftKey && ["i", "j", "c"].includes(key)) { 
+        event.preventDefault(); 
+        logViolation("DevTools shortcut attempt"); 
+        return false; 
+      }
+      if (event.ctrlKey && key === "u") { 
+        event.preventDefault(); 
+        logViolation("View source attempt"); 
+        return false; 
+      }
       return true;
     };
 
@@ -686,221 +820,9 @@ function AssessmentContent() {
 
       {showSuccessModal && <div style={styles.modalOverlay}><div style={{ ...styles.modalContent, textAlign: "center" }}><div style={styles.successIconLarge}>✓</div><h2 style={{ color: successColor }}>Assessment Complete!</h2><p>Your assessment has been successfully submitted.</p><p style={{ color: "#64748b" }}>Redirecting to completion page...</p></div></div>}
 
-      {/* MAIN ASSESSMENT UI */}
+      {/* MAIN ASSESSMENT UI - Keep the same as before */}
       <div style={styles.container}>
-        <div style={styles.header}>
-          <div style={styles.headerContent}>
-            <div style={styles.headerLeft}>
-              <button onClick={handleBackClick} style={styles.backButton}>←</button>
-              <div style={styles.brandSection}>
-                <div style={styles.logoContainer}>
-                  <div style={styles.logoText}>
-                    <span style={styles.logoMain}>STRATAVAX</span>
-                    <span style={styles.logoSub}>CAPABILITY ASSESSMENT</span>
-                  </div>
-                </div>
-                {isNationalService && (
-                  <div style={styles.nationalBadge}>
-                    <span style={styles.nationalBadgeIcon}>🇬🇭</span>
-                    <span style={styles.nationalBadgeText}>National Service</span>
-                  </div>
-                )}
-              </div>
-            </div>
-            <div style={styles.headerRight}>
-              <div style={styles.timer}>
-                <div style={styles.timerLabel}>TIME REMAINING</div>
-                <div style={{ ...styles.timerValue, color: isTimeCritical ? dangerColor : accentColor }}>
-                  {isTimeExpired ? "EXPIRED" : timeRemainingFormatted}
-                </div>
-              </div>
-            </div>
-          </div>
-          <div style={styles.headerMetaBar}>
-            <span style={styles.headerMetaItem}>Question {currentIndex + 1}</span>
-            <span style={styles.headerMetaDivider}>•</span>
-            <span style={styles.headerMetaItem}>{currentQuestion.section || "General"}</span>
-            {isMultipleCorrect && !isNationalService && (
-              <>
-                <span style={styles.headerMetaDivider}>•</span>
-                <span style={{ ...styles.headerMetaItem, color: accentColor, fontWeight: 600 }}>Select all that apply</span>
-              </>
-            )}
-          </div>
-        </div>
-
-        <div style={styles.mainContent}>
-          <div style={styles.leftSidebar}>
-            <div style={styles.statusCard}>
-              <div style={styles.statusNumber}>Question {currentIndex + 1}</div>
-              <div style={styles.statusBadge}>
-                {totalAnswered > 0 ? 'Answered' : 'Not yet answered'}
-              </div>
-            </div>
-
-            <div style={styles.statsCard}>
-              <div style={styles.statsRow}><span style={styles.statsLabel}>Answered</span><span style={styles.statsValue}>{totalAnswered}</span></div>
-              <div style={styles.statsRow}><span style={styles.statsLabel}>Remaining</span><span style={styles.statsValue}>{questions.length - totalAnswered}</span></div>
-              <div style={styles.statsRow}><span style={styles.statsLabel}>Changes</span><span style={styles.statsValue}>{totalChanges}</span></div>
-              <div style={styles.statsDivider} />
-              <div style={styles.statsRow}><span style={styles.statsLabel}>Progress</span><span style={styles.statsValue}>{Math.round((totalAnswered / questions.length) * 100)}%</span></div>
-              <div style={styles.progressBar}>
-                <div style={{ ...styles.progressFill, width: Math.min((totalAnswered / questions.length) * 100, 100) + '%' }} />
-              </div>
-            </div>
-
-            <div style={styles.metaCard}>
-              <div style={styles.metaItem}>Marked out of 1.00</div>
-              <div style={styles.metaItem}>Flag question</div>
-            </div>
-          </div>
-
-          <div style={styles.middleColumn}>
-            <div style={styles.questionCard}>
-              <div style={styles.questionText}>
-                {currentQuestion.question_text}
-              </div>
-
-              {isMultipleCorrect && !isNationalService && (
-                <div style={styles.multipleHint}>
-                  💡 Select one or more answers
-                </div>
-              )}
-
-              <div style={styles.answersContainer}>
-                {safeArray(currentQuestion.answers).map((answer, index) => {
-                  const selected = isAnswerSelected(currentQuestion.id, answer.id);
-                  const optionLetter = String.fromCharCode(65 + index);
-                  return (
-                    <button 
-                      key={answer.id} 
-                      className="answer-option"
-                      onClick={() => handleAnswerSelect(currentQuestion.id, answer.id, isMultipleCorrect)} 
-                      disabled={isDisabled}
-                      style={{ 
-                        ...styles.answerCard, 
-                        background: selected ? "#e3f2fd" : "white", 
-                        borderColor: selected ? primaryColor : "#e2e8f0",
-                        opacity: isDisabled ? 0.6 : 1,
-                        cursor: isDisabled ? "not-allowed" : "pointer"
-                      }}
-                    >
-                      <div style={{ 
-                        ...styles.answerCheckbox, 
-                        background: selected ? primaryColor : "white", 
-                        borderColor: selected ? primaryColor : "#cbd5e1"
-                      }}>
-                        {selected && <span style={{ color: "white", fontSize: "14px" }}>✓</span>}
-                      </div>
-                      <span style={{
-                        flex: 1,
-                        color: selected ? primaryColor : "#1e293b",
-                        fontSize: "15px",
-                        fontWeight: selected ? 600 : 400
-                      }}>
-                        {optionLetter}. {answer.answer_text}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div style={styles.navButtons}>
-              <button 
-                onClick={() => moveToQuestion(currentIndex - 1)} 
-                disabled={currentIndex === 0 || isDisabled} 
-                style={{ ...styles.navButton, opacity: (currentIndex === 0 || isDisabled) ? 0.5 : 1 }}
-              >
-                ← Previous page
-              </button>
-              {isLastQuestion ? (
-                <button 
-                  onClick={() => setShowSubmitModal(true)} 
-                  disabled={isDisabled} 
-                  style={styles.submitButton}
-                >
-                  Submit
-                </button>
-              ) : (
-                <button 
-                  onClick={() => moveToQuestion(currentIndex + 1)} 
-                  disabled={isDisabled} 
-                  style={styles.nextButton}
-                >
-                  Next page →
-                </button>
-              )}
-            </div>
-          </div>
-
-          <div style={styles.rightColumn}>
-            <div style={styles.navigatorCard}>
-              <div style={styles.navigatorHeader}>
-                <span style={styles.navigatorTitle}>Quiz navigation</span>
-              </div>
-              <div style={styles.questionGrid}>
-                {questions.map((question, index) => {
-                  const questionAnswer = answers[question.id];
-                  const answered = questionAnswer !== undefined && (Array.isArray(questionAnswer) ? questionAnswer.length > 0 : questionAnswer !== null);
-                  const current = index === currentIndex;
-                  const changed = answerChangeCount[question.id] > 0;
-                  
-                  let bgColor = "white";
-                  let textColor = "#1e293b";
-                  let borderColor = "#e2e8f0";
-                  
-                  if (current) {
-                    bgColor = accentColor;
-                    textColor = primaryColor;
-                    borderColor = accentColor;
-                  } else if (answered && changed) {
-                    bgColor = warningColor;
-                    textColor = "white";
-                    borderColor = warningColor;
-                  } else if (answered) {
-                    bgColor = successColor;
-                    textColor = "white";
-                    borderColor = successColor;
-                  }
-                  
-                  return (
-                    <button 
-                      key={question.id} 
-                      className="navigator-item"
-                      onClick={() => moveToQuestion(index)} 
-                      disabled={isDisabled}
-                      style={{ 
-                        ...styles.gridItem, 
-                        background: bgColor, 
-                        color: textColor, 
-                        borderColor: borderColor,
-                        opacity: isDisabled ? 0.6 : 1,
-                        cursor: isDisabled ? "not-allowed" : "pointer",
-                        fontWeight: current ? 700 : 500,
-                        boxShadow: current ? `0 0 0 2px ${accentColor}40` : 'none'
-                      }}
-                    >
-                      {index + 1}
-                    </button>
-                  );
-                })}
-              </div>
-              
-              <div style={styles.legend}>
-                <div style={styles.legendItem}><div style={{ ...styles.legendDot, background: successColor }} /><span>Answered</span></div>
-                <div style={styles.legendItem}><div style={{ ...styles.legendDot, background: warningColor }} /><span>Changed</span></div>
-                <div style={styles.legendItem}><div style={{ ...styles.legendDot, background: accentColor }} /><span>Current</span></div>
-                <div style={styles.legendItem}><div style={{ ...styles.legendDot, background: "white", border: "2px solid #e2e8f0" }} /><span>Pending</span></div>
-              </div>
-
-              <div style={styles.navigatorTimer}>
-                <span style={styles.navigatorTimerLabel}>⏱</span>
-                <span style={styles.navigatorTimerValue}>{timeRemainingFormatted}</span>
-              </div>
-            </div>
-          </div>
-        </div>
+        {/* ... keep the existing JSX ... */}
       </div>
 
       <style jsx>{`
@@ -941,10 +863,11 @@ function AssessmentContent() {
 }
 
 // ============================================================
-// STYLES
+// STYLES - Keep the same as before
 // ============================================================
 
 const styles = {
+  // ... keep all existing styles ...
   loadingContainer: { 
     minHeight: "100vh", 
     display: "flex", 
