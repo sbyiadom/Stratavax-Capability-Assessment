@@ -1,4 +1,4 @@
-// pages/admin/reports/[resultId].js - COMPLETE WORKING VERSION
+// pages/admin/reports/[resultId].js - COMPLETE CORRECTED VERSION
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -318,10 +318,10 @@ export default function AdminReportView() {
             {showBehavioral ? 'Hide Behavioral Matrix' : 'Show Behavioral Matrix'}
           </button>
         </div>
+        {/* REMOVED resultId prop until component accepts it */}
         <NationalServiceReport 
           report={reportData.report} 
           onBack={handleBack} 
-          resultId={resultId}
         />
         
         {showBehavioral && (
