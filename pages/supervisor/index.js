@@ -1,4 +1,4 @@
-// pages/supervisor/index.js - COMPLETE FIXED VERSION
+// pages/supervisor/index.js - COMPLETE WITH EXPORT FUNCTIONALITY
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -18,6 +18,7 @@ export default function SupervisorDashboard() {
   const [selectedAssessments, setSelectedAssessments] = useState({});
   const [errorMessage, setErrorMessage] = useState('');
   const [debugInfo, setDebugInfo] = useState(null);
+  const [exporting, setExporting] = useState(false);
   const [stats, setStats] = useState({
     totalCandidates: 0,
     completedAssessments: 0,
@@ -109,6 +110,49 @@ export default function SupervisorDashboard() {
       setErrorMessage(error?.message || 'Unable to load dashboard data.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      const token = session?.session?.access_token;
+
+      if (!token) {
+        throw new Error('Not authenticated');
+      }
+
+      let exportType = 'all';
+      if (activeTab === 'national_service') exportType = 'national_service';
+      else if (activeTab === 'other') exportType = 'other';
+
+      const response = await fetch(`/api/supervisor/export-reports?type=${exportType}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Export failed');
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `supervisor-reports-${new Date().toISOString().split('T')[0]}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+
+    } catch (error) {
+      console.error('Export error:', error);
+      alert('Failed to export: ' + error.message);
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -212,6 +256,17 @@ export default function SupervisorDashboard() {
           </div>
           <div style={styles.headerActions}>
             <button onClick={fetchDashboardData} style={styles.refreshButton}>Refresh</button>
+            <button 
+              onClick={handleExport} 
+              disabled={exporting}
+              style={{
+                ...styles.exportButton,
+                opacity: exporting ? 0.6 : 1,
+                cursor: exporting ? 'not-allowed' : 'pointer'
+              }}
+            >
+              {exporting ? '⏳ Exporting...' : '📊 Export to Excel'}
+            </button>
           </div>
         </div>
 
@@ -417,7 +472,6 @@ function NationalServiceTab({ reports, getScoreColor, getScoreTextColor, getReco
 }
 
 function OtherAssessmentsTab({ reports, onViewReport }) {
-  // Filter out any National Service reports that might have slipped through
   const filteredReports = reports.filter(r => !r.is_national_service);
 
   return (
@@ -593,7 +647,7 @@ const styles = {
   },
   title: { fontSize: '24px', fontWeight: '700', color: '#0a1929', margin: 0 },
   subtitle: { fontSize: '14px', color: '#64748b', margin: '4px 0 0' },
-  headerActions: { display: 'flex', gap: '10px' },
+  headerActions: { display: 'flex', gap: '10px', flexWrap: 'wrap' },
   refreshButton: {
     padding: '8px 16px',
     background: '#f1f5f9',
@@ -603,6 +657,21 @@ const styles = {
     fontSize: '13px',
     fontWeight: '500',
     color: '#475569'
+  },
+  exportButton: {
+    padding: '8px 20px',
+    background: '#16a34a',
+    color: 'white',
+    border: 'none',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    fontSize: '13px',
+    fontWeight: '600',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    fontFamily: 'inherit',
+    transition: 'all 0.2s'
   },
   errorBox: {
     background: '#fee2e2',
@@ -744,11 +813,7 @@ const styles = {
     cursor: 'pointer',
     fontSize: '12px',
     fontWeight: '500',
-    whiteSpace: 'nowrap',
-    disabled: {
-      opacity: 0.5,
-      cursor: 'not-allowed'
-    }
+    whiteSpace: 'nowrap'
   },
   pendingText: { color: '#94a3b8', fontSize: '13px' },
   assessmentDropdown: {
