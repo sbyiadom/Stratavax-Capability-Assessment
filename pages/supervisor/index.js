@@ -1,4 +1,4 @@
-// pages/supervisor/index.js - PROFESSIONAL VERSION (No Emojis)
+// pages/supervisor/index.js - COMPLETE FIXED VERSION
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -66,6 +66,10 @@ export default function SupervisorDashboard() {
       const nsRows = Array.isArray(payload.nationalServiceReports) ? payload.nationalServiceReports : [];
       const otherRows = Array.isArray(payload.otherReports) ? payload.otherReports : [];
       const dashboardStats = payload.stats || {};
+
+      console.log('[Supervisor] National Service reports:', nsRows.length);
+      console.log('[Supervisor] Other reports:', otherRows.length);
+      console.log('[Supervisor] Sample NS report:', nsRows.length > 0 ? nsRows[0] : 'None');
 
       setCandidates(candidateRows);
       setNationalServiceReports(nsRows);
@@ -233,7 +237,11 @@ export default function SupervisorDashboard() {
         {debugInfo && (
           <div style={styles.debugBox}>
             <span>Debug:</span>{' '}
-            Candidates loaded: {debugInfo.assignedCandidates || 0} | Assessments: {debugInfo.candidateAssessments || 0} | Results: {debugInfo.resultRows || 0}
+            Candidates: {debugInfo.assignedCandidates || 0} | 
+            Assessments: {debugInfo.candidateAssessments || 0} | 
+            Results: {debugInfo.resultRows || 0} |
+            NS Reports: {debugInfo.nsReports || 0} |
+            Other Reports: {debugInfo.otherReports || 0}
           </div>
         )}
 
@@ -325,7 +333,7 @@ function NationalServiceTab({ reports, getScoreColor, getScoreTextColor, getReco
   return (
     <div style={styles.tabPanel}>
       <div style={styles.tabDescription}>
-        <p>All National Service assessment reports assigned to this supervisor.</p>
+        <p>All National Service assessment reports assigned to this supervisor. ({reports.length} reports)</p>
       </div>
       {reports.length === 0 ? (
         <div style={styles.emptyState}>
@@ -409,12 +417,15 @@ function NationalServiceTab({ reports, getScoreColor, getScoreTextColor, getReco
 }
 
 function OtherAssessmentsTab({ reports, onViewReport }) {
+  // Filter out any National Service reports that might have slipped through
+  const filteredReports = reports.filter(r => !r.is_national_service);
+
   return (
     <div style={styles.tabPanel}>
       <div style={styles.tabDescription}>
-        <p>All other completed assessments for candidates under your supervision.</p>
+        <p>All other completed assessments for candidates under your supervision. ({filteredReports.length} reports)</p>
       </div>
-      {reports.length === 0 ? (
+      {filteredReports.length === 0 ? (
         <div style={styles.emptyState}>
           <p>No other assessments found.</p>
         </div>
@@ -430,13 +441,18 @@ function OtherAssessmentsTab({ reports, onViewReport }) {
               </tr>
             </thead>
             <tbody>
-              {reports.map((report) => (
+              {filteredReports.map((report) => (
                 <tr key={report.result_id || `${report.candidate_id}-${report.assessment_id}`} style={styles.tr}>
                   <td style={styles.td}>
                     <div style={styles.cellName}>{report.candidate_name}</div>
                     <div style={styles.cellSub}>{report.university || ''} • {report.programme || ''}</div>
                   </td>
-                  <td style={styles.td}>{report.assessment_title}</td>
+                  <td style={styles.td}>
+                    {report.assessment_title}
+                    {report.assessment_code === 'national_service' && (
+                      <span style={styles.nsTag}>NS</span>
+                    )}
+                  </td>
                   <td style={styles.td}>
                     <span style={styles.scoreBadge}>{Math.round(Number(report.score || 0))}%</span>
                   </td>
@@ -674,6 +690,16 @@ const styles = {
   tr: { transition: 'background 0.2s' },
   cellName: { fontWeight: '600', color: '#1a202c' },
   cellSub: { fontSize: '12px', color: '#94a3b8' },
+  nsTag: {
+    fontSize: '10px',
+    fontWeight: '600',
+    padding: '2px 6px',
+    background: '#dbeafe',
+    color: '#1e40af',
+    borderRadius: '4px',
+    marginLeft: '8px',
+    display: 'inline-block'
+  },
   statusBadge: {
     padding: '4px 12px',
     borderRadius: '20px',
@@ -718,7 +744,11 @@ const styles = {
     cursor: 'pointer',
     fontSize: '12px',
     fontWeight: '500',
-    whiteSpace: 'nowrap'
+    whiteSpace: 'nowrap',
+    disabled: {
+      opacity: 0.5,
+      cursor: 'not-allowed'
+    }
   },
   pendingText: { color: '#94a3b8', fontSize: '13px' },
   assessmentDropdown: {
