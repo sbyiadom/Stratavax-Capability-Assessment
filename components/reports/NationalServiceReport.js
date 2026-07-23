@@ -6,9 +6,12 @@ import { supabase } from '../../supabase/client';
 export default function NationalServiceReport({ report, onBack, resultId }) {
   const [behavioralMatrix, setBehavioralMatrix] = useState(null);
   const [showBehavioral, setShowBehavioral] = useState(false);
+  const [loadingBehavioral, setLoadingBehavioral] = useState(false);
 
   useEffect(() => {
     console.log('[NationalServiceReport] Report received:', report);
+    console.log('[NationalServiceReport] resultId prop:', resultId);
+    
     if (resultId) {
       fetchBehavioralMatrix(resultId);
     }
@@ -19,10 +22,17 @@ export default function NationalServiceReport({ report, onBack, resultId }) {
   // ============================================================
   const fetchBehavioralMatrix = async (id) => {
     try {
+      setLoadingBehavioral(true);
+      console.log('[Behavioral] Fetching for resultId:', id);
+      
       const { data: session } = await supabase.auth.getSession();
       const token = session?.session?.access_token;
 
-      if (!token) return;
+      if (!token) {
+        console.log('[Behavioral] No token found');
+        setLoadingBehavioral(false);
+        return;
+      }
 
       const response = await fetch(`/api/assessment/behavioral-matrix?resultId=${id}`, {
         headers: {
@@ -31,12 +41,16 @@ export default function NationalServiceReport({ report, onBack, resultId }) {
       });
 
       const data = await response.json();
+      console.log('[Behavioral] API Response:', data);
+      
       if (data.success) {
         setBehavioralMatrix(data.behavioralMatrix);
-        console.log('[Behavioral Matrix] Data loaded:', data.behavioralMatrix);
+        console.log('[Behavioral] Matrix data:', data.behavioralMatrix);
       }
     } catch (error) {
       console.error('Error fetching behavioral matrix:', error);
+    } finally {
+      setLoadingBehavioral(false);
     }
   };
 
@@ -329,8 +343,15 @@ export default function NationalServiceReport({ report, onBack, resultId }) {
 
   const suggestedPlacements = getSuggestedPlacements();
 
-  // Check if behavioral data exists
-  const hasBehavioralData = behavioralMatrix?.behavior?.hasBehavioralData || false;
+  // ============================================================
+  // CHECK IF BEHAVIORAL DATA EXISTS
+  // ============================================================
+  const hasBehavioralData = 
+    behavioralMatrix?.behavior?.hasBehavioralData === true ||
+    (behavioralMatrix?.behavior?.tabSwitches || 0) > 0 ||
+    (behavioralMatrix?.behavior?.violations || 0) > 0 ||
+    (behavioralMatrix?.behavior?.answerChanges || 0) > 0 ||
+    (behavioralMatrix?.timing?.timePerQuestion && behavioralMatrix.timing.timePerQuestion.length > 0);
 
   // ============================================================
   // RENDER
@@ -562,7 +583,7 @@ export default function NationalServiceReport({ report, onBack, resultId }) {
       </div>
 
       {/* ============================================================
-          BEHAVIORAL MATRIX SECTION - ADDED
+          BEHAVIORAL MATRIX SECTION
           ============================================================ */}
       <div style={styles.behavioralToggleContainer}>
         <button onClick={toggleBehavioral} style={styles.behavioralToggleButton}>
@@ -574,7 +595,11 @@ export default function NationalServiceReport({ report, onBack, resultId }) {
         <div style={styles.behavioralSection}>
           <h3 style={styles.behavioralTitle}>Behavioral Matrix</h3>
           
-          {behavioralMatrix && hasBehavioralData ? (
+          {loadingBehavioral ? (
+            <div style={styles.loadingBehavioral}>
+              <p>Loading behavioral data...</p>
+            </div>
+          ) : behavioralMatrix && hasBehavioralData ? (
             <>
               <div style={styles.behavioralStats}>
                 <div style={styles.behavioralStat}>
@@ -1178,6 +1203,11 @@ const styles = {
     borderBottom: '1px solid #f1f5f9',
     fontSize: '13px',
     color: '#475569'
+  },
+  loadingBehavioral: {
+    textAlign: 'center',
+    padding: '20px',
+    color: '#64748b'
   },
   noBehavioralData: {
     textAlign: 'center',
