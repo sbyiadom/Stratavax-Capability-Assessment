@@ -1,4 +1,4 @@
-// pages/supervisor/reports/[resultId].js - COMPLETE WITH BEHAVIORAL MATRIX
+// pages/supervisor/reports/[resultId].js - COMPLETE UPDATED FILE
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -20,6 +20,7 @@ export default function SupervisorReportView() {
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [behavioralMatrix, setBehavioralMatrix] = useState(null);
   const [showBehavioral, setShowBehavioral] = useState(false);
+  const [loadingBehavioral, setLoadingBehavioral] = useState(false);
 
   useEffect(() => {
     if (!resultId || !session) return;
@@ -136,10 +137,16 @@ export default function SupervisorReportView() {
   // ============================================================
   const fetchBehavioralMatrix = async (id) => {
     try {
+      setLoadingBehavioral(true);
+      console.log('[Behavioral] Fetching for resultId:', id);
+      
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData?.session?.access_token;
 
-      if (!token) return;
+      if (!token) {
+        console.log('[Behavioral] No token found');
+        return;
+      }
 
       const response = await fetch(`/api/assessment/behavioral-matrix?resultId=${id}`, {
         headers: {
@@ -148,12 +155,16 @@ export default function SupervisorReportView() {
       });
 
       const data = await response.json();
+      console.log('[Behavioral] API Response:', data);
+      
       if (data.success) {
         setBehavioralMatrix(data.behavioralMatrix);
-        console.log('[Behavioral Matrix] Data loaded:', data.behavioralMatrix);
+        console.log('[Behavioral] Matrix data:', data.behavioralMatrix);
       }
     } catch (error) {
       console.error('Error fetching behavioral matrix:', error);
+    } finally {
+      setLoadingBehavioral(false);
     }
   };
 
@@ -175,6 +186,14 @@ export default function SupervisorReportView() {
     const secs = seconds % 60;
     return `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
   };
+
+  // Check if behavioral data exists
+  const hasBehavioralData = 
+    behavioralMatrix?.behavior?.hasBehavioralData === true ||
+    (behavioralMatrix?.behavior?.tabSwitches || 0) > 0 ||
+    (behavioralMatrix?.behavior?.violations || 0) > 0 ||
+    (behavioralMatrix?.behavior?.answerChanges || 0) > 0 ||
+    (behavioralMatrix?.timing?.timePerQuestion && behavioralMatrix.timing.timePerQuestion.length > 0);
 
   if (authLoading || loading) {
     return (
@@ -216,7 +235,7 @@ export default function SupervisorReportView() {
           <span style={styles.breadcrumbSeparator}>|</span>
           <span style={styles.breadcrumbText}>National Service Report</span>
           <button onClick={toggleBehavioral} style={styles.behavioralToggle}>
-            {showBehavioral ? 'Hide' : 'Show'} Behavioral Matrix
+            {showBehavioral ? 'Hide Behavioral Matrix' : 'Show Behavioral Matrix'}
           </button>
         </div>
         <NationalServiceReport 
@@ -224,80 +243,105 @@ export default function SupervisorReportView() {
           onBack={handleBack} 
           showAssignment={false}
           userRole="supervisor"
+          resultId={resultId}  // Pass resultId for behavioral data
         />
         
-        {showBehavioral && behavioralMatrix && (
+        {showBehavioral && (
           <div style={styles.behavioralSection}>
             <h3 style={styles.behavioralTitle}>Behavioral Matrix</h3>
             
-            <div style={styles.behavioralStats}>
-              <div style={styles.behavioralStat}>
-                <span style={styles.behavioralLabel}>Total Time</span>
-                <span style={styles.behavioralValue}>
-                  {formatTime(behavioralMatrix.timing?.totalTimeSeconds)}
-                </span>
+            {loadingBehavioral ? (
+              <div style={styles.loadingBehavioral}>
+                <p>Loading behavioral data...</p>
               </div>
-              <div style={styles.behavioralStat}>
-                <span style={styles.behavioralLabel}>Avg Time per Question</span>
-                <span style={styles.behavioralValue}>
-                  {behavioralMatrix.timing?.averageTimePerQuestion || 0}s
-                </span>
-              </div>
-              <div style={styles.behavioralStat}>
-                <span style={styles.behavioralLabel}>Answer Changes</span>
-                <span style={styles.behavioralValue}>
-                  {behavioralMatrix.behavior?.answerChanges || 0}
-                </span>
-              </div>
-              <div style={styles.behavioralStat}>
-                <span style={styles.behavioralLabel}>Tab Switches</span>
-                <span style={styles.behavioralValue}>
-                  {behavioralMatrix.behavior?.tabSwitches || 0}
-                </span>
-              </div>
-              <div style={styles.behavioralStat}>
-                <span style={styles.behavioralLabel}>Violations</span>
-                <span style={styles.behavioralValue}>
-                  {behavioralMatrix.behavior?.violations || 0}
-                </span>
-              </div>
-              <div style={styles.behavioralStat}>
-                <span style={styles.behavioralLabel}>Copy/Paste Attempts</span>
-                <span style={styles.behavioralValue}>
-                  {(behavioralMatrix.behavior?.copyAttempts || 0) + (behavioralMatrix.behavior?.pasteAttempts || 0)}
-                </span>
-              </div>
-              <div style={styles.behavioralStat}>
-                <span style={styles.behavioralLabel}>Risk Level</span>
-                <span style={{
-                  ...styles.riskBadge,
-                  background: behavioralMatrix.riskAssessment?.level === 'High Risk' ? '#fee2e2' :
-                             behavioralMatrix.riskAssessment?.level === 'Medium Risk' ? '#fef3c7' : '#dcfce7',
-                  color: behavioralMatrix.riskAssessment?.level === 'High Risk' ? '#991b1b' :
-                         behavioralMatrix.riskAssessment?.level === 'Medium Risk' ? '#92400e' : '#166534'
-                }}>
-                  {behavioralMatrix.riskAssessment?.level || 'Unknown'}
-                </span>
-              </div>
-            </div>
-            
-            <div style={styles.riskSummary}>
-              <p>{behavioralMatrix.riskAssessment?.summary || 'No behavioral data available.'}</p>
-            </div>
-            
-            {behavioralMatrix.flaggedQuestions && behavioralMatrix.flaggedQuestions.length > 0 && (
-              <div style={styles.flaggedQuestions}>
-                <h4 style={styles.flaggedTitle}>Flagged Questions</h4>
-                <ul style={styles.flaggedList}>
-                  {behavioralMatrix.flaggedQuestions.map((q, index) => (
-                    <li key={index} style={styles.flaggedItem}>
-                      Question {q.question_id}: {q.time_seconds}s, 
-                      {q.changed ? ' Changed ✓' : ''} 
-                      {q.violation ? ' Violation ⚠' : ''}
-                      {!q.changed && !q.violation && ' No concerns'}
-                    </li>
-                  ))}
-                </ul>
+            ) : behavioralMatrix && hasBehavioralData ? (
+              <>
+                <div style={styles.behavioralStats}>
+                  <div style={styles.behavioralStat}>
+                    <span style={styles.behavioralLabel}>Total Time</span>
+                    <span style={styles.behavioralValue}>
+                      {formatTime(behavioralMatrix.timing?.totalTimeSeconds)}
+                    </span>
+                  </div>
+                  <div style={styles.behavioralStat}>
+                    <span style={styles.behavioralLabel}>Avg Time per Question</span>
+                    <span style={styles.behavioralValue}>
+                      {behavioralMatrix.timing?.averageTimePerQuestion || 0}s
+                    </span>
+                  </div>
+                  <div style={styles.behavioralStat}>
+                    <span style={styles.behavioralLabel}>Answer Changes</span>
+                    <span style={styles.behavioralValue}>
+                      {behavioralMatrix.behavior?.answerChanges || 0}
+                    </span>
+                  </div>
+                  <div style={styles.behavioralStat}>
+                    <span style={styles.behavioralLabel}>Tab Switches</span>
+                    <span style={styles.behavioralValue}>
+                      {behavioralMatrix.behavior?.tabSwitches || 0}
+                    </span>
+                  </div>
+                  <div style={styles.behavioralStat}>
+                    <span style={styles.behavioralLabel}>Violations</span>
+                    <span style={styles.behavioralValue}>
+                      {behavioralMatrix.behavior?.violations || 0}
+                    </span>
+                  </div>
+                  <div style={styles.behavioralStat}>
+                    <span style={styles.behavioralLabel}>Copy/Paste Attempts</span>
+                    <span style={styles.behavioralValue}>
+                      {(behavioralMatrix.behavior?.copyAttempts || 0) + (behavioralMatrix.behavior?.pasteAttempts || 0)}
+                    </span>
+                  </div>
+                  <div style={styles.behavioralStat}>
+                    <span style={styles.behavioralLabel}>Right-Click Attempts</span>
+                    <span style={styles.behavioralValue}>
+                      {behavioralMatrix.behavior?.rightClickAttempts || 0}
+                    </span>
+                  </div>
+                  <div style={styles.behavioralStat}>
+                    <span style={styles.behavioralLabel}>Risk Level</span>
+                    <span style={{
+                      ...styles.riskBadge,
+                      background: behavioralMatrix.riskAssessment?.level === 'High Risk' ? '#fee2e2' :
+                                 behavioralMatrix.riskAssessment?.level === 'Medium Risk' ? '#fef3c7' : '#dcfce7',
+                      color: behavioralMatrix.riskAssessment?.level === 'High Risk' ? '#991b1b' :
+                             behavioralMatrix.riskAssessment?.level === 'Medium Risk' ? '#92400e' : '#166534'
+                    }}>
+                      {behavioralMatrix.riskAssessment?.level || 'Unknown'}
+                    </span>
+                  </div>
+                </div>
+                
+                <div style={styles.riskSummary}>
+                  <p>{behavioralMatrix.riskAssessment?.summary || 'No behavioral concerns detected.'}</p>
+                </div>
+                
+                {behavioralMatrix.flaggedQuestions && behavioralMatrix.flaggedQuestions.length > 0 && (
+                  <div style={styles.flaggedQuestions}>
+                    <h4 style={styles.flaggedTitle}>Flagged Questions</h4>
+                    <ul style={styles.flaggedList}>
+                      {behavioralMatrix.flaggedQuestions.slice(0, 10).map((q, index) => (
+                        <li key={index} style={styles.flaggedItem}>
+                          Question {q.question_id}: {q.time_seconds}s
+                          {q.changed ? ' - Changed' : ''}
+                          {q.violation ? ' - Violation' : ''}
+                        </li>
+                      ))}
+                      {behavioralMatrix.flaggedQuestions.length > 10 && (
+                        <li style={styles.flaggedItem}>... and {behavioralMatrix.flaggedQuestions.length - 10} more</li>
+                      )}
+                    </ul>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div style={styles.noBehavioralData}>
+                <p>No behavioral data is available for this assessment.</p>
+                <p style={styles.noBehavioralSubtext}>
+                  Behavioral data (tab switches, violations, answer changes, etc.) 
+                  is only tracked for assessments completed after the behavioral tracking feature was implemented.
+                </p>
               </div>
             )}
           </div>
@@ -323,7 +367,7 @@ export default function SupervisorReportView() {
             <span style={styles.breadcrumbSeparator}>|</span>
             <span style={styles.breadcrumbText}>National Service Report</span>
             <button onClick={toggleBehavioral} style={styles.behavioralToggle}>
-              {showBehavioral ? 'Hide' : 'Show'} Behavioral Matrix
+              {showBehavioral ? 'Hide Behavioral Matrix' : 'Show Behavioral Matrix'}
             </button>
           </div>
           <NationalServiceReport 
@@ -331,12 +375,155 @@ export default function SupervisorReportView() {
             onBack={handleBack}
             showAssignment={false}
             userRole="supervisor"
+            resultId={resultId}  // Pass resultId for behavioral data
           />
           
-          {showBehavioral && behavioralMatrix && (
+          {showBehavioral && (
             <div style={styles.behavioralSection}>
               <h3 style={styles.behavioralTitle}>Behavioral Matrix</h3>
               
+              {loadingBehavioral ? (
+                <div style={styles.loadingBehavioral}>
+                  <p>Loading behavioral data...</p>
+                </div>
+              ) : behavioralMatrix && hasBehavioralData ? (
+                <>
+                  <div style={styles.behavioralStats}>
+                    <div style={styles.behavioralStat}>
+                      <span style={styles.behavioralLabel}>Total Time</span>
+                      <span style={styles.behavioralValue}>
+                        {formatTime(behavioralMatrix.timing?.totalTimeSeconds)}
+                      </span>
+                    </div>
+                    <div style={styles.behavioralStat}>
+                      <span style={styles.behavioralLabel}>Avg Time per Question</span>
+                      <span style={styles.behavioralValue}>
+                        {behavioralMatrix.timing?.averageTimePerQuestion || 0}s
+                      </span>
+                    </div>
+                    <div style={styles.behavioralStat}>
+                      <span style={styles.behavioralLabel}>Answer Changes</span>
+                      <span style={styles.behavioralValue}>
+                        {behavioralMatrix.behavior?.answerChanges || 0}
+                      </span>
+                    </div>
+                    <div style={styles.behavioralStat}>
+                      <span style={styles.behavioralLabel}>Tab Switches</span>
+                      <span style={styles.behavioralValue}>
+                        {behavioralMatrix.behavior?.tabSwitches || 0}
+                      </span>
+                    </div>
+                    <div style={styles.behavioralStat}>
+                      <span style={styles.behavioralLabel}>Violations</span>
+                      <span style={styles.behavioralValue}>
+                        {behavioralMatrix.behavior?.violations || 0}
+                      </span>
+                    </div>
+                    <div style={styles.behavioralStat}>
+                      <span style={styles.behavioralLabel}>Copy/Paste Attempts</span>
+                      <span style={styles.behavioralValue}>
+                        {(behavioralMatrix.behavior?.copyAttempts || 0) + (behavioralMatrix.behavior?.pasteAttempts || 0)}
+                      </span>
+                    </div>
+                    <div style={styles.behavioralStat}>
+                      <span style={styles.behavioralLabel}>Right-Click Attempts</span>
+                      <span style={styles.behavioralValue}>
+                        {behavioralMatrix.behavior?.rightClickAttempts || 0}
+                      </span>
+                    </div>
+                    <div style={styles.behavioralStat}>
+                      <span style={styles.behavioralLabel}>Risk Level</span>
+                      <span style={{
+                        ...styles.riskBadge,
+                        background: behavioralMatrix.riskAssessment?.level === 'High Risk' ? '#fee2e2' :
+                                   behavioralMatrix.riskAssessment?.level === 'Medium Risk' ? '#fef3c7' : '#dcfce7',
+                        color: behavioralMatrix.riskAssessment?.level === 'High Risk' ? '#991b1b' :
+                               behavioralMatrix.riskAssessment?.level === 'Medium Risk' ? '#92400e' : '#166534'
+                      }}>
+                        {behavioralMatrix.riskAssessment?.level || 'Unknown'}
+                      </span>
+                    </div>
+                  </div>
+                  
+                  <div style={styles.riskSummary}>
+                    <p>{behavioralMatrix.riskAssessment?.summary || 'No behavioral concerns detected.'}</p>
+                  </div>
+                  
+                  {behavioralMatrix.flaggedQuestions && behavioralMatrix.flaggedQuestions.length > 0 && (
+                    <div style={styles.flaggedQuestions}>
+                      <h4 style={styles.flaggedTitle}>Flagged Questions</h4>
+                      <ul style={styles.flaggedList}>
+                        {behavioralMatrix.flaggedQuestions.slice(0, 10).map((q, index) => (
+                          <li key={index} style={styles.flaggedItem}>
+                            Question {q.question_id}: {q.time_seconds}s
+                            {q.changed ? ' - Changed' : ''}
+                            {q.violation ? ' - Violation' : ''}
+                          </li>
+                        ))}
+                        {behavioralMatrix.flaggedQuestions.length > 10 && (
+                          <li style={styles.flaggedItem}>... and {behavioralMatrix.flaggedQuestions.length - 10} more</li>
+                        )}
+                      </ul>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div style={styles.noBehavioralData}>
+                  <p>No behavioral data is available for this assessment.</p>
+                  <p style={styles.noBehavioralSubtext}>
+                    Behavioral data (tab switches, violations, answer changes, etc.) 
+                    is only tracked for assessments completed after the behavioral tracking feature was implemented.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+        </AppLayout>
+      );
+    }
+  }
+
+  // ============================================================
+  // DEFAULT: Use Stratavax Report for all non-National Service assessments
+  // ============================================================
+  console.log('[Supervisor Report] Rendering Stratavax Report');
+  
+  // Prepare data for Stratavax report
+  const stratavaxData = {
+    result: reportData?.result || null,
+    candidate: reportData?.result?.candidate_profiles || null,
+    assessment: reportData?.result?.assessments || null
+  };
+
+  return (
+    <AppLayout background="/images/supervisor-bg.jpg">
+      <div style={styles.breadcrumb}>
+        <button onClick={handleBack} style={styles.breadcrumbButton}>
+          ← Back to Supervisor Dashboard
+        </button>
+        <span style={styles.breadcrumbSeparator}>|</span>
+        <span style={styles.breadcrumbText}>Assessment Report</span>
+        <button onClick={toggleBehavioral} style={styles.behavioralToggle}>
+          {showBehavioral ? 'Hide Behavioral Data' : 'Show Behavioral Data'}
+        </button>
+      </div>
+      <StratavaxReport 
+        result={stratavaxData.result}
+        candidate={stratavaxData.candidate}
+        assessment={stratavaxData.assessment}
+        onBack={handleBack}
+      />
+      
+      {showBehavioral && (
+        <div style={styles.behavioralSection}>
+          <h3 style={styles.behavioralTitle}>Behavioral Matrix</h3>
+          
+          {loadingBehavioral ? (
+            <div style={styles.loadingBehavioral}>
+              <p>Loading behavioral data...</p>
+            </div>
+          ) : behavioralMatrix && hasBehavioralData ? (
+            <>
               <div style={styles.behavioralStats}>
                 <div style={styles.behavioralStat}>
                   <span style={styles.behavioralLabel}>Total Time</span>
@@ -375,6 +562,12 @@ export default function SupervisorReportView() {
                   </span>
                 </div>
                 <div style={styles.behavioralStat}>
+                  <span style={styles.behavioralLabel}>Right-Click Attempts</span>
+                  <span style={styles.behavioralValue}>
+                    {behavioralMatrix.behavior?.rightClickAttempts || 0}
+                  </span>
+                </div>
+                <div style={styles.behavioralStat}>
                   <span style={styles.behavioralLabel}>Risk Level</span>
                   <span style={{
                     ...styles.riskBadge,
@@ -389,134 +582,34 @@ export default function SupervisorReportView() {
               </div>
               
               <div style={styles.riskSummary}>
-                <p>{behavioralMatrix.riskAssessment?.summary || 'No behavioral data available.'}</p>
+                <p>{behavioralMatrix.riskAssessment?.summary || 'No behavioral concerns detected.'}</p>
               </div>
               
               {behavioralMatrix.flaggedQuestions && behavioralMatrix.flaggedQuestions.length > 0 && (
                 <div style={styles.flaggedQuestions}>
                   <h4 style={styles.flaggedTitle}>Flagged Questions</h4>
                   <ul style={styles.flaggedList}>
-                    {behavioralMatrix.flaggedQuestions.map((q, index) => (
+                    {behavioralMatrix.flaggedQuestions.slice(0, 10).map((q, index) => (
                       <li key={index} style={styles.flaggedItem}>
-                        Question {q.question_id}: {q.time_seconds}s, 
-                        {q.changed ? ' Changed ✓' : ''} 
-                        {q.violation ? ' Violation ⚠' : ''}
-                        {!q.changed && !q.violation && ' No concerns'}
+                        Question {q.question_id}: {q.time_seconds}s
+                        {q.changed ? ' - Changed' : ''}
+                        {q.violation ? ' - Violation' : ''}
                       </li>
                     ))}
+                    {behavioralMatrix.flaggedQuestions.length > 10 && (
+                      <li style={styles.flaggedItem}>... and {behavioralMatrix.flaggedQuestions.length - 10} more</li>
+                    )}
                   </ul>
                 </div>
               )}
-            </div>
-          )}
-        </AppLayout>
-      );
-    }
-  }
-
-  // ============================================================
-  // DEFAULT: Use Stratavax Report for all non-National Service assessments
-  // ============================================================
-  console.log('[Supervisor Report] Rendering Stratavax Report');
-  
-  // Prepare data for Stratavax report
-  const stratavaxData = {
-    result: reportData?.result || null,
-    candidate: reportData?.result?.candidate_profiles || null,
-    assessment: reportData?.result?.assessments || null
-  };
-
-  return (
-    <AppLayout background="/images/supervisor-bg.jpg">
-      <div style={styles.breadcrumb}>
-        <button onClick={handleBack} style={styles.breadcrumbButton}>
-          ← Back to Supervisor Dashboard
-        </button>
-        <span style={styles.breadcrumbSeparator}>|</span>
-        <span style={styles.breadcrumbText}>Assessment Report</span>
-        <button onClick={toggleBehavioral} style={styles.behavioralToggle}>
-          {showBehavioral ? 'Hide' : 'Show'} Behavioral Data
-        </button>
-      </div>
-      <StratavaxReport 
-        result={stratavaxData.result}
-        candidate={stratavaxData.candidate}
-        assessment={stratavaxData.assessment}
-        onBack={handleBack}
-      />
-      
-      {showBehavioral && behavioralMatrix && (
-        <div style={styles.behavioralSection}>
-          <h3 style={styles.behavioralTitle}>Behavioral Matrix</h3>
-          
-          <div style={styles.behavioralStats}>
-            <div style={styles.behavioralStat}>
-              <span style={styles.behavioralLabel}>Total Time</span>
-              <span style={styles.behavioralValue}>
-                {formatTime(behavioralMatrix.timing?.totalTimeSeconds)}
-              </span>
-            </div>
-            <div style={styles.behavioralStat}>
-              <span style={styles.behavioralLabel}>Avg Time per Question</span>
-              <span style={styles.behavioralValue}>
-                {behavioralMatrix.timing?.averageTimePerQuestion || 0}s
-              </span>
-            </div>
-            <div style={styles.behavioralStat}>
-              <span style={styles.behavioralLabel}>Answer Changes</span>
-              <span style={styles.behavioralValue}>
-                {behavioralMatrix.behavior?.answerChanges || 0}
-              </span>
-            </div>
-            <div style={styles.behavioralStat}>
-              <span style={styles.behavioralLabel}>Tab Switches</span>
-              <span style={styles.behavioralValue}>
-                {behavioralMatrix.behavior?.tabSwitches || 0}
-              </span>
-            </div>
-            <div style={styles.behavioralStat}>
-              <span style={styles.behavioralLabel}>Violations</span>
-              <span style={styles.behavioralValue}>
-                {behavioralMatrix.behavior?.violations || 0}
-              </span>
-            </div>
-            <div style={styles.behavioralStat}>
-              <span style={styles.behavioralLabel}>Copy/Paste Attempts</span>
-              <span style={styles.behavioralValue}>
-                {(behavioralMatrix.behavior?.copyAttempts || 0) + (behavioralMatrix.behavior?.pasteAttempts || 0)}
-              </span>
-            </div>
-            <div style={styles.behavioralStat}>
-              <span style={styles.behavioralLabel}>Risk Level</span>
-              <span style={{
-                ...styles.riskBadge,
-                background: behavioralMatrix.riskAssessment?.level === 'High Risk' ? '#fee2e2' :
-                           behavioralMatrix.riskAssessment?.level === 'Medium Risk' ? '#fef3c7' : '#dcfce7',
-                color: behavioralMatrix.riskAssessment?.level === 'High Risk' ? '#991b1b' :
-                       behavioralMatrix.riskAssessment?.level === 'Medium Risk' ? '#92400e' : '#166534'
-              }}>
-                {behavioralMatrix.riskAssessment?.level || 'Unknown'}
-              </span>
-            </div>
-          </div>
-          
-          <div style={styles.riskSummary}>
-            <p>{behavioralMatrix.riskAssessment?.summary || 'No behavioral data available.'}</p>
-          </div>
-          
-          {behavioralMatrix.flaggedQuestions && behavioralMatrix.flaggedQuestions.length > 0 && (
-            <div style={styles.flaggedQuestions}>
-              <h4 style={styles.flaggedTitle}>Flagged Questions</h4>
-              <ul style={styles.flaggedList}>
-                {behavioralMatrix.flaggedQuestions.map((q, index) => (
-                  <li key={index} style={styles.flaggedItem}>
-                    Question {q.question_id}: {q.time_seconds}s, 
-                    {q.changed ? ' Changed ✓' : ''} 
-                    {q.violation ? ' Violation ⚠' : ''}
-                    {!q.changed && !q.violation && ' No concerns'}
-                  </li>
-                ))}
-              </ul>
+            </>
+          ) : (
+            <div style={styles.noBehavioralData}>
+              <p>No behavioral data is available for this assessment.</p>
+              <p style={styles.noBehavioralSubtext}>
+                Behavioral data (tab switches, violations, answer changes, etc.) 
+                is only tracked for assessments completed after the behavioral tracking feature was implemented.
+              </p>
             </div>
           )}
         </div>
@@ -621,7 +714,7 @@ const styles = {
   },
   behavioralStats: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
     gap: '12px',
     marginBottom: '16px'
   },
@@ -682,6 +775,21 @@ const styles = {
     borderBottom: '1px solid #f1f5f9',
     fontSize: '13px',
     color: '#475569'
+  },
+  loadingBehavioral: {
+    textAlign: 'center',
+    padding: '20px',
+    color: '#64748b'
+  },
+  noBehavioralData: {
+    textAlign: 'center',
+    padding: '30px 20px',
+    color: '#64748b'
+  },
+  noBehavioralSubtext: {
+    fontSize: '13px',
+    color: '#94a3b8',
+    marginTop: '8px'
   }
 };
 
