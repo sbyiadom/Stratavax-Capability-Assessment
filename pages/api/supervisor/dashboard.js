@@ -1,6 +1,9 @@
-// pages/api/supervisor/dashboard.js - FIXED VERSION
-// Avoids querying assessment_types separately to prevent 403 errors
+// pages/api/supervisor/dashboard.js - COMPLETE FIXED VERSION
+// Properly identifies National Service assessments and separates reports
+
 import { createClient } from '@supabase/supabase-js';
+
+const NATIONAL_SERVICE_ASSESSMENT_ID = 'bdb9d46e-9fac-4d00-8478-1f649e7ac600';
 
 function extractBearerToken(req) {
   const authHeader = req.headers.authorization || req.headers.Authorization || '';
@@ -58,16 +61,16 @@ export default async function handler(req, res) {
       return res.status(200).json({
         success: true,
         supervisor: { id: user.id, email: user.email },
-        stats: { totalCandidates: 0, completedAssessments: 0, nationalServiceReports: 0 },
+        stats: { totalCandidates: 0, completedAssessments: 0, nationalServiceReports: 0, pendingReviews: 0 },
         candidates: [],
         nationalServiceReports: [],
-        otherReports: []
+        otherReports: [],
+        debug: { assignedCandidates: 0, candidateAssessments: 0, resultRows: 0 }
       });
     }
 
     // ============================================================
-    // STEP 2: Get candidate assessments with assessment details in ONE query
-    // Using a simpler approach - get assessments first, then join manually
+    // STEP 2: Get candidate assessments
     // ============================================================
     const { data: assessments, error: assessmentsError } = await serviceClient
       .from('candidate_assessments')
@@ -80,15 +83,12 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 3: Get assessment details (with assessment_type info embedded)
-    // We'll use a left join to get the type info
+    // STEP 3: Get assessment details with types
     // ============================================================
     const assessmentIds = assessments.map(a => a.assessment_id).filter(Boolean);
     let assessmentMap = {};
-    let typeMap = {};
 
     if (assessmentIds.length > 0) {
-      // Get assessments with their types using a single query with embedded fields
       const { data: assessmentData, error: assessmentError } = await serviceClient
         .from('assessments')
         .select(`
@@ -101,7 +101,6 @@ export default async function handler(req, res) {
 
       if (assessmentError) {
         console.error('[Dashboard] Assessment details error:', assessmentError);
-        // If this fails, try a simpler approach without the nested join
         // Fallback: get assessments without types
         const { data: simpleAssessments, error: simpleError } = await serviceClient
           .from('assessments')
@@ -113,7 +112,6 @@ export default async function handler(req, res) {
           return res.status(500).json({ success: false, error: 'Failed to load assessment details', details: simpleError.message });
         }
 
-        // Build assessment map from simple data
         simpleAssessments.forEach(a => {
           assessmentMap[a.id] = { ...a, assessment_type: null };
         });
@@ -127,17 +125,17 @@ export default async function handler(req, res) {
             .in('id', typeIds);
 
           if (!typesError && typesData) {
-            typesData.forEach(t => { typeMap[t.id] = t; });
+            typesData.forEach(t => {
+              // Find and attach type to assessment
+              Object.keys(assessmentMap).forEach(id => {
+                const a = assessmentMap[id];
+                if (a.assessment_type_id === t.id) {
+                  a.assessment_type = t;
+                }
+              });
+            });
           }
         }
-
-        // Map types to assessments
-        Object.keys(assessmentMap).forEach(id => {
-          const a = assessmentMap[id];
-          if (a.assessment_type_id) {
-            a.assessment_type = typeMap[a.assessment_type_id] || null;
-          }
-        });
       } else {
         // Build assessment map from successful nested query
         assessmentData.forEach(a => {
@@ -160,14 +158,13 @@ export default async function handler(req, res) {
 
       if (resultsError) {
         console.error('[Dashboard] Results error:', resultsError);
-        // Continue without results
       } else {
         resultsData.forEach(r => { resultMap[r.id] = r; });
       }
     }
 
     // ============================================================
-    // STEP 5: Build reports
+    // STEP 5: Build reports with robust National Service detection
     // ============================================================
     const reports = [];
 
@@ -179,7 +176,16 @@ export default async function handler(req, res) {
       }
 
       const type = assessment.assessment_type || {};
-      const isNationalService = type?.code === 'national_service';
+      
+      // ============================================================
+      // FIX: Robust National Service Detection
+      // ============================================================
+      const isNationalService = 
+        type?.code === 'national_service' ||
+        assessment?.title === 'National Service Recruitment Assessment' ||
+        assessment?.id === NATIONAL_SERVICE_ASSESSMENT_ID ||
+        type?.name === 'National Service Recruitment Assessment';
+
       const result = a.result_id ? resultMap[a.result_id] : null;
       const isCompleted = a.status === 'completed' || a.result_id !== null;
 
@@ -187,6 +193,17 @@ export default async function handler(req, res) {
       if (!isCompleted && !result) return;
 
       const candidate = candidates.find(c => c.id === a.user_id);
+
+      // Calculate recommendation if not present
+      let recommendation = result?.recommendation || 'Not Available';
+      if (isNationalService && (recommendation === 'Not Available' || !recommendation || recommendation === 'N/A')) {
+        const workplace = Number(result?.workplace_readiness || 0);
+        const intellectual = Number(result?.intellectual_capability || 0);
+        if (workplace >= 85 && intellectual >= 85) recommendation = 'Highly Recommended';
+        else if (workplace >= 75 && intellectual >= 75) recommendation = 'Recommended';
+        else if (workplace >= 65 && intellectual >= 65) recommendation = 'Reserve Pool';
+        else recommendation = 'Not Recommended';
+      }
 
       reports.push({
         result_id: a.result_id,
@@ -202,20 +219,35 @@ export default async function handler(req, res) {
         status: a.status,
         completed_at: a.completed_at,
         score: result?.percentage_score || 0,
-        is_national_service: isNationalService,
+        is_national_service: isNationalService,  // CRITICAL: This separates NS from Other
         workplace_readiness: result?.workplace_readiness || 0,
         intellectual_capability: result?.intellectual_capability || 0,
-        recommendation: result?.recommendation || 'Not Available',
+        recommendation: recommendation,
         percentage_score: result?.percentage_score || 0,
         resultData: result || null
       });
     });
 
-    const nationalServiceReports = reports.filter(r => r.is_national_service);
-    const otherReports = reports.filter(r => !r.is_national_service);
+    // ============================================================
+    // STEP 6: Split reports into National Service and Other
+    // ============================================================
+    const nationalServiceReports = reports.filter(r => r.is_national_service === true);
+    const otherReports = reports.filter(r => r.is_national_service === false);
+
+    // Log for debugging
+    console.log('[Dashboard] Total reports:', reports.length);
+    console.log('[Dashboard] National Service reports:', nationalServiceReports.length);
+    console.log('[Dashboard] Other reports:', otherReports.length);
+    if (reports.length > 0) {
+      console.log('[Dashboard] Sample report:', {
+        title: reports[0].assessment_title,
+        is_national_service: reports[0].is_national_service,
+        code: reports[0].assessment_code
+      });
+    }
 
     // ============================================================
-    // STEP 6: Build candidate objects with their stats
+    // STEP 7: Build candidate objects with their stats
     // ============================================================
     const candidatesWithStats = candidates.map(c => {
       const candidateAssessments = assessments.filter(a => a.user_id === c.id);
@@ -232,12 +264,19 @@ export default async function handler(req, res) {
           const type = assessment?.assessment_type || {};
           const result = a.result_id ? resultMap[a.result_id] : null;
           
+          // Use the same robust detection for completed assessments
+          const isNS = 
+            type?.code === 'national_service' ||
+            assessment?.title === 'National Service Recruitment Assessment' ||
+            assessment?.id === NATIONAL_SERVICE_ASSESSMENT_ID ||
+            type?.name === 'National Service Recruitment Assessment';
+          
           return {
             assessment_id: a.assessment_id,
             result_id: a.result_id,
             title: assessment?.title || 'Assessment',
             score: result?.percentage_score || 0,
-            isNationalService: type?.code === 'national_service',
+            isNationalService: isNS,
             assessment_code: type?.code || 'general',
             assessment_type: type?.name || 'General',
             reportData: reports.find(r => r.result_id === a.result_id) || null
@@ -254,7 +293,7 @@ export default async function handler(req, res) {
     });
 
     // ============================================================
-    // STEP 7: Return response
+    // STEP 8: Return response
     // ============================================================
     const stats = {
       totalCandidates: candidates.length,
@@ -273,7 +312,15 @@ export default async function handler(req, res) {
       stats,
       candidates: candidatesWithStats,
       nationalServiceReports,
-      otherReports
+      otherReports,
+      debug: {
+        assignedCandidates: candidates.length,
+        candidateAssessments: assessments.length,
+        resultRows: resultIds.length,
+        totalReports: reports.length,
+        nsReports: nationalServiceReports.length,
+        otherReports: otherReports.length
+      }
     });
 
   } catch (error) {
