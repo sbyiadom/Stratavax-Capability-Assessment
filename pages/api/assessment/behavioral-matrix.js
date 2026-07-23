@@ -1,4 +1,4 @@
-// pages/api/assessment/behavioral-matrix.js
+// pages/api/assessment/behavioral-matrix.js - CORRECTED VERSION
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -73,68 +73,52 @@ export default async function handler(req, res) {
     // Get all responses for this session
     const { data: responses, error: responsesError } = await supabase
       .from('responses')
-      .select('*')
-      .eq('session_id', result.session_id);
+      .select('question_id, answer_id, time_spent_seconds, times_changed, initial_answer_id, metadata, created_at')
+      .eq('session_id', result.session_id)
+      .order('created_at', { ascending: true });
 
     if (responsesError) {
       console.error('Responses error:', responsesError);
     }
 
-    // Calculate behavioral metrics
-    const metrics = {
-      totalQuestions: result.total_questions || 0,
-      answeredQuestions: result.answered_questions || 0,
-      totalTimeSeconds: session?.total_time_spent || 0,
-      averageTimePerQuestion: 0,
-      answerChanges: 0,
-      tabSwitches: 0,
-      violations: 0,
-      copyAttempts: 0,
-      pasteAttempts: 0,
-      rightClickAttempts: 0,
-      timePerQuestion: [],
-      answersTimeline: [],
-      flaggedQuestions: []
-    };
-
+    // ============================================================
+    // CALCULATE BEHAVIORAL METRICS
+    // ============================================================
     let totalChanges = 0;
     let totalTabSwitches = 0;
     let totalViolations = 0;
     let totalCopyAttempts = 0;
     let totalPasteAttempts = 0;
     let totalRightClicks = 0;
+    let totalTimeSpent = session?.total_time_spent || 0;
     const timePerQuestion = [];
 
     if (responses && responses.length > 0) {
       responses.forEach(response => {
+        // ============================================================
+        // FIX: Use the actual column, not metadata.times_changed
+        // ============================================================
+        totalChanges += response.times_changed || 0;
+        
+        // Get metadata from the metadata column
         const metadata = response.metadata || {};
         
-        if (metadata.times_changed) {
-          totalChanges += parseInt(metadata.times_changed) || 0;
-        }
-        if (metadata.tab_switches) {
-          totalTabSwitches += parseInt(metadata.tab_switches) || 0;
-        }
-        if (metadata.violations) {
-          totalViolations += parseInt(metadata.violations) || 0;
-        }
-        if (metadata.copy_attempts) {
-          totalCopyAttempts += parseInt(metadata.copy_attempts) || 0;
-        }
-        if (metadata.paste_attempts) {
-          totalPasteAttempts += parseInt(metadata.paste_attempts) || 0;
-        }
-        if (metadata.right_click_attempts) {
-          totalRightClicks += parseInt(metadata.right_click_attempts) || 0;
-        }
+        totalTabSwitches += parseInt(metadata.tab_switches, 10) || 0;
+        totalViolations += parseInt(metadata.violations, 10) || 0;
+        totalCopyAttempts += parseInt(metadata.copy_attempts, 10) || 0;
+        totalPasteAttempts += parseInt(metadata.paste_attempts, 10) || 0;
+        totalRightClicks += parseInt(metadata.right_click_attempts, 10) || 0;
 
-        if (metadata.time_on_question) {
+        // Time per question - use either time_on_question from metadata or time_spent_seconds column
+        const timeOnQuestion = parseInt(metadata.time_on_question, 10) || 0;
+        if (timeOnQuestion > 0 || (response.time_spent_seconds || 0) > 0) {
           timePerQuestion.push({
             question_id: response.question_id,
-            time_seconds: parseInt(metadata.time_on_question) || 0,
-            changed: (metadata.times_changed || 0) > 0,
+            time_seconds: timeOnQuestion || response.time_spent_seconds || 0,
+            changed: (response.times_changed || 0) > 0,
             violation: (metadata.violations || 0) > 0,
-            answer: response.answer_id
+            answer: response.answer_id,
+            initial_answer: response.initial_answer_id
           });
         }
       });
@@ -148,6 +132,12 @@ export default async function handler(req, res) {
       q.time_seconds > 60 || q.changed || q.violation
     );
 
+    // ============================================================
+    // CHECK IF BEHAVIORAL DATA EXISTS
+    // ============================================================
+    const hasBehavioralData = totalChanges > 0 || totalTabSwitches > 0 || totalViolations > 0 || 
+                              totalCopyAttempts > 0 || totalPasteAttempts > 0 || totalRightClicks > 0;
+
     const behavioralMatrix = {
       candidate: {
         name: result.candidate_profiles?.full_name || 'Unknown',
@@ -159,14 +149,14 @@ export default async function handler(req, res) {
         title: result.assessments?.title || 'Unknown',
         completedAt: result.completed_at,
         overallScore: result.percentage_score,
-        totalQuestions: result.total_questions,
-        answeredQuestions: result.answered_questions
+        totalQuestions: result.total_questions || 0,
+        answeredQuestions: result.answered_questions || 0
       },
       timing: {
-        totalTimeSeconds: session?.total_time_spent || metrics.totalTimeSeconds,
+        totalTimeSeconds: totalTimeSpent || 0,
         averageTimePerQuestion: avgTime,
         timePerQuestion: timePerQuestion,
-        formattedTotalTime: formatTime(session?.total_time_spent || metrics.totalTimeSeconds)
+        formattedTotalTime: formatTime(totalTimeSpent || 0)
       },
       behavior: {
         answerChanges: totalChanges,
@@ -175,7 +165,8 @@ export default async function handler(req, res) {
         copyAttempts: totalCopyAttempts,
         pasteAttempts: totalPasteAttempts,
         rightClickAttempts: totalRightClicks,
-        isAutoSubmitted: result.is_auto_submitted || false
+        isAutoSubmitted: result.is_auto_submitted || false,
+        hasBehavioralData: hasBehavioralData
       },
       flaggedQuestions: flaggedQuestions,
       riskAssessment: {
