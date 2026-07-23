@@ -75,11 +75,9 @@ export default async function handler(req, res) {
     }
 
     const supervisorId = userData.user.id;
-    const { type } = req.query; // 'national_service' or 'other' or 'all'
+    const { type } = req.query;
 
-    // ============================================================
     // STEP 1: Get candidates for this supervisor
-    // ============================================================
     const { data: candidates, error: candidatesError } = await serviceClient
       .from('candidate_profiles')
       .select('id, full_name, email, university, programme, graduation_year, preferred_department')
@@ -99,9 +97,7 @@ export default async function handler(req, res) {
       });
     }
 
-    // ============================================================
     // STEP 2: Get assessment results for these candidates
-    // ============================================================
     const { data: results, error: resultsError } = await serviceClient
       .from('assessment_results')
       .select(`
@@ -148,9 +144,7 @@ export default async function handler(req, res) {
       return res.status(404).json({ success: false, error: 'No results found for your candidates' });
     }
 
-    // ============================================================
     // STEP 3: Process and filter results
-    // ============================================================
     let processedResults = results.map(result => {
       const candidate = result.candidate_profiles || {};
       const assessment = result.assessments || {};
@@ -162,7 +156,6 @@ export default async function handler(req, res) {
         assessmentType.code === 'national_service' ||
         assessmentType.name === 'National Service Recruitment Assessment';
 
-      // Calculate sub-scores if needed
       let workplaceReadiness = Number(result.workplace_readiness || 0);
       let intellectualCapability = Number(result.intellectual_capability || 0);
 
@@ -180,7 +173,6 @@ export default async function handler(req, res) {
         else recommendation = 'Not Recommended';
       }
 
-      // Extract category breakdown
       let categoryBreakdown = '';
       if (result.category_scores && Array.isArray(result.category_scores)) {
         categoryBreakdown = result.category_scores
@@ -217,7 +209,6 @@ export default async function handler(req, res) {
       processedResults = processedResults.filter(r => r.isNationalService === false);
     }
 
-    // Remove the isNationalService flag from the final output
     processedResults = processedResults.map(({ isNationalService, ...rest }) => rest);
 
     if (processedResults.length === 0) {
@@ -227,29 +218,14 @@ export default async function handler(req, res) {
       });
     }
 
-    // ============================================================
     // STEP 4: Generate Excel file
-    // ============================================================
     const worksheet = XLSX.utils.json_to_sheet(processedResults);
     
     const colWidths = [
-      { wch: 25 }, // Candidate Name
-      { wch: 30 }, // Email
-      { wch: 25 }, // University
-      { wch: 20 }, // Programme
-      { wch: 15 }, // Graduation Year
-      { wch: 20 }, // Preferred Department
-      { wch: 35 }, // Assessment
-      { wch: 18 }, // Type
-      { wch: 20 }, // Overall Score
-      { wch: 12 }, // Total Score
-      { wch: 12 }, // Max Score
-      { wch: 25 }, // Workplace Readiness
-      { wch: 25 }, // Intellectual Capability
-      { wch: 22 }, // Recommendation
-      { wch: 50 }, // Category Breakdown
-      { wch: 15 }, // Completed Date
-      { wch: 38 }, // Result ID
+      { wch: 25 }, { wch: 30 }, { wch: 25 }, { wch: 20 }, { wch: 15 },
+      { wch: 20 }, { wch: 35 }, { wch: 18 }, { wch: 20 }, { wch: 12 },
+      { wch: 12 }, { wch: 25 }, { wch: 25 }, { wch: 22 }, { wch: 50 },
+      { wch: 15 }, { wch: 38 }
     ];
     worksheet['!cols'] = colWidths;
 
