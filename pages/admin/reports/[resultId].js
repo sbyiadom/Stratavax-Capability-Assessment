@@ -1,4 +1,4 @@
-// pages/admin/reports/[resultId].js - COMPLETE WITH BEHAVIORAL MATRIX
+// pages/admin/reports/[resultId].js - COMPLETE WORKING VERSION
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -46,9 +46,7 @@ export default function AdminReportView() {
 
         console.log('[Admin Report] Full data received:', data);
 
-        // ============================================================
-        // DETERMINE IF NATIONAL SERVICE
-        // ============================================================
+        // Determine if National Service
         const assessmentId = data.result?.assessment_id || data.assessment_id || '';
         const assessmentTypeCode = data.assessmentTypeCode || data.result?.assessment_type_code || '';
         
@@ -60,9 +58,7 @@ export default function AdminReportView() {
         console.log('[Admin Report] Is National Service:', isNS);
         console.log('[Admin Report] assessmentTypeCode:', assessmentTypeCode);
 
-        // ============================================================
-        // BUILD REPORT OBJECT
-        // ============================================================
+        // Build report object
         let report = data.report || {};
         let result = data.result || {};
 
@@ -70,9 +66,7 @@ export default function AdminReportView() {
           report = result.report_data;
         }
 
-        // ============================================================
-        // EXTRACT CANDIDATE NAME
-        // ============================================================
+        // Extract candidate name
         let candidateName = 'Candidate';
         let candidateEmail = '';
         let candidateUniversity = '';
@@ -96,9 +90,7 @@ export default function AdminReportView() {
 
         console.log('[Admin Report] Candidate name:', candidateName);
 
-        // ============================================================
-        // FOR NATIONAL SERVICE
-        // ============================================================
+        // For National Service
         if (isNS) {
           let categoryScores = [];
           
@@ -157,9 +149,7 @@ export default function AdminReportView() {
           report.reportType = 'national_service';
         }
 
-        // ============================================================
-        // FOR STRATAVAX
-        // ============================================================
+        // For Stratavax
         if (!isNS) {
           let categoryScores = [];
           
@@ -218,9 +208,7 @@ export default function AdminReportView() {
         });
         setIsNationalService(isNS);
 
-        // ============================================================
-        // FETCH BEHAVIORAL MATRIX
-        // ============================================================
+        // Fetch behavioral matrix
         await fetchBehavioralMatrix(resultId);
 
         setLoading(false);
@@ -234,9 +222,7 @@ export default function AdminReportView() {
     fetchReport();
   }, [resultId, session]);
 
-  // ============================================================
-  // FETCH BEHAVIORAL MATRIX
-  // ============================================================
+  // Fetch Behavioral Matrix
   const fetchBehavioralMatrix = async (id) => {
     try {
       setLoadingBehavioral(true);
@@ -278,9 +264,6 @@ export default function AdminReportView() {
     setShowBehavioral(!showBehavioral);
   };
 
-  // ============================================================
-  // FORMAT TIME HELPER
-  // ============================================================
   const formatTime = (seconds) => {
     if (!seconds) return 'N/A';
     const hrs = Math.floor(seconds / 3600);
@@ -289,7 +272,6 @@ export default function AdminReportView() {
     return `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
   };
 
-  // Check if behavioral data exists
   const hasBehavioralData = 
     behavioralMatrix?.behavior?.hasBehavioralData === true ||
     (behavioralMatrix?.behavior?.tabSwitches || 0) > 0 ||
@@ -321,9 +303,7 @@ export default function AdminReportView() {
     );
   }
 
-  // ============================================================
-  // RENDER NATIONAL SERVICE REPORT WITH BEHAVIORAL MATRIX
-  // ============================================================
+  // Render National Service Report with Behavioral Matrix
   if (isNationalService && reportData?.report) {
     console.log('[Admin Report] Rendering National Service Report');
     return (
@@ -341,7 +321,7 @@ export default function AdminReportView() {
         <NationalServiceReport 
           report={reportData.report} 
           onBack={handleBack} 
-          resultId={resultId}  // Pass resultId for behavioral data
+          resultId={resultId}
         />
         
         {showBehavioral && (
@@ -448,9 +428,7 @@ export default function AdminReportView() {
     );
   }
 
-  // ============================================================
-  // RENDER STRATAVAX REPORT WITH BEHAVIORAL MATRIX
-  // ============================================================
+  // Render Stratavax Report with Behavioral Matrix
   if (!isNationalService && reportData?.report) {
     console.log('[Admin Report] Rendering Stratavax Report');
     const report = reportData.report;
@@ -609,9 +587,7 @@ export default function AdminReportView() {
     );
   }
 
-  // ============================================================
-  // FALLBACK
-  // ============================================================
+  // Fallback
   return (
     <AppLayout background="/images/admin-bg.jpg">
       <div style={styles.fallbackContainer}>
