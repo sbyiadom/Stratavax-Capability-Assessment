@@ -1,4 +1,4 @@
-// pages/assessment/[id].js - UPDATED WITH BEHAVIORAL TRACKING
+// pages/assessment/[id].js - COMPLETE WORKING VERSION WITH BEHAVIORAL TRACKING
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
@@ -820,9 +820,221 @@ function AssessmentContent() {
 
       {showSuccessModal && <div style={styles.modalOverlay}><div style={{ ...styles.modalContent, textAlign: "center" }}><div style={styles.successIconLarge}>✓</div><h2 style={{ color: successColor }}>Assessment Complete!</h2><p>Your assessment has been successfully submitted.</p><p style={{ color: "#64748b" }}>Redirecting to completion page...</p></div></div>}
 
-      {/* MAIN ASSESSMENT UI - Keep the same as before */}
+      {/* MAIN ASSESSMENT UI */}
       <div style={styles.container}>
-        {/* ... keep the existing JSX ... */}
+        <div style={styles.header}>
+          <div style={styles.headerContent}>
+            <div style={styles.headerLeft}>
+              <button onClick={handleBackClick} style={styles.backButton}>←</button>
+              <div style={styles.brandSection}>
+                <div style={styles.logoContainer}>
+                  <div style={styles.logoText}>
+                    <span style={styles.logoMain}>STRATAVAX</span>
+                    <span style={styles.logoSub}>CAPABILITY ASSESSMENT</span>
+                  </div>
+                </div>
+                {isNationalService && (
+                  <div style={styles.nationalBadge}>
+                    <span style={styles.nationalBadgeIcon}>🇬🇭</span>
+                    <span style={styles.nationalBadgeText}>National Service</span>
+                  </div>
+                )}
+              </div>
+            </div>
+            <div style={styles.headerRight}>
+              <div style={styles.timer}>
+                <div style={styles.timerLabel}>TIME REMAINING</div>
+                <div style={{ ...styles.timerValue, color: isTimeCritical ? dangerColor : accentColor }}>
+                  {isTimeExpired ? "EXPIRED" : timeRemainingFormatted}
+                </div>
+              </div>
+            </div>
+          </div>
+          <div style={styles.headerMetaBar}>
+            <span style={styles.headerMetaItem}>Question {currentIndex + 1}</span>
+            <span style={styles.headerMetaDivider}>•</span>
+            <span style={styles.headerMetaItem}>{currentQuestion.section || "General"}</span>
+            {isMultipleCorrect && !isNationalService && (
+              <>
+                <span style={styles.headerMetaDivider}>•</span>
+                <span style={{ ...styles.headerMetaItem, color: accentColor, fontWeight: 600 }}>Select all that apply</span>
+              </>
+            )}
+          </div>
+        </div>
+
+        <div style={styles.mainContent}>
+          <div style={styles.leftSidebar}>
+            <div style={styles.statusCard}>
+              <div style={styles.statusNumber}>Question {currentIndex + 1}</div>
+              <div style={styles.statusBadge}>
+                {totalAnswered > 0 ? 'Answered' : 'Not yet answered'}
+              </div>
+            </div>
+
+            <div style={styles.statsCard}>
+              <div style={styles.statsRow}><span style={styles.statsLabel}>Answered</span><span style={styles.statsValue}>{totalAnswered}</span></div>
+              <div style={styles.statsRow}><span style={styles.statsLabel}>Remaining</span><span style={styles.statsValue}>{questions.length - totalAnswered}</span></div>
+              <div style={styles.statsRow}><span style={styles.statsLabel}>Changes</span><span style={styles.statsValue}>{totalChanges}</span></div>
+              <div style={styles.statsDivider} />
+              <div style={styles.statsRow}><span style={styles.statsLabel}>Progress</span><span style={styles.statsValue}>{Math.round((totalAnswered / questions.length) * 100)}%</span></div>
+              <div style={styles.progressBar}>
+                <div style={{ ...styles.progressFill, width: Math.min((totalAnswered / questions.length) * 100, 100) + '%' }} />
+              </div>
+            </div>
+
+            <div style={styles.metaCard}>
+              <div style={styles.metaItem}>Marked out of 1.00</div>
+              <div style={styles.metaItem}>Flag question</div>
+            </div>
+          </div>
+
+          <div style={styles.middleColumn}>
+            <div style={styles.questionCard}>
+              <div style={styles.questionText}>
+                {currentQuestion.question_text}
+              </div>
+
+              {isMultipleCorrect && !isNationalService && (
+                <div style={styles.multipleHint}>
+                  💡 Select one or more answers
+                </div>
+              )}
+
+              <div style={styles.answersContainer}>
+                {safeArray(currentQuestion.answers).map((answer, index) => {
+                  const selected = isAnswerSelected(currentQuestion.id, answer.id);
+                  const optionLetter = String.fromCharCode(65 + index);
+                  return (
+                    <button 
+                      key={answer.id} 
+                      className="answer-option"
+                      onClick={() => handleAnswerSelect(currentQuestion.id, answer.id, isMultipleCorrect)} 
+                      disabled={isDisabled}
+                      style={{ 
+                        ...styles.answerCard, 
+                        background: selected ? "#e3f2fd" : "white", 
+                        borderColor: selected ? primaryColor : "#e2e8f0",
+                        opacity: isDisabled ? 0.6 : 1,
+                        cursor: isDisabled ? "not-allowed" : "pointer"
+                      }}
+                    >
+                      <div style={{ 
+                        ...styles.answerCheckbox, 
+                        background: selected ? primaryColor : "white", 
+                        borderColor: selected ? primaryColor : "#cbd5e1"
+                      }}>
+                        {selected && <span style={{ color: "white", fontSize: "14px" }}>✓</span>}
+                      </div>
+                      <span style={{
+                        flex: 1,
+                        color: selected ? primaryColor : "#1e293b",
+                        fontSize: "15px",
+                        fontWeight: selected ? 600 : 400
+                      }}>
+                        {optionLetter}. {answer.answer_text}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div style={styles.navButtons}>
+              <button 
+                onClick={() => moveToQuestion(currentIndex - 1)} 
+                disabled={currentIndex === 0 || isDisabled} 
+                style={{ ...styles.navButton, opacity: (currentIndex === 0 || isDisabled) ? 0.5 : 1 }}
+              >
+                ← Previous page
+              </button>
+              {isLastQuestion ? (
+                <button 
+                  onClick={() => setShowSubmitModal(true)} 
+                  disabled={isDisabled} 
+                  style={styles.submitButton}
+                >
+                  Submit
+                </button>
+              ) : (
+                <button 
+                  onClick={() => moveToQuestion(currentIndex + 1)} 
+                  disabled={isDisabled} 
+                  style={styles.nextButton}
+                >
+                  Next page →
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div style={styles.rightColumn}>
+            <div style={styles.navigatorCard}>
+              <div style={styles.navigatorHeader}>
+                <span style={styles.navigatorTitle}>Quiz navigation</span>
+              </div>
+              <div style={styles.questionGrid}>
+                {questions.map((question, index) => {
+                  const questionAnswer = answers[question.id];
+                  const answered = questionAnswer !== undefined && (Array.isArray(questionAnswer) ? questionAnswer.length > 0 : questionAnswer !== null);
+                  const current = index === currentIndex;
+                  const changed = answerChangeCount[question.id] > 0;
+                  
+                  let bgColor = "white";
+                  let textColor = "#1e293b";
+                  let borderColor = "#e2e8f0";
+                  
+                  if (current) {
+                    bgColor = accentColor;
+                    textColor = primaryColor;
+                    borderColor = accentColor;
+                  } else if (answered && changed) {
+                    bgColor = warningColor;
+                    textColor = "white";
+                    borderColor = warningColor;
+                  } else if (answered) {
+                    bgColor = successColor;
+                    textColor = "white";
+                    borderColor = successColor;
+                  }
+                  
+                  return (
+                    <button 
+                      key={question.id} 
+                      className="navigator-item"
+                      onClick={() => moveToQuestion(index)} 
+                      disabled={isDisabled}
+                      style={{ 
+                        ...styles.gridItem, 
+                        background: bgColor, 
+                        color: textColor, 
+                        borderColor: borderColor,
+                        opacity: isDisabled ? 0.6 : 1,
+                        cursor: isDisabled ? "not-allowed" : "pointer",
+                        fontWeight: current ? 700 : 500,
+                        boxShadow: current ? `0 0 0 2px ${accentColor}40` : 'none'
+                      }}
+                    >
+                      {index + 1}
+                    </button>
+                  );
+                })}
+              </div>
+              
+              <div style={styles.legend}>
+                <div style={styles.legendItem}><div style={{ ...styles.legendDot, background: successColor }} /><span>Answered</span></div>
+                <div style={styles.legendItem}><div style={{ ...styles.legendDot, background: warningColor }} /><span>Changed</span></div>
+                <div style={styles.legendItem}><div style={{ ...styles.legendDot, background: accentColor }} /><span>Current</span></div>
+                <div style={styles.legendItem}><div style={{ ...styles.legendDot, background: "white", border: "2px solid #e2e8f0" }} /><span>Pending</span></div>
+              </div>
+
+              <div style={styles.navigatorTimer}>
+                <span style={styles.navigatorTimerLabel}>⏱</span>
+                <span style={styles.navigatorTimerValue}>{timeRemainingFormatted}</span>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <style jsx>{`
@@ -863,11 +1075,10 @@ function AssessmentContent() {
 }
 
 // ============================================================
-// STYLES - Keep the same as before
+// STYLES
 // ============================================================
 
 const styles = {
-  // ... keep all existing styles ...
   loadingContainer: { 
     minHeight: "100vh", 
     display: "flex", 
