@@ -1,4 +1,4 @@
-// pages/api/assessment/save-response.js
+// pages/api/assessment/save-response.js - UPDATED WITH METADATA SUPPORT
 
 import { createClient } from "@supabase/supabase-js";
 
@@ -58,7 +58,7 @@ export default async function handler(req, res) {
     // Check if response exists
     const { data: existing, error: existingError } = await serviceClient
       .from("responses")
-      .select("id, answer_id, times_changed, initial_answer_id")
+      .select("id, answer_id, times_changed, initial_answer_id, metadata")
       .eq("session_id", sessionId)
       .eq("question_id", parseInt(questionId, 10))
       .maybeSingle();
@@ -67,14 +67,33 @@ export default async function handler(req, res) {
     const isAnswerChange = existing ? String(existing.answer_id) !== String(answer) : false;
     const newChangeCount = isNew ? 0 : (existing.times_changed || 0) + (isAnswerChange ? 1 : 0);
 
+    // ============================================================
+    // BUILD METADATA COLUMN
+    // ============================================================
+    const metadataColumn = {
+      // Behavioral data from the assessment page
+      tab_switches: parseInt(metadata?.tab_switches, 10) || 0,
+      copy_attempts: parseInt(metadata?.copy_attempts, 10) || 0,
+      paste_attempts: parseInt(metadata?.paste_attempts, 10) || 0,
+      right_click_attempts: parseInt(metadata?.right_click_attempts, 10) || 0,
+      violations: parseInt(metadata?.violations, 10) || 0,
+      previous_question: parseInt(metadata?.previous_question, 10) || 0,
+      is_answer_change: isAnswerChange,
+      time_on_question: parseInt(metadata?.time_on_question, 10) || 0,
+      // Preserve existing metadata if any
+      ...(existing?.metadata || {})
+    };
+
+    // Build response data
     const responseData = {
       session_id: sessionId,
       user_id: userId,
       assessment_id: assessmentId,
       question_id: parseInt(questionId, 10),
       answer_id: String(answer),
-      time_spent_seconds: metadata?.time_spent_seconds || 0,
-      updated_at: new Date().toISOString()
+      time_spent_seconds: parseInt(metadata?.time_spent_seconds, 10) || 0,
+      updated_at: new Date().toISOString(),
+      metadata: metadataColumn
     };
 
     if (isNew) {
@@ -87,22 +106,34 @@ export default async function handler(req, res) {
       responseData.initial_answer_id = existing.initial_answer_id || metadata?.initial_answer_id || String(answer);
     }
 
+    // Save or update
     let result;
     if (isNew) {
-      result = await serviceClient.from("responses").insert(responseData).select();
+      const { data, error } = await serviceClient
+        .from("responses")
+        .insert(responseData)
+        .select();
+      
+      if (error) {
+        console.error("Insert error:", error);
+        return res.status(500).json({ success: false, error: error.message });
+      }
+      result = data;
     } else {
-      result = await serviceClient
+      const { data, error } = await serviceClient
         .from("responses")
         .update(responseData)
         .eq("id", existing.id)
         .select();
+      
+      if (error) {
+        console.error("Update error:", error);
+        return res.status(500).json({ success: false, error: error.message });
+      }
+      result = data;
     }
 
-    if (result.error) {
-      return res.status(500).json({ success: false, error: result.error.message });
-    }
-
-    // Update session answered count
+    // Update session answered count and total time
     const { count } = await serviceClient
       .from("responses")
       .select("id", { count: "exact", head: true })
@@ -110,15 +141,21 @@ export default async function handler(req, res) {
 
     await serviceClient
       .from("assessment_sessions")
-      .update({ answered_questions: count || 0, updated_at: new Date().toISOString() })
+      .update({ 
+        answered_questions: count || 0, 
+        updated_at: new Date().toISOString(),
+        total_time_spent: metadata?.time_spent_seconds || 0,
+        last_activity: new Date().toISOString()
+      })
       .eq("id", sessionId);
 
     return res.status(200).json({
       success: true,
-      data: result.data,
+      data: result,
       isNewResponse: isNew,
       isAnswerChange: isAnswerChange,
-      timesChanged: newChangeCount
+      timesChanged: newChangeCount,
+      hasBehavioralData: metadataColumn.violations > 0 || metadataColumn.tab_switches > 0
     });
 
   } catch (error) {
