@@ -1,4 +1,4 @@
-// pages/supervisor/reports/[resultId].js
+// pages/supervisor/reports/[resultId].js - COMPLETE WITH BEHAVIORAL MATRIX
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -18,6 +18,8 @@ export default function SupervisorReportView() {
   const [reportData, setReportData] = useState(null);
   const [isNationalService, setIsNationalService] = useState(false);
   const [isAuthorized, setIsAuthorized] = useState(false);
+  const [behavioralMatrix, setBehavioralMatrix] = useState(null);
+  const [showBehavioral, setShowBehavioral] = useState(false);
 
   useEffect(() => {
     if (!resultId || !session) return;
@@ -113,6 +115,11 @@ export default function SupervisorReportView() {
         });
         setIsNationalService(isNS);
 
+        // ============================================================
+        // Fetch Behavioral Matrix
+        // ============================================================
+        await fetchBehavioralMatrix(resultId);
+
         setLoading(false);
       } catch (err) {
         console.error('Error fetching report:', err);
@@ -124,8 +131,49 @@ export default function SupervisorReportView() {
     fetchReport();
   }, [resultId, session]);
 
+  // ============================================================
+  // Fetch Behavioral Matrix
+  // ============================================================
+  const fetchBehavioralMatrix = async (id) => {
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
+
+      if (!token) return;
+
+      const response = await fetch(`/api/assessment/behavioral-matrix?resultId=${id}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        setBehavioralMatrix(data.behavioralMatrix);
+        console.log('[Behavioral Matrix] Data loaded:', data.behavioralMatrix);
+      }
+    } catch (error) {
+      console.error('Error fetching behavioral matrix:', error);
+    }
+  };
+
   const handleBack = () => {
     router.push('/supervisor');
+  };
+
+  const toggleBehavioral = () => {
+    setShowBehavioral(!showBehavioral);
+  };
+
+  // ============================================================
+  // Format time helper
+  // ============================================================
+  const formatTime = (seconds) => {
+    if (!seconds) return 'N/A';
+    const hrs = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+    return `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
   };
 
   if (authLoading || loading) {
@@ -167,6 +215,9 @@ export default function SupervisorReportView() {
           </button>
           <span style={styles.breadcrumbSeparator}>|</span>
           <span style={styles.breadcrumbText}>National Service Report</span>
+          <button onClick={toggleBehavioral} style={styles.behavioralToggle}>
+            {showBehavioral ? 'Hide' : 'Show'} Behavioral Matrix
+          </button>
         </div>
         <NationalServiceReport 
           report={reportData.report} 
@@ -174,6 +225,83 @@ export default function SupervisorReportView() {
           showAssignment={false}
           userRole="supervisor"
         />
+        
+        {showBehavioral && behavioralMatrix && (
+          <div style={styles.behavioralSection}>
+            <h3 style={styles.behavioralTitle}>Behavioral Matrix</h3>
+            
+            <div style={styles.behavioralStats}>
+              <div style={styles.behavioralStat}>
+                <span style={styles.behavioralLabel}>Total Time</span>
+                <span style={styles.behavioralValue}>
+                  {formatTime(behavioralMatrix.timing?.totalTimeSeconds)}
+                </span>
+              </div>
+              <div style={styles.behavioralStat}>
+                <span style={styles.behavioralLabel}>Avg Time per Question</span>
+                <span style={styles.behavioralValue}>
+                  {behavioralMatrix.timing?.averageTimePerQuestion || 0}s
+                </span>
+              </div>
+              <div style={styles.behavioralStat}>
+                <span style={styles.behavioralLabel}>Answer Changes</span>
+                <span style={styles.behavioralValue}>
+                  {behavioralMatrix.behavior?.answerChanges || 0}
+                </span>
+              </div>
+              <div style={styles.behavioralStat}>
+                <span style={styles.behavioralLabel}>Tab Switches</span>
+                <span style={styles.behavioralValue}>
+                  {behavioralMatrix.behavior?.tabSwitches || 0}
+                </span>
+              </div>
+              <div style={styles.behavioralStat}>
+                <span style={styles.behavioralLabel}>Violations</span>
+                <span style={styles.behavioralValue}>
+                  {behavioralMatrix.behavior?.violations || 0}
+                </span>
+              </div>
+              <div style={styles.behavioralStat}>
+                <span style={styles.behavioralLabel}>Copy/Paste Attempts</span>
+                <span style={styles.behavioralValue}>
+                  {(behavioralMatrix.behavior?.copyAttempts || 0) + (behavioralMatrix.behavior?.pasteAttempts || 0)}
+                </span>
+              </div>
+              <div style={styles.behavioralStat}>
+                <span style={styles.behavioralLabel}>Risk Level</span>
+                <span style={{
+                  ...styles.riskBadge,
+                  background: behavioralMatrix.riskAssessment?.level === 'High Risk' ? '#fee2e2' :
+                             behavioralMatrix.riskAssessment?.level === 'Medium Risk' ? '#fef3c7' : '#dcfce7',
+                  color: behavioralMatrix.riskAssessment?.level === 'High Risk' ? '#991b1b' :
+                         behavioralMatrix.riskAssessment?.level === 'Medium Risk' ? '#92400e' : '#166534'
+                }}>
+                  {behavioralMatrix.riskAssessment?.level || 'Unknown'}
+                </span>
+              </div>
+            </div>
+            
+            <div style={styles.riskSummary}>
+              <p>{behavioralMatrix.riskAssessment?.summary || 'No behavioral data available.'}</p>
+            </div>
+            
+            {behavioralMatrix.flaggedQuestions && behavioralMatrix.flaggedQuestions.length > 0 && (
+              <div style={styles.flaggedQuestions}>
+                <h4 style={styles.flaggedTitle}>Flagged Questions</h4>
+                <ul style={styles.flaggedList}>
+                  {behavioralMatrix.flaggedQuestions.map((q, index) => (
+                    <li key={index} style={styles.flaggedItem}>
+                      Question {q.question_id}: {q.time_seconds}s, 
+                      {q.changed ? ' Changed ✓' : ''} 
+                      {q.violation ? ' Violation ⚠' : ''}
+                      {!q.changed && !q.violation && ' No concerns'}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
       </AppLayout>
     );
   }
@@ -194,6 +322,9 @@ export default function SupervisorReportView() {
             </button>
             <span style={styles.breadcrumbSeparator}>|</span>
             <span style={styles.breadcrumbText}>National Service Report</span>
+            <button onClick={toggleBehavioral} style={styles.behavioralToggle}>
+              {showBehavioral ? 'Hide' : 'Show'} Behavioral Matrix
+            </button>
           </div>
           <NationalServiceReport 
             report={reportData.result.report_data} 
@@ -201,6 +332,83 @@ export default function SupervisorReportView() {
             showAssignment={false}
             userRole="supervisor"
           />
+          
+          {showBehavioral && behavioralMatrix && (
+            <div style={styles.behavioralSection}>
+              <h3 style={styles.behavioralTitle}>Behavioral Matrix</h3>
+              
+              <div style={styles.behavioralStats}>
+                <div style={styles.behavioralStat}>
+                  <span style={styles.behavioralLabel}>Total Time</span>
+                  <span style={styles.behavioralValue}>
+                    {formatTime(behavioralMatrix.timing?.totalTimeSeconds)}
+                  </span>
+                </div>
+                <div style={styles.behavioralStat}>
+                  <span style={styles.behavioralLabel}>Avg Time per Question</span>
+                  <span style={styles.behavioralValue}>
+                    {behavioralMatrix.timing?.averageTimePerQuestion || 0}s
+                  </span>
+                </div>
+                <div style={styles.behavioralStat}>
+                  <span style={styles.behavioralLabel}>Answer Changes</span>
+                  <span style={styles.behavioralValue}>
+                    {behavioralMatrix.behavior?.answerChanges || 0}
+                  </span>
+                </div>
+                <div style={styles.behavioralStat}>
+                  <span style={styles.behavioralLabel}>Tab Switches</span>
+                  <span style={styles.behavioralValue}>
+                    {behavioralMatrix.behavior?.tabSwitches || 0}
+                  </span>
+                </div>
+                <div style={styles.behavioralStat}>
+                  <span style={styles.behavioralLabel}>Violations</span>
+                  <span style={styles.behavioralValue}>
+                    {behavioralMatrix.behavior?.violations || 0}
+                  </span>
+                </div>
+                <div style={styles.behavioralStat}>
+                  <span style={styles.behavioralLabel}>Copy/Paste Attempts</span>
+                  <span style={styles.behavioralValue}>
+                    {(behavioralMatrix.behavior?.copyAttempts || 0) + (behavioralMatrix.behavior?.pasteAttempts || 0)}
+                  </span>
+                </div>
+                <div style={styles.behavioralStat}>
+                  <span style={styles.behavioralLabel}>Risk Level</span>
+                  <span style={{
+                    ...styles.riskBadge,
+                    background: behavioralMatrix.riskAssessment?.level === 'High Risk' ? '#fee2e2' :
+                               behavioralMatrix.riskAssessment?.level === 'Medium Risk' ? '#fef3c7' : '#dcfce7',
+                    color: behavioralMatrix.riskAssessment?.level === 'High Risk' ? '#991b1b' :
+                           behavioralMatrix.riskAssessment?.level === 'Medium Risk' ? '#92400e' : '#166534'
+                  }}>
+                    {behavioralMatrix.riskAssessment?.level || 'Unknown'}
+                  </span>
+                </div>
+              </div>
+              
+              <div style={styles.riskSummary}>
+                <p>{behavioralMatrix.riskAssessment?.summary || 'No behavioral data available.'}</p>
+              </div>
+              
+              {behavioralMatrix.flaggedQuestions && behavioralMatrix.flaggedQuestions.length > 0 && (
+                <div style={styles.flaggedQuestions}>
+                  <h4 style={styles.flaggedTitle}>Flagged Questions</h4>
+                  <ul style={styles.flaggedList}>
+                    {behavioralMatrix.flaggedQuestions.map((q, index) => (
+                      <li key={index} style={styles.flaggedItem}>
+                        Question {q.question_id}: {q.time_seconds}s, 
+                        {q.changed ? ' Changed ✓' : ''} 
+                        {q.violation ? ' Violation ⚠' : ''}
+                        {!q.changed && !q.violation && ' No concerns'}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
         </AppLayout>
       );
     }
@@ -226,6 +434,9 @@ export default function SupervisorReportView() {
         </button>
         <span style={styles.breadcrumbSeparator}>|</span>
         <span style={styles.breadcrumbText}>Assessment Report</span>
+        <button onClick={toggleBehavioral} style={styles.behavioralToggle}>
+          {showBehavioral ? 'Hide' : 'Show'} Behavioral Data
+        </button>
       </div>
       <StratavaxReport 
         result={stratavaxData.result}
@@ -233,6 +444,83 @@ export default function SupervisorReportView() {
         assessment={stratavaxData.assessment}
         onBack={handleBack}
       />
+      
+      {showBehavioral && behavioralMatrix && (
+        <div style={styles.behavioralSection}>
+          <h3 style={styles.behavioralTitle}>Behavioral Matrix</h3>
+          
+          <div style={styles.behavioralStats}>
+            <div style={styles.behavioralStat}>
+              <span style={styles.behavioralLabel}>Total Time</span>
+              <span style={styles.behavioralValue}>
+                {formatTime(behavioralMatrix.timing?.totalTimeSeconds)}
+              </span>
+            </div>
+            <div style={styles.behavioralStat}>
+              <span style={styles.behavioralLabel}>Avg Time per Question</span>
+              <span style={styles.behavioralValue}>
+                {behavioralMatrix.timing?.averageTimePerQuestion || 0}s
+              </span>
+            </div>
+            <div style={styles.behavioralStat}>
+              <span style={styles.behavioralLabel}>Answer Changes</span>
+              <span style={styles.behavioralValue}>
+                {behavioralMatrix.behavior?.answerChanges || 0}
+              </span>
+            </div>
+            <div style={styles.behavioralStat}>
+              <span style={styles.behavioralLabel}>Tab Switches</span>
+              <span style={styles.behavioralValue}>
+                {behavioralMatrix.behavior?.tabSwitches || 0}
+              </span>
+            </div>
+            <div style={styles.behavioralStat}>
+              <span style={styles.behavioralLabel}>Violations</span>
+              <span style={styles.behavioralValue}>
+                {behavioralMatrix.behavior?.violations || 0}
+              </span>
+            </div>
+            <div style={styles.behavioralStat}>
+              <span style={styles.behavioralLabel}>Copy/Paste Attempts</span>
+              <span style={styles.behavioralValue}>
+                {(behavioralMatrix.behavior?.copyAttempts || 0) + (behavioralMatrix.behavior?.pasteAttempts || 0)}
+              </span>
+            </div>
+            <div style={styles.behavioralStat}>
+              <span style={styles.behavioralLabel}>Risk Level</span>
+              <span style={{
+                ...styles.riskBadge,
+                background: behavioralMatrix.riskAssessment?.level === 'High Risk' ? '#fee2e2' :
+                           behavioralMatrix.riskAssessment?.level === 'Medium Risk' ? '#fef3c7' : '#dcfce7',
+                color: behavioralMatrix.riskAssessment?.level === 'High Risk' ? '#991b1b' :
+                       behavioralMatrix.riskAssessment?.level === 'Medium Risk' ? '#92400e' : '#166534'
+              }}>
+                {behavioralMatrix.riskAssessment?.level || 'Unknown'}
+              </span>
+            </div>
+          </div>
+          
+          <div style={styles.riskSummary}>
+            <p>{behavioralMatrix.riskAssessment?.summary || 'No behavioral data available.'}</p>
+          </div>
+          
+          {behavioralMatrix.flaggedQuestions && behavioralMatrix.flaggedQuestions.length > 0 && (
+            <div style={styles.flaggedQuestions}>
+              <h4 style={styles.flaggedTitle}>Flagged Questions</h4>
+              <ul style={styles.flaggedList}>
+                {behavioralMatrix.flaggedQuestions.map((q, index) => (
+                  <li key={index} style={styles.flaggedItem}>
+                    Question {q.question_id}: {q.time_seconds}s, 
+                    {q.changed ? ' Changed ✓' : ''} 
+                    {q.violation ? ' Violation ⚠' : ''}
+                    {!q.changed && !q.violation && ' No concerns'}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
     </AppLayout>
   );
 }
@@ -284,7 +572,8 @@ const styles = {
     background: 'white',
     borderBottom: '1px solid #e2e8f0',
     maxWidth: '1200px',
-    margin: '0 auto'
+    margin: '0 auto',
+    flexWrap: 'wrap'
   },
   breadcrumbButton: {
     padding: '8px 16px',
@@ -300,6 +589,98 @@ const styles = {
   },
   breadcrumbText: {
     fontSize: '14px',
+    color: '#475569'
+  },
+  behavioralToggle: {
+    padding: '6px 16px',
+    background: '#1a237e',
+    color: 'white',
+    border: 'none',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontSize: '13px',
+    fontWeight: '500',
+    marginLeft: 'auto'
+  },
+  behavioralSection: {
+    maxWidth: '1200px',
+    margin: '24px auto',
+    padding: '24px',
+    background: 'white',
+    borderRadius: '12px',
+    border: '1px solid #e2e8f0',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
+  },
+  behavioralTitle: {
+    fontSize: '18px',
+    fontWeight: '600',
+    color: '#0a1929',
+    margin: '0 0 16px 0',
+    paddingBottom: '12px',
+    borderBottom: '2px solid #e2e8f0'
+  },
+  behavioralStats: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+    gap: '12px',
+    marginBottom: '16px'
+  },
+  behavioralStat: {
+    background: '#f8fafc',
+    padding: '12px 16px',
+    borderRadius: '8px',
+    border: '1px solid #e2e8f0',
+    textAlign: 'center'
+  },
+  behavioralLabel: {
+    display: 'block',
+    fontSize: '11px',
+    color: '#94a3b8',
+    textTransform: 'uppercase',
+    letterSpacing: '0.04em',
+    marginBottom: '4px'
+  },
+  behavioralValue: {
+    fontSize: '18px',
+    fontWeight: '700',
+    color: '#0a1929'
+  },
+  riskBadge: {
+    display: 'inline-block',
+    padding: '4px 12px',
+    borderRadius: '12px',
+    fontSize: '13px',
+    fontWeight: '600'
+  },
+  riskSummary: {
+    padding: '12px 16px',
+    background: '#f8fafc',
+    borderRadius: '8px',
+    border: '1px solid #e2e8f0',
+    marginBottom: '12px',
+    fontSize: '14px',
+    color: '#475569'
+  },
+  flaggedQuestions: {
+    marginTop: '12px'
+  },
+  flaggedTitle: {
+    fontSize: '14px',
+    fontWeight: '600',
+    color: '#0a1929',
+    marginBottom: '8px'
+  },
+  flaggedList: {
+    listStyle: 'none',
+    padding: '0',
+    margin: '0'
+  },
+  flaggedItem: {
+    padding: '6px 12px',
+    background: '#f8fafc',
+    borderRadius: '4px',
+    borderBottom: '1px solid #f1f5f9',
+    fontSize: '13px',
     color: '#475569'
   }
 };
