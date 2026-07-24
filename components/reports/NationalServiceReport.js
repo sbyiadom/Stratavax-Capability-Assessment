@@ -1,4 +1,4 @@
-// components/reports/NationalServiceReport.js - WITH DEBUG LOGGING
+// components/reports/NationalServiceReport.js - ULTRA SIMPLE FIX
 
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../../supabase/client';
@@ -531,32 +531,6 @@ const styles = {
     margin: '4px 0 0 0',
     fontSize: '13px',
     color: '#64748b'
-  },
-  debugInfo: {
-    background: '#f8f9fa',
-    padding: '16px',
-    borderRadius: '8px',
-    marginBottom: '20px',
-    border: '1px solid #dee2e6',
-    fontSize: '12px'
-  },
-  debugSuccess: {
-    background: '#d4edda',
-    padding: '12px 16px',
-    borderRadius: '8px',
-    marginBottom: '16px',
-    border: '1px solid #c3e6cb',
-    color: '#155724',
-    fontSize: '14px'
-  },
-  debugError: {
-    background: '#f8d7da',
-    padding: '12px 16px',
-    borderRadius: '8px',
-    marginBottom: '16px',
-    border: '1px solid #f5c6cb',
-    color: '#721c24',
-    fontSize: '14px'
   }
 };
 
@@ -567,7 +541,6 @@ export default function NationalServiceReport({ report, onBack }) {
   const [behavioralMatrix, setBehavioralMatrix] = useState(null);
   const [showBehavioral, setShowBehavioral] = useState(false);
   const [loadingBehavioral, setLoadingBehavioral] = useState(false);
-  const [debugData, setDebugData] = useState(null);
 
   useEffect(() => {
     console.log('[NationalServiceReport] Report received:', report);
@@ -581,19 +554,17 @@ export default function NationalServiceReport({ report, onBack }) {
   const fetchBehavioralMatrix = async (id) => {
     try {
       setLoadingBehavioral(true);
-      console.log('[Behavioral] 🚀 Fetching for resultId:', id);
+      console.log('[Behavioral] Fetching for resultId:', id);
       
       const { data: session } = await supabase.auth.getSession();
       const token = session?.session?.access_token;
 
       if (!token) {
-        console.log('[Behavioral] ❌ No token found');
+        console.log('[Behavioral] No token found');
         setLoadingBehavioral(false);
         return;
       }
 
-      console.log('[Behavioral] ✅ Token found, making API call...');
-      
       const response = await fetch(`/api/assessment/behavioral-matrix?resultId=${id}`, {
         headers: {
           'Authorization': `Bearer ${token}`
@@ -601,60 +572,21 @@ export default function NationalServiceReport({ report, onBack }) {
       });
 
       const data = await response.json();
-      
-      // ============================================================
-      // DEBUG LOGGING - EVERYTHING WE NEED TO TRACK
-      // ============================================================
-      console.log('[Behavioral] 📡 API Response Status:', response.status);
-      console.log('[Behavioral] 📡 API Response:', data);
-      console.log('[Behavioral] 📡 Response keys:', Object.keys(data));
-      console.log('[Behavioral] 📡 success:', data.success);
-      console.log('[Behavioral] 📡 behavioralMatrix exists?', !!data.behavioralMatrix);
-      console.log('[Behavioral] 📡 matrixData exists?', !!data.matrixData);
-      console.log('[Behavioral] 📡 data.data exists?', !!data.data);
-      console.log('[Behavioral] 📡 result exists?', !!data.result);
-      
-      // Store debug data
-      setDebugData({
-        status: response.status,
-        keys: Object.keys(data),
-        hasBehavioralMatrix: !!data.behavioralMatrix,
-        hasMatrixData: !!data.matrixData,
-        hasData: !!data.data,
-        hasResult: !!data.result,
-        behavioralMatrixKeys: data.behavioralMatrix ? Object.keys(data.behavioralMatrix) : [],
-        hasBehavioralData: data.behavioralMatrix?.hasBehavioralData,
-        behaviorKeys: data.behavioralMatrix?.behavior ? Object.keys(data.behavioralMatrix.behavior) : [],
-        tabSwitches: data.behavioralMatrix?.behavior?.tabSwitches,
-        violations: data.behavioralMatrix?.behavior?.violations,
-        fullResponse: data
-      });
+      console.log('[Behavioral] API Response:', data);
       
       if (data.success) {
         // Try to get matrix from various possible locations
         let matrix = data.behavioralMatrix || data.matrixData || data.data || data.result;
         
         if (matrix) {
-          console.log('[Behavioral] ✅ Matrix data found!');
-          console.log('[Behavioral] 📊 Matrix keys:', Object.keys(matrix));
-          console.log('[Behavioral] 📊 hasBehavioralData:', matrix.hasBehavioralData);
-          console.log('[Behavioral] 📊 behavior:', matrix.behavior);
-          console.log('[Behavioral] 📊 tabSwitches:', matrix.behavior?.tabSwitches);
-          console.log('[Behavioral] 📊 violations:', matrix.behavior?.violations);
-          console.log('[Behavioral] 📊 answerChanges:', matrix.behavior?.answerChanges);
-          
+          console.log('[Behavioral] Matrix data:', matrix);
           setBehavioralMatrix(matrix);
         } else {
-          console.log('[Behavioral] ❌ No matrix data found in response');
-          console.log('[Behavioral] Full response structure:', JSON.stringify(data, null, 2));
+          console.log('[Behavioral] No matrix data found in response');
         }
-      } else {
-        console.log('[Behavioral] ❌ API returned success: false');
-        console.log('[Behavioral] Error:', data.error);
       }
     } catch (error) {
-      console.error('[Behavioral] ❌ Error fetching behavioral matrix:', error);
-      setDebugData(prev => ({ ...prev, error: error.message }));
+      console.error('Error fetching behavioral matrix:', error);
     } finally {
       setLoadingBehavioral(false);
     }
@@ -941,26 +873,10 @@ export default function NationalServiceReport({ report, onBack }) {
   const suggestedPlacements = getSuggestedPlacements();
 
   // ============================================================
-  // ✅ FIXED: CHECK IF BEHAVIORAL DATA EXISTS
+  // ✅ FIXED: CHECK IF BEHAVIORAL DATA EXISTS - ULTRA SIMPLE
   // ============================================================
-  // The matrix should show if we have a behavioralMatrix object with data
-  const hasBehavioralData = 
-    behavioralMatrix !== null && 
-    (
-      behavioralMatrix?.hasBehavioralData === true ||
-      behavioralMatrix?.behavior !== undefined ||
-      (behavioralMatrix?.behavior?.tabSwitches !== undefined) ||
-      (behavioralMatrix?.behavior?.violations !== undefined) ||
-      (behavioralMatrix?.behavior?.answerChanges !== undefined) ||
-      (behavioralMatrix?.timing?.timePerQuestion && behavioralMatrix.timing.timePerQuestion.length > 0)
-    );
-
-  const hasViolations = 
-    (behavioralMatrix?.behavior?.tabSwitches || 0) > 0 ||
-    (behavioralMatrix?.behavior?.violations || 0) > 0 ||
-    (behavioralMatrix?.behavior?.copyAttempts || 0) > 0 ||
-    (behavioralMatrix?.behavior?.pasteAttempts || 0) > 0 ||
-    (behavioralMatrix?.behavior?.rightClickAttempts || 0) > 0;
+  // If behavioralMatrix exists at all, show the matrix
+  const hasBehavioralData = behavioralMatrix !== null;
 
   // ============================================================
   // RENDER
@@ -971,42 +887,6 @@ export default function NationalServiceReport({ report, onBack }) {
         <button onClick={onBack} style={styles.backButton}>
           ← Back to Dashboard
         </button>
-      )}
-
-      {/* ============================================================
-          DEBUG SECTION - Shows what's happening with the data
-          ============================================================ */}
-      {debugData && (
-        <div style={styles.debugInfo}>
-          <h4 style={{ margin: '0 0 8px 0', color: '#0b2a4e' }}>🔍 Debug: Behavioral Matrix Status</h4>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '8px' }}>
-            <div><strong>API Status:</strong> {debugData.status}</div>
-            <div><strong>Success:</strong> {debugData.hasBehavioralMatrix ? '✅ Yes' : '❌ No'}</div>
-            <div><strong>Matrix Exists:</strong> {debugData.behavioralMatrixKeys?.length > 0 ? '✅ Yes' : '❌ No'}</div>
-            <div><strong>hasBehavioralData:</strong> {debugData.hasBehavioralData ? '✅ Yes' : '❌ No'}</div>
-            <div><strong>Tab Switches:</strong> {debugData.tabSwitches ?? 'N/A'}</div>
-            <div><strong>Violations:</strong> {debugData.violations ?? 'N/A'}</div>
-            <div><strong>Behavior Keys:</strong> {debugData.behaviorKeys?.join(', ') || 'None'}</div>
-          </div>
-          <details style={{ marginTop: '8px' }}>
-            <summary style={{ cursor: 'pointer', fontWeight: '600', color: '#475569' }}>
-              View Full Response
-            </summary>
-            <pre style={{ 
-              whiteSpace: 'pre-wrap', 
-              fontSize: '11px', 
-              maxHeight: '300px', 
-              overflow: 'auto', 
-              background: '#fff', 
-              padding: '12px', 
-              borderRadius: '4px', 
-              border: '1px solid #ddd',
-              marginTop: '8px'
-            }}>
-              {JSON.stringify(debugData.fullResponse, null, 2)}
-            </pre>
-          </details>
-        </div>
       )}
 
       {/* Header */}
@@ -1246,11 +1126,6 @@ export default function NationalServiceReport({ report, onBack }) {
             </div>
           ) : behavioralMatrix && hasBehavioralData ? (
             <>
-              {/* Show success message */}
-              <div style={styles.debugSuccess}>
-                ✅ Behavioral data found! Displaying matrix with {behavioralMatrix.behavior?.tabSwitches || 0} tab switches and {behavioralMatrix.behavior?.violations || 0} violations.
-              </div>
-
               <div style={styles.behavioralStats}>
                 <div style={styles.behavioralStat}>
                   <span style={styles.behavioralLabel}>Total Time</span>
@@ -1308,24 +1183,17 @@ export default function NationalServiceReport({ report, onBack }) {
                 </div>
               </div>
               
-              {!hasViolations ? (
-                <div style={styles.cleanAssessment}>
-                  <p style={{ color: '#166534', fontWeight: '600' }}>
-                    ✅ This candidate completed the assessment with no behavioral violations detected.
+              {/* Show behavioral flags */}
+              <div style={styles.riskSummary}>
+                <p>
+                  Behavioral flags: {behavioralMatrix.behavior?.violations || 0} violation(s), {behavioralMatrix.behavior?.tabSwitches || 0} tab switches.
+                </p>
+                {behavioralMatrix.riskAssessment?.detail && (
+                  <p style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
+                    {behavioralMatrix.riskAssessment.detail}
                   </p>
-                </div>
-              ) : (
-                <div style={styles.riskSummary}>
-                  <p style={{ fontWeight: '500' }}>
-                    Behavioral flags: {behavioralMatrix.behavior?.violations || 0} violation(s), {behavioralMatrix.behavior?.tabSwitches || 0} tab switches.
-                  </p>
-                  {behavioralMatrix.riskAssessment?.detail && (
-                    <p style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
-                      {behavioralMatrix.riskAssessment.detail}
-                    </p>
-                  )}
-                </div>
-              )}
+                )}
+              </div>
               
               {/* Show flagged questions */}
               {behavioralMatrix.flaggedQuestions && behavioralMatrix.flaggedQuestions.length > 0 && (
@@ -1337,7 +1205,6 @@ export default function NationalServiceReport({ report, onBack }) {
                         Question {q.question_id}: {q.time_seconds}s
                         {q.changed ? ' - Changed' : ''}
                         {q.violation ? ' - Violation' : ''}
-                        {q.comment ? ` - ${q.comment}` : ''}
                       </li>
                     ))}
                     {behavioralMatrix.flaggedQuestions.length > 10 && (
@@ -1354,11 +1221,6 @@ export default function NationalServiceReport({ report, onBack }) {
                 Behavioral data (tab switches, violations, answer changes, etc.) 
                 is only tracked for assessments completed after the behavioral tracking feature was implemented.
               </p>
-              {debugData && !debugData.hasBehavioralMatrix && (
-                <p style={{ fontSize: '12px', color: '#dc3545', marginTop: '12px' }}>
-                  ⚠️ Debug: No behavioralMatrix found in API response. Check API logs.
-                </p>
-              )}
             </div>
           )}
         </div>
