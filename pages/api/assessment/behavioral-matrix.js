@@ -1,4 +1,4 @@
-// pages/api/assessment/behavioral-matrix.js - WITH COMMENTS
+// pages/api/assessment/behavioral-matrix.js - FULLY CORRECTED VERSION
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -10,7 +10,7 @@ const VIOLATION_TYPES = {
     label: 'Tab Switch',
     severity: 'high',
     comment: 'Candidate switched to another browser tab or window. This may indicate they were looking up answers, using other applications, or multitasking during the assessment.',
-    recommendation: 'Flag for review. 108 tab switches is excessive and suggests the candidate was not fully focused on the assessment.'
+    recommendation: 'Flag for review. Excessive tab switches suggests the candidate was not fully focused on the assessment.'
   },
   copy_attempt: {
     label: 'Copy Attempt',
@@ -113,6 +113,18 @@ function formatFlaggedQuestions(questions) {
   }));
 }
 
+function getRiskLevel(violations, tabSwitches, changes, avgTime) {
+  let score = 0;
+  if (violations > 0) score += 2;
+  if (tabSwitches > 5) score += 1;
+  if (changes > 10) score += 1;
+  if (avgTime < 5) score += 1;
+
+  if (score >= 4) return 'High Risk';
+  if (score >= 2) return 'Medium Risk';
+  return 'Low Risk';
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'GET') {
     return res.status(405).json({ success: false, error: 'Method not allowed' });
@@ -139,7 +151,9 @@ export default async function handler(req, res) {
       return res.status(401).json({ success: false, error: 'Invalid token' });
     }
 
-    // Get the result with session data
+    // ============================================================
+    // FIXED: Get the result WITHOUT the problematic join
+    // ============================================================
     const { data: result, error: resultError } = await supabase
       .from('assessment_results')
       .select(`
@@ -157,16 +171,34 @@ export default async function handler(req, res) {
           email,
           university,
           programme
-        ),
-        assessments:assessment_id (
-          title
         )
       `)
       .eq('id', resultId)
       .single();
 
     if (resultError) {
+      console.error('Result error:', resultError);
       return res.status(500).json({ success: false, error: resultError.message });
+    }
+
+    // ============================================================
+    // FIXED: Get assessment title separately if needed
+    // ============================================================
+    let assessmentTitle = 'Assessment';
+    try {
+      const { data: assessmentData, error: assessmentError } = await supabase
+        .from('assessments')
+        .select('title')
+        .eq('id', result.assessment_id)
+        .single();
+      
+      if (!assessmentError && assessmentData) {
+        assessmentTitle = assessmentData.title || 'Assessment';
+      }
+    } catch (assessmentErr) {
+      // If the assessments table doesn't exist or has different structure, just use fallback
+      console.warn('Could not fetch assessment title:', assessmentErr.message);
+      assessmentTitle = 'Assessment';
     }
 
     // Get all responses for this session
@@ -298,7 +330,7 @@ export default async function handler(req, res) {
     const riskComment = getRiskComment(riskLevel, totalViolations, totalTabSwitches);
 
     // ============================================================
-    // BUILD RESPONSE WITH COMMENTS
+    // BUILD RESPONSE WITH COMMENTS - FIXED ASSESSMENT TITLE
     // ============================================================
     const behavioralMatrix = {
       candidate: {
@@ -308,7 +340,7 @@ export default async function handler(req, res) {
         programme: result.candidate_profiles?.programme || ''
       },
       assessment: {
-        title: result.assessments?.title || 'Unknown',
+        title: assessmentTitle,
         completedAt: result.completed_at,
         overallScore: result.percentage_score,
         totalQuestions: result.total_questions || 0,
@@ -329,15 +361,15 @@ export default async function handler(req, res) {
         rightClickAttempts: totalRightClicks,
         isAutoSubmitted: result.is_auto_submitted || false,
         hasBehavioralData: hasBehavioralData,
-        violationComments: violationComments,  // ADDED: Comments for each violation type
-        violationTimeline: violationTimeline  // ADDED: Timeline of when violations occurred
+        violationComments: violationComments,
+        violationTimeline: violationTimeline
       },
-      flaggedQuestions: flaggedQuestions,  // ADDED: Questions with comments
+      flaggedQuestions: flaggedQuestions,
       riskAssessment: {
         level: riskLevel,
-        summary: riskComment.summary,  // ADDED: Risk summary with comment
-        detail: riskComment.detail,    // ADDED: Detailed risk explanation
-        action: riskComment.action      // ADDED: Recommended action
+        summary: riskComment.summary,
+        detail: riskComment.detail,
+        action: riskComment.action
       }
     };
 
@@ -348,18 +380,10 @@ export default async function handler(req, res) {
 
   } catch (error) {
     console.error('Behavioral matrix error:', error);
-    return res.status(500).json({ success: false, error: error.message });
+    return res.status(500).json({ 
+      success: false, 
+      error: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
   }
-}
-
-function getRiskLevel(violations, tabSwitches, changes, avgTime) {
-  let score = 0;
-  if (violations > 0) score += 2;
-  if (tabSwitches > 5) score += 1;
-  if (changes > 10) score += 1;
-  if (avgTime < 5) score += 1;
-
-  if (score >= 4) return 'High Risk';
-  if (score >= 2) return 'Medium Risk';
-  return 'Low Risk';
 }
