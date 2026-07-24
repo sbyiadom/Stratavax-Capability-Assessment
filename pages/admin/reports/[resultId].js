@@ -1,4 +1,4 @@
-// pages/admin/reports/[resultId].js - WITH FIXED hasBehavioralData
+// pages/admin/reports/[resultId].js - WITH PROP PASSING FIX
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -233,6 +233,7 @@ export default function AdminReportView() {
 
       if (!token) {
         console.log('[Behavioral] No token found');
+        setLoadingBehavioral(false);
         return;
       }
 
@@ -249,13 +250,18 @@ export default function AdminReportView() {
         // Try different response formats
         const matrix = data.behavioralMatrix || data.matrixData || data.data || data.result;
         if (matrix) {
-          console.log('[Behavioral] Matrix data:', matrix);
-          console.log('[Behavioral] Matrix tabSwitches:', matrix.behavior?.tabSwitches);
-          console.log('[Behavioral] Matrix violations:', matrix.behavior?.violations);
+          console.log('[Behavioral] Matrix data found:');
+          console.log('[Behavioral] - tabSwitches:', matrix.behavior?.tabSwitches);
+          console.log('[Behavioral] - violations:', matrix.behavior?.violations);
+          console.log('[Behavioral] - answerChanges:', matrix.behavior?.answerChanges);
+          console.log('[Behavioral] - hasBehavioralData:', matrix.behavior?.hasBehavioralData);
           setBehavioralMatrix(matrix);
         } else {
           console.log('[Behavioral] No matrix data found in response');
+          console.log('[Behavioral] Response keys:', Object.keys(data));
         }
+      } else {
+        console.log('[Behavioral] API returned success: false');
       }
     } catch (error) {
       console.error('Error fetching behavioral matrix:', error);
@@ -281,13 +287,21 @@ export default function AdminReportView() {
   };
 
   // ============================================================
-  // ✅ FIXED: CHECK IF BEHAVIORAL DATA EXISTS - SIMPLEST POSSIBLE
+  // ✅ FIXED: CHECK IF BEHAVIORAL DATA EXISTS
   // ============================================================
-  // Just check if behavioralMatrix exists at all
-  // The API already handles determining if data exists
   const hasBehavioralData = 
     behavioralMatrix !== null && 
-    behavioralMatrix !== undefined;
+    behavioralMatrix !== undefined &&
+    (behavioralMatrix.behavior !== undefined ||
+     behavioralMatrix.hasBehavioralData === true ||
+     Object.keys(behavioralMatrix).length > 0);
+
+  // Check if there are actual behavioral metrics (even if 0)
+  const hasBehavioralMetrics = 
+    behavioralMatrix?.behavior !== undefined &&
+    (behavioralMatrix.behavior.tabSwitches !== undefined ||
+     behavioralMatrix.behavior.violations !== undefined ||
+     behavioralMatrix.behavior.answerChanges !== undefined);
 
   if (authLoading || loading) {
     return (
@@ -316,6 +330,10 @@ export default function AdminReportView() {
   // Render National Service Report with Behavioral Matrix
   if (isNationalService && reportData?.report) {
     console.log('[Admin Report] Rendering National Service Report');
+    console.log('[Admin Report] behavioralMatrix:', behavioralMatrix);
+    console.log('[Admin Report] hasBehavioralData:', hasBehavioralData);
+    console.log('[Admin Report] hasBehavioralMetrics:', hasBehavioralMetrics);
+    
     return (
       <AppLayout background="/images/admin-bg.jpg">
         <div style={styles.breadcrumb}>
@@ -328,9 +346,13 @@ export default function AdminReportView() {
             {showBehavioral ? 'Hide Behavioral Matrix' : 'Show Behavioral Matrix'}
           </button>
         </div>
+        
+        {/* ✅ PASS behavioralMatrix as prop to NationalServiceReport */}
         <NationalServiceReport 
           report={reportData.report} 
-          onBack={handleBack} 
+          onBack={handleBack}
+          behavioralMatrix={behavioralMatrix}
+          loadingBehavioral={loadingBehavioral}
         />
         
         {showBehavioral && (
@@ -395,13 +417,20 @@ export default function AdminReportView() {
                       color: behavioralMatrix.riskAssessment?.level === 'High Risk' ? '#991b1b' :
                              behavioralMatrix.riskAssessment?.level === 'Medium Risk' ? '#92400e' : '#166534'
                     }}>
-                      {behavioralMatrix.riskAssessment?.level || 'Unknown'}
+                      {behavioralMatrix.riskAssessment?.level || 'Low Risk'}
                     </span>
                   </div>
                 </div>
                 
                 <div style={styles.riskSummary}>
-                  <p>{behavioralMatrix.riskAssessment?.summary || 'No behavioral concerns detected.'}</p>
+                  <p>
+                    Behavioral flags: {behavioralMatrix.behavior?.violations || 0} violation(s), {behavioralMatrix.behavior?.tabSwitches || 0} tab switches.
+                  </p>
+                  {behavioralMatrix.riskAssessment?.detail && (
+                    <p style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
+                      {behavioralMatrix.riskAssessment.detail}
+                    </p>
+                  )}
                 </div>
                 
                 {behavioralMatrix.flaggedQuestions && behavioralMatrix.flaggedQuestions.length > 0 && (
@@ -413,6 +442,7 @@ export default function AdminReportView() {
                           Question {q.question_id}: {q.time_seconds}s
                           {q.changed ? ' - Changed' : ''}
                           {q.violation ? ' - Violation' : ''}
+                          {q.comment ? ` - ${q.comment}` : ''}
                         </li>
                       ))}
                       {behavioralMatrix.flaggedQuestions.length > 10 && (
@@ -429,6 +459,12 @@ export default function AdminReportView() {
                   Behavioral data (tab switches, violations, answer changes, etc.) 
                   is only tracked for assessments completed after the behavioral tracking feature was implemented.
                 </p>
+                {behavioralMatrix && (
+                  <p style={{ fontSize: '12px', color: '#dc3545', marginTop: '12px' }}>
+                    Debug: behavioralMatrix exists but hasBehavioralData is false. 
+                    Keys: {Object.keys(behavioralMatrix).join(', ')}
+                  </p>
+                )}
               </div>
             )}
           </div>
@@ -554,13 +590,20 @@ export default function AdminReportView() {
                       color: behavioralMatrix.riskAssessment?.level === 'High Risk' ? '#991b1b' :
                              behavioralMatrix.riskAssessment?.level === 'Medium Risk' ? '#92400e' : '#166534'
                     }}>
-                      {behavioralMatrix.riskAssessment?.level || 'Unknown'}
+                      {behavioralMatrix.riskAssessment?.level || 'Low Risk'}
                     </span>
                   </div>
                 </div>
                 
                 <div style={styles.riskSummary}>
-                  <p>{behavioralMatrix.riskAssessment?.summary || 'No behavioral concerns detected.'}</p>
+                  <p>
+                    Behavioral flags: {behavioralMatrix.behavior?.violations || 0} violation(s), {behavioralMatrix.behavior?.tabSwitches || 0} tab switches.
+                  </p>
+                  {behavioralMatrix.riskAssessment?.detail && (
+                    <p style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
+                      {behavioralMatrix.riskAssessment.detail}
+                    </p>
+                  )}
                 </div>
                 
                 {behavioralMatrix.flaggedQuestions && behavioralMatrix.flaggedQuestions.length > 0 && (
@@ -572,6 +615,7 @@ export default function AdminReportView() {
                           Question {q.question_id}: {q.time_seconds}s
                           {q.changed ? ' - Changed' : ''}
                           {q.violation ? ' - Violation' : ''}
+                          {q.comment ? ` - ${q.comment}` : ''}
                         </li>
                       ))}
                       {behavioralMatrix.flaggedQuestions.length > 10 && (
