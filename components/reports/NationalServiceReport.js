@@ -1,4 +1,4 @@
-// components/reports/NationalServiceReport.js - ULTRA SIMPLE FIX
+// components/reports/NationalServiceReport.js - WITH FIXED hasBehavioralData
 
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../../supabase/client';
@@ -580,6 +580,8 @@ export default function NationalServiceReport({ report, onBack }) {
         
         if (matrix) {
           console.log('[Behavioral] Matrix data:', matrix);
+          console.log('[Behavioral] Matrix tabSwitches:', matrix.behavior?.tabSwitches);
+          console.log('[Behavioral] Matrix violations:', matrix.behavior?.violations);
           setBehavioralMatrix(matrix);
         } else {
           console.log('[Behavioral] No matrix data found in response');
@@ -873,10 +875,11 @@ export default function NationalServiceReport({ report, onBack }) {
   const suggestedPlacements = getSuggestedPlacements();
 
   // ============================================================
-  // ✅ FIXED: CHECK IF BEHAVIORAL DATA EXISTS - ULTRA SIMPLE
+  // ✅ FIXED: CHECK IF BEHAVIORAL DATA EXISTS - SIMPLEST POSSIBLE
   // ============================================================
-  // If behavioralMatrix exists at all, show the matrix
-  const hasBehavioralData = behavioralMatrix !== null;
+  // Just check if behavioralMatrix exists at all
+  // The API already handles determining if data exists
+  const hasBehavioralData = behavioralMatrix !== null && behavioralMatrix !== undefined;
 
   // ============================================================
   // RENDER
