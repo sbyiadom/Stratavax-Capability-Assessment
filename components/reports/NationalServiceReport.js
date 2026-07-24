@@ -1,40 +1,564 @@
-// components/reports/NationalServiceReport.js - FIXED
+// components/reports/NationalServiceReport.js - COMPLETE FIXED VERSION
 
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../../supabase/client';
 
 // ============================================================
-// STYLES - Keep all your existing styles (I'm omitting them for brevity)
+// STYLES - DEFINED AT THE TOP
 // ============================================================
+const styles = {
+  container: {
+    maxWidth: '1200px',
+    margin: '0 auto',
+    padding: '20px',
+    fontFamily: 'system-ui, -apple-system, sans-serif'
+  },
+  backButton: {
+    padding: '8px 16px',
+    background: 'transparent',
+    border: '1px solid #e2e8f0',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    fontSize: '14px',
+    color: '#475569',
+    marginBottom: '20px'
+  },
+  header: {
+    textAlign: 'center',
+    padding: '30px 20px 20px',
+    background: 'linear-gradient(135deg, #0b2a4e 0%, #1b4a7a 100%)',
+    borderRadius: '12px',
+    color: 'white',
+    marginBottom: '30px'
+  },
+  title: {
+    fontSize: '28px',
+    fontWeight: '700',
+    margin: '0 0 16px 0'
+  },
+  candidateInfo: {
+    background: 'rgba(255,255,255,0.1)',
+    borderRadius: '8px',
+    padding: '16px 20px',
+    marginTop: '8px'
+  },
+  candidateInfoGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+    gap: '12px',
+    textAlign: 'left'
+  },
+  infoLabel: {
+    fontSize: '12px',
+    opacity: 0.7,
+    display: 'block',
+    marginBottom: '2px'
+  },
+  infoValue: {
+    fontSize: '15px',
+    fontWeight: '500',
+    display: 'block'
+  },
+  banner: {
+    borderRadius: '12px',
+    padding: '20px 24px',
+    marginBottom: '24px',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
+  },
+  bannerContent: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: '16px'
+  },
+  bannerIcon: {
+    fontSize: '32px',
+    lineHeight: '1'
+  },
+  bannerTitle: {
+    fontSize: '20px',
+    fontWeight: '700',
+    marginBottom: '4px'
+  },
+  bannerNarrative: {
+    fontSize: '14px',
+    color: '#1a202c',
+    lineHeight: '1.6'
+  },
+  scoreGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+    gap: '20px',
+    marginBottom: '30px'
+  },
+  scoreCard: {
+    background: 'white',
+    padding: '24px',
+    borderRadius: '12px',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+    textAlign: 'center',
+    border: '1px solid #e2e8f0'
+  },
+  scoreLabel: {
+    fontSize: '14px',
+    color: '#64748b',
+    fontWeight: '500',
+    marginBottom: '8px'
+  },
+  scoreValue: {
+    fontSize: '32px',
+    fontWeight: '700',
+    color: '#0b2a4e'
+  },
+  scoreBand: {
+    fontSize: '14px',
+    fontWeight: '600',
+    marginTop: '8px'
+  },
+  subCategoryCount: {
+    fontSize: '12px',
+    color: '#94a3b8',
+    marginTop: '8px'
+  },
+  section: {
+    marginBottom: '30px'
+  },
+  sectionHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '16px'
+  },
+  sectionTitle: {
+    fontSize: '20px',
+    fontWeight: '600',
+    color: '#0b2a4e',
+    margin: 0
+  },
+  sectionScore: {
+    fontSize: '18px',
+    fontWeight: '700',
+    color: '#0b2a4e',
+    background: '#e8eaf6',
+    padding: '4px 16px',
+    borderRadius: '20px'
+  },
+  categoryGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+    gap: '16px'
+  },
+  categoryCard: {
+    background: 'white',
+    padding: '16px',
+    borderRadius: '12px',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+    border: '1px solid #e2e8f0'
+  },
+  categoryHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '8px'
+  },
+  categoryName: {
+    fontSize: '14px',
+    fontWeight: '500',
+    color: '#475569'
+  },
+  categoryScore: {
+    fontSize: '20px',
+    fontWeight: '700'
+  },
+  categoryBar: {
+    height: '8px',
+    background: '#e2e8f0',
+    borderRadius: '4px',
+    overflow: 'hidden',
+    marginBottom: '6px'
+  },
+  categoryBarFill: {
+    height: '100%',
+    borderRadius: '4px'
+  },
+  categoryDetail: {
+    fontSize: '12px',
+    color: '#94a3b8'
+  },
+  categoryComment: {
+    fontSize: '13px',
+    fontWeight: '500',
+    marginTop: '4px'
+  },
+  emptyState: {
+    textAlign: 'center',
+    padding: '30px',
+    background: '#f8fafc',
+    borderRadius: '12px',
+    border: '1px solid #e2e8f0',
+    color: '#64748b'
+  },
+  strengthGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+    gap: '16px'
+  },
+  strengthCard: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '16px',
+    background: 'white',
+    padding: '16px',
+    borderRadius: '12px',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+    border: '1px solid #e2e8f0'
+  },
+  strengthRank: {
+    width: '32px',
+    height: '32px',
+    background: '#2e7d32',
+    color: 'white',
+    borderRadius: '50%',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '14px',
+    fontWeight: '700',
+    flexShrink: 0
+  },
+  strengthContent: {
+    flex: 1
+  },
+  strengthName: {
+    fontSize: '14px',
+    fontWeight: '500',
+    color: '#1a202c',
+    marginBottom: '4px'
+  },
+  strengthScore: {
+    fontSize: '16px',
+    fontWeight: '700',
+    color: '#2e7d32',
+    marginBottom: '4px'
+  },
+  strengthBar: {
+    height: '4px',
+    background: '#e8f5e9',
+    borderRadius: '2px',
+    overflow: 'hidden'
+  },
+  strengthBarFill: {
+    height: '100%',
+    background: 'linear-gradient(90deg, #43a047, #2e7d32)',
+    borderRadius: '2px'
+  },
+  developmentGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+    gap: '16px'
+  },
+  developmentCard: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '16px',
+    background: 'white',
+    padding: '16px',
+    borderRadius: '12px',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+    border: '1px solid #e2e8f0'
+  },
+  developmentRank: {
+    width: '32px',
+    height: '32px',
+    background: '#c62828',
+    color: 'white',
+    borderRadius: '50%',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '14px',
+    fontWeight: '700',
+    flexShrink: 0
+  },
+  developmentContent: {
+    flex: 1
+  },
+  developmentName: {
+    fontSize: '14px',
+    fontWeight: '500',
+    color: '#1a202c',
+    marginBottom: '4px'
+  },
+  developmentScore: {
+    fontSize: '16px',
+    fontWeight: '700',
+    color: '#c62828',
+    marginBottom: '4px'
+  },
+  developmentBar: {
+    height: '4px',
+    background: '#ffebee',
+    borderRadius: '2px',
+    overflow: 'hidden',
+    marginBottom: '4px'
+  },
+  developmentBarFill: {
+    height: '100%',
+    background: 'linear-gradient(90deg, #ef5350, #c62828)',
+    borderRadius: '2px'
+  },
+  developmentGap: {
+    fontSize: '12px',
+    color: '#94a3b8'
+  },
+  placementContainer: {
+    background: 'white',
+    padding: '20px',
+    borderRadius: '12px',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+    border: '1px solid #e2e8f0'
+  },
+  placementDescription: {
+    fontSize: '14px',
+    color: '#475569',
+    marginBottom: '16px'
+  },
+  placementGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
+    gap: '12px'
+  },
+  placementCard: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    padding: '12px 16px',
+    background: '#f8fafc',
+    borderRadius: '8px',
+    border: '1px solid #e2e8f0'
+  },
+  placementIcon: {
+    fontSize: '18px'
+  },
+  placementName: {
+    fontSize: '14px',
+    fontWeight: '500',
+    color: '#1a202c'
+  },
+  statsGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+    gap: '16px'
+  },
+  statCard: {
+    background: 'white',
+    padding: '16px',
+    borderRadius: '12px',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+    textAlign: 'center',
+    border: '1px solid #e2e8f0'
+  },
+  statValue: {
+    fontSize: '24px',
+    fontWeight: '700',
+    color: '#0b2a4e'
+  },
+  statLabel: {
+    fontSize: '12px',
+    color: '#94a3b8',
+    marginTop: '4px'
+  },
+  actions: {
+    textAlign: 'center',
+    marginTop: '20px'
+  },
+  printButton: {
+    padding: '12px 24px',
+    background: '#0b2a4e',
+    color: 'white',
+    border: 'none',
+    borderRadius: '8px',
+    fontSize: '16px',
+    fontWeight: '600',
+    cursor: 'pointer'
+  },
+  loading: {
+    textAlign: 'center',
+    padding: '40px',
+    fontSize: '18px',
+    color: '#64748b'
+  },
+  behavioralToggleContainer: {
+    marginTop: '24px',
+    textAlign: 'center'
+  },
+  behavioralToggleButton: {
+    padding: '10px 24px',
+    background: '#1a237e',
+    color: 'white',
+    border: 'none',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    fontSize: '14px',
+    fontWeight: '600'
+  },
+  behavioralSection: {
+    marginTop: '24px',
+    padding: '20px',
+    background: '#f8fafc',
+    borderRadius: '12px',
+    border: '1px solid #e2e8f0'
+  },
+  behavioralTitle: {
+    fontSize: '18px',
+    fontWeight: '600',
+    color: '#0a1929',
+    margin: '0 0 16px 0',
+    paddingBottom: '12px',
+    borderBottom: '2px solid #e2e8f0'
+  },
+  behavioralStats: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+    gap: '12px',
+    marginBottom: '16px'
+  },
+  behavioralStat: {
+    background: 'white',
+    padding: '12px 16px',
+    borderRadius: '8px',
+    border: '1px solid #e2e8f0',
+    textAlign: 'center'
+  },
+  behavioralLabel: {
+    display: 'block',
+    fontSize: '11px',
+    color: '#94a3b8',
+    textTransform: 'uppercase',
+    letterSpacing: '0.04em',
+    marginBottom: '4px'
+  },
+  behavioralValue: {
+    fontSize: '18px',
+    fontWeight: '700',
+    color: '#0a1929'
+  },
+  riskBadge: {
+    display: 'inline-block',
+    padding: '4px 12px',
+    borderRadius: '12px',
+    fontSize: '13px',
+    fontWeight: '600'
+  },
+  riskSummary: {
+    padding: '12px 16px',
+    background: 'white',
+    borderRadius: '8px',
+    border: '1px solid #e2e8f0',
+    marginBottom: '12px',
+    fontSize: '14px',
+    color: '#475569'
+  },
+  flaggedQuestions: {
+    marginTop: '12px'
+  },
+  flaggedTitle: {
+    fontSize: '14px',
+    fontWeight: '600',
+    color: '#0a1929',
+    marginBottom: '8px'
+  },
+  flaggedList: {
+    listStyle: 'none',
+    padding: '0',
+    margin: '0'
+  },
+  flaggedItem: {
+    padding: '6px 12px',
+    background: 'white',
+    borderRadius: '4px',
+    borderBottom: '1px solid #f1f5f9',
+    fontSize: '13px',
+    color: '#475569'
+  },
+  loadingBehavioral: {
+    textAlign: 'center',
+    padding: '20px',
+    color: '#64748b'
+  },
+  noBehavioralData: {
+    textAlign: 'center',
+    padding: '30px 20px',
+    color: '#64748b'
+  },
+  noBehavioralSubtext: {
+    fontSize: '13px',
+    color: '#94a3b8',
+    marginTop: '8px'
+  },
+  cleanAssessment: {
+    padding: '16px 20px',
+    background: '#dcfce7',
+    borderRadius: '8px',
+    border: '1px solid #bbf7d0',
+    marginBottom: '16px'
+  },
+  violationComments: {
+    marginTop: '12px',
+    padding: '16px',
+    background: 'white',
+    borderRadius: '8px',
+    border: '1px solid #e2e8f0'
+  },
+  violationCommentItem: {
+    padding: '8px 12px',
+    marginBottom: '4px',
+    borderBottom: '1px solid #f1f5f9'
+  },
+  violationCommentLabel: {
+    fontWeight: '600',
+    marginRight: '8px'
+  },
+  violationCommentCount: {
+    display: 'inline-block',
+    padding: '2px 8px',
+    background: '#e2e8f0',
+    borderRadius: '12px',
+    fontSize: '12px',
+    fontWeight: '600',
+    marginRight: '8px'
+  },
+  violationCommentText: {
+    margin: '4px 0 0 0',
+    fontSize: '13px',
+    color: '#64748b'
+  }
+};
 
 // ============================================================
 // COMPONENT - FIXED TO USE PROPS
 // ============================================================
-export default function NationalServiceReport({ 
-  report, 
+export default function NationalServiceReport({
+  report,
   onBack,
-  behavioralMatrix: propBehavioralMatrix,      // ← ADDED: Receive from parent
-  loadingBehavioral: propLoadingBehavioral     // ← ADDED: Receive from parent
+  behavioralMatrix: propBehavioralMatrix,
+  loadingBehavioral: propLoadingBehavioral
 }) {
-  // State for behavioral matrix
+  // State for behavioral matrix (only used if props not provided)
   const [localBehavioralMatrix, setLocalBehavioralMatrix] = useState(null);
   const [localLoadingBehavioral, setLocalLoadingBehavioral] = useState(false);
-  
+  const [showBehavioral, setShowBehavioral] = useState(false);
+
   // Use prop data if available, otherwise use local state
   const behavioralMatrix = propBehavioralMatrix !== undefined ? propBehavioralMatrix : localBehavioralMatrix;
   const loadingBehavioral = propLoadingBehavioral !== undefined ? propLoadingBehavioral : localLoadingBehavioral;
-  
-  const [showBehavioral, setShowBehavioral] = useState(false);
 
   // Only fetch locally if prop is NOT provided
   useEffect(() => {
-    // If propBehavioralMatrix is provided, use it and don't fetch
     if (propBehavioralMatrix !== undefined) {
       console.log('[NationalServiceReport] Using behavioralMatrix from props:', propBehavioralMatrix);
       return;
     }
-    
-    // Otherwise fetch locally
+
     console.log('[NationalServiceReport] No prop provided, fetching locally');
     const resultId = report?.resultId || report?.id || report?.result_id;
     if (resultId) {
@@ -46,7 +570,7 @@ export default function NationalServiceReport({
     try {
       setLocalLoadingBehavioral(true);
       console.log('[Behavioral] Local fetch for resultId:', id);
-      
+
       const { data: session } = await supabase.auth.getSession();
       const token = session?.session?.access_token;
 
@@ -64,9 +588,9 @@ export default function NationalServiceReport({
 
       const data = await response.json();
       console.log('[Behavioral] Local API Response:', data);
-      
+
       if (data.success) {
-        let matrix = data.behavioralMatrix || data.matrixData || data.data || data.result;
+        const matrix = data.behavioralMatrix || data.matrixData || data.data || data.result;
         if (matrix) {
           console.log('[Behavioral] Local matrix data:', matrix);
           setLocalBehavioralMatrix(matrix);
@@ -115,26 +639,26 @@ export default function NationalServiceReport({
   }
 
   // ============================================================
-  // EXTRACT DATA - Keep all your existing data extraction logic
+  // EXTRACT DATA
   // ============================================================
   const reportData = report.report_data || report;
-  
+
   const candidateInfo = reportData.candidateInfo || report.candidateInfo || {};
   const candidateName = reportData.candidateName || candidateInfo.fullName || report.candidateName || 'Candidate';
   const university = reportData.university || candidateInfo.university || report.university || 'N/A';
   const programme = reportData.programme || candidateInfo.programme || report.programme || 'N/A';
   const graduationYear = reportData.graduationYear || candidateInfo.graduationYear || report.graduationYear || 'N/A';
   const preferredDepartment = reportData.preferredDepartment || candidateInfo.preferredDepartment || report.preferredDepartment || 'Not Specified';
-  
+
   const completed_at = reportData.completed_at || report.completed_at || null;
-  const assessmentDate = candidateInfo.assessmentDate || 
+  const assessmentDate = candidateInfo.assessmentDate ||
     (completed_at ? new Date(completed_at).toLocaleDateString() : 'N/A');
 
   // ============================================================
-  // EXTRACT CATEGORY SCORES - Keep your existing logic
+  // EXTRACT CATEGORY SCORES
   // ============================================================
   let categoryScores = [];
-  
+
   if (reportData.category_scores && Array.isArray(reportData.category_scores) && reportData.category_scores.length > 0) {
     categoryScores = reportData.category_scores;
   } else if (report.category_scores && Array.isArray(report.category_scores) && report.category_scores.length > 0) {
@@ -148,7 +672,7 @@ export default function NationalServiceReport({
   console.log('[Report] category_scores count:', categoryScores.length);
 
   // ============================================================
-  // SPLIT INTO WORKPLACE AND INTELLECTUAL - Keep your existing logic
+  // SPLIT INTO WORKPLACE AND INTELLECTUAL
   // ============================================================
   const workplaceSubCategories = [];
   const intellectualSubCategories = [];
@@ -177,12 +701,12 @@ export default function NationalServiceReport({
     categoryScores.forEach(cat => {
       const categoryName = safeString(cat.category || cat.name || '');
       const percentage = Number(cat.percentage || cat.score || 0);
-      
-      const isWorkplace = workplaceCategoryNames.some(name => 
+
+      const isWorkplace = workplaceCategoryNames.some(name =>
         categoryName.toLowerCase().includes(name.toLowerCase())
       );
-      
-      const isIntellectual = intellectualCategoryNames.some(name => 
+
+      const isIntellectual = intellectualCategoryNames.some(name =>
         categoryName.toLowerCase().includes(name.toLowerCase())
       );
 
@@ -192,11 +716,11 @@ export default function NationalServiceReport({
         intellectualSubCategories.push({ ...cat, category: categoryName, percentage });
       } else {
         const lowerName = categoryName.toLowerCase();
-        if (lowerName.includes('safety') || lowerName.includes('technical') || 
-            lowerName.includes('communication') || lowerName.includes('teamwork') ||
-            lowerName.includes('ownership') || lowerName.includes('integrity') ||
-            lowerName.includes('workplace') || lowerName.includes('ethics') ||
-            lowerName.includes('professional') || lowerName.includes('conduct')) {
+        if (lowerName.includes('safety') || lowerName.includes('technical') ||
+          lowerName.includes('communication') || lowerName.includes('teamwork') ||
+          lowerName.includes('ownership') || lowerName.includes('integrity') ||
+          lowerName.includes('workplace') || lowerName.includes('ethics') ||
+          lowerName.includes('professional') || lowerName.includes('conduct')) {
           workplaceSubCategories.push({ ...cat, category: categoryName, percentage });
         } else {
           intellectualSubCategories.push({ ...cat, category: categoryName, percentage });
@@ -209,18 +733,18 @@ export default function NationalServiceReport({
   console.log('[Report] Intellectual sub-categories:', intellectualSubCategories.length);
 
   // ============================================================
-  // CALCULATE AVERAGES - Keep your existing logic
+  // CALCULATE AVERAGES FROM SUB-CATEGORIES
   // ============================================================
-  const displayWorkplace = workplaceSubCategories.length > 0 
+  const displayWorkplace = workplaceSubCategories.length > 0
     ? Math.round(workplaceSubCategories.reduce((sum, cat) => sum + (cat.percentage || 0), 0) / workplaceSubCategories.length)
     : 0;
 
-  const displayIntellectual = intellectualSubCategories.length > 0 
+  const displayIntellectual = intellectualSubCategories.length > 0
     ? Math.round(intellectualSubCategories.reduce((sum, cat) => sum + (cat.percentage || 0), 0) / intellectualSubCategories.length)
     : 0;
 
   const allCategories = [...workplaceSubCategories, ...intellectualSubCategories];
-  const displayOverall = allCategories.length > 0 
+  const displayOverall = allCategories.length > 0
     ? Math.round(allCategories.reduce((sum, cat) => sum + (cat.percentage || 0), 0) / allCategories.length)
     : 0;
 
@@ -229,7 +753,7 @@ export default function NationalServiceReport({
   console.log('[Report] Calculated Overall:', displayOverall);
 
   // ============================================================
-  // RECOMMENDATION LOGIC - Keep your existing logic
+  // RECOMMENDATION LOGIC
   // ============================================================
   let recommendationLevel = 'Not Recommended';
 
@@ -252,7 +776,7 @@ export default function NationalServiceReport({
   }
 
   // ============================================================
-  // RECOMMENDATION DETAILS - Keep your existing logic
+  // RECOMMENDATION DETAILS
   // ============================================================
   const getRecommendationDetails = (level, workplace, intellectual, overall) => {
     const details = {
@@ -305,7 +829,7 @@ export default function NationalServiceReport({
   const recommendationDetails = getRecommendationDetails(recommendationLevel, displayWorkplace, displayIntellectual, displayOverall);
 
   // ============================================================
-  // RENDER HELPERS - Keep your existing logic
+  // RENDER HELPERS
   // ============================================================
   const getCategoryComment = (percentage) => {
     if (percentage >= 90) return { text: 'Exceptional', color: '#2e7d32' };
@@ -316,9 +840,11 @@ export default function NationalServiceReport({
     return { text: 'Critical Gap', color: '#c62828' };
   };
 
+  // Sort categories
   const sortedWorkplace = [...workplaceSubCategories].sort((a, b) => (b.percentage || 0) - (a.percentage || 0));
   const sortedIntellectual = [...intellectualSubCategories].sort((a, b) => (b.percentage || 0) - (a.percentage || 0));
 
+  // Top strengths and development areas
   const allSubCategories = [...workplaceSubCategories, ...intellectualSubCategories];
   const topStrengths = [...allSubCategories]
     .filter(c => (c.percentage || 0) > 0)
@@ -329,6 +855,7 @@ export default function NationalServiceReport({
     .filter(c => (c.percentage || 0) > 0 && (c.percentage || 0) < 60)
     .sort((a, b) => (a.percentage || 0) - (b.percentage || 0));
 
+  // Suggested placements
   const getSuggestedPlacements = () => {
     if (report.suggestedPlacement && report.suggestedPlacement.length > 0) {
       return report.suggestedPlacement;
@@ -336,11 +863,11 @@ export default function NationalServiceReport({
     if (reportData.suggestedDepartments && reportData.suggestedDepartments.length > 0) {
       return reportData.suggestedDepartments;
     }
-    
+
     const workplace = displayWorkplace;
     const intellectual = displayIntellectual;
     const overall = (workplace + intellectual) / 2;
-    
+
     if (workplace >= 85 && intellectual >= 85) {
       return ['Operations & Production Management', 'Quality Assurance & Control', 'Supply Chain & Logistics', 'Technical Services'];
     } else if (workplace >= 75 && intellectual >= 75) {
@@ -357,7 +884,7 @@ export default function NationalServiceReport({
   const suggestedPlacements = getSuggestedPlacements();
 
   // ============================================================
-  // ✅ CHECK IF BEHAVIORAL DATA EXISTS - ULTRA SIMPLE
+  // ✅ CHECK IF BEHAVIORAL DATA EXISTS
   // ============================================================
   const hasBehavioralData = behavioralMatrix !== null && behavioralMatrix !== undefined;
 
@@ -447,7 +974,7 @@ export default function NationalServiceReport({
               const categoryName = cat.category || cat.name || 'Unknown';
               const score = cat.score || cat.earned || 0;
               const maxScore = cat.maxScore || cat.max || 100;
-              
+
               return (
                 <div key={index} style={styles.categoryCard}>
                   <div style={styles.categoryHeader}>
@@ -490,7 +1017,7 @@ export default function NationalServiceReport({
               const categoryName = cat.category || cat.name || 'Unknown';
               const score = cat.score || cat.earned || 0;
               const maxScore = cat.maxScore || cat.max || 100;
-              
+
               return (
                 <div key={index} style={styles.categoryCard}>
                   <div style={styles.categoryHeader}>
@@ -602,7 +1129,7 @@ export default function NationalServiceReport({
       {showBehavioral && (
         <div style={styles.behavioralSection}>
           <h3 style={styles.behavioralTitle}>Behavioral Matrix</h3>
-          
+
           {loadingBehavioral ? (
             <div style={styles.loadingBehavioral}>
               <p>Loading behavioral data...</p>
@@ -657,15 +1184,15 @@ export default function NationalServiceReport({
                   <span style={{
                     ...styles.riskBadge,
                     background: behavioralMatrix.riskAssessment?.level === 'High Risk' ? '#fee2e2' :
-                               behavioralMatrix.riskAssessment?.level === 'Medium Risk' ? '#fef3c7' : '#dcfce7',
+                      behavioralMatrix.riskAssessment?.level === 'Medium Risk' ? '#fef3c7' : '#dcfce7',
                     color: behavioralMatrix.riskAssessment?.level === 'High Risk' ? '#991b1b' :
-                           behavioralMatrix.riskAssessment?.level === 'Medium Risk' ? '#92400e' : '#166534'
+                      behavioralMatrix.riskAssessment?.level === 'Medium Risk' ? '#92400e' : '#166534'
                   }}>
                     {behavioralMatrix.riskAssessment?.level || 'Low Risk'}
                   </span>
                 </div>
               </div>
-              
+
               <div style={styles.riskSummary}>
                 <p>
                   Behavioral flags: {behavioralMatrix.behavior?.violations || 0} violation(s), {behavioralMatrix.behavior?.tabSwitches || 0} tab switches.
@@ -676,7 +1203,7 @@ export default function NationalServiceReport({
                   </p>
                 )}
               </div>
-              
+
               {behavioralMatrix.flaggedQuestions && behavioralMatrix.flaggedQuestions.length > 0 && (
                 <div style={styles.flaggedQuestions}>
                   <h4 style={styles.flaggedTitle}>Flagged Questions</h4>
@@ -699,7 +1226,7 @@ export default function NationalServiceReport({
             <div style={styles.noBehavioralData}>
               <p>No behavioral data is available for this assessment.</p>
               <p style={styles.noBehavioralSubtext}>
-                Behavioral data (tab switches, violations, answer changes, etc.) 
+                Behavioral data (tab switches, violations, answer changes, etc.)
                 is only tracked for assessments completed after the behavioral tracking feature was implemented.
               </p>
             </div>
