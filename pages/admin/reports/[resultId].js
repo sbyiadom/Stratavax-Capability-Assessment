@@ -1,4 +1,4 @@
-// pages/admin/reports/[resultId].js - COMPLETE CORRECTED VERSION
+// pages/admin/reports/[resultId].js - WITH FIXED hasBehavioralData
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -246,8 +246,16 @@ export default function AdminReportView() {
       console.log('[Behavioral] API Response:', data);
       
       if (data.success) {
-        setBehavioralMatrix(data.behavioralMatrix);
-        console.log('[Behavioral] Matrix data:', data.behavioralMatrix);
+        // Try different response formats
+        const matrix = data.behavioralMatrix || data.matrixData || data.data || data.result;
+        if (matrix) {
+          console.log('[Behavioral] Matrix data:', matrix);
+          console.log('[Behavioral] Matrix tabSwitches:', matrix.behavior?.tabSwitches);
+          console.log('[Behavioral] Matrix violations:', matrix.behavior?.violations);
+          setBehavioralMatrix(matrix);
+        } else {
+          console.log('[Behavioral] No matrix data found in response');
+        }
       }
     } catch (error) {
       console.error('Error fetching behavioral matrix:', error);
@@ -272,12 +280,14 @@ export default function AdminReportView() {
     return `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
   };
 
+  // ============================================================
+  // ✅ FIXED: CHECK IF BEHAVIORAL DATA EXISTS - SIMPLEST POSSIBLE
+  // ============================================================
+  // Just check if behavioralMatrix exists at all
+  // The API already handles determining if data exists
   const hasBehavioralData = 
-    behavioralMatrix?.behavior?.hasBehavioralData === true ||
-    (behavioralMatrix?.behavior?.tabSwitches || 0) > 0 ||
-    (behavioralMatrix?.behavior?.violations || 0) > 0 ||
-    (behavioralMatrix?.behavior?.answerChanges || 0) > 0 ||
-    (behavioralMatrix?.timing?.timePerQuestion && behavioralMatrix.timing.timePerQuestion.length > 0);
+    behavioralMatrix !== null && 
+    behavioralMatrix !== undefined;
 
   if (authLoading || loading) {
     return (
@@ -318,7 +328,6 @@ export default function AdminReportView() {
             {showBehavioral ? 'Hide Behavioral Matrix' : 'Show Behavioral Matrix'}
           </button>
         </div>
-        {/* REMOVED resultId prop until component accepts it */}
         <NationalServiceReport 
           report={reportData.report} 
           onBack={handleBack} 
