@@ -1,3 +1,5 @@
+// pages/api/supervisor-report.js - WITH BEHAVIORAL MATRIX DATA
+
 import { createClient } from "@supabase/supabase-js";
 
 /**
@@ -100,7 +102,7 @@ function buildRecommendationsFromLibrary(developmentAreas) {
 }
 
 // ============================================================
-// NEW: Extract sub-categories from report_data
+// Extract sub-categories from report_data
 // ============================================================
 function extractSubCategories(reportData) {
   const rd = safeObject(reportData);
@@ -135,7 +137,7 @@ function extractSubCategories(reportData) {
 }
 
 // ============================================================
-// NEW: Split sub-categories into Workplace and Intellectual
+// Split sub-categories into Workplace and Intellectual
 // ============================================================
 function splitSubCategories(subCategories) {
   const workplace = [];
@@ -210,11 +212,64 @@ function splitSubCategories(subCategories) {
   return { workplace, intellectual };
 }
 
-/**
- * ============================================================
- * API HANDLER
- * ============================================================
- */
+// ============================================================
+// Generate behavioral commentary
+// ============================================================
+function generateBehavioralCommentary(tabSwitches, violations, answerChanges) {
+  const comments = [];
+  const recommendations = [];
+
+  // Tab Switches
+  if (tabSwitches === 0) {
+    comments.push('No tab switching detected. Candidate maintained focus on the assessment.');
+  } else if (tabSwitches <= 5) {
+    comments.push(`Minimal tab switching detected (${tabSwitches} switches). This may indicate occasional distraction.`);
+    recommendations.push('Consider discussing focus levels during follow-up interview.');
+  } else if (tabSwitches <= 20) {
+    comments.push(`Moderate tab switching detected (${tabSwitches} switches). Candidate may have been referencing external materials.`);
+    recommendations.push('Review the assessment validity. Consider a follow-up assessment or interview.');
+  } else {
+    comments.push(`High tab switching detected (${tabSwitches} switches). This suggests significant distraction or potential external reference use.`);
+    recommendations.push('Strongly recommend invalidating this assessment or conducting a fresh assessment in a controlled environment.');
+  }
+
+  // Violations
+  if (violations === 0) {
+    comments.push('No rule violations detected. Candidate followed all assessment guidelines.');
+  } else if (violations <= 3) {
+    comments.push(`Minor violations detected (${violations} violations). These may be accidental or due to unfamiliarity with the assessment interface.`);
+    recommendations.push('Review the specific violations. Consider providing clearer instructions for future assessments.');
+  } else if (violations <= 10) {
+    comments.push(`Moderate violations detected (${violations} violations). Candidate may have attempted to circumvent assessment rules.`);
+    recommendations.push('Flag for review. Consider a follow-up interview to discuss the behavior.');
+  } else {
+    comments.push(`High violations detected (${violations} violations). This indicates significant disregard for assessment rules.`);
+    recommendations.push('Immediate review required. Consider invalidating the assessment and requiring a fresh attempt.');
+  }
+
+  // Answer Changes
+  if (answerChanges === 0) {
+    comments.push('No answer changes. Candidate answered confidently without second-guessing.');
+  } else if (answerChanges <= 3) {
+    comments.push(`Minimal answer changes (${answerChanges} changes). Candidate showed some hesitation on a few questions.`);
+  } else if (answerChanges <= 10) {
+    comments.push(`Moderate answer changes (${answerChanges} changes). Candidate may have been uncertain about several answers.`);
+    recommendations.push('Review the questions where answers were changed. Consider if the questions were ambiguous.');
+  } else {
+    comments.push(`High answer changes (${answerChanges} changes). Candidate showed significant uncertainty throughout the assessment.`);
+    recommendations.push('Review the assessment for potential difficulty issues or candidate comprehension problems.');
+  }
+
+  return {
+    summary: comments.join(' '),
+    detailedComments: comments,
+    recommendations: recommendations
+  };
+}
+
+// ============================================================
+// API HANDLER
+// ============================================================
 export default async function handler(req, res) {
   if (req.method !== "GET") {
     return res.status(405).json({
@@ -407,7 +462,190 @@ export default async function handler(req, res) {
 
     /**
      * ------------------------------------------------------------
-     * 6) Build report payload
+     * 6) Load behavioral matrix data
+     * ------------------------------------------------------------
+     */
+    let behavioralData = null;
+    let behavioralMetrics = {
+      tabSwitches: 0,
+      violations: 0,
+      copyAttempts: 0,
+      pasteAttempts: 0,
+      rightClickAttempts: 0,
+      answerChanges: 0,
+      totalTimeSeconds: 0,
+      averageTimePerQuestion: 0,
+      timePerQuestion: [],
+      violationTimeline: [],
+      flaggedQuestions: [],
+      hasBehavioralData: false
+    };
+
+    // Try to fetch behavioral matrix if we have a session_id
+    if (record.session_id) {
+      try {
+        console.log('[API] Fetching behavioral data for session:', record.session_id);
+        
+        const { data: responses, error: responsesError } = await supabase
+          .from('responses')
+          .select('question_id, time_spent_seconds, times_changed, metadata, created_at')
+          .eq('session_id', record.session_id)
+          .order('created_at', { ascending: true });
+
+        if (!responsesError && responses && responses.length > 0) {
+          console.log('[API] Found responses:', responses.length);
+          
+          let totalTabSwitches = 0;
+          let totalViolations = 0;
+          let totalCopyAttempts = 0;
+          let totalPasteAttempts = 0;
+          let totalRightClicks = 0;
+          let totalChanges = 0;
+          let totalTime = 0;
+          const timePerQuestion = [];
+          const violationTimeline = [];
+          const flaggedQuestions = [];
+
+          responses.forEach(response => {
+            totalChanges += response.times_changed || 0;
+            totalTime += response.time_spent_seconds || 0;
+            
+            const metadata = response.metadata || {};
+            const tabSwitches = parseInt(metadata.tab_switches, 10) || 0;
+            const violations = parseInt(metadata.violations, 10) || 0;
+            const copyAttempts = parseInt(metadata.copy_attempts, 10) || 0;
+            const pasteAttempts = parseInt(metadata.paste_attempts, 10) || 0;
+            const rightClicks = parseInt(metadata.right_click_attempts, 10) || 0;
+            
+            totalTabSwitches += tabSwitches;
+            totalViolations += violations;
+            totalCopyAttempts += copyAttempts;
+            totalPasteAttempts += pasteAttempts;
+            totalRightClicks += rightClicks;
+
+            // Track timeline
+            if (violations > 0 || tabSwitches > 0 || copyAttempts > 0 || pasteAttempts > 0 || rightClicks > 0) {
+              violationTimeline.push({
+                question_id: response.question_id,
+                timestamp: response.created_at,
+                tab_switches: tabSwitches,
+                violations: violations,
+                copy_attempts: copyAttempts,
+                paste_attempts: pasteAttempts,
+                right_click_attempts: rightClicks
+              });
+            }
+
+            // Time per question
+            const timeOnQuestion = parseInt(metadata.time_on_question, 10) || 0;
+            const timeSpent = response.time_spent_seconds || 0;
+            if (timeOnQuestion > 0 || timeSpent > 0) {
+              const qTime = timeOnQuestion || timeSpent;
+              timePerQuestion.push({
+                question_id: response.question_id,
+                time_seconds: qTime,
+                changed: (response.times_changed || 0) > 0,
+                violation: (metadata.violations || 0) > 0
+              });
+
+              // Flagged questions
+              if (qTime > 60 || (response.times_changed || 0) > 0 || (metadata.violations || 0) > 0) {
+                flaggedQuestions.push({
+                  question_id: response.question_id,
+                  time_seconds: qTime,
+                  changed: (response.times_changed || 0) > 0,
+                  violation: (metadata.violations || 0) > 0,
+                  comment: (metadata.violations || 0) > 0 
+                    ? 'This question had a violation (tab switch, copy attempt, etc.)' 
+                    : (response.times_changed || 0) > 0 
+                      ? 'Candidate changed their answer on this question'
+                      : 'Candidate spent more than 60 seconds on this question',
+                  recommendation: (metadata.violations || 0) > 0 
+                    ? 'Review this question for potential compromise' 
+                    : 'No action needed'
+                });
+              }
+            }
+          });
+
+          const avgTime = timePerQuestion.length > 0 
+            ? Math.round(timePerQuestion.reduce((sum, q) => sum + q.time_seconds, 0) / timePerQuestion.length)
+            : 0;
+
+          const hasBehavioralData = 
+            totalChanges > 0 || 
+            totalTabSwitches > 0 || 
+            totalViolations > 0 || 
+            totalCopyAttempts > 0 || 
+            totalPasteAttempts > 0 || 
+            totalRightClicks > 0 ||
+            timePerQuestion.length > 0;
+
+          // Determine risk level
+          let riskLevel = 'Low Risk';
+          let riskScore = 0;
+          if (totalViolations > 0) riskScore += 2;
+          if (totalTabSwitches > 5) riskScore += 1;
+          if (totalChanges > 10) riskScore += 1;
+          if (avgTime < 5) riskScore += 1;
+          if (riskScore >= 4) riskLevel = 'High Risk';
+          else if (riskScore >= 2) riskLevel = 'Medium Risk';
+
+          // Generate commentary
+          const commentary = generateBehavioralCommentary(totalTabSwitches, totalViolations, totalChanges);
+
+          behavioralMetrics = {
+            tabSwitches: totalTabSwitches,
+            violations: totalViolations,
+            copyAttempts: totalCopyAttempts,
+            pasteAttempts: totalPasteAttempts,
+            rightClickAttempts: totalRightClicks,
+            answerChanges: totalChanges,
+            totalTimeSeconds: totalTime,
+            averageTimePerQuestion: avgTime,
+            timePerQuestion: timePerQuestion,
+            violationTimeline: violationTimeline,
+            flaggedQuestions: flaggedQuestions,
+            hasBehavioralData: hasBehavioralData,
+            riskLevel: riskLevel,
+            riskScore: riskScore,
+            commentary: commentary
+          };
+
+          behavioralData = {
+            hasBehavioralData: hasBehavioralData,
+            metrics: behavioralMetrics,
+            riskAssessment: {
+              level: riskLevel,
+              summary: hasBehavioralData 
+                ? `${riskLevel} - ${totalViolations} violations, ${totalTabSwitches} tab switches` 
+                : 'No behavioral data available',
+              detail: hasBehavioralData 
+                ? `Candidate had ${totalViolations} violations and ${totalTabSwitches} tab switches across ${responses.length} questions.`
+                : 'No behavioral data was tracked for this assessment.',
+              action: hasBehavioralData 
+                ? riskLevel === 'High Risk' ? 'Immediate review recommended' : 'Standard review process applies'
+                : 'No action required'
+            },
+            commentary: commentary
+          };
+
+          console.log('[API] Behavioral data calculated:');
+          console.log('[API] - tabSwitches:', totalTabSwitches);
+          console.log('[API] - violations:', totalViolations);
+          console.log('[API] - answerChanges:', totalChanges);
+          console.log('[API] - hasBehavioralData:', hasBehavioralData);
+        } else {
+          console.log('[API] No responses found for session:', record.session_id);
+        }
+      } catch (behavioralError) {
+        console.error('[API] Error fetching behavioral data:', behavioralError);
+      }
+    }
+
+    /**
+     * ------------------------------------------------------------
+     * 7) Build report payload
      * ------------------------------------------------------------
      */
     const percentage = toNumber(record.percentage_score, 0);
@@ -529,7 +767,7 @@ export default async function handler(req, res) {
         : "Candidate requires additional development before assuming critical responsibilities.");
 
     // ============================================================
-    // BUILD THE FINAL REPORT WITH SUB-CATEGORIES
+    // BUILD THE FINAL REPORT WITH SUB-CATEGORIES AND BEHAVIORAL DATA
     // ============================================================
     const generatedReport = {
       candidateName,
@@ -583,6 +821,28 @@ export default async function handler(req, res) {
       recommendations,
       followUpQuestions,
 
+      // ============================================================
+      // BEHAVIORAL DATA - NEW
+      // ============================================================
+      behavioralData: behavioralData || {
+        hasBehavioralData: false,
+        metrics: behavioralMetrics,
+        riskAssessment: {
+          level: 'No Data',
+          summary: 'No behavioral data available',
+          detail: 'No behavioral data was tracked for this assessment.',
+          action: 'No action required'
+        },
+        commentary: {
+          summary: 'No behavioral data available for this assessment.',
+          detailedComments: ['No behavioral data was tracked for this assessment.'],
+          recommendations: ['No action required.']
+        }
+      },
+
+      // For backward compatibility
+      behavioralMetrics: behavioralMetrics,
+
       responseCount,
       answered_questions: responseCount,
       completedAt: record.completed_at || null,
@@ -595,7 +855,23 @@ export default async function handler(req, res) {
       assessment: assessment || { id: record.assessment_id, title: "Assessment" },
       generatedReport,
       result: record,
-      assessment_id: record.assessment_id
+      assessment_id: record.assessment_id,
+      // Also return behavioral data at root level for easy access
+      behavioralData: behavioralData || {
+        hasBehavioralData: false,
+        metrics: behavioralMetrics,
+        riskAssessment: {
+          level: 'No Data',
+          summary: 'No behavioral data available',
+          detail: 'No behavioral data was tracked for this assessment.',
+          action: 'No action required'
+        },
+        commentary: {
+          summary: 'No behavioral data available for this assessment.',
+          detailedComments: ['No behavioral data was tracked for this assessment.'],
+          recommendations: ['No action required.']
+        }
+      }
     });
   } catch (error) {
     console.error("Supervisor report fatal error:", error);
