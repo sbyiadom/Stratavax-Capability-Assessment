@@ -1,128 +1,379 @@
-// pages/api/assessment/behavioral-matrix.js - DIAGNOSTIC VERSION
+// pages/api/assessment/behavioral-matrix.js - FINAL FIXED VERSION
 
 import { createClient } from '@supabase/supabase-js';
 
+// ============================================================
+// VIOLATION TYPE DEFINITIONS
+// ============================================================
+const VIOLATION_TYPES = {
+  tab_switch: {
+    label: 'Tab Switch',
+    severity: 'high',
+    comment: 'Candidate switched to another browser tab or window. This may indicate they were looking up answers, using other applications, or multitasking during the assessment.',
+    recommendation: 'Flag for review. Excessive tab switches suggests the candidate was not fully focused on the assessment.'
+  },
+  copy_attempt: {
+    label: 'Copy Attempt',
+    severity: 'high',
+    comment: 'Candidate attempted to copy content from the assessment page. This is typically an attempt to save or share questions.',
+    recommendation: 'Review for potential academic dishonesty.'
+  },
+  paste_attempt: {
+    label: 'Paste Attempt',
+    severity: 'high',
+    comment: 'Candidate attempted to paste content into the assessment. This may indicate they were copying answers from external sources.',
+    recommendation: 'Investigate for potential cheating.'
+  },
+  right_click_attempt: {
+    label: 'Right-Click Attempt',
+    severity: 'medium',
+    comment: 'Candidate attempted to right-click on the assessment page. This is often an attempt to access browser developer tools or copy content.',
+    recommendation: 'Monitor for other suspicious behavior.'
+  },
+  screenshot_attempt: {
+    label: 'Screenshot Attempt',
+    severity: 'high',
+    comment: 'Candidate attempted to take a screenshot of the assessment. This may indicate they were trying to save questions.',
+    recommendation: 'Flag for review.'
+  },
+  devtools_attempt: {
+    label: 'DevTools Attempt',
+    severity: 'critical',
+    comment: 'Candidate attempted to open browser developer tools. This is a serious violation as it may indicate attempts to manipulate the assessment or view hidden content.',
+    recommendation: 'Consider invalidating the assessment.'
+  },
+  view_source: {
+    label: 'View Source Attempt',
+    severity: 'high',
+    comment: 'Candidate attempted to view the page source code. This may indicate attempts to find hidden answers or manipulate the assessment.',
+    recommendation: 'Flag for technical review.'
+  },
+  violation: {
+    label: 'Rule Violation',
+    severity: 'medium',
+    comment: 'Candidate violated assessment rules. This includes tab switching, copy attempts, paste attempts, and other prohibited actions.',
+    recommendation: 'Review the specific violation types for details.'
+  }
+};
+
+function getViolationComment(type, count) {
+  const info = VIOLATION_TYPES[type] || VIOLATION_TYPES.violation;
+  return {
+    label: info.label,
+    severity: info.severity,
+    comment: info.comment,
+    recommendation: info.recommendation,
+    count: count
+  };
+}
+
+function getRiskComment(level, violations, tabSwitches) {
+  switch(level) {
+    case 'High Risk':
+      return {
+        summary: `⚠️ HIGH RISK: ${violations} violations and ${tabSwitches} tab switches detected.`,
+        detail: 'This candidate exhibited significant behavioral concerns during the assessment, including excessive tab switching and rule violations. Strongly recommend review and potential invalidation of results.',
+        action: 'Immediate review required. Consider invalidating the assessment.'
+      };
+    case 'Medium Risk':
+      return {
+        summary: `⚠️ MEDIUM RISK: ${violations} violations and ${tabSwitches} tab switches detected.`,
+        detail: 'This candidate showed moderate behavioral concerns during the assessment, including tab switching and rule violations. Recommend review and follow-up.',
+        action: 'Review the assessment results carefully. Consider a follow-up interview to discuss the behavior.'
+      };
+    case 'Low Risk':
+      return {
+        summary: `✅ LOW RISK: Minimal behavioral concerns detected.`,
+        detail: 'This candidate demonstrated good focus and compliance with assessment rules. No significant behavioral issues were detected.',
+        action: 'No action required. Standard review process applies.'
+      };
+    default:
+      return {
+        summary: 'Behavioral assessment complete.',
+        detail: 'No significant behavioral concerns detected.',
+        action: 'Standard review process applies.'
+      };
+  }
+}
+
+function formatFlaggedQuestions(questions) {
+  return questions.map(q => ({
+    ...q,
+    comment: q.violation 
+      ? '⚠️ This question had a violation (tab switch, copy attempt, etc.)' 
+      : q.changed 
+        ? '✏️ Candidate changed their answer on this question'
+        : '⏱️ Candidate spent more than 60 seconds on this question',
+    recommendation: q.violation 
+      ? 'Review this question for potential compromise' 
+      : 'No action needed'
+  }));
+}
+
+function getRiskLevel(violations, tabSwitches, changes, avgTime) {
+  let score = 0;
+  if (violations > 0) score += 2;
+  if (tabSwitches > 5) score += 1;
+  if (changes > 10) score += 1;
+  if (avgTime < 5) score += 1;
+  if (score >= 4) return 'High Risk';
+  if (score >= 2) return 'Medium Risk';
+  return 'Low Risk';
+}
+
 export default async function handler(req, res) {
-  console.log('========================================');
-  console.log('🔍 BEHAVIORAL MATRIX DIAGNOSTIC START');
-  console.log('========================================');
-  
+  if (req.method !== 'GET') {
+    return res.status(405).json({ success: false, error: 'Method not allowed' });
+  }
+
   try {
-    // Step 1: Check environment variables
-    console.log('📌 STEP 1: Checking environment variables...');
+    const { resultId } = req.query;
+    if (!resultId) {
+      return res.status(400).json({ success: false, error: 'Missing resultId' });
+    }
+
+    const token = req.headers.authorization?.replace('Bearer ', '');
+    if (!token) {
+      return res.status(401).json({ success: false, error: 'Unauthorized' });
+    }
+
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     
-    console.log('  - NEXT_PUBLIC_SUPABASE_URL:', supabaseUrl ? '✅ PRESENT' : '❌ MISSING');
-    console.log('  - SUPABASE_SERVICE_ROLE_KEY:', supabaseKey ? '✅ PRESENT' : '❌ MISSING');
-    
     if (!supabaseUrl || !supabaseKey) {
-      throw new Error('Missing Supabase credentials');
+      return res.status(500).json({ success: false, error: 'Server configuration error' });
     }
-
-    // Step 2: Get resultId
-    console.log('📌 STEP 2: Getting resultId...');
-    const { resultId } = req.query;
-    console.log('  - resultId:', resultId || '❌ MISSING');
     
-    if (!resultId) {
-      throw new Error('Missing resultId');
-    }
-
-    // Step 3: Check token
-    console.log('📌 STEP 3: Checking authorization...');
-    const token = req.headers.authorization?.replace('Bearer ', '');
-    console.log('  - Token present:', token ? '✅ YES' : '❌ NO');
-    
-    if (!token) {
-      throw new Error('Missing authorization token');
-    }
-
-    // Step 4: Initialize Supabase
-    console.log('📌 STEP 4: Initializing Supabase...');
     const supabase = createClient(supabaseUrl, supabaseKey);
-    console.log('  - Supabase initialized: ✅');
 
-    // Step 5: Verify user
-    console.log('📌 STEP 5: Verifying user...');
+    // Verify user
     const { data: userData, error: authError } = await supabase.auth.getUser(token);
-    
-    if (authError) {
-      console.error('  - Auth Error:', authError);
-      throw new Error(`Auth error: ${authError.message}`);
+    if (authError || !userData?.user) {
+      return res.status(401).json({ success: false, error: 'Invalid token' });
     }
-    console.log('  - User verified:', userData?.user?.email || '✅');
 
-    // Step 6: Check if assessment_results table exists and get data
-    console.log('📌 STEP 6: Fetching assessment result...');
+    // Get the result
     const { data: result, error: resultError } = await supabase
       .from('assessment_results')
-      .select('*')
+      .select(`
+        id,
+        user_id,
+        assessment_id,
+        percentage_score,
+        completed_at,
+        total_questions,
+        answered_questions,
+        is_auto_submitted,
+        session_id
+      `)
       .eq('id', resultId)
       .single();
-    
-    if (resultError) {
-      console.error('  - Result Error:', resultError);
-      throw new Error(`Result error: ${resultError.message}`);
-    }
-    console.log('  - Result found:', result.id);
-    console.log('  - session_id:', result.session_id);
-    console.log('  - user_id:', result.user_id);
-    console.log('  - assessment_id:', result.assessment_id);
 
-    // Step 7: Check if responses table exists and get data
-    console.log('📌 STEP 7: Fetching responses...');
+    if (resultError) {
+      console.error('Result error:', resultError);
+      return res.status(500).json({ success: false, error: resultError.message });
+    }
+
+    // Get candidate profile
+    const { data: candidateProfile, error: profileError } = await supabase
+      .from('candidate_profiles')
+      .select('full_name, email, university, programme')
+      .eq('user_id', result.user_id)
+      .single();
+
+    if (profileError) {
+      console.warn('Profile error (non-fatal):', profileError.message);
+    }
+
+    // Get assessment title
+    let assessmentTitle = 'Assessment';
+    try {
+      const { data: assessmentData, error: assessmentError } = await supabase
+        .from('assessments')
+        .select('title')
+        .eq('id', result.assessment_id)
+        .single();
+      
+      if (!assessmentError && assessmentData) {
+        assessmentTitle = assessmentData.title || 'Assessment';
+      }
+    } catch (assessmentErr) {
+      console.warn('Assessment fetch error:', assessmentErr.message);
+    }
+
+    // Get responses
     const { data: responses, error: responsesError } = await supabase
       .from('responses')
-      .select('*')
-      .eq('session_id', result.session_id);
-    
+      .select('question_id, time_spent_seconds, times_changed, metadata, created_at')
+      .eq('session_id', result.session_id)
+      .order('created_at', { ascending: true });
+
     if (responsesError) {
-      console.error('  - Responses Error:', responsesError);
-      // Not throwing here - maybe responses table doesn't exist yet
-      console.log('  - ⚠️ Responses table may not exist, continuing...');
-    } else {
-      console.log('  - Responses found:', responses?.length || 0);
-      if (responses && responses.length > 0) {
-        console.log('  - Sample response metadata:', responses[0]?.metadata);
-      }
+      console.error('Responses error:', responsesError);
     }
 
-    // Step 8: Return success with sample data
-    console.log('📌 STEP 8: Success! Returning diagnostic data...');
-    console.log('========================================');
-    
+    // Calculate behavioral metrics
+    let totalChanges = 0;
+    let totalTabSwitches = 0;
+    let totalViolations = 0;
+    let totalCopyAttempts = 0;
+    let totalPasteAttempts = 0;
+    let totalRightClicks = 0;
+    let violationTypes = {};
+    const timePerQuestion = [];
+    const violationTimeline = [];
+
+    if (responses && responses.length > 0) {
+      responses.forEach(response => {
+        totalChanges += response.times_changed || 0;
+        
+        const metadata = response.metadata || {};
+        const tabSwitches = parseInt(metadata.tab_switches, 10) || 0;
+        const violations = parseInt(metadata.violations, 10) || 0;
+        const copyAttempts = parseInt(metadata.copy_attempts, 10) || 0;
+        const pasteAttempts = parseInt(metadata.paste_attempts, 10) || 0;
+        const rightClicks = parseInt(metadata.right_click_attempts, 10) || 0;
+        
+        totalTabSwitches += tabSwitches;
+        totalViolations += violations;
+        totalCopyAttempts += copyAttempts;
+        totalPasteAttempts += pasteAttempts;
+        totalRightClicks += rightClicks;
+
+        if (tabSwitches > 0) violationTypes.tab_switch = (violationTypes.tab_switch || 0) + tabSwitches;
+        if (copyAttempts > 0) violationTypes.copy_attempt = (violationTypes.copy_attempt || 0) + copyAttempts;
+        if (pasteAttempts > 0) violationTypes.paste_attempt = (violationTypes.paste_attempt || 0) + pasteAttempts;
+        if (rightClicks > 0) violationTypes.right_click_attempt = (violationTypes.right_click_attempt || 0) + rightClicks;
+
+        if (violations > 0 || tabSwitches > 0 || copyAttempts > 0 || pasteAttempts > 0 || rightClicks > 0) {
+          violationTimeline.push({
+            question_id: response.question_id,
+            timestamp: response.created_at,
+            tab_switches: tabSwitches,
+            violations: violations,
+            copy_attempts: copyAttempts,
+            paste_attempts: pasteAttempts,
+            right_click_attempts: rightClicks
+          });
+        }
+
+        const timeOnQuestion = parseInt(metadata.time_on_question, 10) || 0;
+        const timeSpent = response.time_spent_seconds || 0;
+        
+        if (timeOnQuestion > 0 || timeSpent > 0) {
+          timePerQuestion.push({
+            question_id: response.question_id,
+            time_seconds: timeOnQuestion || timeSpent,
+            changed: (response.times_changed || 0) > 0,
+            violation: (metadata.violations || 0) > 0
+          });
+        }
+      });
+    }
+
+    const avgTime = timePerQuestion.length > 0 
+      ? Math.round(timePerQuestion.reduce((sum, q) => sum + q.time_seconds, 0) / timePerQuestion.length)
+      : 0;
+
+    const rawFlaggedQuestions = timePerQuestion.filter(q => 
+      q.time_seconds > 60 || q.changed || q.violation
+    );
+    const flaggedQuestions = formatFlaggedQuestions(rawFlaggedQuestions);
+
+    const violationComments = [];
+    Object.keys(violationTypes).forEach(type => {
+      const info = getViolationComment(type, violationTypes[type]);
+      violationComments.push({
+        type: type,
+        label: info.label,
+        count: info.count,
+        severity: info.severity,
+        comment: info.comment,
+        recommendation: info.recommendation
+      });
+    });
+
+    const severityOrder = { critical: 0, high: 1, medium: 2, low: 3 };
+    violationComments.sort((a, b) => {
+      const aScore = (a.count || 0) * 10 + severityOrder[a.severity] || 99;
+      const bScore = (b.count || 0) * 10 + severityOrder[b.severity] || 99;
+      return bScore - aScore;
+    });
+
+    const hasBehavioralData = 
+      totalChanges > 0 || 
+      totalTabSwitches > 0 || 
+      totalViolations > 0 || 
+      totalCopyAttempts > 0 || 
+      totalPasteAttempts > 0 || 
+      totalRightClicks > 0 ||
+      timePerQuestion.length > 0;
+
+    const riskLevel = getRiskLevel(totalViolations, totalTabSwitches, totalChanges, avgTime);
+    const riskComment = getRiskComment(riskLevel, totalViolations, totalTabSwitches);
+
+    // ============================================================
+    // BUILD BOTH RESPONSE STRUCTURES FOR COMPATIBILITY
+    // ============================================================
+    const behavioralMatrix = {
+      candidate: {
+        name: candidateProfile?.full_name || 'Unknown',
+        email: candidateProfile?.email || '',
+        university: candidateProfile?.university || '',
+        programme: candidateProfile?.programme || ''
+      },
+      assessment: {
+        title: assessmentTitle,
+        completedAt: result.completed_at,
+        overallScore: result.percentage_score,
+        totalQuestions: result.total_questions || 0,
+        answeredQuestions: result.answered_questions || 0
+      },
+      timing: {
+        totalTimeSeconds: 0,
+        averageTimePerQuestion: avgTime,
+        timePerQuestion: timePerQuestion,
+        formattedTotalTime: '00:00:00'
+      },
+      behavior: {
+        answerChanges: totalChanges,
+        tabSwitches: totalTabSwitches,
+        violations: totalViolations,
+        copyAttempts: totalCopyAttempts,
+        pasteAttempts: totalPasteAttempts,
+        rightClickAttempts: totalRightClicks,
+        isAutoSubmitted: result.is_auto_submitted || false,
+        hasBehavioralData: hasBehavioralData,
+        violationComments: violationComments,
+        violationTimeline: violationTimeline
+      },
+      flaggedQuestions: flaggedQuestions,
+      riskAssessment: {
+        level: riskLevel,
+        summary: riskComment.summary,
+        detail: riskComment.detail,
+        action: riskComment.action
+      }
+    };
+
+    // ============================================================
+    // ✅ FIX: Return BOTH structures to ensure frontend finds it
+    // ============================================================
     return res.status(200).json({
       success: true,
-      message: 'Diagnostic test successful',
-      data: {
-        hasResult: true,
-        resultId: result.id,
-        sessionId: result.session_id,
-        userId: result.user_id,
-        assessmentId: result.assessment_id,
-        responsesCount: responses?.length || 0,
-        hasResponses: responses && responses.length > 0,
-        sampleMetadata: responses && responses.length > 0 ? responses[0]?.metadata : null,
-        resultData: {
-          percentage_score: result.percentage_score,
-          completed_at: result.completed_at,
-          is_auto_submitted: result.is_auto_submitted
-        }
-      }
+      behavioralMatrix: behavioralMatrix,     // Original structure
+      matrixData: behavioralMatrix,           // Alternative structure
+      data: behavioralMatrix,                 // Another alternative
+      result: behavioralMatrix                // Yet another alternative
     });
 
   } catch (error) {
-    console.error('❌ DIAGNOSTIC FAILED:', error);
-    console.error('  - Error message:', error.message);
-    console.error('  - Error stack:', error.stack);
-    console.log('========================================');
-    
-    return res.status(500).json({
-      success: false,
+    console.error('Behavioral matrix error:', error);
+    return res.status(500).json({ 
+      success: false, 
       error: error.message,
-      stack: error.stack,
-      timestamp: new Date().toISOString()
+      matrixData: null,  // Ensure consistent structure even on error
+      behavioralMatrix: null
     });
   }
 }
