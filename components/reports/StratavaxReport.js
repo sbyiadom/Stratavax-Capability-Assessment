@@ -1,6 +1,7 @@
-// components/reports/StratavaxReport.js - PROFESSIONAL VERSION (No Emojis)
+// components/reports/StratavaxReport.js - WITH BEHAVIORAL MATRIX AND COMMENTARY
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+import { supabase } from '../../supabase/client';
 import {
   getScorePhrase,
   getManufacturingPhrase,
@@ -66,7 +67,93 @@ function formatDate(dateString) {
   }
 }
 
-export default function StratavaxReport({ result, candidate, assessment, onBack }) {
+// ============================================================
+// FORMAT TIME HELPER
+// ============================================================
+function formatTime(seconds) {
+  if (!seconds) return 'N/A';
+  const hrs = Math.floor(seconds / 3600);
+  const mins = Math.floor((seconds % 3600) / 60);
+  const secs = seconds % 60;
+  return `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+}
+
+export default function StratavaxReport({ 
+  result, 
+  candidate, 
+  assessment, 
+  onBack,
+  behavioralMatrix: propBehavioralMatrix,
+  loadingBehavioral: propLoadingBehavioral 
+}) {
+  // State for behavioral matrix
+  const [localBehavioralMatrix, setLocalBehavioralMatrix] = useState(null);
+  const [localLoadingBehavioral, setLocalLoadingBehavioral] = useState(false);
+  const [showBehavioral, setShowBehavioral] = useState(false);
+
+  // Use prop data if available, otherwise use local state
+  const behavioralMatrix = propBehavioralMatrix !== undefined ? propBehavioralMatrix : localBehavioralMatrix;
+  const loadingBehavioral = propLoadingBehavioral !== undefined ? propLoadingBehavioral : localLoadingBehavioral;
+
+  // Fetch behavioral matrix if not provided via props
+  useEffect(() => {
+    if (propBehavioralMatrix !== undefined) {
+      console.log('[StratavaxReport] Using behavioralMatrix from props:', propBehavioralMatrix);
+      return;
+    }
+
+    const resultId = result?.id || result?.result_id;
+    if (resultId) {
+      fetchBehavioralMatrix(resultId);
+    }
+  }, [result, propBehavioralMatrix]);
+
+  const fetchBehavioralMatrix = async (id) => {
+    try {
+      setLocalLoadingBehavioral(true);
+      console.log('[Stratavax] Fetching behavioral matrix for resultId:', id);
+
+      const { data: session } = await supabase.auth.getSession();
+      const token = session?.session?.access_token;
+
+      if (!token) {
+        console.log('[Stratavax] No token found');
+        setLocalLoadingBehavioral(false);
+        return;
+      }
+
+      const response = await fetch(`/api/assessment/behavioral-matrix?resultId=${id}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      const data = await response.json();
+      console.log('[Stratavax] Behavioral API Response:', data);
+
+      if (data.success) {
+        const matrix = data.behavioralMatrix || data.matrixData || data.data || data.result;
+        if (matrix) {
+          console.log('[Stratavax] Matrix data:', matrix);
+          setLocalBehavioralMatrix(matrix);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching behavioral matrix:', error);
+    } finally {
+      setLocalLoadingBehavioral(false);
+    }
+  };
+
+  const toggleBehavioral = () => {
+    setShowBehavioral(!showBehavioral);
+  };
+
+  // ============================================================
+  // CHECK IF BEHAVIORAL DATA EXISTS
+  // ============================================================
+  const hasBehavioralData = behavioralMatrix !== null && behavioralMatrix !== undefined;
+
   if (!result) {
     return (
       <div style={styles.loadingContainer}>
@@ -295,7 +382,7 @@ export default function StratavaxReport({ result, candidate, assessment, onBack 
         <div style={styles.section}>
           <h2 style={styles.sectionTitle}>Strengths</h2>
           <p style={styles.sectionSubtitle}>
-            The following categories are identified as strengths (score ≥ 75%). These areas represent the candidate's strongest capabilities.
+            The following categories are identified as strengths (score greater than or equal to 75%). These areas represent the candidate's strongest capabilities.
           </p>
           <div style={styles.strengthGrid}>
             {strengths.slice(0, 5).map((strength, index) => {
@@ -382,6 +469,208 @@ export default function StratavaxReport({ result, candidate, assessment, onBack 
           </div>
         )}
       </div>
+
+      {/* ============================================================
+          BEHAVIORAL MATRIX SECTION
+          ============================================================ */}
+      <div style={styles.behavioralToggleContainer}>
+        <button onClick={toggleBehavioral} style={styles.behavioralToggleButton}>
+          {showBehavioral ? 'Hide Behavioral Matrix' : 'Show Behavioral Matrix'}
+        </button>
+      </div>
+
+      {showBehavioral && (
+        <div style={styles.behavioralSection}>
+          <h3 style={styles.behavioralTitle}>Behavioral Matrix</h3>
+
+          {loadingBehavioral ? (
+            <div style={styles.loadingBehavioral}>
+              <p>Loading behavioral data...</p>
+            </div>
+          ) : behavioralMatrix && hasBehavioralData ? (
+            <>
+              {/* Behavioral Stats */}
+              <div style={styles.behavioralStats}>
+                <div style={styles.behavioralStat}>
+                  <span style={styles.behavioralLabel}>Total Time</span>
+                  <span style={styles.behavioralValue}>
+                    {formatTime(behavioralMatrix.timing?.totalTimeSeconds || 0)}
+                  </span>
+                </div>
+                <div style={styles.behavioralStat}>
+                  <span style={styles.behavioralLabel}>Avg Time per Question</span>
+                  <span style={styles.behavioralValue}>
+                    {behavioralMatrix.timing?.averageTimePerQuestion || 0}s
+                  </span>
+                </div>
+                <div style={styles.behavioralStat}>
+                  <span style={styles.behavioralLabel}>Answer Changes</span>
+                  <span style={styles.behavioralValue}>
+                    {behavioralMatrix.behavior?.answerChanges || 0}
+                  </span>
+                </div>
+                <div style={styles.behavioralStat}>
+                  <span style={styles.behavioralLabel}>Tab Switches</span>
+                  <span style={styles.behavioralValue}>
+                    {behavioralMatrix.behavior?.tabSwitches || 0}
+                  </span>
+                </div>
+                <div style={styles.behavioralStat}>
+                  <span style={styles.behavioralLabel}>Violations</span>
+                  <span style={styles.behavioralValue}>
+                    {behavioralMatrix.behavior?.violations || 0}
+                  </span>
+                </div>
+                <div style={styles.behavioralStat}>
+                  <span style={styles.behavioralLabel}>Copy/Paste Attempts</span>
+                  <span style={styles.behavioralValue}>
+                    {(behavioralMatrix.behavior?.copyAttempts || 0) + (behavioralMatrix.behavior?.pasteAttempts || 0)}
+                  </span>
+                </div>
+                <div style={styles.behavioralStat}>
+                  <span style={styles.behavioralLabel}>Right-Click Attempts</span>
+                  <span style={styles.behavioralValue}>
+                    {behavioralMatrix.behavior?.rightClickAttempts || 0}
+                  </span>
+                </div>
+                <div style={styles.behavioralStat}>
+                  <span style={styles.behavioralLabel}>Risk Level</span>
+                  <span style={{
+                    ...styles.riskBadge,
+                    background: behavioralMatrix.riskAssessment?.level === 'High Risk' ? '#fee2e2' :
+                      behavioralMatrix.riskAssessment?.level === 'Medium Risk' ? '#fef3c7' : '#dcfce7',
+                    color: behavioralMatrix.riskAssessment?.level === 'High Risk' ? '#991b1b' :
+                      behavioralMatrix.riskAssessment?.level === 'Medium Risk' ? '#92400e' : '#166534'
+                  }}>
+                    {behavioralMatrix.riskAssessment?.level || 'Low Risk'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Risk Summary */}
+              <div style={styles.riskSummary}>
+                <p>
+                  Behavioral flags: {behavioralMatrix.behavior?.violations || 0} violation(s), {behavioralMatrix.behavior?.tabSwitches || 0} tab switches.
+                </p>
+                {behavioralMatrix.riskAssessment?.detail && (
+                  <p style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
+                    {behavioralMatrix.riskAssessment.detail}
+                  </p>
+                )}
+              </div>
+
+              {/* ============================================================
+                  BEHAVIORAL COMMENTARY SECTION
+                  ============================================================ */}
+              {behavioralMatrix?.behavior && (
+                <div style={styles.behavioralCommentary}>
+                  <h4 style={styles.commentaryTitle}>Behavioral Analysis</h4>
+
+                  <div style={styles.commentaryMetrics}>
+                    <div style={styles.commentaryItem}>
+                      <span style={styles.commentaryLabel}>Tab Switches:</span>
+                      <span style={styles.commentaryText}>
+                        {behavioralMatrix.behavior.tabSwitches === 0
+                          ? 'No tab switching detected. Candidate maintained focus.'
+                          : behavioralMatrix.behavior.tabSwitches <= 5
+                            ? `Minimal tab switching (${behavioralMatrix.behavior.tabSwitches} switches). Occasional distraction.`
+                            : behavioralMatrix.behavior.tabSwitches <= 20
+                              ? `Moderate tab switching (${behavioralMatrix.behavior.tabSwitches} switches). Potential external reference use.`
+                              : `High tab switching (${behavioralMatrix.behavior.tabSwitches} switches). Significant distraction detected.`
+                        }
+                      </span>
+                    </div>
+
+                    <div style={styles.commentaryItem}>
+                      <span style={styles.commentaryLabel}>Violations:</span>
+                      <span style={styles.commentaryText}>
+                        {behavioralMatrix.behavior.violations === 0
+                          ? 'No rule violations detected. Candidate followed all guidelines.'
+                          : behavioralMatrix.behavior.violations <= 3
+                            ? `Minor violations (${behavioralMatrix.behavior.violations}). May be accidental.`
+                            : behavioralMatrix.behavior.violations <= 10
+                              ? `Moderate violations (${behavioralMatrix.behavior.violations}). Review recommended.`
+                              : `High violations (${behavioralMatrix.behavior.violations}). Immediate review required.`
+                        }
+                      </span>
+                    </div>
+
+                    <div style={styles.commentaryItem}>
+                      <span style={styles.commentaryLabel}>Answer Changes:</span>
+                      <span style={styles.commentaryText}>
+                        {behavioralMatrix.behavior.answerChanges === 0
+                          ? 'No answer changes. Candidate showed confidence.'
+                          : behavioralMatrix.behavior.answerChanges <= 3
+                            ? `Minimal changes (${behavioralMatrix.behavior.answerChanges}). Some hesitation.`
+                            : behavioralMatrix.behavior.answerChanges <= 10
+                              ? `Moderate changes (${behavioralMatrix.behavior.answerChanges}). Uncertainty detected.`
+                              : `High changes (${behavioralMatrix.behavior.answerChanges}). Significant uncertainty.`
+                        }
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Recommendations */}
+                  {(behavioralMatrix.behavior.violations > 0 || behavioralMatrix.behavior.tabSwitches > 5) ? (
+                    <div style={styles.recommendationBox}>
+                      <h5 style={styles.recommendationTitle}>Recommendations</h5>
+                      <ul style={styles.recommendationList}>
+                        {behavioralMatrix.behavior.tabSwitches > 20 && (
+                          <li>Consider invalidating the assessment due to excessive tab switching.</li>
+                        )}
+                        {behavioralMatrix.behavior.violations > 10 && (
+                          <li>Immediate review required. Assessment validity is compromised.</li>
+                        )}
+                        {behavioralMatrix.behavior.tabSwitches > 5 && behavioralMatrix.behavior.tabSwitches <= 20 && (
+                          <li>Conduct a follow-up interview to discuss potential external reference use.</li>
+                        )}
+                        {behavioralMatrix.behavior.violations > 3 && behavioralMatrix.behavior.violations <= 10 && (
+                          <li>Review specific flagged questions and discuss with candidate.</li>
+                        )}
+                        {behavioralMatrix.behavior.answerChanges > 5 && (
+                          <li>Review questions where answers were changed for potential ambiguity.</li>
+                        )}
+                      </ul>
+                    </div>
+                  ) : (
+                    <div style={styles.cleanCommentary}>
+                      No concerning behavioral patterns detected. The candidate completed the assessment with integrity.
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Flagged Questions */}
+              {behavioralMatrix.flaggedQuestions && behavioralMatrix.flaggedQuestions.length > 0 && (
+                <div style={styles.flaggedQuestions}>
+                  <h4 style={styles.flaggedTitle}>Flagged Questions</h4>
+                  <ul style={styles.flaggedList}>
+                    {behavioralMatrix.flaggedQuestions.slice(0, 10).map((q, index) => (
+                      <li key={index} style={styles.flaggedItem}>
+                        Question {q.question_id}: {q.time_seconds}s
+                        {q.changed ? ' - Changed' : ''}
+                        {q.violation ? ' - Violation' : ''}
+                        {q.comment ? ` - ${q.comment}` : ''}
+                      </li>
+                    ))}
+                    {behavioralMatrix.flaggedQuestions.length > 10 && (
+                      <li style={styles.flaggedItem}>... and {behavioralMatrix.flaggedQuestions.length - 10} more</li>
+                    )}
+                  </ul>
+                </div>
+              )}
+            </>
+          ) : (
+            <div style={styles.noBehavioralData}>
+              <p>No behavioral data is available for this assessment.</p>
+              <p style={styles.noBehavioralSubtext}>
+                Behavioral data (tab switches, violations, answer changes, etc.)
+                is only tracked for assessments completed after the behavioral tracking feature was implemented.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Print Button */}
       <div style={styles.actions}>
@@ -742,5 +1031,186 @@ const styles = {
     fontSize: '16px',
     fontWeight: '600',
     cursor: 'pointer'
+  },
+  // ============================================================
+  // BEHAVIORAL MATRIX STYLES
+  // ============================================================
+  behavioralToggleContainer: {
+    marginTop: '24px',
+    textAlign: 'center'
+  },
+  behavioralToggleButton: {
+    padding: '10px 24px',
+    background: '#1a237e',
+    color: 'white',
+    border: 'none',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    fontSize: '14px',
+    fontWeight: '600'
+  },
+  behavioralSection: {
+    marginTop: '24px',
+    padding: '20px',
+    background: '#f8fafc',
+    borderRadius: '12px',
+    border: '1px solid #e2e8f0'
+  },
+  behavioralTitle: {
+    fontSize: '18px',
+    fontWeight: '600',
+    color: '#0a1929',
+    margin: '0 0 16px 0',
+    paddingBottom: '12px',
+    borderBottom: '2px solid #e2e8f0'
+  },
+  behavioralStats: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+    gap: '12px',
+    marginBottom: '16px'
+  },
+  behavioralStat: {
+    background: 'white',
+    padding: '12px 16px',
+    borderRadius: '8px',
+    border: '1px solid #e2e8f0',
+    textAlign: 'center'
+  },
+  behavioralLabel: {
+    display: 'block',
+    fontSize: '11px',
+    color: '#94a3b8',
+    textTransform: 'uppercase',
+    letterSpacing: '0.04em',
+    marginBottom: '4px'
+  },
+  behavioralValue: {
+    fontSize: '18px',
+    fontWeight: '700',
+    color: '#0a1929'
+  },
+  riskBadge: {
+    display: 'inline-block',
+    padding: '4px 12px',
+    borderRadius: '12px',
+    fontSize: '13px',
+    fontWeight: '600'
+  },
+  riskSummary: {
+    padding: '12px 16px',
+    background: 'white',
+    borderRadius: '8px',
+    border: '1px solid #e2e8f0',
+    marginBottom: '12px',
+    fontSize: '14px',
+    color: '#475569'
+  },
+  flaggedQuestions: {
+    marginTop: '12px'
+  },
+  flaggedTitle: {
+    fontSize: '14px',
+    fontWeight: '600',
+    color: '#0a1929',
+    marginBottom: '8px'
+  },
+  flaggedList: {
+    listStyle: 'none',
+    padding: '0',
+    margin: '0'
+  },
+  flaggedItem: {
+    padding: '6px 12px',
+    background: 'white',
+    borderRadius: '4px',
+    borderBottom: '1px solid #f1f5f9',
+    fontSize: '13px',
+    color: '#475569'
+  },
+  loadingBehavioral: {
+    textAlign: 'center',
+    padding: '20px',
+    color: '#64748b'
+  },
+  noBehavioralData: {
+    textAlign: 'center',
+    padding: '30px 20px',
+    color: '#64748b'
+  },
+  noBehavioralSubtext: {
+    fontSize: '13px',
+    color: '#94a3b8',
+    marginTop: '8px'
+  },
+  // ============================================================
+  // BEHAVIORAL COMMENTARY STYLES
+  // ============================================================
+  behavioralCommentary: {
+    marginTop: '16px',
+    padding: '16px',
+    background: 'white',
+    borderRadius: '8px',
+    border: '1px solid #e2e8f0'
+  },
+  commentaryTitle: {
+    fontSize: '15px',
+    fontWeight: '600',
+    color: '#0a1929',
+    margin: '0 0 12px 0',
+    paddingBottom: '8px',
+    borderBottom: '1px solid #e2e8f0'
+  },
+  commentaryMetrics: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px'
+  },
+  commentaryItem: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: '8px',
+    padding: '6px 0',
+    borderBottom: '1px solid #f8fafc'
+  },
+  commentaryLabel: {
+    fontWeight: '600',
+    color: '#475569',
+    minWidth: '120px',
+    fontSize: '13px',
+    flexShrink: 0
+  },
+  commentaryText: {
+    fontSize: '13px',
+    color: '#1a202c',
+    lineHeight: '1.5'
+  },
+  recommendationBox: {
+    marginTop: '12px',
+    padding: '12px 16px',
+    background: '#fef3c7',
+    borderRadius: '8px',
+    border: '1px solid #fcd34d'
+  },
+  recommendationTitle: {
+    fontSize: '13px',
+    fontWeight: '600',
+    color: '#92400e',
+    margin: '0 0 6px 0'
+  },
+  recommendationList: {
+    margin: '0',
+    paddingLeft: '20px',
+    fontSize: '13px',
+    color: '#78350f'
+  },
+  cleanCommentary: {
+    marginTop: '12px',
+    padding: '12px 16px',
+    background: '#dcfce7',
+    borderRadius: '8px',
+    border: '1px solid #bbf7d0',
+    fontSize: '13px',
+    color: '#166534'
   }
 };
