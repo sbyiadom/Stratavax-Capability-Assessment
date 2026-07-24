@@ -1,4 +1,4 @@
-// components/reports/NationalServiceReport.js - COMPLETE WORKING VERSION
+// components/reports/NationalServiceReport.js - FULLY CORRECTED VERSION
 
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../../supabase/client';
@@ -345,14 +345,24 @@ export default function NationalServiceReport({ report, onBack }) {
   const suggestedPlacements = getSuggestedPlacements();
 
   // ============================================================
-  // CHECK IF BEHAVIORAL DATA EXISTS
+  // ✅ FIXED: CHECK IF BEHAVIORAL DATA EXISTS
   // ============================================================
   const hasBehavioralData = 
-    behavioralMatrix?.behavior?.hasBehavioralData === true ||
+    behavioralMatrix?.hasBehavioralData === true ||  // Primary flag from API
+    (behavioralMatrix?.behavior?.tabSwitches !== undefined) ||  // Check if data exists at all
+    (behavioralMatrix?.behavior?.violations !== undefined) ||
+    (behavioralMatrix?.behavior?.answerChanges !== undefined) ||
+    (behavioralMatrix?.timing?.timePerQuestion && behavioralMatrix.timing.timePerQuestion.length > 0) ||
+    (behavioralMatrix?.behavior?.hasViolations !== undefined) ||
+    (behavioralMatrix?.behavior && Object.keys(behavioralMatrix.behavior).length > 0);  // Any behavior object
+
+  // Check if there are any violations
+  const hasViolations = 
     (behavioralMatrix?.behavior?.tabSwitches || 0) > 0 ||
     (behavioralMatrix?.behavior?.violations || 0) > 0 ||
-    (behavioralMatrix?.behavior?.answerChanges || 0) > 0 ||
-    (behavioralMatrix?.timing?.timePerQuestion && behavioralMatrix.timing.timePerQuestion.length > 0);
+    (behavioralMatrix?.behavior?.copyAttempts || 0) > 0 ||
+    (behavioralMatrix?.behavior?.pasteAttempts || 0) > 0 ||
+    (behavioralMatrix?.behavior?.rightClickAttempts || 0) > 0;
 
   // ============================================================
   // RENDER
@@ -584,7 +594,7 @@ export default function NationalServiceReport({ report, onBack }) {
       </div>
 
       {/* ============================================================
-          BEHAVIORAL MATRIX SECTION
+          BEHAVIORAL MATRIX SECTION - FIXED
           ============================================================ */}
       <div style={styles.behavioralToggleContainer}>
         <button onClick={toggleBehavioral} style={styles.behavioralToggleButton}>
@@ -602,11 +612,12 @@ export default function NationalServiceReport({ report, onBack }) {
             </div>
           ) : behavioralMatrix && hasBehavioralData ? (
             <>
+              {/* Show the matrix even if all values are 0 */}
               <div style={styles.behavioralStats}>
                 <div style={styles.behavioralStat}>
                   <span style={styles.behavioralLabel}>Total Time</span>
                   <span style={styles.behavioralValue}>
-                    {formatTime(behavioralMatrix.timing?.totalTimeSeconds)}
+                    {formatTime(behavioralMatrix.timing?.totalTimeSeconds || 0)}
                   </span>
                 </div>
                 <div style={styles.behavioralStat}>
@@ -654,15 +665,49 @@ export default function NationalServiceReport({ report, onBack }) {
                     color: behavioralMatrix.riskAssessment?.level === 'High Risk' ? '#991b1b' :
                            behavioralMatrix.riskAssessment?.level === 'Medium Risk' ? '#92400e' : '#166534'
                   }}>
-                    {behavioralMatrix.riskAssessment?.level || 'Unknown'}
+                    {behavioralMatrix.riskAssessment?.level || 'Low Risk'}
                   </span>
                 </div>
               </div>
               
-              <div style={styles.riskSummary}>
-                <p>{behavioralMatrix.riskAssessment?.summary || 'No behavioral concerns detected.'}</p>
-              </div>
+              {/* Show clean assessment message when no violations */}
+              {!hasViolations ? (
+                <div style={styles.cleanAssessment}>
+                  <p style={{ color: '#166534', fontWeight: '600' }}>
+                    ✅ This candidate completed the assessment with no behavioral violations detected.
+                  </p>
+                  <p style={{ fontSize: '13px', color: '#15803d', marginTop: '4px' }}>
+                    All behavioral metrics are within acceptable ranges. No further action is required.
+                  </p>
+                </div>
+              ) : (
+                <div style={styles.riskSummary}>
+                  <p>{behavioralMatrix.riskAssessment?.summary || 'Behavioral data available for review.'}</p>
+                  {behavioralMatrix.riskAssessment?.detail && (
+                    <p style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
+                      {behavioralMatrix.riskAssessment.detail}
+                    </p>
+                  )}
+                </div>
+              )}
               
+              {/* Show violation comments if any exist */}
+              {behavioralMatrix.behavior?.violationComments && 
+               behavioralMatrix.behavior.violationComments.length > 0 &&
+               behavioralMatrix.behavior.violationComments[0]?.type !== 'none' && (
+                <div style={styles.violationComments}>
+                  <h4 style={styles.flaggedTitle}>Violation Details</h4>
+                  {behavioralMatrix.behavior.violationComments.map((comment, index) => (
+                    <div key={index} style={styles.violationCommentItem}>
+                      <span style={styles.violationCommentLabel}>{comment.label}:</span>
+                      <span style={styles.violationCommentCount}>{comment.count}</span>
+                      <p style={styles.violationCommentText}>{comment.comment}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+              
+              {/* Show flagged questions if any exist */}
               {behavioralMatrix.flaggedQuestions && behavioralMatrix.flaggedQuestions.length > 0 && (
                 <div style={styles.flaggedQuestions}>
                   <h4 style={styles.flaggedTitle}>Flagged Questions</h4>
@@ -672,6 +717,7 @@ export default function NationalServiceReport({ report, onBack }) {
                         Question {q.question_id}: {q.time_seconds}s
                         {q.changed ? ' - Changed' : ''}
                         {q.violation ? ' - Violation' : ''}
+                        {q.comment ? ` - ${q.comment}` : ''}
                       </li>
                     ))}
                     {behavioralMatrix.flaggedQuestions.length > 10 && (
@@ -1219,5 +1265,45 @@ const styles = {
     fontSize: '13px',
     color: '#94a3b8',
     marginTop: '8px'
+  },
+  // ============================================================
+  // NEW STYLES FOR FIXED BEHAVIORAL MATRIX
+  // ============================================================
+  cleanAssessment: {
+    padding: '16px 20px',
+    background: '#dcfce7',
+    borderRadius: '8px',
+    border: '1px solid #bbf7d0',
+    marginBottom: '16px'
+  },
+  violationComments: {
+    marginTop: '12px',
+    padding: '16px',
+    background: 'white',
+    borderRadius: '8px',
+    border: '1px solid #e2e8f0'
+  },
+  violationCommentItem: {
+    padding: '8px 12px',
+    marginBottom: '4px',
+    borderBottom: '1px solid #f1f5f9'
+  },
+  violationCommentLabel: {
+    fontWeight: '600',
+    marginRight: '8px'
+  },
+  violationCommentCount: {
+    display: 'inline-block',
+    padding: '2px 8px',
+    background: '#e2e8f0',
+    borderRadius: '12px',
+    fontSize: '12px',
+    fontWeight: '600',
+    marginRight: '8px'
+  },
+  violationCommentText: {
+    margin: '4px 0 0 0',
+    fontSize: '13px',
+    color: '#64748b'
   }
 };
