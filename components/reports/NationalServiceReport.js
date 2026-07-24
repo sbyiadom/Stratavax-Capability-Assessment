@@ -1,10 +1,10 @@
-// components/reports/NationalServiceReport.js - COMPLETE FIXED VERSION
+// components/reports/NationalServiceReport.js - WITH COMMENTARY FEATURE
 
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../../supabase/client';
 
 // ============================================================
-// STYLES - DEFINED AT THE TOP
+// STYLES
 // ============================================================
 const styles = {
   container: {
@@ -531,11 +531,81 @@ const styles = {
     margin: '4px 0 0 0',
     fontSize: '13px',
     color: '#64748b'
+  },
+  // ============================================================
+  // NEW COMMENTARY STYLES
+  // ============================================================
+  behavioralCommentary: {
+    marginTop: '16px',
+    padding: '16px',
+    background: 'white',
+    borderRadius: '8px',
+    border: '1px solid #e2e8f0'
+  },
+  commentaryTitle: {
+    fontSize: '15px',
+    fontWeight: '600',
+    color: '#0a1929',
+    margin: '0 0 12px 0',
+    paddingBottom: '8px',
+    borderBottom: '1px solid #e2e8f0'
+  },
+  commentaryMetrics: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px'
+  },
+  commentaryItem: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: '8px',
+    padding: '6px 0',
+    borderBottom: '1px solid #f8fafc'
+  },
+  commentaryLabel: {
+    fontWeight: '600',
+    color: '#475569',
+    minWidth: '120px',
+    fontSize: '13px',
+    flexShrink: 0
+  },
+  commentaryText: {
+    fontSize: '13px',
+    color: '#1a202c',
+    lineHeight: '1.5'
+  },
+  recommendationBox: {
+    marginTop: '12px',
+    padding: '12px 16px',
+    background: '#fef3c7',
+    borderRadius: '8px',
+    border: '1px solid #fcd34d'
+  },
+  recommendationTitle: {
+    fontSize: '13px',
+    fontWeight: '600',
+    color: '#92400e',
+    margin: '0 0 6px 0'
+  },
+  recommendationList: {
+    margin: '0',
+    paddingLeft: '20px',
+    fontSize: '13px',
+    color: '#78350f'
+  },
+  cleanCommentary: {
+    marginTop: '12px',
+    padding: '12px 16px',
+    background: '#dcfce7',
+    borderRadius: '8px',
+    border: '1px solid #bbf7d0',
+    fontSize: '13px',
+    color: '#166534'
   }
 };
 
 // ============================================================
-// COMPONENT - FIXED TO USE PROPS
+// COMPONENT
 // ============================================================
 export default function NationalServiceReport({
   report,
@@ -543,16 +613,13 @@ export default function NationalServiceReport({
   behavioralMatrix: propBehavioralMatrix,
   loadingBehavioral: propLoadingBehavioral
 }) {
-  // State for behavioral matrix (only used if props not provided)
   const [localBehavioralMatrix, setLocalBehavioralMatrix] = useState(null);
   const [localLoadingBehavioral, setLocalLoadingBehavioral] = useState(false);
   const [showBehavioral, setShowBehavioral] = useState(false);
 
-  // Use prop data if available, otherwise use local state
   const behavioralMatrix = propBehavioralMatrix !== undefined ? propBehavioralMatrix : localBehavioralMatrix;
   const loadingBehavioral = propLoadingBehavioral !== undefined ? propLoadingBehavioral : localLoadingBehavioral;
 
-  // Only fetch locally if prop is NOT provided
   useEffect(() => {
     if (propBehavioralMatrix !== undefined) {
       console.log('[NationalServiceReport] Using behavioralMatrix from props:', propBehavioralMatrix);
@@ -633,6 +700,69 @@ export default function NationalServiceReport({
     }
     return String(value);
   };
+
+  // ============================================================
+  // GENERATE BEHAVIORAL COMMENTARY
+  // ============================================================
+  const getBehavioralCommentary = (behavior) => {
+    if (!behavior) return { comments: [], recommendations: [] };
+
+    const { tabSwitches = 0, violations = 0, answerChanges = 0 } = behavior;
+    const comments = [];
+    const recommendations = [];
+
+    // Tab Switches Commentary
+    if (tabSwitches === 0) {
+      comments.push('✅ No tab switching detected. Candidate maintained focus on the assessment.');
+    } else if (tabSwitches <= 5) {
+      comments.push(`ℹ️ Minimal tab switching detected (${tabSwitches} switches). This may indicate occasional distraction.`);
+      recommendations.push('Consider discussing focus levels during follow-up interview.');
+    } else if (tabSwitches <= 20) {
+      comments.push(`⚠️ Moderate tab switching detected (${tabSwitches} switches). Candidate may have been referencing external materials.`);
+      recommendations.push('Review the assessment validity. Consider a follow-up assessment or interview.');
+    } else {
+      comments.push(`🔴 High tab switching detected (${tabSwitches} switches). This suggests significant distraction or potential external reference use.`);
+      recommendations.push('⚠️ Strongly recommend invalidating this assessment or conducting a fresh assessment in a controlled environment.');
+    }
+
+    // Violations Commentary
+    if (violations === 0) {
+      comments.push('✅ No rule violations detected. Candidate followed all assessment guidelines.');
+    } else if (violations <= 3) {
+      comments.push(`ℹ️ Minor violations detected (${violations} violations). These may be accidental or due to unfamiliarity with the assessment interface.`);
+      recommendations.push('Review the specific violations. Consider providing clearer instructions for future assessments.');
+    } else if (violations <= 10) {
+      comments.push(`⚠️ Moderate violations detected (${violations} violations). Candidate may have attempted to circumvent assessment rules.`);
+      recommendations.push('Flag for review. Consider a follow-up interview to discuss the behavior.');
+    } else {
+      comments.push(`🔴 High violations detected (${violations} violations). This indicates significant disregard for assessment rules.`);
+      recommendations.push('⚠️ Immediate review required. Consider invalidating the assessment and requiring a fresh attempt.');
+    }
+
+    // Answer Changes Commentary
+    if (answerChanges === 0) {
+      comments.push('✅ No answer changes. Candidate answered confidently without second-guessing.');
+    } else if (answerChanges <= 3) {
+      comments.push(`ℹ️ Minimal answer changes (${answerChanges} changes). Candidate showed some hesitation on a few questions.`);
+    } else if (answerChanges <= 10) {
+      comments.push(`⚠️ Moderate answer changes (${answerChanges} changes). Candidate may have been uncertain about several answers.`);
+      recommendations.push('Review the questions where answers were changed. Consider if the questions were ambiguous.');
+    } else {
+      comments.push(`🔴 High answer changes (${answerChanges} changes). Candidate showed significant uncertainty throughout the assessment.`);
+      recommendations.push('Review the assessment for potential difficulty issues or candidate comprehension problems.');
+    }
+
+    return {
+      summary: comments.join(' '),
+      detailedComments: comments,
+      recommendations: recommendations.length > 0 ? recommendations : ['No specific recommendations required. Standard review process applies.']
+    };
+  };
+
+  // ============================================================
+  // CHECK IF BEHAVIORAL DATA EXISTS
+  // ============================================================
+  const hasBehavioralData = behavioralMatrix !== null && behavioralMatrix !== undefined;
 
   if (!report) {
     return <div style={styles.loading}>Loading report...</div>;
@@ -884,9 +1014,9 @@ export default function NationalServiceReport({
   const suggestedPlacements = getSuggestedPlacements();
 
   // ============================================================
-  // ✅ CHECK IF BEHAVIORAL DATA EXISTS
+  // GENERATE COMMENTARY
   // ============================================================
-  const hasBehavioralData = behavioralMatrix !== null && behavioralMatrix !== undefined;
+  const commentary = getBehavioralCommentary(behavioralMatrix?.behavior);
 
   // ============================================================
   // RENDER
@@ -1136,6 +1266,7 @@ export default function NationalServiceReport({
             </div>
           ) : behavioralMatrix && hasBehavioralData ? (
             <>
+              {/* Behavioral Stats */}
               <div style={styles.behavioralStats}>
                 <div style={styles.behavioralStat}>
                   <span style={styles.behavioralLabel}>Total Time</span>
@@ -1193,6 +1324,7 @@ export default function NationalServiceReport({
                 </div>
               </div>
 
+              {/* Risk Summary */}
               <div style={styles.riskSummary}>
                 <p>
                   Behavioral flags: {behavioralMatrix.behavior?.violations || 0} violation(s), {behavioralMatrix.behavior?.tabSwitches || 0} tab switches.
@@ -1204,6 +1336,88 @@ export default function NationalServiceReport({
                 )}
               </div>
 
+              {/* ============================================================
+                  BEHAVIORAL COMMENTARY SECTION - NEW
+                  ============================================================ */}
+              {behavioralMatrix?.behavior && (
+                <div style={styles.behavioralCommentary}>
+                  <h4 style={styles.commentaryTitle}>Behavioral Analysis</h4>
+
+                  <div style={styles.commentaryMetrics}>
+                    <div style={styles.commentaryItem}>
+                      <span style={styles.commentaryLabel}>Tab Switches:</span>
+                      <span style={styles.commentaryText}>
+                        {behavioralMatrix.behavior.tabSwitches === 0
+                          ? '✅ No tab switching detected. Candidate maintained focus.'
+                          : behavioralMatrix.behavior.tabSwitches <= 5
+                            ? `ℹ️ Minimal tab switching (${behavioralMatrix.behavior.tabSwitches} switches). Occasional distraction.`
+                            : behavioralMatrix.behavior.tabSwitches <= 20
+                              ? `⚠️ Moderate tab switching (${behavioralMatrix.behavior.tabSwitches} switches). Potential external reference use.`
+                              : `🔴 High tab switching (${behavioralMatrix.behavior.tabSwitches} switches). Significant distraction detected.`
+                        }
+                      </span>
+                    </div>
+
+                    <div style={styles.commentaryItem}>
+                      <span style={styles.commentaryLabel}>Violations:</span>
+                      <span style={styles.commentaryText}>
+                        {behavioralMatrix.behavior.violations === 0
+                          ? '✅ No rule violations detected. Candidate followed all guidelines.'
+                          : behavioralMatrix.behavior.violations <= 3
+                            ? `ℹ️ Minor violations (${behavioralMatrix.behavior.violations}). May be accidental.`
+                            : behavioralMatrix.behavior.violations <= 10
+                              ? `⚠️ Moderate violations (${behavioralMatrix.behavior.violations}). Review recommended.`
+                              : `🔴 High violations (${behavioralMatrix.behavior.violations}). Immediate review required.`
+                        }
+                      </span>
+                    </div>
+
+                    <div style={styles.commentaryItem}>
+                      <span style={styles.commentaryLabel}>Answer Changes:</span>
+                      <span style={styles.commentaryText}>
+                        {behavioralMatrix.behavior.answerChanges === 0
+                          ? '✅ No answer changes. Candidate showed confidence.'
+                          : behavioralMatrix.behavior.answerChanges <= 3
+                            ? `ℹ️ Minimal changes (${behavioralMatrix.behavior.answerChanges}). Some hesitation.`
+                            : behavioralMatrix.behavior.answerChanges <= 10
+                              ? `⚠️ Moderate changes (${behavioralMatrix.behavior.answerChanges}). Uncertainty detected.`
+                              : `🔴 High changes (${behavioralMatrix.behavior.answerChanges}). Significant uncertainty.`
+                        }
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Recommendations */}
+                  {(behavioralMatrix.behavior.violations > 0 || behavioralMatrix.behavior.tabSwitches > 5) ? (
+                    <div style={styles.recommendationBox}>
+                      <h5 style={styles.recommendationTitle}>Recommendations</h5>
+                      <ul style={styles.recommendationList}>
+                        {behavioralMatrix.behavior.tabSwitches > 20 && (
+                          <li>⚠️ Consider invalidating the assessment due to excessive tab switching.</li>
+                        )}
+                        {behavioralMatrix.behavior.violations > 10 && (
+                          <li>⚠️ Immediate review required. Assessment validity is compromised.</li>
+                        )}
+                        {behavioralMatrix.behavior.tabSwitches > 5 && behavioralMatrix.behavior.tabSwitches <= 20 && (
+                          <li>📋 Conduct a follow-up interview to discuss potential external reference use.</li>
+                        )}
+                        {behavioralMatrix.behavior.violations > 3 && behavioralMatrix.behavior.violations <= 10 && (
+                          <li>📋 Review specific flagged questions and discuss with candidate.</li>
+                        )}
+                        {behavioralMatrix.behavior.answerChanges > 5 && (
+                          <li>📋 Review questions where answers were changed for potential ambiguity.</li>
+                        )}
+                      </ul>
+                    </div>
+                  ) : (
+                    <div style={styles.cleanCommentary}>
+                      ✅ No concerning behavioral patterns detected. The candidate completed the assessment with integrity.
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Flagged Questions */}
               {behavioralMatrix.flaggedQuestions && behavioralMatrix.flaggedQuestions.length > 0 && (
                 <div style={styles.flaggedQuestions}>
                   <h4 style={styles.flaggedTitle}>Flagged Questions</h4>
@@ -1213,6 +1427,7 @@ export default function NationalServiceReport({
                         Question {q.question_id}: {q.time_seconds}s
                         {q.changed ? ' - Changed' : ''}
                         {q.violation ? ' - Violation' : ''}
+                        {q.comment ? ` - ${q.comment}` : ''}
                       </li>
                     ))}
                     {behavioralMatrix.flaggedQuestions.length > 10 && (
