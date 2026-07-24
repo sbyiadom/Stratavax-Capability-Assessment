@@ -1,4 +1,4 @@
-// pages/supervisor/reports/[resultId].js - COMPLETE UPDATED FILE
+// pages/supervisor/reports/[resultId].js - COMPLETE UPDATED WITH BEHAVIORAL MATRIX
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -158,8 +158,17 @@ export default function SupervisorReportView() {
       console.log('[Behavioral] API Response:', data);
       
       if (data.success) {
-        setBehavioralMatrix(data.behavioralMatrix);
-        console.log('[Behavioral] Matrix data:', data.behavioralMatrix);
+        // Try different response formats
+        const matrix = data.behavioralMatrix || data.matrixData || data.data || data.result;
+        if (matrix) {
+          console.log('[Behavioral] Matrix data found:');
+          console.log('[Behavioral] - tabSwitches:', matrix.behavior?.tabSwitches);
+          console.log('[Behavioral] - violations:', matrix.behavior?.violations);
+          console.log('[Behavioral] - answerChanges:', matrix.behavior?.answerChanges);
+          setBehavioralMatrix(matrix);
+        } else {
+          console.log('[Behavioral] No matrix data found in response');
+        }
       }
     } catch (error) {
       console.error('Error fetching behavioral matrix:', error);
@@ -187,13 +196,10 @@ export default function SupervisorReportView() {
     return `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
   };
 
-  // Check if behavioral data exists
-  const hasBehavioralData = 
-    behavioralMatrix?.behavior?.hasBehavioralData === true ||
-    (behavioralMatrix?.behavior?.tabSwitches || 0) > 0 ||
-    (behavioralMatrix?.behavior?.violations || 0) > 0 ||
-    (behavioralMatrix?.behavior?.answerChanges || 0) > 0 ||
-    (behavioralMatrix?.timing?.timePerQuestion && behavioralMatrix.timing.timePerQuestion.length > 0);
+  // ============================================================
+  // Check if behavioral data exists - SIMPLIFIED
+  // ============================================================
+  const hasBehavioralData = behavioralMatrix !== null && behavioralMatrix !== undefined;
 
   if (authLoading || loading) {
     return (
@@ -226,6 +232,8 @@ export default function SupervisorReportView() {
   // If it's a National Service assessment, use the National Service Report
   if (isNationalService && reportData?.report && isAuthorized) {
     console.log('[Supervisor Report] Rendering National Service Report');
+    console.log('[Supervisor Report] Passing behavioralMatrix:', behavioralMatrix);
+    
     return (
       <AppLayout background="/images/supervisor-bg.jpg">
         <div style={styles.breadcrumb}>
@@ -238,12 +246,15 @@ export default function SupervisorReportView() {
             {showBehavioral ? 'Hide Behavioral Matrix' : 'Show Behavioral Matrix'}
           </button>
         </div>
+        
+        {/* Pass behavioralMatrix as props to NationalServiceReport */}
         <NationalServiceReport 
           report={reportData.report} 
           onBack={handleBack} 
           showAssignment={false}
           userRole="supervisor"
-          resultId={resultId}  // Pass resultId for behavioral data
+          behavioralMatrix={behavioralMatrix}
+          loadingBehavioral={loadingBehavioral}
         />
         
         {showBehavioral && (
@@ -308,14 +319,96 @@ export default function SupervisorReportView() {
                       color: behavioralMatrix.riskAssessment?.level === 'High Risk' ? '#991b1b' :
                              behavioralMatrix.riskAssessment?.level === 'Medium Risk' ? '#92400e' : '#166534'
                     }}>
-                      {behavioralMatrix.riskAssessment?.level || 'Unknown'}
+                      {behavioralMatrix.riskAssessment?.level || 'Low Risk'}
                     </span>
                   </div>
                 </div>
                 
                 <div style={styles.riskSummary}>
-                  <p>{behavioralMatrix.riskAssessment?.summary || 'No behavioral concerns detected.'}</p>
+                  <p>
+                    Behavioral flags: {behavioralMatrix.behavior?.violations || 0} violation(s), {behavioralMatrix.behavior?.tabSwitches || 0} tab switches.
+                  </p>
+                  {behavioralMatrix.riskAssessment?.detail && (
+                    <p style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
+                      {behavioralMatrix.riskAssessment.detail}
+                    </p>
+                  )}
                 </div>
+                
+                {/* Behavioral Commentary */}
+                {behavioralMatrix?.behavior && (
+                  <div style={styles.behavioralCommentary}>
+                    <h4 style={styles.commentaryTitle}>Behavioral Analysis</h4>
+                    <div style={styles.commentaryMetrics}>
+                      <div style={styles.commentaryItem}>
+                        <span style={styles.commentaryLabel}>Tab Switches:</span>
+                        <span style={styles.commentaryText}>
+                          {behavioralMatrix.behavior.tabSwitches === 0
+                            ? 'No tab switching detected. Candidate maintained focus.'
+                            : behavioralMatrix.behavior.tabSwitches <= 5
+                              ? `Minimal tab switching (${behavioralMatrix.behavior.tabSwitches} switches). Occasional distraction.`
+                              : behavioralMatrix.behavior.tabSwitches <= 20
+                                ? `Moderate tab switching (${behavioralMatrix.behavior.tabSwitches} switches). Potential external reference use.`
+                                : `High tab switching (${behavioralMatrix.behavior.tabSwitches} switches). Significant distraction detected.`
+                          }
+                        </span>
+                      </div>
+                      <div style={styles.commentaryItem}>
+                        <span style={styles.commentaryLabel}>Violations:</span>
+                        <span style={styles.commentaryText}>
+                          {behavioralMatrix.behavior.violations === 0
+                            ? 'No rule violations detected. Candidate followed all guidelines.'
+                            : behavioralMatrix.behavior.violations <= 3
+                              ? `Minor violations (${behavioralMatrix.behavior.violations}). May be accidental.`
+                              : behavioralMatrix.behavior.violations <= 10
+                                ? `Moderate violations (${behavioralMatrix.behavior.violations}). Review recommended.`
+                                : `High violations (${behavioralMatrix.behavior.violations}). Immediate review required.`
+                          }
+                        </span>
+                      </div>
+                      <div style={styles.commentaryItem}>
+                        <span style={styles.commentaryLabel}>Answer Changes:</span>
+                        <span style={styles.commentaryText}>
+                          {behavioralMatrix.behavior.answerChanges === 0
+                            ? 'No answer changes. Candidate showed confidence.'
+                            : behavioralMatrix.behavior.answerChanges <= 3
+                              ? `Minimal changes (${behavioralMatrix.behavior.answerChanges}). Some hesitation.`
+                              : behavioralMatrix.behavior.answerChanges <= 10
+                                ? `Moderate changes (${behavioralMatrix.behavior.answerChanges}). Uncertainty detected.`
+                                : `High changes (${behavioralMatrix.behavior.answerChanges}). Significant uncertainty.`
+                          }
+                        </span>
+                      </div>
+                    </div>
+                    
+                    {(behavioralMatrix.behavior.violations > 0 || behavioralMatrix.behavior.tabSwitches > 5) ? (
+                      <div style={styles.recommendationBox}>
+                        <h5 style={styles.recommendationTitle}>Recommendations</h5>
+                        <ul style={styles.recommendationList}>
+                          {behavioralMatrix.behavior.tabSwitches > 20 && (
+                            <li>Consider invalidating the assessment due to excessive tab switching.</li>
+                          )}
+                          {behavioralMatrix.behavior.violations > 10 && (
+                            <li>Immediate review required. Assessment validity is compromised.</li>
+                          )}
+                          {behavioralMatrix.behavior.tabSwitches > 5 && behavioralMatrix.behavior.tabSwitches <= 20 && (
+                            <li>Conduct a follow-up interview to discuss potential external reference use.</li>
+                          )}
+                          {behavioralMatrix.behavior.violations > 3 && behavioralMatrix.behavior.violations <= 10 && (
+                            <li>Review specific flagged questions and discuss with candidate.</li>
+                          )}
+                          {behavioralMatrix.behavior.answerChanges > 5 && (
+                            <li>Review questions where answers were changed for potential ambiguity.</li>
+                          )}
+                        </ul>
+                      </div>
+                    ) : (
+                      <div style={styles.cleanCommentary}>
+                        No concerning behavioral patterns detected. The candidate completed the assessment with integrity.
+                      </div>
+                    )}
+                  </div>
+                )}
                 
                 {behavioralMatrix.flaggedQuestions && behavioralMatrix.flaggedQuestions.length > 0 && (
                   <div style={styles.flaggedQuestions}>
@@ -326,6 +419,7 @@ export default function SupervisorReportView() {
                           Question {q.question_id}: {q.time_seconds}s
                           {q.changed ? ' - Changed' : ''}
                           {q.violation ? ' - Violation' : ''}
+                          {q.comment ? ` - ${q.comment}` : ''}
                         </li>
                       ))}
                       {behavioralMatrix.flaggedQuestions.length > 10 && (
@@ -375,7 +469,8 @@ export default function SupervisorReportView() {
             onBack={handleBack}
             showAssignment={false}
             userRole="supervisor"
-            resultId={resultId}  // Pass resultId for behavioral data
+            behavioralMatrix={behavioralMatrix}
+            loadingBehavioral={loadingBehavioral}
           />
           
           {showBehavioral && (
@@ -440,14 +535,96 @@ export default function SupervisorReportView() {
                         color: behavioralMatrix.riskAssessment?.level === 'High Risk' ? '#991b1b' :
                                behavioralMatrix.riskAssessment?.level === 'Medium Risk' ? '#92400e' : '#166534'
                       }}>
-                        {behavioralMatrix.riskAssessment?.level || 'Unknown'}
+                        {behavioralMatrix.riskAssessment?.level || 'Low Risk'}
                       </span>
                     </div>
                   </div>
                   
                   <div style={styles.riskSummary}>
-                    <p>{behavioralMatrix.riskAssessment?.summary || 'No behavioral concerns detected.'}</p>
+                    <p>
+                      Behavioral flags: {behavioralMatrix.behavior?.violations || 0} violation(s), {behavioralMatrix.behavior?.tabSwitches || 0} tab switches.
+                    </p>
+                    {behavioralMatrix.riskAssessment?.detail && (
+                      <p style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
+                        {behavioralMatrix.riskAssessment.detail}
+                      </p>
+                    )}
                   </div>
+                  
+                  {/* Behavioral Commentary */}
+                  {behavioralMatrix?.behavior && (
+                    <div style={styles.behavioralCommentary}>
+                      <h4 style={styles.commentaryTitle}>Behavioral Analysis</h4>
+                      <div style={styles.commentaryMetrics}>
+                        <div style={styles.commentaryItem}>
+                          <span style={styles.commentaryLabel}>Tab Switches:</span>
+                          <span style={styles.commentaryText}>
+                            {behavioralMatrix.behavior.tabSwitches === 0
+                              ? 'No tab switching detected. Candidate maintained focus.'
+                              : behavioralMatrix.behavior.tabSwitches <= 5
+                                ? `Minimal tab switching (${behavioralMatrix.behavior.tabSwitches} switches). Occasional distraction.`
+                                : behavioralMatrix.behavior.tabSwitches <= 20
+                                  ? `Moderate tab switching (${behavioralMatrix.behavior.tabSwitches} switches). Potential external reference use.`
+                                  : `High tab switching (${behavioralMatrix.behavior.tabSwitches} switches). Significant distraction detected.`
+                            }
+                          </span>
+                        </div>
+                        <div style={styles.commentaryItem}>
+                          <span style={styles.commentaryLabel}>Violations:</span>
+                          <span style={styles.commentaryText}>
+                            {behavioralMatrix.behavior.violations === 0
+                              ? 'No rule violations detected. Candidate followed all guidelines.'
+                              : behavioralMatrix.behavior.violations <= 3
+                                ? `Minor violations (${behavioralMatrix.behavior.violations}). May be accidental.`
+                                : behavioralMatrix.behavior.violations <= 10
+                                  ? `Moderate violations (${behavioralMatrix.behavior.violations}). Review recommended.`
+                                  : `High violations (${behavioralMatrix.behavior.violations}). Immediate review required.`
+                            }
+                          </span>
+                        </div>
+                        <div style={styles.commentaryItem}>
+                          <span style={styles.commentaryLabel}>Answer Changes:</span>
+                          <span style={styles.commentaryText}>
+                            {behavioralMatrix.behavior.answerChanges === 0
+                              ? 'No answer changes. Candidate showed confidence.'
+                              : behavioralMatrix.behavior.answerChanges <= 3
+                                ? `Minimal changes (${behavioralMatrix.behavior.answerChanges}). Some hesitation.`
+                                : behavioralMatrix.behavior.answerChanges <= 10
+                                  ? `Moderate changes (${behavioralMatrix.behavior.answerChanges}). Uncertainty detected.`
+                                  : `High changes (${behavioralMatrix.behavior.answerChanges}). Significant uncertainty.`
+                            }
+                          </span>
+                        </div>
+                      </div>
+                      
+                      {(behavioralMatrix.behavior.violations > 0 || behavioralMatrix.behavior.tabSwitches > 5) ? (
+                        <div style={styles.recommendationBox}>
+                          <h5 style={styles.recommendationTitle}>Recommendations</h5>
+                          <ul style={styles.recommendationList}>
+                            {behavioralMatrix.behavior.tabSwitches > 20 && (
+                              <li>Consider invalidating the assessment due to excessive tab switching.</li>
+                            )}
+                            {behavioralMatrix.behavior.violations > 10 && (
+                              <li>Immediate review required. Assessment validity is compromised.</li>
+                            )}
+                            {behavioralMatrix.behavior.tabSwitches > 5 && behavioralMatrix.behavior.tabSwitches <= 20 && (
+                              <li>Conduct a follow-up interview to discuss potential external reference use.</li>
+                            )}
+                            {behavioralMatrix.behavior.violations > 3 && behavioralMatrix.behavior.violations <= 10 && (
+                              <li>Review specific flagged questions and discuss with candidate.</li>
+                            )}
+                            {behavioralMatrix.behavior.answerChanges > 5 && (
+                              <li>Review questions where answers were changed for potential ambiguity.</li>
+                            )}
+                          </ul>
+                        </div>
+                      ) : (
+                        <div style={styles.cleanCommentary}>
+                          No concerning behavioral patterns detected. The candidate completed the assessment with integrity.
+                        </div>
+                      )}
+                    </div>
+                  )}
                   
                   {behavioralMatrix.flaggedQuestions && behavioralMatrix.flaggedQuestions.length > 0 && (
                     <div style={styles.flaggedQuestions}>
@@ -458,6 +635,7 @@ export default function SupervisorReportView() {
                             Question {q.question_id}: {q.time_seconds}s
                             {q.changed ? ' - Changed' : ''}
                             {q.violation ? ' - Violation' : ''}
+                            {q.comment ? ` - ${q.comment}` : ''}
                           </li>
                         ))}
                         {behavioralMatrix.flaggedQuestions.length > 10 && (
@@ -487,6 +665,7 @@ export default function SupervisorReportView() {
   // DEFAULT: Use Stratavax Report for all non-National Service assessments
   // ============================================================
   console.log('[Supervisor Report] Rendering Stratavax Report');
+  console.log('[Supervisor Report] Passing behavioralMatrix:', behavioralMatrix);
   
   // Prepare data for Stratavax report
   const stratavaxData = {
@@ -507,11 +686,15 @@ export default function SupervisorReportView() {
           {showBehavioral ? 'Hide Behavioral Data' : 'Show Behavioral Data'}
         </button>
       </div>
+      
+      {/* Pass behavioralMatrix as props to StratavaxReport */}
       <StratavaxReport 
         result={stratavaxData.result}
         candidate={stratavaxData.candidate}
         assessment={stratavaxData.assessment}
         onBack={handleBack}
+        behavioralMatrix={behavioralMatrix}
+        loadingBehavioral={loadingBehavioral}
       />
       
       {showBehavioral && (
@@ -576,14 +759,96 @@ export default function SupervisorReportView() {
                     color: behavioralMatrix.riskAssessment?.level === 'High Risk' ? '#991b1b' :
                            behavioralMatrix.riskAssessment?.level === 'Medium Risk' ? '#92400e' : '#166534'
                   }}>
-                    {behavioralMatrix.riskAssessment?.level || 'Unknown'}
+                    {behavioralMatrix.riskAssessment?.level || 'Low Risk'}
                   </span>
                 </div>
               </div>
               
               <div style={styles.riskSummary}>
-                <p>{behavioralMatrix.riskAssessment?.summary || 'No behavioral concerns detected.'}</p>
+                <p>
+                  Behavioral flags: {behavioralMatrix.behavior?.violations || 0} violation(s), {behavioralMatrix.behavior?.tabSwitches || 0} tab switches.
+                </p>
+                {behavioralMatrix.riskAssessment?.detail && (
+                  <p style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
+                    {behavioralMatrix.riskAssessment.detail}
+                  </p>
+                )}
               </div>
+              
+              {/* Behavioral Commentary */}
+              {behavioralMatrix?.behavior && (
+                <div style={styles.behavioralCommentary}>
+                  <h4 style={styles.commentaryTitle}>Behavioral Analysis</h4>
+                  <div style={styles.commentaryMetrics}>
+                    <div style={styles.commentaryItem}>
+                      <span style={styles.commentaryLabel}>Tab Switches:</span>
+                      <span style={styles.commentaryText}>
+                        {behavioralMatrix.behavior.tabSwitches === 0
+                          ? 'No tab switching detected. Candidate maintained focus.'
+                          : behavioralMatrix.behavior.tabSwitches <= 5
+                            ? `Minimal tab switching (${behavioralMatrix.behavior.tabSwitches} switches). Occasional distraction.`
+                            : behavioralMatrix.behavior.tabSwitches <= 20
+                              ? `Moderate tab switching (${behavioralMatrix.behavior.tabSwitches} switches). Potential external reference use.`
+                              : `High tab switching (${behavioralMatrix.behavior.tabSwitches} switches). Significant distraction detected.`
+                        }
+                      </span>
+                    </div>
+                    <div style={styles.commentaryItem}>
+                      <span style={styles.commentaryLabel}>Violations:</span>
+                      <span style={styles.commentaryText}>
+                        {behavioralMatrix.behavior.violations === 0
+                          ? 'No rule violations detected. Candidate followed all guidelines.'
+                          : behavioralMatrix.behavior.violations <= 3
+                            ? `Minor violations (${behavioralMatrix.behavior.violations}). May be accidental.`
+                            : behavioralMatrix.behavior.violations <= 10
+                              ? `Moderate violations (${behavioralMatrix.behavior.violations}). Review recommended.`
+                              : `High violations (${behavioralMatrix.behavior.violations}). Immediate review required.`
+                        }
+                      </span>
+                    </div>
+                    <div style={styles.commentaryItem}>
+                      <span style={styles.commentaryLabel}>Answer Changes:</span>
+                      <span style={styles.commentaryText}>
+                        {behavioralMatrix.behavior.answerChanges === 0
+                          ? 'No answer changes. Candidate showed confidence.'
+                          : behavioralMatrix.behavior.answerChanges <= 3
+                            ? `Minimal changes (${behavioralMatrix.behavior.answerChanges}). Some hesitation.`
+                            : behavioralMatrix.behavior.answerChanges <= 10
+                              ? `Moderate changes (${behavioralMatrix.behavior.answerChanges}). Uncertainty detected.`
+                              : `High changes (${behavioralMatrix.behavior.answerChanges}). Significant uncertainty.`
+                        }
+                      </span>
+                    </div>
+                  </div>
+                  
+                  {(behavioralMatrix.behavior.violations > 0 || behavioralMatrix.behavior.tabSwitches > 5) ? (
+                    <div style={styles.recommendationBox}>
+                      <h5 style={styles.recommendationTitle}>Recommendations</h5>
+                      <ul style={styles.recommendationList}>
+                        {behavioralMatrix.behavior.tabSwitches > 20 && (
+                          <li>Consider invalidating the assessment due to excessive tab switching.</li>
+                        )}
+                        {behavioralMatrix.behavior.violations > 10 && (
+                          <li>Immediate review required. Assessment validity is compromised.</li>
+                        )}
+                        {behavioralMatrix.behavior.tabSwitches > 5 && behavioralMatrix.behavior.tabSwitches <= 20 && (
+                          <li>Conduct a follow-up interview to discuss potential external reference use.</li>
+                        )}
+                        {behavioralMatrix.behavior.violations > 3 && behavioralMatrix.behavior.violations <= 10 && (
+                          <li>Review specific flagged questions and discuss with candidate.</li>
+                        )}
+                        {behavioralMatrix.behavior.answerChanges > 5 && (
+                          <li>Review questions where answers were changed for potential ambiguity.</li>
+                        )}
+                      </ul>
+                    </div>
+                  ) : (
+                    <div style={styles.cleanCommentary}>
+                      No concerning behavioral patterns detected. The candidate completed the assessment with integrity.
+                    </div>
+                  )}
+                </div>
+              )}
               
               {behavioralMatrix.flaggedQuestions && behavioralMatrix.flaggedQuestions.length > 0 && (
                 <div style={styles.flaggedQuestions}>
@@ -594,6 +859,7 @@ export default function SupervisorReportView() {
                         Question {q.question_id}: {q.time_seconds}s
                         {q.changed ? ' - Changed' : ''}
                         {q.violation ? ' - Violation' : ''}
+                        {q.comment ? ` - ${q.comment}` : ''}
                       </li>
                     ))}
                     {behavioralMatrix.flaggedQuestions.length > 10 && (
@@ -790,6 +1056,76 @@ const styles = {
     fontSize: '13px',
     color: '#94a3b8',
     marginTop: '8px'
+  },
+  // ============================================================
+  // Behavioral Commentary Styles
+  // ============================================================
+  behavioralCommentary: {
+    marginTop: '16px',
+    padding: '16px',
+    background: 'white',
+    borderRadius: '8px',
+    border: '1px solid #e2e8f0'
+  },
+  commentaryTitle: {
+    fontSize: '15px',
+    fontWeight: '600',
+    color: '#0a1929',
+    margin: '0 0 12px 0',
+    paddingBottom: '8px',
+    borderBottom: '1px solid #e2e8f0'
+  },
+  commentaryMetrics: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px'
+  },
+  commentaryItem: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: '8px',
+    padding: '6px 0',
+    borderBottom: '1px solid #f8fafc'
+  },
+  commentaryLabel: {
+    fontWeight: '600',
+    color: '#475569',
+    minWidth: '120px',
+    fontSize: '13px',
+    flexShrink: 0
+  },
+  commentaryText: {
+    fontSize: '13px',
+    color: '#1a202c',
+    lineHeight: '1.5'
+  },
+  recommendationBox: {
+    marginTop: '12px',
+    padding: '12px 16px',
+    background: '#fef3c7',
+    borderRadius: '8px',
+    border: '1px solid #fcd34d'
+  },
+  recommendationTitle: {
+    fontSize: '13px',
+    fontWeight: '600',
+    color: '#92400e',
+    margin: '0 0 6px 0'
+  },
+  recommendationList: {
+    margin: '0',
+    paddingLeft: '20px',
+    fontSize: '13px',
+    color: '#78350f'
+  },
+  cleanCommentary: {
+    marginTop: '12px',
+    padding: '12px 16px',
+    background: '#dcfce7',
+    borderRadius: '8px',
+    border: '1px solid #bbf7d0',
+    fontSize: '13px',
+    color: '#166534'
   }
 };
 
