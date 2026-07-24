@@ -1,4 +1,4 @@
-// pages/api/assessment/behavioral-matrix.js - FULLY CORRECTED VERSION
+// pages/api/assessment/behavioral-matrix.js - WITH EXTENSIVE ERROR LOGGING
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -126,34 +126,71 @@ function getRiskLevel(violations, tabSwitches, changes, avgTime) {
 }
 
 export default async function handler(req, res) {
+  // Add CORS headers for debugging
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
   if (req.method !== 'GET') {
     return res.status(405).json({ success: false, error: 'Method not allowed' });
   }
 
   try {
+    console.log('[Behavioral Matrix] Starting request...');
+    
     const { resultId } = req.query;
+    console.log('[Behavioral Matrix] resultId:', resultId);
+    
     if (!resultId) {
+      console.log('[Behavioral Matrix] Missing resultId');
       return res.status(400).json({ success: false, error: 'Missing resultId' });
     }
 
     const token = req.headers.authorization?.replace('Bearer ', '');
+    console.log('[Behavioral Matrix] Token present:', !!token);
+    
     if (!token) {
+      console.log('[Behavioral Matrix] No token provided');
       return res.status(401).json({ success: false, error: 'Unauthorized' });
     }
 
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    
+    console.log('[Behavioral Matrix] Supabase URL present:', !!supabaseUrl);
+    console.log('[Behavioral Matrix] Supabase Key present:', !!supabaseKey);
+    
+    if (!supabaseUrl || !supabaseKey) {
+      console.error('[Behavioral Matrix] Missing Supabase credentials');
+      return res.status(500).json({ success: false, error: 'Server configuration error' });
+    }
+    
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     // Verify user
+    console.log('[Behavioral Matrix] Verifying user...');
     const { data: userData, error: authError } = await supabase.auth.getUser(token);
-    if (authError || !userData?.user) {
-      return res.status(401).json({ success: false, error: 'Invalid token' });
+    
+    if (authError) {
+      console.error('[Behavioral Matrix] Auth error:', authError);
+      return res.status(401).json({ success: false, error: 'Invalid token', details: authError.message });
     }
+    
+    if (!userData?.user) {
+      console.error('[Behavioral Matrix] No user data');
+      return res.status(401).json({ success: false, error: 'Invalid token - no user' });
+    }
+    
+    console.log('[Behavioral Matrix] User verified:', userData.user.email);
 
     // ============================================================
     // FIXED: Get the result WITHOUT the problematic join
     // ============================================================
+    console.log('[Behavioral Matrix] Fetching result...');
     const { data: result, error: resultError } = await supabase
       .from('assessment_results')
       .select(`
@@ -165,27 +202,44 @@ export default async function handler(req, res) {
         total_questions,
         answered_questions,
         is_auto_submitted,
-        session_id,
-        candidate_profiles:user_id (
-          full_name,
-          email,
-          university,
-          programme
-        )
+        session_id
       `)
       .eq('id', resultId)
       .single();
 
     if (resultError) {
-      console.error('Result error:', resultError);
-      return res.status(500).json({ success: false, error: resultError.message });
+      console.error('[Behavioral Matrix] Result error:', resultError);
+      return res.status(500).json({ 
+        success: false, 
+        error: 'Failed to fetch result',
+        details: resultError.message,
+        hint: resultError.hint,
+        code: resultError.code
+      });
+    }
+    
+    console.log('[Behavioral Matrix] Result found:', result.id);
+
+    // ============================================================
+    // Fetch candidate profile separately
+    // ============================================================
+    console.log('[Behavioral Matrix] Fetching candidate profile...');
+    const { data: candidateProfile, error: profileError } = await supabase
+      .from('candidate_profiles')
+      .select('full_name, email, university, programme')
+      .eq('user_id', result.user_id)
+      .single();
+
+    if (profileError) {
+      console.warn('[Behavioral Matrix] Profile error (non-fatal):', profileError.message);
     }
 
     // ============================================================
-    // FIXED: Get assessment title separately if needed
+    // Fetch assessment title separately (if table exists)
     // ============================================================
     let assessmentTitle = 'Assessment';
     try {
+      console.log('[Behavioral Matrix] Fetching assessment title...');
       const { data: assessmentData, error: assessmentError } = await supabase
         .from('assessments')
         .select('title')
@@ -194,14 +248,16 @@ export default async function handler(req, res) {
       
       if (!assessmentError && assessmentData) {
         assessmentTitle = assessmentData.title || 'Assessment';
+        console.log('[Behavioral Matrix] Assessment title:', assessmentTitle);
+      } else if (assessmentError) {
+        console.warn('[Behavioral Matrix] Assessment fetch warning:', assessmentError.message);
       }
     } catch (assessmentErr) {
-      // If the assessments table doesn't exist or has different structure, just use fallback
-      console.warn('Could not fetch assessment title:', assessmentErr.message);
-      assessmentTitle = 'Assessment';
+      console.warn('[Behavioral Matrix] Assessment fetch error (non-fatal):', assessmentErr.message);
     }
 
     // Get all responses for this session
+    console.log('[Behavioral Matrix] Fetching responses...');
     const { data: responses, error: responsesError } = await supabase
       .from('responses')
       .select('question_id, time_spent_seconds, times_changed, metadata, created_at')
@@ -209,8 +265,11 @@ export default async function handler(req, res) {
       .order('created_at', { ascending: true });
 
     if (responsesError) {
-      console.error('Responses error:', responsesError);
+      console.error('[Behavioral Matrix] Responses error:', responsesError);
+      // Continue with empty responses
     }
+    
+    console.log('[Behavioral Matrix] Responses count:', responses?.length || 0);
 
     // ============================================================
     // CALCULATE BEHAVIORAL METRICS WITH COMMENTS
@@ -226,7 +285,8 @@ export default async function handler(req, res) {
     const violationTimeline = [];
 
     if (responses && responses.length > 0) {
-      responses.forEach(response => {
+      console.log('[Behavioral Matrix] Processing responses...');
+      responses.forEach((response, index) => {
         // From columns
         totalChanges += response.times_changed || 0;
         
@@ -278,6 +338,12 @@ export default async function handler(req, res) {
       });
     }
 
+    console.log('[Behavioral Matrix] Calculations complete:');
+    console.log('  - Total Changes:', totalChanges);
+    console.log('  - Total Tab Switches:', totalTabSwitches);
+    console.log('  - Total Violations:', totalViolations);
+    console.log('  - Time per Question:', timePerQuestion.length);
+
     const avgTime = timePerQuestion.length > 0 
       ? Math.round(timePerQuestion.reduce((sum, q) => sum + q.time_seconds, 0) / timePerQuestion.length)
       : 0;
@@ -323,6 +389,8 @@ export default async function handler(req, res) {
       totalRightClicks > 0 ||
       timePerQuestion.length > 0;
 
+    console.log('[Behavioral Matrix] Has behavioral data:', hasBehavioralData);
+
     // ============================================================
     // GENERATE RISK COMMENT
     // ============================================================
@@ -334,10 +402,10 @@ export default async function handler(req, res) {
     // ============================================================
     const behavioralMatrix = {
       candidate: {
-        name: result.candidate_profiles?.full_name || 'Unknown',
-        email: result.candidate_profiles?.email || '',
-        university: result.candidate_profiles?.university || '',
-        programme: result.candidate_profiles?.programme || ''
+        name: candidateProfile?.full_name || 'Unknown',
+        email: candidateProfile?.email || '',
+        university: candidateProfile?.university || '',
+        programme: candidateProfile?.programme || ''
       },
       assessment: {
         title: assessmentTitle,
@@ -373,16 +441,20 @@ export default async function handler(req, res) {
       }
     };
 
+    console.log('[Behavioral Matrix] Sending successful response');
     return res.status(200).json({
       success: true,
       behavioralMatrix
     });
 
   } catch (error) {
-    console.error('Behavioral matrix error:', error);
+    console.error('[Behavioral Matrix] UNHANDLED ERROR:', error);
+    console.error('[Behavioral Matrix] Error stack:', error.stack);
+    
     return res.status(500).json({ 
       success: false, 
-      error: error.message,
+      error: 'Internal server error',
+      message: error.message,
       stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
