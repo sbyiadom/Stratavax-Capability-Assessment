@@ -51,7 +51,6 @@ function getRecommendation(workplaceReadiness, intellectualCapability, overallSc
 function getNationalServiceOverallScore(result) {
   const reportData = result?.report_data || {};
 
-  // 1. Preferred source: report_data.dimensions.overallScore
   if (
     reportData?.dimensions &&
     reportData.dimensions.overallScore !== undefined &&
@@ -60,7 +59,6 @@ function getNationalServiceOverallScore(result) {
     return roundScore(reportData.dimensions.overallScore);
   }
 
-  // 2. Compatibility source: report_data.scores.overall
   if (
     reportData?.scores &&
     reportData.scores.overall !== undefined &&
@@ -69,7 +67,6 @@ function getNationalServiceOverallScore(result) {
     return roundScore(reportData.scores.overall);
   }
 
-  // 3. Compatibility source: report_data.overallScore
   if (
     reportData.overallScore !== undefined &&
     reportData.overallScore !== null
@@ -77,7 +74,6 @@ function getNationalServiceOverallScore(result) {
     return roundScore(reportData.overallScore);
   }
 
-  // 4. Fallback to database percentage_score
   return roundScore(result?.percentage_score);
 }
 
@@ -164,6 +160,9 @@ function getCategoryScores(result) {
   return [];
 }
 
+// ============================================================
+// API HANDLER
+// ============================================================
 export default async function handler(req, res) {
   if (req.method !== 'GET') {
     return res.status(405).json({
@@ -304,6 +303,7 @@ export default async function handler(req, res) {
     const enrichedReports = results.map(result => {
       const profile = candidateMap[result.user_id] || {};
       const assessment = assessmentMap[result.assessment_id] || {};
+
       const assessmentType = assessment?.assessment_type_id
         ? typeMap[assessment.assessment_type_id]
         : null;
@@ -392,4 +392,44 @@ export default async function handler(req, res) {
         report_data: result.report_data || null,
 
         // Candidate info for report component
-        candidateInfo
+        candidateInfo: {
+          fullName: profile?.full_name || 'Unknown',
+          university: profile?.university || '',
+          programme: profile?.programme || '',
+          graduationYear: profile?.graduation_year || '',
+          preferredDepartment: profile?.preferred_department || '',
+          assessmentDate: result.completed_at
+            ? new Date(result.completed_at).toLocaleDateString()
+            : 'N/A'
+        }
+      };
+    });
+
+    // ============================================================
+    // STEP 6: Report counts
+    // ============================================================
+    const nationalServiceReports = enrichedReports.filter(
+      report => report.isNationalService === true
+    );
+
+    const nationalServiceCount = nationalServiceReports.length;
+    const stratavaxCount = enrichedReports.length - nationalServiceCount;
+
+    return res.status(200).json({
+      success: true,
+      reports: enrichedReports,
+      stats: {
+        total: enrichedReports.length,
+        nationalService: nationalServiceCount,
+        stratavax: stratavaxCount
+      }
+    });
+  } catch (error) {
+    console.error('[Admin Reports API] API error:', error);
+
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Internal server error'
+    });
+  }
+}
