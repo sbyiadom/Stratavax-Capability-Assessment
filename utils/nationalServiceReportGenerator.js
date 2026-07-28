@@ -11,6 +11,7 @@ import { roundNumber, safeArray } from './scoring';
 const WORKPLACE_CATEGORIES = [
   'safety', 'risk_awareness', 'risk', 'hazard',
   'technical_fundamentals', 'technical',
+  'problem_solving', 'troubleshooting',
   'communication', 'teamwork', 'collaboration',
   'ownership', 'integrity', 'accountability',
   'professional_conduct', 'work_ethic', 'ethics',
@@ -23,7 +24,7 @@ const INTELLECTUAL_CATEGORIES = [
   'logical_reasoning', 'logic', 'reasoning',
   'measurement', 'engineering_units', 'units',
   'spatial_reasoning', 'spatial',
-  'problem_solving', 'troubleshooting', 'analysis',
+  'analysis',
   'critical_thinking', 'analytical', 'decision_making',
   'intellectual', 'cognitive', 'capability'
 ];
@@ -101,6 +102,9 @@ export function calculateNationalServiceScores(responses, questions) {
   let intellectualEarned = 0;
   let intellectualMax = 0;
 
+  let overallEarned = 0;
+  let overallMax = 0;
+
   const responseMap = {};
   responses.forEach(r => {
     responseMap[r.question_id] = r;
@@ -117,29 +121,53 @@ export function calculateNationalServiceScores(responses, questions) {
     const maxScore = answers.reduce((max, a) => Math.max(max, Number(a.score) || 0), 0) || 1;
 
     const response = responseMap[question.id];
+
     let earned = 0;
     if (response?.answer_id) {
       earned = getAnswerScore(question, response.answer_id);
     }
 
-    const category = cleanText(question.section || 'General', 'General');
+    // Overall score must include every valid question
+    overallEarned += earned;
+    overallMax += maxScore;
+
+    const category = cleanText(question.section || question.category || 'General', 'General');
+
     if (isWorkplaceCategory(category)) {
       workplaceEarned += earned;
       workplaceMax += maxScore;
     } else if (isIntellectualCategory(category)) {
       intellectualEarned += earned;
       intellectualMax += maxScore;
+    } else {
+      // If category is unknown, include it under workplace by default
+      // so it is not excluded from executive grouping
+      workplaceEarned += earned;
+      workplaceMax += maxScore;
     }
   });
+
+  const workplaceReadiness =
+    workplaceMax > 0 ? roundNumber((workplaceEarned / workplaceMax) * 100, 1) : 0;
+
+  const intellectualCapability =
+    intellectualMax > 0 ? roundNumber((intellectualEarned / intellectualMax) * 100, 1) : 0;
+
+  const overallScore =
+    overallMax > 0 ? roundNumber((overallEarned / overallMax) * 100, 1) : 0;
 
   return {
     workplaceEarned,
     workplaceMax,
     intellectualEarned,
-    intellectualMax
+    intellectualMax,
+    overallEarned,
+    overallMax,
+    workplaceReadiness,
+    intellectualCapability,
+    overallScore
   };
 }
-
 // ============================================================
 // ENHANCED CATEGORY BREAKDOWN CALCULATION
 // ============================================================
