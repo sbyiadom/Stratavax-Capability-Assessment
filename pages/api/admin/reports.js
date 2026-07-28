@@ -1,5 +1,6 @@
-// pages/api/admin/reports.js - COMPLETE CORRECTED VERSION
+// pages/api/admin/reports.js - COMPLETE CORRECTED VERSION V2
 // Fixes National Service overall score mismatch between report list and report detail
+// V2 adds safe parsing for report_data when Supabase returns it as a JSON string
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -19,6 +20,36 @@ function safeNumber(value, fallback = 0) {
 function roundScore(value) {
   const numberValue = safeNumber(value, 0);
   return Math.round(numberValue);
+}
+
+// ============================================================
+// HELPER: SAFE REPORT DATA PARSER
+// Supabase may return report_data as an object or as a JSON string.
+// If it is a string and we do not parse it, the API falls back to percentage_score,
+// which is why the list can continue showing 5% instead of the detailed report score.
+// ============================================================
+function getReportData(result) {
+  const rawReportData = result?.report_data;
+
+  if (!rawReportData) {
+    return {};
+  }
+
+  if (typeof rawReportData === 'object') {
+    return rawReportData;
+  }
+
+  if (typeof rawReportData === 'string') {
+    try {
+      const parsed = JSON.parse(rawReportData);
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch (error) {
+      console.error('[Admin Reports API] Failed to parse report_data JSON:', error);
+      return {};
+    }
+  }
+
+  return {};
 }
 
 // ============================================================
@@ -49,7 +80,7 @@ function getRecommendation(workplaceReadiness, intellectualCapability, overallSc
 // The report list must use the same score used by the report detail.
 // ============================================================
 function getNationalServiceOverallScore(result) {
-  const reportData = result?.report_data || {};
+  const reportData = getReportData(result);
 
   if (
     reportData?.dimensions &&
@@ -81,7 +112,7 @@ function getNationalServiceOverallScore(result) {
 // HELPER: Extract Workplace Readiness
 // ============================================================
 function getWorkplaceReadiness(result) {
-  const reportData = result?.report_data || {};
+  const reportData = getReportData(result);
 
   if (
     reportData?.dimensions &&
@@ -106,7 +137,7 @@ function getWorkplaceReadiness(result) {
 // HELPER: Extract Intellectual Capability
 // ============================================================
 function getIntellectualCapability(result) {
-  const reportData = result?.report_data || {};
+  const reportData = getReportData(result);
 
   if (
     reportData?.dimensions &&
@@ -131,7 +162,7 @@ function getIntellectualCapability(result) {
 // HELPER: Extract Category Scores
 // ============================================================
 function getCategoryScores(result) {
-  const reportData = result?.report_data || {};
+  const reportData = getReportData(result);
 
   if (
     result?.category_scores &&
@@ -313,11 +344,6 @@ export default async function handler(req, res) {
         assessmentType?.code === 'national_service' ||
         assessment?.title === 'National Service Recruitment Assessment';
 
-      // ============================================================
-      // CRITICAL SCORE FIX
-      // For National Service, use report_data score first.
-      // This keeps the list page and detail page consistent.
-      // ============================================================
       let workplaceReadiness = 0;
       let intellectualCapability = 0;
       let overallScore = 0;
@@ -334,9 +360,6 @@ export default async function handler(req, res) {
 
       const categoryScores = getCategoryScores(result);
 
-      // ============================================================
-      // Recommendation should be based on the same corrected score
-      // ============================================================
       let recommendation = result.recommendation || null;
 
       if (!recommendation || recommendation === 'N/A' || recommendation === '') {
@@ -347,12 +370,13 @@ export default async function handler(req, res) {
         );
       }
 
+      const parsedReportData = getReportData(result);
+
       return {
         id: result.id,
         user_id: result.user_id,
         assessment_id: result.assessment_id,
 
-        // Candidate info
         candidate_name: profile?.full_name || 'Unknown',
         candidate_email: profile?.email || '',
         university: profile?.university || '',
@@ -360,38 +384,33 @@ export default async function handler(req, res) {
         graduation_year: profile?.graduation_year || '',
         preferred_department: profile?.preferred_department || '',
 
-        // Assessment info
         assessment_title: assessment?.title || 'Unknown',
         assessment_type_code: assessmentType?.code || null,
         assessment_type_name: assessmentType?.name || 'General',
         isNationalService,
         typeLabel: isNationalService ? 'National Service' : 'Stratavax',
 
-        // Scores
         workplace_readiness: workplaceReadiness,
         intellectual_capability: intellectualCapability,
         percentage_score: overallScore,
         overallScore,
+        score: overallScore,
 
-        // Category scores
         category_scores: categoryScores,
         categoryScores,
         categoryBreakdown: categoryScores,
 
-        // Recommendation
         recommendation,
         recommendationLevel: recommendation,
 
-        // Metadata
         completed_at: result.completed_at,
         total_questions: result.total_questions || 0,
         answered_questions: result.answered_questions || 0,
         correct_answers: result.correct_answers || 0,
 
-        // Include raw report data for detailed report page compatibility
-        report_data: result.report_data || null,
+        // Return parsed object so the frontend receives consistent report data
+        report_data: parsedReportData,
 
-        // Candidate info for report component
         candidateInfo: {
           fullName: profile?.full_name || 'Unknown',
           university: profile?.university || '',
