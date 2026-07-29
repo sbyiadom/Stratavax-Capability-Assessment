@@ -1,4 +1,5 @@
 // pages/api/admin/supervisor-assignments.js
+// FIXED: Gets assignments for candidates
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -23,6 +24,7 @@ export default async function handler(req, res) {
     // Verify user
     const { data: userData, error: userError } = await supabase.auth.getUser(token);
     if (userError || !userData?.user) {
+      console.error('[Assignments API] Auth error:', userError);
       return res.status(401).json({ success: false, error: 'Invalid token' });
     }
 
@@ -36,8 +38,13 @@ export default async function handler(req, res) {
     const ids = candidateIds.split(',').filter(Boolean);
 
     if (ids.length === 0) {
-      return res.status(400).json({ success: false, error: 'No valid candidate IDs provided' });
+      return res.status(200).json({
+        success: true,
+        assignments: {}
+      });
     }
+
+    console.log('[Assignments API] Fetching for', ids.length, 'candidates');
 
     // Fetch all assignments for these candidates
     const { data: assignments, error: assignError } = await supabase
@@ -46,18 +53,30 @@ export default async function handler(req, res) {
       .in('candidate_id', ids);
 
     if (assignError) {
-      console.error('[Supervisor Assignments API] Error:', assignError);
+      console.error('[Assignments API] Error:', assignError);
+      // If the table doesn't exist, return empty
+      if (assignError.code === '42P01') {
+        return res.status(200).json({
+          success: true,
+          assignments: {},
+          message: 'candidate_supervisors table not found'
+        });
+      }
       return res.status(500).json({ success: false, error: assignError.message });
     }
 
     // Group by candidate_id
     const grouped = {};
-    assignments.forEach(assignment => {
-      if (!grouped[assignment.candidate_id]) {
-        grouped[assignment.candidate_id] = [];
-      }
-      grouped[assignment.candidate_id].push(assignment.supervisor_id);
-    });
+    if (assignments) {
+      assignments.forEach(assignment => {
+        if (!grouped[assignment.candidate_id]) {
+          grouped[assignment.candidate_id] = [];
+        }
+        grouped[assignment.candidate_id].push(assignment.supervisor_id);
+      });
+    }
+
+    console.log('[Assignments API] Found', Object.keys(grouped).length, 'candidates with assignments');
 
     return res.status(200).json({
       success: true,
@@ -65,7 +84,7 @@ export default async function handler(req, res) {
     });
 
   } catch (error) {
-    console.error('[Supervisor Assignments API] Error:', error);
+    console.error('[Assignments API] Error:', error);
     return res.status(500).json({
       success: false,
       error: error.message || 'Internal server error'
