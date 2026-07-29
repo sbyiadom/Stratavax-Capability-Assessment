@@ -14,7 +14,7 @@ export default function SupervisorReportsList() {
   
   const [loading, setLoading] = useState(true);
   const [reports, setReports] = useState([]);
-  const [stats, setStats] = useState({ total: 0, completed: 0, inProgress: 0 });
+  const [stats, setStats] = useState({ total: 0, completed: 0, inProgress: 0, autoSubmitted: 0 });
   const [searchTerm, setSearchTerm] = useState('');
   const [filter, setFilter] = useState('all');
   const [error, setError] = useState(null);
@@ -38,7 +38,6 @@ export default function SupervisorReportsList() {
       // ============================================================
       // Step 1: Get all candidates assigned to this supervisor
       // ============================================================
-      // Try multiple fields for assignment
       let assignedCandidates = [];
 
       // Method 1: Check supervisor_id and assigned_supervisor_id
@@ -81,7 +80,7 @@ export default function SupervisorReportsList() {
       if (assignedCandidates.length === 0) {
         console.log('[Supervisor Reports] No candidates assigned to this supervisor');
         setReports([]);
-        setStats({ total: 0, completed: 0, inProgress: 0 });
+        setStats({ total: 0, completed: 0, inProgress: 0, autoSubmitted: 0 });
         setLoading(false);
         return;
       }
@@ -125,137 +124,138 @@ export default function SupervisorReportsList() {
         .in('user_id', candidateIds)
         .order('completed_at', { ascending: false });
 
-    if (resultsError) {
-      console.error('[Supervisor Reports] Results query error:', resultsError);
-      setError(resultsError.message);
-      setLoading(false);
-      return;
-    }
-
-    console.log('[Supervisor Reports] Results found:', results?.length || 0);
-
-    // ============================================================
-    // Step 3: Process results and filter for National Service
-    // ============================================================
-    let processedReports = (results || []).map(report => {
-      const assessment = report.assessments || {};
-      const assessmentType = assessment.assessment_types || {};
-      
-      const isNationalService = 
-        assessmentType?.code === 'national_service' ||
-        assessment?.title === 'National Service Recruitment Assessment' ||
-        report.assessment_id === NATIONAL_SERVICE_ASSESSMENT_ID;
-
-      // Find the candidate info
-      const candidate = assignedCandidates.find(c => c.id === report.user_id) || {};
-
-      // Calculate display score for National Service
-      let displayScore = report.percentage_score || 0;
-      let calculatedWorkplace = report.workplace_readiness || 0;
-      let calculatedIntellectual = report.intellectual_capability || 0;
-
-      if (isNationalService) {
-        // Calculate from category_scores if available
-        const categoryScores = report.category_scores || report.report_data?.categoryScores || [];
-        
-        if (categoryScores.length > 0) {
-          const workplaceCategories = [
-            'Communication & Teamwork',
-            'Ownership & Integrity',
-            'Technical Fundamentals',
-            'Safety & Risk Awareness'
-          ];
-          
-          const intellectualCategories = [
-            'Learning Agility',
-            'Problem Solving & Troubleshooting',
-            'Logical Reasoning',
-            'Numerical Reasoning',
-            'Measurement & Engineering Units'
-          ];
-
-          let workplaceTotal = 0;
-          let workplaceCount = 0;
-          let intellectualTotal = 0;
-          let intellectualCount = 0;
-
-          categoryScores.forEach(cat => {
-            const name = cat.category || cat.name || '';
-            const percentage = Number(cat.percentage || cat.score || 0);
-            
-            if (workplaceCategories.some(c => name.includes(c) || name.toLowerCase().includes(c.toLowerCase()))) {
-              workplaceTotal += percentage;
-              workplaceCount++;
-            } else if (intellectualCategories.some(c => name.includes(c) || name.toLowerCase().includes(c.toLowerCase()))) {
-              intellectualTotal += percentage;
-              intellectualCount++;
-            }
-          });
-
-          calculatedWorkplace = workplaceCount > 0 ? Math.round(workplaceTotal / workplaceCount) : 0;
-          calculatedIntellectual = intellectualCount > 0 ? Math.round(intellectualTotal / intellectualCount) : 0;
-          
-          displayScore = (calculatedWorkplace > 0 || calculatedIntellectual > 0) 
-            ? Math.round((calculatedWorkplace + calculatedIntellectual) / 2)
-            : Number(report.percentage_score || 0);
-        }
+      if (resultsError) {
+        console.error('[Supervisor Reports] Results query error:', resultsError);
+        setError(resultsError.message);
+        setLoading(false);
+        return;
       }
 
-      return {
-        ...report,
-        displayScore: displayScore,
-        calculatedWorkplace: calculatedWorkplace,
-        calculatedIntellectual: calculatedIntellectual,
-        isNationalService: isNationalService,
-        candidate_name: candidate.full_name || 'Unknown',
-        candidate_email: candidate.email || '',
-        candidate_university: candidate.university || '',
-        candidate_programme: candidate.programme || '',
-        assessment_title: assessment?.title || 'Unknown',
-        is_completed: !!report.completed_at,
-        is_auto_submitted: report.is_auto_submitted || false,
-        hasResultId: !!report.id
-      };
-    });
+      console.log('[Supervisor Reports] Results found:', results?.length || 0);
 
-    // Filter for National Service assessments
-    let filteredReports = processedReports.filter(r => r.isNationalService === true);
+      // ============================================================
+      // Step 3: Process results and filter for National Service
+      // ============================================================
+      let processedReports = (results || []).map(report => {
+        const assessment = report.assessments || {};
+        const assessmentType = assessment.assessment_types || {};
+        
+        const isNationalService = 
+          assessmentType?.code === 'national_service' ||
+          assessment?.title === 'National Service Recruitment Assessment' ||
+          report.assessment_id === NATIONAL_SERVICE_ASSESSMENT_ID;
 
-    // Apply search filter
-    if (searchTerm) {
-      const term = searchTerm.toLowerCase();
-      filteredReports = filteredReports.filter(r => 
-        (r.candidate_name || '').toLowerCase().includes(term) ||
-        (r.candidate_email || '').toLowerCase().includes(term) ||
-        (r.assessment_title || '').toLowerCase().includes(term)
-      );
+        // Find the candidate info
+        const candidate = assignedCandidates.find(c => c.id === report.user_id) || {};
+
+        // Calculate display score for National Service
+        let displayScore = report.percentage_score || 0;
+        let calculatedWorkplace = report.workplace_readiness || 0;
+        let calculatedIntellectual = report.intellectual_capability || 0;
+
+        if (isNationalService) {
+          // Calculate from category_scores if available
+          const categoryScores = report.category_scores || report.report_data?.categoryScores || [];
+          
+          if (categoryScores.length > 0) {
+            const workplaceCategories = [
+              'Communication & Teamwork',
+              'Ownership & Integrity',
+              'Technical Fundamentals',
+              'Safety & Risk Awareness'
+            ];
+            
+            const intellectualCategories = [
+              'Learning Agility',
+              'Problem Solving & Troubleshooting',
+              'Logical Reasoning',
+              'Numerical Reasoning',
+              'Measurement & Engineering Units'
+            ];
+
+            let workplaceTotal = 0;
+            let workplaceCount = 0;
+            let intellectualTotal = 0;
+            let intellectualCount = 0;
+
+            categoryScores.forEach(cat => {
+              const name = cat.category || cat.name || '';
+              const percentage = Number(cat.percentage || cat.score || 0);
+              
+              if (workplaceCategories.some(c => name.includes(c) || name.toLowerCase().includes(c.toLowerCase()))) {
+                workplaceTotal += percentage;
+                workplaceCount++;
+              } else if (intellectualCategories.some(c => name.includes(c) || name.toLowerCase().includes(c.toLowerCase()))) {
+                intellectualTotal += percentage;
+                intellectualCount++;
+              }
+            });
+
+            calculatedWorkplace = workplaceCount > 0 ? Math.round(workplaceTotal / workplaceCount) : 0;
+            calculatedIntellectual = intellectualCount > 0 ? Math.round(intellectualTotal / intellectualCount) : 0;
+            
+            displayScore = (calculatedWorkplace > 0 || calculatedIntellectual > 0) 
+              ? Math.round((calculatedWorkplace + calculatedIntellectual) / 2)
+              : Number(report.percentage_score || 0);
+          }
+        }
+
+        return {
+          ...report,
+          displayScore: displayScore,
+          calculatedWorkplace: calculatedWorkplace,
+          calculatedIntellectual: calculatedIntellectual,
+          isNationalService: isNationalService,
+          candidate_name: candidate.full_name || 'Unknown',
+          candidate_email: candidate.email || '',
+          candidate_university: candidate.university || '',
+          candidate_programme: candidate.programme || '',
+          assessment_title: assessment?.title || 'Unknown',
+          is_completed: !!report.completed_at,
+          is_auto_submitted: report.is_auto_submitted || false,
+          hasResultId: !!report.id
+        };
+      });
+
+      // Filter for National Service assessments only
+      let nationalServiceReports = processedReports.filter(r => r.isNationalService === true);
+
+      // Apply search filter
+      if (searchTerm) {
+        const term = searchTerm.toLowerCase();
+        nationalServiceReports = nationalServiceReports.filter(r => 
+          (r.candidate_name || '').toLowerCase().includes(term) ||
+          (r.candidate_email || '').toLowerCase().includes(term) ||
+          (r.assessment_title || '').toLowerCase().includes(term)
+        );
+      }
+
+      // Apply status filter
+      if (filter === 'completed') {
+        nationalServiceReports = nationalServiceReports.filter(r => r.is_completed && !r.is_auto_submitted);
+      } else if (filter === 'auto_submitted') {
+        nationalServiceReports = nationalServiceReports.filter(r => r.is_auto_submitted);
+      } else if (filter === 'in_progress') {
+        nationalServiceReports = nationalServiceReports.filter(r => !r.is_completed && r.session_id);
+      }
+
+      // Calculate stats for National Service reports only
+      const allNS = processedReports.filter(r => r.isNationalService);
+      const total = allNS.length;
+      const completed = allNS.filter(r => r.is_completed && !r.is_auto_submitted).length;
+      const autoSubmitted = allNS.filter(r => r.is_auto_submitted).length;
+      const inProgress = allNS.filter(r => !r.is_completed && r.session_id).length;
+
+      setStats({ total, completed, autoSubmitted, inProgress });
+      setReports(nationalServiceReports);
+      setLoading(false);
+
+    } catch (error) {
+      console.error('[Supervisor Reports] Error:', error);
+      setError(error.message || 'Failed to fetch reports');
+      setLoading(false);
     }
-
-    // Apply status filter
-    if (filter === 'completed') {
-      filteredReports = filteredReports.filter(r => r.is_completed);
-    } else if (filter === 'auto_submitted') {
-      filteredReports = filteredReports.filter(r => r.is_auto_submitted);
-    } else if (filter === 'in_progress') {
-      filteredReports = filteredReports.filter(r => !r.is_completed && r.session_id);
-    }
-
-    // Calculate stats
-    const total = processedReports.filter(r => r.isNationalService).length;
-    const completed = processedReports.filter(r => r.isNationalService && r.is_completed).length;
-    const autoSubmitted = processedReports.filter(r => r.isNationalService && r.is_auto_submitted).length;
-    const inProgress = processedReports.filter(r => r.isNationalService && !r.is_completed && r.session_id).length;
-
-    setStats({ total, completed, autoSubmitted, inProgress });
-    setReports(filteredReports);
-    setLoading(false);
-
-  } catch (error) {
-    console.error('[Supervisor Reports] Error:', error);
-    setError(error.message || 'Failed to fetch reports');
-    setLoading(false);
-  }
-};
+  };
 
   const handleViewReport = (resultId) => {
     if (resultId) {
@@ -362,6 +362,9 @@ export default function SupervisorReportsList() {
             </span>
             <span style={styles.statsItem}>
               ⏳ In Progress: <strong>{stats.inProgress || 0}</strong>
+            </span>
+            <span style={styles.statsItem}>
+              ⚠️ Auto-Submitted: <strong>{stats.autoSubmitted || 0}</strong>
             </span>
           </div>
         </div>
