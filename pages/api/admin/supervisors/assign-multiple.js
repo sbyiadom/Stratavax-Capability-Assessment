@@ -16,7 +16,6 @@ export default async function handler(req, res) {
       return res.status(401).json({ success: false, error: 'Unauthorized' });
     }
 
-    // Use service role key to bypass RLS
     const supabase = createClient(supabaseUrl, supabaseServiceKey, {
       auth: { persistSession: false }
     });
@@ -35,7 +34,7 @@ export default async function handler(req, res) {
 
     let ids = [];
     if (isBulk && candidateIds) {
-      ids = candidateIds;
+      ids = Array.isArray(candidateIds) ? candidateIds : [candidateIds];
     } else if (candidateId) {
       ids = [candidateId];
     } else {
