@@ -1,5 +1,5 @@
 // pages/admin/assign-candidates.js
-// COMPLETE FIXED VERSION - Uses API routes for database operations with proper error handling
+// COMPLETE FIXED VERSION - Merges legacy and multi-supervisor assignments
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
@@ -170,9 +170,15 @@ export default function AssignCandidates() {
       setCandidates(candidateRows);
       setSupervisors(supervisorRows);
 
+      // ============================================================
+      // FIXED: Merge legacy supervisor_id with multi-assignments
+      // ============================================================
       const initialSelected = {};
       candidateRows.forEach((candidate) => {
-        initialSelected[candidate.id] = multipleAssignments[candidate.id] || [];
+        const multi = multipleAssignments[candidate.id] || [];
+        const legacySupervisor = candidate.supervisor_id ? [candidate.supervisor_id] : [];
+        // Merge and deduplicate
+        initialSelected[candidate.id] = [...new Set([...multi, ...legacySupervisor])];
       });
       setSelectedSupervisors(initialSelected);
 
@@ -234,7 +240,7 @@ export default function AssignCandidates() {
   }
 
   // ============================================================
-  // UPDATED: Uses API route with proper error handling
+  // UPDATED: Uses API route with proper error handling and deduplication
   // ============================================================
   async function syncMultipleAssignments(candidateId, supervisorIds) {
     const { data: session } = await supabase.auth.getSession();
@@ -244,6 +250,9 @@ export default function AssignCandidates() {
       throw new Error('Not authenticated');
     }
 
+    // Deduplicate supervisorIds before sending
+    const uniqueSupervisorIds = [...new Set(supervisorIds)];
+
     const response = await fetch('/api/admin/supervisors/assign-multiple', {
       method: 'POST',
       headers: {
@@ -252,7 +261,7 @@ export default function AssignCandidates() {
       },
       body: JSON.stringify({
         candidateId,
-        supervisorIds
+        supervisorIds: uniqueSupervisorIds
       })
     });
 
@@ -367,7 +376,10 @@ export default function AssignCandidates() {
       return;
     }
 
-    const supervisorNames = selectedBulkSupervisors.map(id => {
+    // Deduplicate bulk supervisors
+    const uniqueBulkSupervisors = [...new Set(selectedBulkSupervisors)];
+
+    const supervisorNames = uniqueBulkSupervisors.map(id => {
       const sup = supervisors.find(s => s.id === id);
       return sup?.full_name || sup?.email || id;
     }).join(', ');
@@ -399,7 +411,7 @@ export default function AssignCandidates() {
         },
         body: JSON.stringify({
           candidateIds,
-          supervisorIds: selectedBulkSupervisors,
+          supervisorIds: uniqueBulkSupervisors,
           isBulk: true
         })
       });
