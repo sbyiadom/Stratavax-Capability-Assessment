@@ -1,4 +1,5 @@
-// pages/api/supervisor/dashboard.js - FIXED RECOMMENDATION CALCULATION
+// pages/api/supervisor/dashboard.js - COMPLETE UPDATED VERSION
+// Supports both single supervisor_id AND multiple supervisors via candidate_supervisors table
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -58,15 +59,11 @@ function calculateSubScores(categoryScores) {
   };
 }
 
-// ============================================================
-// NEW: Calculate recommendation from scores
-// ============================================================
 function calculateRecommendation(workplaceReadiness, intellectualCapability, overallScore) {
   const workplace = Number(workplaceReadiness || 0);
   const intellectual = Number(intellectualCapability || 0);
   const overall = Number(overallScore || 0);
   
-  // If overall score is available, use it
   if (overall > 0) {
     if (overall >= 85) return 'Highly Recommended';
     if (overall >= 75) return 'Recommended';
@@ -75,7 +72,6 @@ function calculateRecommendation(workplaceReadiness, intellectualCapability, ove
     return 'Not Recommended';
   }
   
-  // Otherwise use workplace and intellectual scores
   if (workplace >= 85 && intellectual >= 85) return 'Highly Recommended';
   if (workplace >= 75 && intellectual >= 75) return 'Recommended';
   if (workplace >= 65 && intellectual >= 65) return 'Reserve Pool';
@@ -118,24 +114,59 @@ export default async function handler(req, res) {
 
     // ============================================================
     // STEP 1: Get candidates assigned to this supervisor
+    // Supports both: single supervisor_id AND multiple via junction table
     // ============================================================
-    const { data: candidates, error: candidatesError } = await serviceClient
+    let candidates = [];
+    const candidateIdsSet = new Set();
+
+    // Method 1: Check supervisor_id in candidate_profiles
+    const { data: candidatesBySupervisorId, error: error1 } = await serviceClient
       .from('candidate_profiles')
       .select('id, full_name, email, university, programme, supervisor_id')
       .eq('supervisor_id', supervisorId);
 
-    if (candidatesError) {
-      console.error('[Dashboard] Candidates error:', candidatesError);
-      return res.status(500).json({ 
-        success: false, 
-        error: 'Failed to load candidates', 
-        details: candidatesError.message 
+    if (!error1 && candidatesBySupervisorId && candidatesBySupervisorId.length > 0) {
+      candidatesBySupervisorId.forEach(c => {
+        if (!candidateIdsSet.has(c.id)) {
+          candidateIdsSet.add(c.id);
+          candidates.push(c);
+        }
       });
+      console.log('[Dashboard] Found candidates by supervisor_id:', candidatesBySupervisorId.length);
     }
 
-    console.log('[Dashboard] Candidates found:', candidates?.length || 0);
+    // Method 2: Check candidate_supervisors junction table (NEW)
+    try {
+      const { data: assignedCandidates, error: assignedError } = await serviceClient
+        .from('candidate_supervisors')
+        .select('candidate_id')
+        .eq('supervisor_id', supervisorId);
 
-    if (!candidates || candidates.length === 0) {
+      if (!assignedError && assignedCandidates && assignedCandidates.length > 0) {
+        const assignedIds = assignedCandidates.map(a => a.candidate_id);
+        
+        const { data: junctionCandidates, error: junctionError } = await serviceClient
+          .from('candidate_profiles')
+          .select('id, full_name, email, university, programme, supervisor_id')
+          .in('id', assignedIds);
+
+        if (!junctionError && junctionCandidates) {
+          junctionCandidates.forEach(c => {
+            if (!candidateIdsSet.has(c.id)) {
+              candidateIdsSet.add(c.id);
+              candidates.push(c);
+            }
+          });
+          console.log('[Dashboard] Found candidates via junction table:', junctionCandidates.length);
+        }
+      }
+    } catch (junctionError) {
+      console.log('[Dashboard] Junction table may not exist yet:', junctionError.message);
+    }
+
+    console.log('[Dashboard] Total unique candidates found:', candidates.length);
+
+    if (candidates.length === 0) {
       return res.status(200).json({
         success: true,
         supervisor: { id: user.id, email: user.email },
@@ -147,7 +178,8 @@ export default async function handler(req, res) {
           assignedCandidates: 0,
           candidateAssessments: 0,
           resultRows: 0,
-          supervisorId: supervisorId
+          supervisorId: supervisorId,
+          message: 'No candidates found. Check supervisor_id or candidate_supervisors table.'
         }
       });
     }
@@ -232,7 +264,6 @@ export default async function handler(req, res) {
 
       // Build completed assessments list with scores
       const completedAssessments = completedResults.map(r => {
-        // Find the assessment details
         const assessment = assessmentMap[r.assessment_id] || {};
         const type = assessment.assessment_type || {};
         const isNationalService = 
@@ -249,9 +280,6 @@ export default async function handler(req, res) {
           intellectual = calculated.intellectualCapability;
         }
 
-        // ============================================================
-        // Calculate recommendation from scores
-        // ============================================================
         const overallScore = Number(r.percentage_score || 0);
         const recommendation = calculateRecommendation(workplace, intellectual, overallScore);
 
@@ -265,7 +293,7 @@ export default async function handler(req, res) {
           workplace_readiness: workplace,
           intellectual_capability: intellectual,
           completed_at: r.completed_at,
-          recommendation: recommendation  // ✅ Now calculated from scores
+          recommendation: recommendation
         };
       });
 
@@ -301,7 +329,7 @@ export default async function handler(req, res) {
           is_national_service: assessment.isNationalService || false,
           workplace_readiness: assessment.workplace_readiness || 0,
           intellectual_capability: assessment.intellectual_capability || 0,
-          recommendation: assessment.recommendation || 'Not Available',  // ✅ Now has value
+          recommendation: assessment.recommendation || 'Not Available',
           status: 'completed',
           completed_at: assessment.completed_at
         });
@@ -314,7 +342,6 @@ export default async function handler(req, res) {
     console.log('[Dashboard] National Service reports:', nationalServiceReports.length);
     console.log('[Dashboard] Other reports:', otherReports.length);
 
-    // Sample log to verify recommendations
     if (nationalServiceReports.length > 0) {
       console.log('[Dashboard] Sample recommendation:', {
         name: nationalServiceReports[0].candidate_name,
@@ -346,7 +373,8 @@ export default async function handler(req, res) {
         totalReports: allReports.length,
         nsReports: nationalServiceReports.length,
         otherReports: otherReports.length,
-        supervisorId: supervisorId
+        supervisorId: supervisorId,
+        supportsMultiSupervisor: true
       }
     });
 
