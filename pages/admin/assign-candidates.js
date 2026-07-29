@@ -1,5 +1,5 @@
 // pages/admin/assign-candidates.js
-// MODIFIED: Uses API route for database operations
+// COMPLETE FIXED VERSION - Uses API routes for database operations
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
@@ -139,23 +139,30 @@ export default function AssignCandidates() {
       // Fetch existing multiple assignments via API
       const candidateIds = candidateRows.map(c => c.id);
       let multipleAssignments = {};
-      
+
       if (candidateIds.length > 0) {
         const { data: session } = await supabase.auth.getSession();
         const token = session?.session?.access_token;
-        
+
         if (token) {
-          const response = await fetch(`/api/admin/supervisor-assignments?candidateIds=${candidateIds.join(',')}`, {
-            headers: {
-              'Authorization': `Bearer ${token}`
+          try {
+            const response = await fetch(`/api/admin/supervisor-assignments?candidateIds=${candidateIds.join(',')}`, {
+              headers: {
+                'Authorization': `Bearer ${token}`
+              }
+            });
+
+            if (response.ok) {
+              const data = await response.json();
+              if (data.success && data.assignments) {
+                multipleAssignments = data.assignments;
+                console.log('[Fetch] Loaded assignments for', Object.keys(multipleAssignments).length, 'candidates');
+              }
+            } else {
+              console.log('[Fetch] API returned', response.status);
             }
-          });
-          
-          if (response.ok) {
-            const data = await response.json();
-            if (data.success && data.assignments) {
-              multipleAssignments = data.assignments;
-            }
+          } catch (err) {
+            console.log('[Fetch] Error loading assignments:', err.message);
           }
         }
       }
@@ -168,7 +175,7 @@ export default function AssignCandidates() {
         initialSelected[candidate.id] = multipleAssignments[candidate.id] || [];
       });
       setSelectedSupervisors(initialSelected);
-      
+
       const initialShowMulti = {};
       candidateRows.forEach((candidate) => {
         const hasMultiple = (initialSelected[candidate.id] || []).length > 1;
@@ -250,7 +257,7 @@ export default function AssignCandidates() {
     });
 
     const result = await response.json();
-    
+
     if (!result.success) {
       throw new Error(result.error || 'Failed to assign supervisors');
     }
@@ -309,7 +316,7 @@ export default function AssignCandidates() {
       });
 
       const result = await response.json();
-      
+
       if (!result.success) {
         throw new Error(result.error || 'Failed to clear assignments');
       }
@@ -376,7 +383,7 @@ export default function AssignCandidates() {
       });
 
       const result = await response.json();
-      
+
       if (!result.success) {
         throw new Error(result.error || 'Failed to assign supervisors');
       }
