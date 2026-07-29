@@ -1,4 +1,4 @@
-// pages/api/supervisor/dashboard.js - COMPLETE FIXED VERSION
+// pages/api/supervisor/dashboard.js - FIXED: Count from assessment_results
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -130,7 +130,23 @@ export default async function handler(req, res) {
     const candidateIds = candidates.map(c => c.id);
 
     // ============================================================
-    // STEP 2: Get candidate assessments
+    // STEP 2: Get ALL assessment results for these candidates
+    // This is the key change - count from assessment_results
+    // ============================================================
+    const { data: results, error: resultsError } = await serviceClient
+      .from('assessment_results')
+      .select('*')
+      .in('user_id', candidateIds);
+
+    if (resultsError) {
+      console.error('[Dashboard] Results error:', resultsError);
+      // Continue with empty results
+    }
+
+    console.log('[Dashboard] Results found:', results?.length || 0);
+
+    // ============================================================
+    // STEP 3: Get candidate assessments (for status tracking)
     // ============================================================
     const { data: assessments, error: assessmentsError } = await serviceClient
       .from('candidate_assessments')
@@ -139,13 +155,12 @@ export default async function handler(req, res) {
 
     if (assessmentsError) {
       console.error('[Dashboard] Assessments error:', assessmentsError);
-      // Continue with empty assessments
     }
 
     console.log('[Dashboard] Assessments found:', assessments?.length || 0);
 
     // ============================================================
-    // STEP 3: Get assessment details
+    // STEP 4: Get assessment details
     // ============================================================
     const assessmentIds = assessments ? assessments.map(a => a.assessment_id).filter(Boolean) : [];
     let assessmentMap = {};
@@ -181,156 +196,97 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 4: Get results for completed assessments
+    // STEP 5: Build candidates with correct counts from results
     // ============================================================
-    const resultIds = assessments ? assessments.map(a => a.result_id).filter(Boolean) : [];
-    let resultMap = {};
+    const candidatesWithStats = candidates.map(c => {
+      // Get results for this candidate
+      const candidateResults = results ? results.filter(r => r.user_id === c.id) : [];
+      const completedResults = candidateResults.filter(r => r.completed_at !== null && r.is_valid !== false);
+      
+      // Get assessments for this candidate
+      const candidateAssessments = assessments ? assessments.filter(a => a.user_id === c.id) : [];
+      const inProgressAssessments = candidateAssessments.filter(a => a.status === 'in_progress' && !a.result_id);
 
-    if (resultIds.length > 0) {
-      const { data: resultsData, error: resultsError } = await serviceClient
-        .from('assessment_results')
-        .select('*')
-        .in('id', resultIds);
-
-      if (!resultsError && resultsData) {
-        resultsData.forEach(r => { resultMap[r.id] = r; });
-        console.log('[Dashboard] Results found:', resultsData.length);
-      }
-    }
-
-    // ============================================================
-    // STEP 5: Build reports
-    // ============================================================
-    const reports = [];
-
-    if (assessments) {
-      assessments.forEach(a => {
-        const assessment = assessmentMap[a.assessment_id];
-        if (!assessment) return;
-
+      // Build completed assessments list with scores
+      const completedAssessments = completedResults.map(r => {
+        // Find the assessment details
+        const assessment = assessmentMap[r.assessment_id] || {};
         const type = assessment.assessment_type || {};
         const isNationalService = 
           type?.code === 'national_service' ||
           assessment?.title === 'National Service Recruitment Assessment' ||
           assessment?.id === NATIONAL_SERVICE_ASSESSMENT_ID;
 
-        const result = a.result_id ? resultMap[a.result_id] : null;
-        const isCompleted = a.status === 'completed' || a.result_id !== null;
+        let workplace = Number(r.workplace_readiness || 0);
+        let intellectual = Number(r.intellectual_capability || 0);
 
-        if (!isCompleted && !result) return;
-
-        const candidate = candidates.find(c => c.id === a.user_id);
-
-        let workplaceReadiness = Number(result?.workplace_readiness || 0);
-        let intellectualCapability = Number(result?.intellectual_capability || 0);
-
-        if (workplaceReadiness === 0 && intellectualCapability === 0 && result?.category_scores) {
-          const calculated = calculateSubScores(result.category_scores);
-          workplaceReadiness = calculated.workplaceReadiness;
-          intellectualCapability = calculated.intellectualCapability;
+        if (workplace === 0 && intellectual === 0 && r.category_scores) {
+          const calculated = calculateSubScores(r.category_scores);
+          workplace = calculated.workplaceReadiness;
+          intellectual = calculated.intellectualCapability;
         }
 
-        let recommendation = result?.recommendation || 'Not Available';
-        if (isNationalService && (recommendation === 'Not Available' || !recommendation || recommendation === 'N/A')) {
-          const workplace = Number(workplaceReadiness || 0);
-          const intellectual = Number(intellectualCapability || 0);
-          if (workplace >= 85 && intellectual >= 85) recommendation = 'Highly Recommended';
-          else if (workplace >= 75 && intellectual >= 75) recommendation = 'Recommended';
-          else if (workplace >= 65 && intellectual >= 65) recommendation = 'Reserve Pool';
-          else recommendation = 'Not Recommended';
-        }
-
-        reports.push({
-          result_id: a.result_id,
-          candidate_id: a.user_id,
-          candidate_name: candidate?.full_name || 'Unknown',
-          candidate_email: candidate?.email || '',
-          university: candidate?.university || '',
-          programme: candidate?.programme || '',
-          assessment_id: a.assessment_id,
-          assessment_title: assessment.title || 'Assessment',
+        return {
+          assessment_id: r.assessment_id,
+          result_id: r.id,
+          title: assessment.title || 'Assessment',
+          score: r.percentage_score || 0,
+          isNationalService: isNationalService,
           assessment_code: type?.code || 'general',
-          status: a.status,
-          completed_at: a.completed_at,
-          score: result?.percentage_score || 0,
-          is_national_service: isNationalService,
-          workplace_readiness: workplaceReadiness,
-          intellectual_capability: intellectualCapability,
-          recommendation: recommendation,
-          percentage_score: result?.percentage_score || 0,
-          resultData: result || null
+          workplace_readiness: workplace,
+          intellectual_capability: intellectual,
+          completed_at: r.completed_at
+        };
+      });
+
+      return {
+        ...c,
+        stats: {
+          completed: completedResults.length,
+          inProgress: inProgressAssessments.length,
+          totalAssessments: candidateResults.length + inProgressAssessments.length
+        },
+        completedAssessments: completedAssessments
+      };
+    });
+
+    // ============================================================
+    // STEP 6: Build reports for National Service and Other tabs
+    // ============================================================
+    const allReports = [];
+
+    candidatesWithStats.forEach(candidate => {
+      candidate.completedAssessments.forEach(assessment => {
+        allReports.push({
+          result_id: assessment.result_id,
+          candidate_id: candidate.id,
+          candidate_name: candidate.full_name || 'Unknown',
+          candidate_email: candidate.email || '',
+          university: candidate.university || '',
+          programme: candidate.programme || '',
+          assessment_id: assessment.assessment_id,
+          assessment_title: assessment.title || 'Assessment',
+          assessment_code: assessment.assessment_code || 'general',
+          score: assessment.score || 0,
+          is_national_service: assessment.isNationalService || false,
+          workplace_readiness: assessment.workplace_readiness || 0,
+          intellectual_capability: assessment.intellectual_capability || 0,
+          status: 'completed',
+          completed_at: assessment.completed_at
         });
       });
-    }
+    });
 
-    // ============================================================
-    // STEP 6: Split reports
-    // ============================================================
-    const nationalServiceReports = reports.filter(r => r.is_national_service === true);
-    const otherReports = reports.filter(r => r.is_national_service === false);
+    const nationalServiceReports = allReports.filter(r => r.is_national_service === true);
+    const otherReports = allReports.filter(r => r.is_national_service === false);
 
     console.log('[Dashboard] National Service reports:', nationalServiceReports.length);
     console.log('[Dashboard] Other reports:', otherReports.length);
 
-    // ============================================================
-    // STEP 7: Build candidate objects
-    // ============================================================
-    const candidatesWithStats = candidates.map(c => {
-      const candidateAssessments = assessments ? assessments.filter(a => a.user_id === c.id) : [];
-      const completed = candidateAssessments.filter(a => a.status === 'completed' || a.result_id !== null).length;
-      const inProgress = candidateAssessments.filter(a => a.status === 'in_progress').length;
-      const notStarted = candidateAssessments.filter(a => !a.status || a.status === 'pending' || a.status === '').length;
-
-      const completedAssessments = candidateAssessments
-        .filter(a => a.status === 'completed' || a.result_id !== null)
-        .map(a => {
-          const assessment = assessmentMap[a.assessment_id];
-          const type = assessment?.assessment_type || {};
-          const result = a.result_id ? resultMap[a.result_id] : null;
-          
-          const isNS = type?.code === 'national_service' || assessment?.title === 'National Service Recruitment Assessment';
-          
-          let workplace = Number(result?.workplace_readiness || 0);
-          let intellectual = Number(result?.intellectual_capability || 0);
-          
-          if (workplace === 0 && intellectual === 0 && result?.category_scores) {
-            const calculated = calculateSubScores(result.category_scores);
-            workplace = calculated.workplaceReadiness;
-            intellectual = calculated.intellectualCapability;
-          }
-          
-          return {
-            assessment_id: a.assessment_id,
-            result_id: a.result_id,
-            title: assessment?.title || 'Assessment',
-            score: result?.percentage_score || 0,
-            isNationalService: isNS,
-            assessment_code: type?.code || 'general',
-            workplace_readiness: workplace,
-            intellectual_capability: intellectual
-          };
-        })
-        .filter(item => item.result_id);
-
-      return {
-        ...c,
-        assessments: candidateAssessments,
-        stats: { 
-          completed, 
-          inProgress, 
-          unblocked: 0, 
-          blocked: 0, 
-          notStarted, 
-          total: candidateAssessments.length 
-        },
-        completedAssessments
-      };
-    });
-
     const stats = {
       totalCandidates: candidates.length,
-      completedAssessments: assessments ? assessments.filter(a => a.status === 'completed' || a.result_id !== null).length : 0,
-      pendingReviews: assessments ? assessments.filter(a => a.status === 'in_progress').length : 0,
+      completedAssessments: allReports.length,
+      pendingReviews: allReports.filter(r => r.status === 'completed').length,
       nationalServiceReports: nationalServiceReports.length
     };
 
@@ -344,8 +300,8 @@ export default async function handler(req, res) {
       debug: {
         assignedCandidates: candidates.length,
         candidateAssessments: assessments ? assessments.length : 0,
-        resultRows: resultIds.length,
-        totalReports: reports.length,
+        resultRows: results ? results.length : 0,
+        totalReports: allReports.length,
         nsReports: nationalServiceReports.length,
         otherReports: otherReports.length,
         supervisorId: supervisorId
