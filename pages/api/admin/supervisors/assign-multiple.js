@@ -1,5 +1,5 @@
 // pages/api/admin/supervisors/assign-multiple.js
-// SIMPLIFIED WORKING VERSION
+// FINAL WORKING VERSION
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -28,13 +28,14 @@ export default async function handler(req, res) {
       });
     }
 
-    console.log('[Assign API] Using service role key (length):', supabaseServiceKey.length);
+    console.log('[Assign API] Service role key present, creating admin client');
 
+    // Create admin client with service role key
     const supabase = createClient(supabaseUrl, supabaseServiceKey, {
       auth: { persistSession: false }
     });
 
-    // Verify user
+    // Verify user (using the admin client)
     const { data: userData, error: userError } = await supabase.auth.getUser(token);
     if (userError || !userData?.user) {
       console.error('[Assign API] Auth error:', userError);
@@ -83,12 +84,13 @@ export default async function handler(req, res) {
     }
 
     console.log('[Assign API] Processing candidates:', candidateIdList);
+    console.log('[Assign API] Supervisors to assign:', cleanedSupervisorIds);
 
     const results = [];
 
     for (const id of candidateIdList) {
       try {
-        // DELETE existing assignments
+        // Step 1: Delete existing assignments
         const { error: deleteError } = await supabase
           .from('candidate_supervisors')
           .delete()
@@ -100,25 +102,23 @@ export default async function handler(req, res) {
           continue;
         }
 
-        // INSERT new assignments
-        if (cleanedSupervisorIds.length > 0) {
-          const assignments = cleanedSupervisorIds.map(sid => ({
-            candidate_id: id,
-            supervisor_id: sid
-          }));
+        // Step 2: Insert new assignments
+        const assignments = cleanedSupervisorIds.map(sid => ({
+          candidate_id: id,
+          supervisor_id: sid
+        }));
 
-          const { error: insertError } = await supabase
-            .from('candidate_supervisors')
-            .insert(assignments);
+        const { error: insertError } = await supabase
+          .from('candidate_supervisors')
+          .insert(assignments);
 
-          if (insertError) {
-            console.error('[Assign API] Insert error:', insertError);
-            results.push({ candidateId: id, success: false, error: insertError.message });
-            continue;
-          }
+        if (insertError) {
+          console.error('[Assign API] Insert error:', insertError);
+          results.push({ candidateId: id, success: false, error: insertError.message });
+          continue;
         }
 
-        // UPDATE candidate_profiles
+        // Step 3: Update candidate_profiles with primary supervisor
         const primarySupervisor = cleanedSupervisorIds[0];
         const { error: updateError } = await supabase
           .from('candidate_profiles')
