@@ -1,5 +1,5 @@
 // pages/api/admin/supervisor-assignments.js
-// FIXED: Gets assignments for candidates
+// COMPLETE FIXED VERSION
 
 import { createClient } from '@supabase/supabase-js';
 
