@@ -1,5 +1,5 @@
 // pages/admin/assign-candidates.js
-// COMPLETE FIXED VERSION - Merges legacy and multi-supervisor assignments
+// COMPLETE FIXED VERSION - Shows detailed errors, merges legacy assignments, deduplicates IDs
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
@@ -136,7 +136,7 @@ export default function AssignCandidates() {
       const candidateRows = candidatesResponse.data || [];
       const supervisorRows = supervisorsResponse.data || [];
 
-      // Fetch existing multiple assignments via API
+      // Fetch existing multiple assignments via API (using POST to avoid long URLs)
       const candidateIds = candidateRows.map(c => c.id);
       let multipleAssignments = {};
 
@@ -146,10 +146,14 @@ export default function AssignCandidates() {
 
         if (token) {
           try {
-            const response = await fetch(`/api/admin/supervisor-assignments?candidateIds=${candidateIds.join(',')}`, {
+            // Use POST to avoid long URL limit issues
+            const response = await fetch('/api/admin/supervisor-assignments', {
+              method: 'POST',
               headers: {
-                'Authorization': `Bearer ${token}`
-              }
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({ candidateIds })
             });
 
             if (response.ok) {
@@ -240,7 +244,7 @@ export default function AssignCandidates() {
   }
 
   // ============================================================
-  // UPDATED: Uses API route with proper error handling and deduplication
+  // UPDATED: Shows detailed errors, deduplicates supervisor IDs
   // ============================================================
   async function syncMultipleAssignments(candidateId, supervisorIds) {
     const { data: session } = await supabase.auth.getSession();
@@ -272,18 +276,32 @@ export default function AssignCandidates() {
       throw new Error(result.error || `API returned ${response.status}`);
     }
 
+    // ============================================================
+    // FIXED: Show detailed error from result.results
+    // ============================================================
     if (!result.success) {
-      const errorMsg = result.error || result.message || 'Failed to assign supervisors';
-      console.error('[API Error]', errorMsg, result);
-      throw new Error(errorMsg);
+      // Extract detailed errors from results array
+      const detailedErrors = result.results
+        ?.filter(r => !r.success)
+        ?.map(r => `${r.candidateId || 'candidate'}: ${r.error || 'Unknown error'}`)
+        ?.join(' | ');
+
+      throw new Error(
+        detailedErrors ||
+        result.error ||
+        result.message ||
+        'Failed to assign supervisors'
+      );
     }
 
     // Check if individual assignments failed
     if (result.results) {
       const failed = result.results.filter(r => !r.success);
       if (failed.length > 0) {
-        console.error('[API Error] Some assignments failed:', failed);
-        throw new Error(`${failed.length} of ${result.results.length} assignments failed`);
+        const detailedErrors = failed
+          .map(r => `${r.candidateId || 'candidate'}: ${r.error || 'Unknown error'}`)
+          .join(' | ');
+        throw new Error(`${failed.length} assignment(s) failed: ${detailedErrors}`);
       }
     }
 
@@ -423,7 +441,11 @@ export default function AssignCandidates() {
       }
 
       if (!result.success) {
-        throw new Error(result.error || 'Failed to assign supervisors');
+        const detailedErrors = result.results
+          ?.filter(r => !r.success)
+          ?.map(r => `${r.candidateId || 'candidate'}: ${r.error || 'Unknown error'}`)
+          ?.join(' | ');
+        throw new Error(detailedErrors || result.error || 'Failed to assign supervisors');
       }
 
       setSelectedBulkSupervisors([]);
