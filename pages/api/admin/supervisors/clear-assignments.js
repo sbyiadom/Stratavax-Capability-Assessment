@@ -1,5 +1,5 @@
 // pages/api/admin/supervisors/clear-assignments.js
-// FIXED: Clears all assignments for a candidate
+// FINAL WORKING VERSION
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -33,7 +33,7 @@ export default async function handler(req, res) {
       return res.status(400).json({ success: false, error: 'candidateId is required' });
     }
 
-    console.log('[Clear Assignments API] Clearing assignments for', candidateId);
+    console.log('[Clear Assignments API] Clearing for candidate:', candidateId);
 
     // Delete from candidate_supervisors
     const { error: deleteError } = await supabase
@@ -43,16 +43,13 @@ export default async function handler(req, res) {
 
     if (deleteError) {
       console.error('[Clear Assignments API] Delete error:', deleteError);
-      // If table doesn't exist, that's fine
-      if (deleteError.code !== '42P01') {
-        return res.status(500).json({ success: false, error: deleteError.message });
-      }
+      return res.status(500).json({ success: false, error: deleteError.message });
     }
 
     // Update candidate_profiles
     const { error: updateError } = await supabase
       .from('candidate_profiles')
-      .update({ supervisor_id: null })
+      .update({ supervisor_id: null, updated_at: new Date().toISOString() })
       .eq('id', candidateId);
 
     if (updateError) {
@@ -60,7 +57,7 @@ export default async function handler(req, res) {
       return res.status(500).json({ success: false, error: updateError.message });
     }
 
-    console.log('[Clear Assignments API] Successfully cleared assignments for', candidateId);
+    console.log('[Clear Assignments API] Successfully cleared for candidate:', candidateId);
 
     return res.status(200).json({
       success: true,
