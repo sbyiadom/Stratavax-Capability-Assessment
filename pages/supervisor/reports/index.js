@@ -1,4 +1,4 @@
-// pages/supervisor/reports/index.js - COMPLETE FIXED VERSION
+// pages/supervisor/reports/index.js - SHOW ALL ASSESSMENTS
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -6,15 +6,13 @@ import { supabase } from '../../../supabase/client';
 import { useRequireAuth } from '../../../utils/requireAuth';
 import AppLayout from '../../../components/AppLayout';
 
-const NATIONAL_SERVICE_ASSESSMENT_ID = 'bdb9d46e-9fac-4d00-8478-1f649e7ac600';
-
 export default function SupervisorReportsList() {
   const router = useRouter();
   const { session, loading: authLoading } = useRequireAuth();
   
   const [loading, setLoading] = useState(true);
   const [reports, setReports] = useState([]);
-  const [stats, setStats] = useState({ total: 0, completed: 0, inProgress: 0, autoSubmitted: 0 });
+  const [stats, setStats] = useState({ total: 0, completed: 0, autoSubmitted: 0, inProgress: 0 });
   const [searchTerm, setSearchTerm] = useState('');
   const [filter, setFilter] = useState('all');
   const [error, setError] = useState(null);
@@ -33,14 +31,12 @@ export default function SupervisorReportsList() {
       const supervisorEmail = session.user.email;
 
       console.log('[Supervisor Reports] Supervisor ID:', supervisorId);
-      console.log('[Supervisor Reports] Supervisor Email:', supervisorEmail);
 
       // ============================================================
       // Step 1: Get all candidates assigned to this supervisor
       // ============================================================
       let assignedCandidates = [];
 
-      // Method 1: Check supervisor_id and assigned_supervisor_id
       const { data: candidatesByField, error: candidatesError } = await supabase
         .from('candidate_profiles')
         .select('id, full_name, email, university, programme, supervisor_id, assigned_supervisor_id, supervisor_email')
@@ -48,48 +44,20 @@ export default function SupervisorReportsList() {
 
       if (!candidatesError && candidatesByField && candidatesByField.length > 0) {
         assignedCandidates = candidatesByField;
-        console.log('[Supervisor Reports] Found candidates via profile fields:', assignedCandidates.length);
-      }
-
-      // Method 2: If no candidates found, check supervisor_assignments table
-      if (assignedCandidates.length === 0) {
-        try {
-          const { data: assignments, error: assignmentError } = await supabase
-            .from('supervisor_assignments')
-            .select('candidate_id')
-            .eq('supervisor_id', supervisorId);
-
-          if (!assignmentError && assignments && assignments.length > 0) {
-            const candidateIds = assignments.map(a => a.candidate_id);
-            
-            const { data: candidatesFromAssignments, error: candidatesError2 } = await supabase
-              .from('candidate_profiles')
-              .select('id, full_name, email, university, programme, supervisor_id, assigned_supervisor_id, supervisor_email')
-              .in('id', candidateIds);
-
-            if (!candidatesError2 && candidatesFromAssignments) {
-              assignedCandidates = candidatesFromAssignments;
-              console.log('[Supervisor Reports] Found candidates via supervisor_assignments:', assignedCandidates.length);
-            }
-          }
-        } catch (assignmentTableError) {
-          console.log('[Supervisor Reports] supervisor_assignments table may not exist');
-        }
+        console.log('[Supervisor Reports] Found candidates:', assignedCandidates.length);
       }
 
       if (assignedCandidates.length === 0) {
-        console.log('[Supervisor Reports] No candidates assigned to this supervisor');
         setReports([]);
-        setStats({ total: 0, completed: 0, inProgress: 0, autoSubmitted: 0 });
+        setStats({ total: 0, completed: 0, autoSubmitted: 0, inProgress: 0 });
         setLoading(false);
         return;
       }
 
       const candidateIds = assignedCandidates.map(c => c.id);
-      console.log('[Supervisor Reports] Candidate IDs:', candidateIds);
 
       // ============================================================
-      // Step 2: Get assessment results for these candidates
+      // Step 2: Get ALL assessment results for these candidates
       // ============================================================
       const { data: results, error: resultsError } = await supabase
         .from('assessment_results')
@@ -134,7 +102,7 @@ export default function SupervisorReportsList() {
       console.log('[Supervisor Reports] Results found:', results?.length || 0);
 
       // ============================================================
-      // Step 3: Process results and filter for National Service
+      // Step 3: Process ALL results
       // ============================================================
       let processedReports = (results || []).map(report => {
         const assessment = report.assessments || {};
@@ -142,19 +110,14 @@ export default function SupervisorReportsList() {
         
         const isNationalService = 
           assessmentType?.code === 'national_service' ||
-          assessment?.title === 'National Service Recruitment Assessment' ||
-          report.assessment_id === NATIONAL_SERVICE_ASSESSMENT_ID;
+          assessment?.title === 'National Service Recruitment Assessment';
 
-        // Find the candidate info
         const candidate = assignedCandidates.find(c => c.id === report.user_id) || {};
 
-        // Calculate display score for National Service
         let displayScore = report.percentage_score || 0;
-        let calculatedWorkplace = report.workplace_readiness || 0;
-        let calculatedIntellectual = report.intellectual_capability || 0;
 
+        // Only recalculate for National Service
         if (isNationalService) {
-          // Calculate from category_scores if available
           const categoryScores = report.category_scores || report.report_data?.categoryScores || [];
           
           if (categoryScores.length > 0) {
@@ -191,11 +154,10 @@ export default function SupervisorReportsList() {
               }
             });
 
-            calculatedWorkplace = workplaceCount > 0 ? Math.round(workplaceTotal / workplaceCount) : 0;
-            calculatedIntellectual = intellectualCount > 0 ? Math.round(intellectualTotal / intellectualCount) : 0;
-            
-            displayScore = (calculatedWorkplace > 0 || calculatedIntellectual > 0) 
-              ? Math.round((calculatedWorkplace + calculatedIntellectual) / 2)
+            const workplaceReadiness = workplaceCount > 0 ? Math.round(workplaceTotal / workplaceCount) : 0;
+            const intellectualCapability = intellectualCount > 0 ? Math.round(intellectualTotal / intellectualCount) : 0;
+            displayScore = (workplaceReadiness > 0 || intellectualCapability > 0) 
+              ? Math.round((workplaceReadiness + intellectualCapability) / 2)
               : Number(report.percentage_score || 0);
           }
         }
@@ -203,51 +165,48 @@ export default function SupervisorReportsList() {
         return {
           ...report,
           displayScore: displayScore,
-          calculatedWorkplace: calculatedWorkplace,
-          calculatedIntellectual: calculatedIntellectual,
           isNationalService: isNationalService,
           candidate_name: candidate.full_name || 'Unknown',
           candidate_email: candidate.email || '',
           candidate_university: candidate.university || '',
           candidate_programme: candidate.programme || '',
           assessment_title: assessment?.title || 'Unknown',
+          assessment_type_code: assessmentType?.code || 'unknown',
           is_completed: !!report.completed_at,
           is_auto_submitted: report.is_auto_submitted || false,
           hasResultId: !!report.id
         };
       });
 
-      // Filter for National Service assessments only
-      let nationalServiceReports = processedReports.filter(r => r.isNationalService === true);
+      // Apply filter
+      let filteredReports = processedReports;
+      
+      if (filter === 'national_service') {
+        filteredReports = filteredReports.filter(r => r.isNationalService === true);
+      } else if (filter === 'stratavax') {
+        filteredReports = filteredReports.filter(r => r.isNationalService !== true);
+      }
 
       // Apply search filter
       if (searchTerm) {
         const term = searchTerm.toLowerCase();
-        nationalServiceReports = nationalServiceReports.filter(r => 
+        filteredReports = filteredReports.filter(r => 
           (r.candidate_name || '').toLowerCase().includes(term) ||
           (r.candidate_email || '').toLowerCase().includes(term) ||
           (r.assessment_title || '').toLowerCase().includes(term)
         );
       }
 
-      // Apply status filter
-      if (filter === 'completed') {
-        nationalServiceReports = nationalServiceReports.filter(r => r.is_completed && !r.is_auto_submitted);
-      } else if (filter === 'auto_submitted') {
-        nationalServiceReports = nationalServiceReports.filter(r => r.is_auto_submitted);
-      } else if (filter === 'in_progress') {
-        nationalServiceReports = nationalServiceReports.filter(r => !r.is_completed && r.session_id);
-      }
+      // Calculate stats
+      const total = processedReports.length;
+      const completed = processedReports.filter(r => r.is_completed && !r.is_auto_submitted).length;
+      const autoSubmitted = processedReports.filter(r => r.is_auto_submitted).length;
+      const inProgress = processedReports.filter(r => !r.is_completed && r.session_id).length;
+      const nsCount = processedReports.filter(r => r.isNationalService).length;
+      const stratavaxCount = processedReports.filter(r => !r.isNationalService).length;
 
-      // Calculate stats for National Service reports only
-      const allNS = processedReports.filter(r => r.isNationalService);
-      const total = allNS.length;
-      const completed = allNS.filter(r => r.is_completed && !r.is_auto_submitted).length;
-      const autoSubmitted = allNS.filter(r => r.is_auto_submitted).length;
-      const inProgress = allNS.filter(r => !r.is_completed && r.session_id).length;
-
-      setStats({ total, completed, autoSubmitted, inProgress });
-      setReports(nationalServiceReports);
+      setStats({ total, completed, autoSubmitted, inProgress, nsCount, stratavaxCount });
+      setReports(filteredReports);
       setLoading(false);
 
     } catch (error) {
@@ -286,8 +245,8 @@ export default function SupervisorReportsList() {
         </button>
 
         <div style={styles.header}>
-          <h1 style={styles.title}>National Service Reports</h1>
-          <p style={styles.subtitle}>Review completed National Service assessments for your assigned candidates.</p>
+          <h1 style={styles.title}>My Candidates' Reports</h1>
+          <p style={styles.subtitle}>All assessment reports for your assigned candidates.</p>
           
           {error && (
             <div style={styles.errorBox}>
@@ -295,6 +254,10 @@ export default function SupervisorReportsList() {
               <button onClick={fetchReports} style={styles.retryButton}>Retry</button>
             </div>
           )}
+
+          <div style={styles.debugInfo}>
+            Debug: Total Reports: {stats.total} | Completed: {stats.completed} | Auto-Submitted: {stats.autoSubmitted} | In Progress: {stats.inProgress} | National Service: {stats.nsCount || 0} | Stratavax: {stats.stratavaxCount || 0}
+          </div>
 
           <div style={styles.searchBar}>
             <input
@@ -319,37 +282,26 @@ export default function SupervisorReportsList() {
               All Reports ({stats.total || 0})
             </button>
             <button
-              onClick={() => setFilter('completed')}
+              onClick={() => setFilter('national_service')}
               style={{
                 ...styles.filterTab,
-                background: filter === 'completed' ? '#1a237e' : 'white',
-                color: filter === 'completed' ? 'white' : '#1a237e',
-                border: filter === 'completed' ? 'none' : '1px solid #e2e8f0'
+                background: filter === 'national_service' ? '#1a237e' : 'white',
+                color: filter === 'national_service' ? 'white' : '#1a237e',
+                border: filter === 'national_service' ? 'none' : '1px solid #e2e8f0'
               }}
             >
-              Completed ({stats.completed || 0})
+              National Service ({stats.nsCount || 0})
             </button>
             <button
-              onClick={() => setFilter('auto_submitted')}
+              onClick={() => setFilter('stratavax')}
               style={{
                 ...styles.filterTab,
-                background: filter === 'auto_submitted' ? '#1a237e' : 'white',
-                color: filter === 'auto_submitted' ? 'white' : '#1a237e',
-                border: filter === 'auto_submitted' ? 'none' : '1px solid #e2e8f0'
+                background: filter === 'stratavax' ? '#1a237e' : 'white',
+                color: filter === 'stratavax' ? 'white' : '#1a237e',
+                border: filter === 'stratavax' ? 'none' : '1px solid #e2e8f0'
               }}
             >
-              Auto-Submitted ({stats.autoSubmitted || 0})
-            </button>
-            <button
-              onClick={() => setFilter('in_progress')}
-              style={{
-                ...styles.filterTab,
-                background: filter === 'in_progress' ? '#1a237e' : 'white',
-                color: filter === 'in_progress' ? 'white' : '#1a237e',
-                border: filter === 'in_progress' ? 'none' : '1px solid #e2e8f0'
-              }}
-            >
-              In Progress ({stats.inProgress || 0})
+              Stratavax ({stats.stratavaxCount || 0})
             </button>
           </div>
 
@@ -372,9 +324,9 @@ export default function SupervisorReportsList() {
         {reports.length === 0 ? (
           <div style={styles.emptyState}>
             <div style={styles.emptyIcon}>📭</div>
-            <p>No National Service assessments to review.</p>
+            <p>No assessment reports to review.</p>
             <p style={styles.emptySubtext}>
-              {searchTerm ? 'Try adjusting your search or filter.' : 'When your assigned candidates complete their National Service assessment, their reports will appear here.'}
+              {searchTerm ? 'Try adjusting your search or filter.' : 'When your assigned candidates complete assessments, their reports will appear here.'}
             </p>
           </div>
         ) : (
@@ -384,6 +336,7 @@ export default function SupervisorReportsList() {
                 <tr>
                   <th style={styles.th}>Candidate</th>
                   <th style={styles.th}>Assessment</th>
+                  <th style={styles.th}>Type</th>
                   <th style={styles.th}>Score</th>
                   <th style={styles.th}>Status</th>
                   <th style={styles.th}>Completed</th>
@@ -426,6 +379,17 @@ export default function SupervisorReportsList() {
                       </td>
                       <td style={styles.td}>
                         {report.assessment_title || 'N/A'}
+                      </td>
+                      <td style={styles.td}>
+                        <span style={{
+                          ...styles.typeBadge,
+                          background: report.isNationalService ? '#dbeafe' : '#e8f5e9',
+                          color: report.isNationalService ? '#1e40af' : '#2e7d32'
+                        }}>
+                          {report.isNationalService ? 'National Service' : 
+                           report.assessment_type_code ? report.assessment_type_code.charAt(0).toUpperCase() + report.assessment_type_code.slice(1) : 
+                           'Stratavax'}
+                        </span>
                       </td>
                       <td style={styles.td}>
                         <span style={{
@@ -540,6 +504,15 @@ const styles = {
     cursor: 'pointer',
     fontSize: '12px'
   },
+  debugInfo: {
+    padding: '8px 12px',
+    background: '#f8f9fa',
+    borderRadius: '6px',
+    fontSize: '12px',
+    color: '#6c757d',
+    marginBottom: '12px',
+    border: '1px solid #e2e8f0'
+  },
   searchBar: {
     marginBottom: '16px'
   },
@@ -621,6 +594,13 @@ const styles = {
   candidateEmail: {
     fontSize: '12px',
     color: '#94a3b8'
+  },
+  typeBadge: {
+    padding: '2px 10px',
+    borderRadius: '12px',
+    fontSize: '12px',
+    fontWeight: '600',
+    display: 'inline-block'
   },
   statusBadge: {
     padding: '4px 12px',
