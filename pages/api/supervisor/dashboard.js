@@ -1,5 +1,4 @@
 // pages/api/supervisor/dashboard.js - COMPLETE UPDATED VERSION
-// Supports both single supervisor_id AND multiple supervisors via candidate_supervisors table
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -119,7 +118,7 @@ export default async function handler(req, res) {
     let candidates = [];
     const candidateIdsSet = new Set();
 
-    // Method 1: Check supervisor_id in candidate_profiles
+    // Method 1: Check supervisor_id in candidate_profiles (backward compatibility)
     const { data: candidatesBySupervisorId, error: error1 } = await serviceClient
       .from('candidate_profiles')
       .select('id, full_name, email, university, programme, supervisor_id')
@@ -135,7 +134,7 @@ export default async function handler(req, res) {
       console.log('[Dashboard] Found candidates by supervisor_id:', candidatesBySupervisorId.length);
     }
 
-    // Method 2: Check candidate_supervisors junction table (NEW)
+    // Method 2: Check candidate_supervisors junction table (NEW - for multiple supervisors)
     try {
       const { data: assignedCandidates, error: assignedError } = await serviceClient
         .from('candidate_supervisors')
@@ -161,7 +160,7 @@ export default async function handler(req, res) {
         }
       }
     } catch (junctionError) {
-      console.log('[Dashboard] Junction table may not exist yet:', junctionError.message);
+      console.log('[Dashboard] Junction table not found:', junctionError.message);
     }
 
     console.log('[Dashboard] Total unique candidates found:', candidates.length);
