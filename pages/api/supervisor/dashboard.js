@@ -1,4 +1,4 @@
-// pages/api/supervisor/dashboard.js - FIXED: Count from assessment_results
+// pages/api/supervisor/dashboard.js - FIXED RECOMMENDATION CALCULATION
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -56,6 +56,31 @@ function calculateSubScores(categoryScores) {
     workplaceReadiness: workplaceCount > 0 ? Math.round(workplaceTotal / workplaceCount) : 0,
     intellectualCapability: intellectualCount > 0 ? Math.round(intellectualTotal / intellectualCount) : 0
   };
+}
+
+// ============================================================
+// NEW: Calculate recommendation from scores
+// ============================================================
+function calculateRecommendation(workplaceReadiness, intellectualCapability, overallScore) {
+  const workplace = Number(workplaceReadiness || 0);
+  const intellectual = Number(intellectualCapability || 0);
+  const overall = Number(overallScore || 0);
+  
+  // If overall score is available, use it
+  if (overall > 0) {
+    if (overall >= 85) return 'Highly Recommended';
+    if (overall >= 75) return 'Recommended';
+    if (overall >= 65) return 'Reserve Pool';
+    if (overall >= 50) return 'Consider for Development';
+    return 'Not Recommended';
+  }
+  
+  // Otherwise use workplace and intellectual scores
+  if (workplace >= 85 && intellectual >= 85) return 'Highly Recommended';
+  if (workplace >= 75 && intellectual >= 75) return 'Recommended';
+  if (workplace >= 65 && intellectual >= 65) return 'Reserve Pool';
+  if (workplace >= 50 || intellectual >= 50) return 'Consider for Development';
+  return 'Not Recommended';
 }
 
 export default async function handler(req, res) {
@@ -131,7 +156,6 @@ export default async function handler(req, res) {
 
     // ============================================================
     // STEP 2: Get ALL assessment results for these candidates
-    // This is the key change - count from assessment_results
     // ============================================================
     const { data: results, error: resultsError } = await serviceClient
       .from('assessment_results')
@@ -140,7 +164,6 @@ export default async function handler(req, res) {
 
     if (resultsError) {
       console.error('[Dashboard] Results error:', resultsError);
-      // Continue with empty results
     }
 
     console.log('[Dashboard] Results found:', results?.length || 0);
@@ -196,7 +219,7 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 5: Build candidates with correct counts from results
+    // STEP 5: Build candidates with correct counts and recommendations
     // ============================================================
     const candidatesWithStats = candidates.map(c => {
       // Get results for this candidate
@@ -226,16 +249,23 @@ export default async function handler(req, res) {
           intellectual = calculated.intellectualCapability;
         }
 
+        // ============================================================
+        // Calculate recommendation from scores
+        // ============================================================
+        const overallScore = Number(r.percentage_score || 0);
+        const recommendation = calculateRecommendation(workplace, intellectual, overallScore);
+
         return {
           assessment_id: r.assessment_id,
           result_id: r.id,
           title: assessment.title || 'Assessment',
-          score: r.percentage_score || 0,
+          score: overallScore,
           isNationalService: isNationalService,
           assessment_code: type?.code || 'general',
           workplace_readiness: workplace,
           intellectual_capability: intellectual,
-          completed_at: r.completed_at
+          completed_at: r.completed_at,
+          recommendation: recommendation  // ✅ Now calculated from scores
         };
       });
 
@@ -271,6 +301,7 @@ export default async function handler(req, res) {
           is_national_service: assessment.isNationalService || false,
           workplace_readiness: assessment.workplace_readiness || 0,
           intellectual_capability: assessment.intellectual_capability || 0,
+          recommendation: assessment.recommendation || 'Not Available',  // ✅ Now has value
           status: 'completed',
           completed_at: assessment.completed_at
         });
@@ -282,6 +313,17 @@ export default async function handler(req, res) {
 
     console.log('[Dashboard] National Service reports:', nationalServiceReports.length);
     console.log('[Dashboard] Other reports:', otherReports.length);
+
+    // Sample log to verify recommendations
+    if (nationalServiceReports.length > 0) {
+      console.log('[Dashboard] Sample recommendation:', {
+        name: nationalServiceReports[0].candidate_name,
+        workplace: nationalServiceReports[0].workplace_readiness,
+        intellectual: nationalServiceReports[0].intellectual_capability,
+        overall: nationalServiceReports[0].score,
+        recommendation: nationalServiceReports[0].recommendation
+      });
+    }
 
     const stats = {
       totalCandidates: candidates.length,
