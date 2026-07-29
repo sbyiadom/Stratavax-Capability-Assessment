@@ -1,4 +1,4 @@
-// pages/api/supervisor/dashboard.js - CORRECTED VERSION
+// pages/api/supervisor/dashboard.js - COMPLETE FIXED VERSION
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -93,80 +93,24 @@ export default async function handler(req, res) {
 
     // ============================================================
     // STEP 1: Get candidates assigned to this supervisor
-    // Try multiple assignment methods
     // ============================================================
-    let candidates = [];
-    let assignmentMethod = 'none';
-
-    // Method 1: Check supervisor_id
-    const { data: candidatesBySupervisorId, error: error1 } = await serviceClient
+    const { data: candidates, error: candidatesError } = await serviceClient
       .from('candidate_profiles')
-      .select('id, full_name, email, university, programme, supervisor_id, assigned_supervisor_id')
+      .select('id, full_name, email, university, programme, supervisor_id')
       .eq('supervisor_id', supervisorId);
 
-    if (!error1 && candidatesBySupervisorId && candidatesBySupervisorId.length > 0) {
-      candidates = candidatesBySupervisorId;
-      assignmentMethod = 'supervisor_id';
-      console.log('[Dashboard] Found candidates by supervisor_id:', candidates.length);
+    if (candidatesError) {
+      console.error('[Dashboard] Candidates error:', candidatesError);
+      return res.status(500).json({ 
+        success: false, 
+        error: 'Failed to load candidates', 
+        details: candidatesError.message 
+      });
     }
 
-    // Method 2: Check assigned_supervisor_id
-    if (candidates.length === 0) {
-      const { data: candidatesByAssignedId, error: error2 } = await serviceClient
-        .from('candidate_profiles')
-        .select('id, full_name, email, university, programme, supervisor_id, assigned_supervisor_id')
-        .eq('assigned_supervisor_id', supervisorId);
+    console.log('[Dashboard] Candidates found:', candidates?.length || 0);
 
-      if (!error2 && candidatesByAssignedId && candidatesByAssignedId.length > 0) {
-        candidates = candidatesByAssignedId;
-        assignmentMethod = 'assigned_supervisor_id';
-        console.log('[Dashboard] Found candidates by assigned_supervisor_id:', candidates.length);
-      }
-    }
-
-    // Method 3: Check both fields with OR
-    if (candidates.length === 0) {
-      const { data: candidatesByOr, error: error3 } = await serviceClient
-        .from('candidate_profiles')
-        .select('id, full_name, email, university, programme, supervisor_id, assigned_supervisor_id')
-        .or(`supervisor_id.eq.${supervisorId},assigned_supervisor_id.eq.${supervisorId}`);
-
-      if (!error3 && candidatesByOr && candidatesByOr.length > 0) {
-        candidates = candidatesByOr;
-        assignmentMethod = 'or_both';
-        console.log('[Dashboard] Found candidates by OR query:', candidates.length);
-      }
-    }
-
-    // Method 4: Check supervisor_assignments table
-    if (candidates.length === 0) {
-      try {
-        const { data: assignments, error: assignmentError } = await serviceClient
-          .from('supervisor_assignments')
-          .select('candidate_id')
-          .eq('supervisor_id', supervisorId);
-
-        if (!assignmentError && assignments && assignments.length > 0) {
-          const candidateIds = assignments.map(a => a.candidate_id);
-          const { data: candidatesFromAssignments, error: error4 } = await serviceClient
-            .from('candidate_profiles')
-            .select('id, full_name, email, university, programme, supervisor_id, assigned_supervisor_id')
-            .in('id', candidateIds);
-
-          if (!error4 && candidatesFromAssignments && candidatesFromAssignments.length > 0) {
-            candidates = candidatesFromAssignments;
-            assignmentMethod = 'supervisor_assignments';
-            console.log('[Dashboard] Found candidates via supervisor_assignments:', candidates.length);
-          }
-        }
-      } catch (e) {
-        console.log('[Dashboard] supervisor_assignments table may not exist');
-      }
-    }
-
-    // If still no candidates, return empty with debug info
-    if (candidates.length === 0) {
-      console.log('[Dashboard] No candidates found for supervisor:', supervisorId);
+    if (!candidates || candidates.length === 0) {
       return res.status(200).json({
         success: true,
         supervisor: { id: user.id, email: user.email },
@@ -178,9 +122,7 @@ export default async function handler(req, res) {
           assignedCandidates: 0,
           candidateAssessments: 0,
           resultRows: 0,
-          assignmentMethod: 'none',
-          supervisorId: supervisorId,
-          message: 'No candidates found. Check assignment fields.'
+          supervisorId: supervisorId
         }
       });
     }
@@ -197,11 +139,7 @@ export default async function handler(req, res) {
 
     if (assessmentsError) {
       console.error('[Dashboard] Assessments error:', assessmentsError);
-      return res.status(500).json({ 
-        success: false, 
-        error: 'Failed to load assessments', 
-        details: assessmentsError.message 
-      });
+      // Continue with empty assessments
     }
 
     console.log('[Dashboard] Assessments found:', assessments?.length || 0);
@@ -209,7 +147,7 @@ export default async function handler(req, res) {
     // ============================================================
     // STEP 3: Get assessment details
     // ============================================================
-    const assessmentIds = assessments.map(a => a.assessment_id).filter(Boolean);
+    const assessmentIds = assessments ? assessments.map(a => a.assessment_id).filter(Boolean) : [];
     let assessmentMap = {};
 
     if (assessmentIds.length > 0) {
@@ -230,12 +168,12 @@ export default async function handler(req, res) {
           .select('id, title, assessment_type_id')
           .in('id', assessmentIds);
 
-        if (!simpleError) {
+        if (!simpleError && simpleAssessments) {
           simpleAssessments.forEach(a => {
             assessmentMap[a.id] = { ...a, assessment_type: null };
           });
         }
-      } else {
+      } else if (assessmentData) {
         assessmentData.forEach(a => {
           assessmentMap[a.id] = a;
         });
@@ -245,7 +183,7 @@ export default async function handler(req, res) {
     // ============================================================
     // STEP 4: Get results for completed assessments
     // ============================================================
-    const resultIds = assessments.map(a => a.result_id).filter(Boolean);
+    const resultIds = assessments ? assessments.map(a => a.result_id).filter(Boolean) : [];
     let resultMap = {};
 
     if (resultIds.length > 0) {
@@ -254,7 +192,7 @@ export default async function handler(req, res) {
         .select('*')
         .in('id', resultIds);
 
-      if (!resultsError) {
+      if (!resultsError && resultsData) {
         resultsData.forEach(r => { resultMap[r.id] = r; });
         console.log('[Dashboard] Results found:', resultsData.length);
       }
@@ -265,63 +203,65 @@ export default async function handler(req, res) {
     // ============================================================
     const reports = [];
 
-    assessments.forEach(a => {
-      const assessment = assessmentMap[a.assessment_id];
-      if (!assessment) return;
+    if (assessments) {
+      assessments.forEach(a => {
+        const assessment = assessmentMap[a.assessment_id];
+        if (!assessment) return;
 
-      const type = assessment.assessment_type || {};
-      const isNationalService = 
-        type?.code === 'national_service' ||
-        assessment?.title === 'National Service Recruitment Assessment' ||
-        assessment?.id === NATIONAL_SERVICE_ASSESSMENT_ID;
+        const type = assessment.assessment_type || {};
+        const isNationalService = 
+          type?.code === 'national_service' ||
+          assessment?.title === 'National Service Recruitment Assessment' ||
+          assessment?.id === NATIONAL_SERVICE_ASSESSMENT_ID;
 
-      const result = a.result_id ? resultMap[a.result_id] : null;
-      const isCompleted = a.status === 'completed' || a.result_id !== null;
+        const result = a.result_id ? resultMap[a.result_id] : null;
+        const isCompleted = a.status === 'completed' || a.result_id !== null;
 
-      if (!isCompleted && !result) return;
+        if (!isCompleted && !result) return;
 
-      const candidate = candidates.find(c => c.id === a.user_id);
+        const candidate = candidates.find(c => c.id === a.user_id);
 
-      let workplaceReadiness = Number(result?.workplace_readiness || 0);
-      let intellectualCapability = Number(result?.intellectual_capability || 0);
+        let workplaceReadiness = Number(result?.workplace_readiness || 0);
+        let intellectualCapability = Number(result?.intellectual_capability || 0);
 
-      if (workplaceReadiness === 0 && intellectualCapability === 0 && result?.category_scores) {
-        const calculated = calculateSubScores(result.category_scores);
-        workplaceReadiness = calculated.workplaceReadiness;
-        intellectualCapability = calculated.intellectualCapability;
-      }
+        if (workplaceReadiness === 0 && intellectualCapability === 0 && result?.category_scores) {
+          const calculated = calculateSubScores(result.category_scores);
+          workplaceReadiness = calculated.workplaceReadiness;
+          intellectualCapability = calculated.intellectualCapability;
+        }
 
-      let recommendation = result?.recommendation || 'Not Available';
-      if (isNationalService && (recommendation === 'Not Available' || !recommendation || recommendation === 'N/A')) {
-        const workplace = Number(workplaceReadiness || 0);
-        const intellectual = Number(intellectualCapability || 0);
-        if (workplace >= 85 && intellectual >= 85) recommendation = 'Highly Recommended';
-        else if (workplace >= 75 && intellectual >= 75) recommendation = 'Recommended';
-        else if (workplace >= 65 && intellectual >= 65) recommendation = 'Reserve Pool';
-        else recommendation = 'Not Recommended';
-      }
+        let recommendation = result?.recommendation || 'Not Available';
+        if (isNationalService && (recommendation === 'Not Available' || !recommendation || recommendation === 'N/A')) {
+          const workplace = Number(workplaceReadiness || 0);
+          const intellectual = Number(intellectualCapability || 0);
+          if (workplace >= 85 && intellectual >= 85) recommendation = 'Highly Recommended';
+          else if (workplace >= 75 && intellectual >= 75) recommendation = 'Recommended';
+          else if (workplace >= 65 && intellectual >= 65) recommendation = 'Reserve Pool';
+          else recommendation = 'Not Recommended';
+        }
 
-      reports.push({
-        result_id: a.result_id,
-        candidate_id: a.user_id,
-        candidate_name: candidate?.full_name || 'Unknown',
-        candidate_email: candidate?.email || '',
-        university: candidate?.university || '',
-        programme: candidate?.programme || '',
-        assessment_id: a.assessment_id,
-        assessment_title: assessment.title || 'Assessment',
-        assessment_code: type?.code || 'general',
-        status: a.status,
-        completed_at: a.completed_at,
-        score: result?.percentage_score || 0,
-        is_national_service: isNationalService,
-        workplace_readiness: workplaceReadiness,
-        intellectual_capability: intellectualCapability,
-        recommendation: recommendation,
-        percentage_score: result?.percentage_score || 0,
-        resultData: result || null
+        reports.push({
+          result_id: a.result_id,
+          candidate_id: a.user_id,
+          candidate_name: candidate?.full_name || 'Unknown',
+          candidate_email: candidate?.email || '',
+          university: candidate?.university || '',
+          programme: candidate?.programme || '',
+          assessment_id: a.assessment_id,
+          assessment_title: assessment.title || 'Assessment',
+          assessment_code: type?.code || 'general',
+          status: a.status,
+          completed_at: a.completed_at,
+          score: result?.percentage_score || 0,
+          is_national_service: isNationalService,
+          workplace_readiness: workplaceReadiness,
+          intellectual_capability: intellectualCapability,
+          recommendation: recommendation,
+          percentage_score: result?.percentage_score || 0,
+          resultData: result || null
+        });
       });
-    });
+    }
 
     // ============================================================
     // STEP 6: Split reports
@@ -336,7 +276,7 @@ export default async function handler(req, res) {
     // STEP 7: Build candidate objects
     // ============================================================
     const candidatesWithStats = candidates.map(c => {
-      const candidateAssessments = assessments.filter(a => a.user_id === c.id);
+      const candidateAssessments = assessments ? assessments.filter(a => a.user_id === c.id) : [];
       const completed = candidateAssessments.filter(a => a.status === 'completed' || a.result_id !== null).length;
       const inProgress = candidateAssessments.filter(a => a.status === 'in_progress').length;
       const notStarted = candidateAssessments.filter(a => !a.status || a.status === 'pending' || a.status === '').length;
@@ -389,8 +329,8 @@ export default async function handler(req, res) {
 
     const stats = {
       totalCandidates: candidates.length,
-      completedAssessments: assessments.filter(a => a.status === 'completed' || a.result_id !== null).length,
-      pendingReviews: assessments.filter(a => a.status === 'in_progress').length,
+      completedAssessments: assessments ? assessments.filter(a => a.status === 'completed' || a.result_id !== null).length : 0,
+      pendingReviews: assessments ? assessments.filter(a => a.status === 'in_progress').length : 0,
       nationalServiceReports: nationalServiceReports.length
     };
 
@@ -403,12 +343,11 @@ export default async function handler(req, res) {
       otherReports,
       debug: {
         assignedCandidates: candidates.length,
-        candidateAssessments: assessments.length,
+        candidateAssessments: assessments ? assessments.length : 0,
         resultRows: resultIds.length,
         totalReports: reports.length,
         nsReports: nationalServiceReports.length,
         otherReports: otherReports.length,
-        assignmentMethod: assignmentMethod,
         supervisorId: supervisorId
       }
     });
