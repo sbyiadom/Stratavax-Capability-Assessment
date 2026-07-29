@@ -1,4 +1,4 @@
-// components/reports/NationalServiceReport.js - COMPLETE FIXED VERSION
+// components/reports/NationalServiceReport.js - WITH FIXED OVERALL SCORE
 
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../../supabase/client';
@@ -524,12 +524,11 @@ export default function NationalServiceReport({
   }
 
   // ============================================================
-  // SPLIT INTO WORKPLACE AND INTELLECTUAL - FIXED
+  // SPLIT INTO WORKPLACE AND INTELLECTUAL
   // ============================================================
   const workplaceSubCategories = [];
   const intellectualSubCategories = [];
 
-  // Exact category names for matching
   const workplaceCategoryNames = [
     'Communication & Teamwork',
     'Ownership & Integrity',
@@ -560,7 +559,6 @@ export default function NationalServiceReport({
       const percentage = Number(cat.percentage ?? cat.score_percentage ?? 0);
       const normalizedCat = { ...cat, category: categoryName, percentage: Number.isFinite(percentage) ? percentage : 0 };
 
-      // Check exact matches first
       const isWorkplace = workplaceCategoryNames.some(catName => 
         trimmedName === catName || trimmedName.toLowerCase() === catName.toLowerCase()
       );
@@ -569,7 +567,6 @@ export default function NationalServiceReport({
         trimmedName === catName || trimmedName.toLowerCase() === catName.toLowerCase()
       );
 
-      // Check dimension field
       const dimension = safeString(cat.dimension || '').toLowerCase();
 
       if (dimension === 'workplace' || isWorkplace) {
@@ -577,7 +574,6 @@ export default function NationalServiceReport({
       } else if (dimension === 'intellectual' || isIntellectual) {
         intellectualSubCategories.push(normalizedCat);
       } else {
-        // Fallback: keyword matching
         const lowerName = trimmedName.toLowerCase();
         const workplaceKeywords = [
           'safety', 'risk', 'technical', 'communication', 'teamwork',
@@ -609,49 +605,43 @@ export default function NationalServiceReport({
   }
 
   // ============================================================
-  // DISPLAY SCORES - AUTHORITATIVE SCORE FIRST, CATEGORY AVERAGE FALLBACK SECOND
+  // CALCULATE SCORES - WITH CORRECT OVERALL SCORE
   // ============================================================
   const allCategories = [...workplaceSubCategories, ...intellectualSubCategories];
 
   const fallbackWorkplace = getCategoryAverage(workplaceSubCategories);
   const fallbackIntellectual = getCategoryAverage(intellectualSubCategories);
-  const fallbackOverall = getCategoryAverage(allCategories);
 
-  const displayWorkplace = toDisplayScore(
+  // Get authoritative scores from report data
+  const authoritativeWorkplace = toDisplayScore(
     reportData?.dimensions?.workplaceReadiness ??
     reportData?.scores?.workplace ??
     reportData?.workplaceReadiness ??
     reportData?.workplace_readiness ??
     report?.workplaceReadiness ??
-    report?.workplace_readiness,
-    fallbackWorkplace
+    report?.workplace_readiness
   );
 
-  const displayIntellectual = toDisplayScore(
+  const authoritativeIntellectual = toDisplayScore(
     reportData?.dimensions?.intellectualCapability ??
     reportData?.scores?.intellectual ??
     reportData?.intellectualCapability ??
     reportData?.intellectual_capability ??
     report?.intellectualCapability ??
-    report?.intellectual_capability,
-    fallbackIntellectual
+    report?.intellectual_capability
   );
 
-  const displayOverall = toDisplayScore(
-    reportData?.dimensions?.overallScore ??
-    reportData?.scores?.overall ??
-    reportData?.overallScore ??
-    reportData?.percentage_score ??
-    reportData?.score ??
-    report?.overallScore ??
-    report?.percentage_score ??
-    report?.score,
-    fallbackOverall
-  );
+  // Use authoritative scores if they exist and are > 0, otherwise use fallback
+  const displayWorkplace = authoritativeWorkplace > 0 ? authoritativeWorkplace : fallbackWorkplace;
+  const displayIntellectual = authoritativeIntellectual > 0 ? authoritativeIntellectual : fallbackIntellectual;
+
+  // ✅ FIXED: Calculate overall score from workplace and intellectual scores
+  // This ensures the overall score is properly derived from the category averages
+  const displayOverall = Math.round((displayWorkplace + displayIntellectual) / 2);
 
   console.log('[Report] Display Workplace:', displayWorkplace);
   console.log('[Report] Display Intellectual:', displayIntellectual);
-  console.log('[Report] Display Overall:', displayOverall);
+  console.log('[Report] Display Overall (calculated):', displayOverall);
 
   // ============================================================
   // RECOMMENDATION LOGIC
