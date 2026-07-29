@@ -1,10 +1,98 @@
-// pages/admin/reports/index.js - COMPLETE WITH EXPORT
+// pages/admin/reports/index.js - COMPLETE WITH FIXED SCORES
 
 import { useState, useEffect, Fragment } from 'react';
 import { useRouter } from 'next/router';
 import { supabase } from '../../../supabase/client';
 import { useRequireAuth } from '../../../utils/requireAuth';
 import AppLayout from '../../../components/AppLayout';
+
+// ============================================================
+// HELPER FUNCTIONS
+// ============================================================
+function safeNumber(value, fallback = 0) {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : fallback;
+}
+
+function calculateNationalServiceScores(reportData, categoryScores, result) {
+  let workplaceReadiness = 0;
+  let intellectualCapability = 0;
+  let overallScore = 0;
+
+  // Try to get from report_data first
+  if (reportData) {
+    if (reportData.workplaceReadiness) workplaceReadiness = safeNumber(reportData.workplaceReadiness);
+    else if (reportData.workplace_readiness) workplaceReadiness = safeNumber(reportData.workplace_readiness);
+    else if (reportData.dimensions?.workplaceReadiness) workplaceReadiness = safeNumber(reportData.dimensions.workplaceReadiness);
+    
+    if (reportData.intellectualCapability) intellectualCapability = safeNumber(reportData.intellectualCapability);
+    else if (reportData.intellectual_capability) intellectualCapability = safeNumber(reportData.intellectual_capability);
+    else if (reportData.dimensions?.intellectualCapability) intellectualCapability = safeNumber(reportData.dimensions.intellectualCapability);
+    
+    if (reportData.overallScore) overallScore = safeNumber(reportData.overallScore);
+    else if (reportData.percentage_score) overallScore = safeNumber(reportData.percentage_score);
+    else if (reportData.dimensions?.overallScore) overallScore = safeNumber(reportData.dimensions.overallScore);
+  }
+
+  // Try to get from result if not found
+  if (!workplaceReadiness && result) {
+    workplaceReadiness = safeNumber(result.workplace_readiness);
+    intellectualCapability = safeNumber(result.intellectual_capability);
+    overallScore = safeNumber(result.percentage_score);
+  }
+
+  // If still 0, calculate from category scores
+  if (workplaceReadiness === 0 || intellectualCapability === 0 || overallScore === 0) {
+    const workplaceCategories = [
+      'Communication & Teamwork',
+      'Ownership & Integrity',
+      'Technical Fundamentals',
+      'Safety & Risk Awareness'
+    ];
+    
+    const intellectualCategories = [
+      'Learning Agility',
+      'Problem Solving & Troubleshooting',
+      'Logical Reasoning',
+      'Numerical Reasoning',
+      'Measurement & Engineering Units'
+    ];
+
+    let workplaceTotal = 0;
+    let workplaceCount = 0;
+    let intellectualTotal = 0;
+    let intellectualCount = 0;
+
+    if (categoryScores && categoryScores.length > 0) {
+      categoryScores.forEach(cat => {
+        const name = cat.category || cat.name || '';
+        const percentage = safeNumber(cat.percentage || cat.score || 0);
+        
+        if (workplaceCategories.some(c => name.includes(c) || name.toLowerCase().includes(c.toLowerCase()))) {
+          workplaceTotal += percentage;
+          workplaceCount++;
+        } else if (intellectualCategories.some(c => name.includes(c) || name.toLowerCase().includes(c.toLowerCase()))) {
+          intellectualTotal += percentage;
+          intellectualCount++;
+        }
+      });
+    }
+
+    if (workplaceReadiness === 0 && workplaceCount > 0) {
+      workplaceReadiness = Math.round(workplaceTotal / workplaceCount);
+    }
+    
+    if (intellectualCapability === 0 && intellectualCount > 0) {
+      intellectualCapability = Math.round(intellectualTotal / intellectualCount);
+    }
+    
+    if (overallScore === 0 && (workplaceReadiness > 0 || intellectualCapability > 0)) {
+      overallScore = Math.round((workplaceReadiness + intellectualCapability) / 2);
+    }
+  }
+
+  return { workplaceReadiness, intellectualCapability, overallScore };
+}
 
 export default function AdminReportsList() {
   const router = useRouter();
@@ -53,11 +141,47 @@ export default function AdminReportsList() {
         throw new Error(data.error || 'Failed to load reports');
       }
 
-      setReports(data.reports || []);
+      // ============================================================
+      // Process reports to calculate correct scores for National Service
+      // ============================================================
+      const processedReports = (data.reports || []).map(report => {
+        const isNationalService = report.isNationalService || 
+          report.assessment_id === 'bdb9d46e-9fac-4d00-8478-1f649e7ac600' ||
+          report.assessment_title === 'National Service Recruitment Assessment';
+
+        if (isNationalService) {
+          // Get category scores from report_data or result
+          const categoryScores = report.category_scores || 
+            report.report_data?.categoryScores || 
+            report.report_data?.category_scores || [];
+          
+          const calculated = calculateNationalServiceScores(
+            report.report_data,
+            categoryScores,
+            report
+          );
+          
+          return {
+            ...report,
+            isNationalService: true,
+            displayScore: calculated.overallScore,
+            workplaceReadiness: calculated.workplaceReadiness,
+            intellectualCapability: calculated.intellectualCapability
+          };
+        }
+
+        // For Stratavax, use the percentage score directly
+        return {
+          ...report,
+          displayScore: safeNumber(report.percentage_score || report.overallScore || 0)
+        };
+      });
+
+      setReports(processedReports);
       setStats(data.stats || { total: 0, nationalService: 0, stratavax: 0 });
       
       const candidateMap = {};
-      (data.reports || []).forEach(report => {
+      processedReports.forEach(report => {
         const key = report.user_id || report.candidate_email;
         if (!candidateMap[key]) {
           candidateMap[key] = {
@@ -206,56 +330,61 @@ export default function AdminReportsList() {
                 </td>
               </tr>
             ) : (
-              nsReports.map((report) => (
-                <tr key={report.id} style={styles.tr}>
-                  <td style={styles.td}>
-                    <div style={styles.candidateName}>
-                      {report.candidate_name || 'Unknown'}
-                    </div>
-                    <div style={styles.candidateEmail}>
-                      {report.candidate_email || ''}
-                    </div>
-                  </td>
-                  <td style={styles.td}>
-                    {report.assessment_title || 'N/A'}
-                  </td>
-                  <td style={styles.td}>
-                    <span style={{
-                      ...styles.scoreBadge,
-                      background: report.percentage_score >= 75 ? '#dcfce7' :
-                                 report.percentage_score >= 65 ? '#fef3c7' : '#fee2e2',
-                      color: report.percentage_score >= 75 ? '#166534' :
-                             report.percentage_score >= 65 ? '#92400e' : '#991b1b'
-                    }}>
-                      {Math.round(report.percentage_score || 0)}%
-                    </span>
-                  </td>
-                  <td style={styles.td}>
-                    <span style={{
-                      ...styles.recommendationBadge,
-                      background: report.recommendation === 'Highly Recommended' ? '#dcfce7' :
-                                 report.recommendation === 'Recommended' ? '#dbeafe' :
-                                 report.recommendation === 'Reserve Pool' ? '#fef3c7' : '#fee2e2',
-                      color: report.recommendation === 'Highly Recommended' ? '#166534' :
-                             report.recommendation === 'Recommended' ? '#1e40af' :
-                             report.recommendation === 'Reserve Pool' ? '#92400e' : '#991b1b'
-                    }}>
-                      {report.recommendation || 'N/A'}
-                    </span>
-                  </td>
-                  <td style={styles.td}>
-                    {report.completed_at ? new Date(report.completed_at).toLocaleDateString() : 'N/A'}
-                  </td>
-                  <td style={styles.td}>
-                    <button
-                      onClick={() => handleViewReport(report.id)}
-                      style={styles.viewButton}
-                    >
-                      View Report
-                    </button>
-                  </td>
-                </tr>
-              ))
+              nsReports.map((report) => {
+                // Use displayScore for National Service reports
+                const score = Math.round(report.displayScore || report.percentage_score || 0);
+                
+                return (
+                  <tr key={report.id} style={styles.tr}>
+                    <td style={styles.td}>
+                      <div style={styles.candidateName}>
+                        {report.candidate_name || 'Unknown'}
+                      </div>
+                      <div style={styles.candidateEmail}>
+                        {report.candidate_email || ''}
+                      </div>
+                    </td>
+                    <td style={styles.td}>
+                      {report.assessment_title || 'N/A'}
+                    </td>
+                    <td style={styles.td}>
+                      <span style={{
+                        ...styles.scoreBadge,
+                        background: score >= 75 ? '#dcfce7' :
+                                   score >= 65 ? '#fef3c7' : '#fee2e2',
+                        color: score >= 75 ? '#166534' :
+                               score >= 65 ? '#92400e' : '#991b1b'
+                      }}>
+                        {score}%
+                      </span>
+                    </td>
+                    <td style={styles.td}>
+                      <span style={{
+                        ...styles.recommendationBadge,
+                        background: report.recommendation === 'Highly Recommended' ? '#dcfce7' :
+                                   report.recommendation === 'Recommended' ? '#dbeafe' :
+                                   report.recommendation === 'Reserve Pool' ? '#fef3c7' : '#fee2e2',
+                        color: report.recommendation === 'Highly Recommended' ? '#166534' :
+                               report.recommendation === 'Recommended' ? '#1e40af' :
+                               report.recommendation === 'Reserve Pool' ? '#92400e' : '#991b1b'
+                      }}>
+                        {report.recommendation || 'N/A'}
+                      </span>
+                    </td>
+                    <td style={styles.td}>
+                      {report.completed_at ? new Date(report.completed_at).toLocaleDateString() : 'N/A'}
+                    </td>
+                    <td style={styles.td}>
+                      <button
+                        onClick={() => handleViewReport(report.id)}
+                        style={styles.viewButton}
+                      >
+                        View Report
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>
@@ -290,7 +419,7 @@ export default function AdminReportsList() {
               filteredCandidates.map((candidate) => {
                 const isExpanded = expandedCandidates[candidate.id];
                 const avgScore = candidate.assessments.length > 0
-                  ? Math.round(candidate.assessments.reduce((sum, a) => sum + (a.percentage_score || 0), 0) / candidate.assessments.length)
+                  ? Math.round(candidate.assessments.reduce((sum, a) => sum + (a.displayScore || a.percentage_score || 0), 0) / candidate.assessments.length)
                   : 0;
 
                 return (
@@ -337,7 +466,7 @@ export default function AdminReportsList() {
                         <td colSpan="5" style={styles.expandedRow}>
                           <div style={styles.assessmentList}>
                             {candidate.assessments.map((assessment) => {
-                              const score = Math.round(assessment.percentage_score || 0);
+                              const score = Math.round(assessment.displayScore || assessment.percentage_score || 0);
                               
                               return (
                                 <div key={assessment.id} style={styles.assessmentItem}>
@@ -415,7 +544,7 @@ export default function AdminReportsList() {
             ) : (
               allReports.map((report) => {
                 const isNationalService = report.isNationalService;
-                const score = Math.round(report.percentage_score || 0);
+                const score = Math.round(report.displayScore || report.percentage_score || 0);
                 
                 return (
                   <tr key={report.id} style={styles.tr}>
@@ -548,7 +677,6 @@ export default function AdminReportsList() {
             </button>
           </div>
 
-          {/* EXPORT BUTTON - ADDED HERE */}
           <div style={styles.exportContainer}>
             <button
               onClick={handleExport}
