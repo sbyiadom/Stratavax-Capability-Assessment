@@ -1,6 +1,6 @@
-// pages/admin/batch-manage.js
+// pages/admin/batch-manage.js - COMPLETE WITH MULTI-SUPERVISOR ASSIGNMENT
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import AppLayout from "../../components/AppLayout";
@@ -11,13 +11,459 @@ function getReadableError(error) {
   return error.message || String(error) || "Something went wrong.";
 }
 
+// ============================================================
+// SUPERVISOR ASSIGNMENT MODAL COMPONENT
+// ============================================================
+function SupervisorAssignmentModal({ candidate, onClose, onSave }) {
+  const [selectedSupervisors, setSelectedSupervisors] = useState([]);
+  const [availableSupervisors, setAvailableSupervisors] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    loadData();
+  }, [candidate]);
+
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Get all supervisors (users with supervisor role)
+      const { data: supervisors, error: supError } = await supabase
+        .from('candidate_profiles')
+        .select('id, full_name, email, supervisor_id')
+        .not('supervisor_id', 'is', null);
+
+      if (supError) {
+        console.error('Error loading supervisors:', supError);
+      }
+
+      // Also try to get from auth.users via the API
+      const { data: session } = await supabase.auth.getSession();
+      const token = session?.session?.access_token;
+
+      let allSupervisors = supervisors || [];
+
+      // Fetch additional supervisors from the API if available
+      try {
+        const response = await fetch('/api/admin/supervisors/list', {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        const data = await response.json();
+        if (data.success && data.supervisors) {
+          // Merge with existing, avoiding duplicates
+          const existingIds = new Set(allSupervisors.map(s => s.id));
+          data.supervisors.forEach(s => {
+            if (!existingIds.has(s.id)) {
+              allSupervisors.push(s);
+            }
+          });
+        }
+      } catch (apiError) {
+        console.log('Supervisor list API not available, using profiles data');
+      }
+
+      // Get current assignments for this candidate
+      let currentIds = [];
+      try {
+        const { data: assignments, error: assignError } = await supabase
+          .from('candidate_supervisors')
+          .select('supervisor_id')
+          .eq('candidate_id', candidate.id);
+
+        if (!assignError && assignments) {
+          currentIds = assignments.map(a => a.supervisor_id);
+        }
+      } catch (e) {
+        console.log('candidate_supervisors table may not exist yet');
+      }
+
+      // Also check if supervisor_id is set in candidate_profiles
+      if (candidate.supervisor_id && !currentIds.includes(candidate.supervisor_id)) {
+        currentIds.push(candidate.supervisor_id);
+      }
+
+      setSelectedSupervisors(currentIds);
+      
+      // Filter out supervisors already assigned
+      const available = allSupervisors.filter(s => !currentIds.includes(s.id));
+      setAvailableSupervisors(available);
+      
+    } catch (error) {
+      console.error('Error loading data:', error);
+      setError(error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAssign = async () => {
+    setSaving(true);
+    setError(null);
+    
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      const token = session?.session?.access_token;
+
+      if (!token) {
+        throw new Error('Not authenticated');
+      }
+
+      const response = await fetch('/api/admin/supervisors/assign', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          candidateId: candidate.id,
+          supervisorIds: selectedSupervisors,
+          action: 'replace'
+        })
+      });
+
+      const data = await response.json();
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to assign supervisors');
+      }
+
+      onSave();
+      onClose();
+    } catch (error) {
+      console.error('Error assigning supervisors:', error);
+      setError(error.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const addSupervisor = (supervisorId) => {
+    setSelectedSupervisors(prev => [...prev, supervisorId]);
+    setAvailableSupervisors(prev => prev.filter(s => s.id !== supervisorId));
+  };
+
+  const removeSupervisor = (supervisorId) => {
+    setSelectedSupervisors(prev => prev.filter(id => id !== supervisorId));
+    const supervisor = availableSupervisors.find(s => s.id === supervisorId) || 
+      { id: supervisorId, full_name: 'Unknown', email: '' };
+    setAvailableSupervisors(prev => [...prev, supervisor]);
+  };
+
+  if (loading) {
+    return (
+      <div style={modalStyles.overlay}>
+        <div style={modalStyles.modal}>
+          <div style={modalStyles.loadingContainer}>
+            <div style={modalStyles.loadingSpinner}></div>
+            <p>Loading assignments...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={modalStyles.overlay} onClick={onClose}>
+      <div style={modalStyles.modal} onClick={e => e.stopPropagation()}>
+        <div style={modalStyles.modalHeader}>
+          <h2 style={modalStyles.modalTitle}>Assign Supervisors</h2>
+          <button onClick={onClose} style={modalStyles.closeButton}>×</button>
+        </div>
+        
+        <div style={modalStyles.candidateInfo}>
+          <strong>{candidate.full_name}</strong>
+          <span style={modalStyles.candidateEmail}>{candidate.email}</span>
+        </div>
+
+        {error && (
+          <div style={modalStyles.errorBox}>
+            <strong>Error:</strong> {error}
+          </div>
+        )}
+
+        <div style={modalStyles.section}>
+          <h3 style={modalStyles.sectionTitle}>Assigned Supervisors ({selectedSupervisors.length})</h3>
+          {selectedSupervisors.length === 0 ? (
+            <p style={modalStyles.emptyText}>No supervisors assigned</p>
+          ) : (
+            <div style={modalStyles.chipContainer}>
+              {selectedSupervisors.map(id => {
+                // Try to find in available supervisors first, or create a placeholder
+                const supervisor = availableSupervisors.find(s => s.id === id) || 
+                  { id, full_name: 'Unknown', email: 'Loading...' };
+                return (
+                  <div key={id} style={modalStyles.chip}>
+                    <span>{supervisor.full_name || supervisor.email || id}</span>
+                    <button 
+                      onClick={() => removeSupervisor(id)}
+                      style={modalStyles.removeChip}
+                    >
+                      ×
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div style={modalStyles.section}>
+          <h3 style={modalStyles.sectionTitle}>Available Supervisors</h3>
+          <div style={modalStyles.availableList}>
+            {availableSupervisors.length === 0 ? (
+              <p style={modalStyles.emptyText}>No available supervisors</p>
+            ) : (
+              availableSupervisors.map(supervisor => (
+                <div key={supervisor.id} style={modalStyles.availableItem}>
+                  <div>
+                    <div style={modalStyles.supervisorName}>
+                      {supervisor.full_name || 'Unknown'}
+                    </div>
+                    <div style={modalStyles.supervisorEmail}>
+                      {supervisor.email || ''}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => addSupervisor(supervisor.id)}
+                    style={modalStyles.addButton}
+                  >
+                    + Add
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        <div style={modalStyles.actions}>
+          <button onClick={onClose} style={modalStyles.cancelButton}>
+            Cancel
+          </button>
+          <button 
+            onClick={handleAssign} 
+            style={modalStyles.saveButton}
+            disabled={saving}
+          >
+            {saving ? 'Saving...' : 'Save Assignments'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const modalStyles = {
+  overlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    background: 'rgba(0,0,0,0.5)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1000,
+    backdropFilter: 'blur(4px)'
+  },
+  modal: {
+    background: 'white',
+    borderRadius: '16px',
+    padding: '24px',
+    maxWidth: '600px',
+    width: '100%',
+    maxHeight: '80vh',
+    overflow: 'auto',
+    boxShadow: '0 20px 60px rgba(0,0,0,0.3)'
+  },
+  modalHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '16px',
+    paddingBottom: '12px',
+    borderBottom: '1px solid #e2e8f0'
+  },
+  modalTitle: {
+    fontSize: '20px',
+    fontWeight: '700',
+    color: '#0a1929',
+    margin: 0
+  },
+  closeButton: {
+    background: 'none',
+    border: 'none',
+    fontSize: '24px',
+    cursor: 'pointer',
+    color: '#94a3b8',
+    padding: '0 8px'
+  },
+  candidateInfo: {
+    background: '#f8fafc',
+    padding: '12px 16px',
+    borderRadius: '8px',
+    marginBottom: '16px',
+    border: '1px solid #e2e8f0'
+  },
+  candidateEmail: {
+    display: 'block',
+    fontSize: '13px',
+    color: '#64748b',
+    marginTop: '2px'
+  },
+  section: {
+    marginBottom: '20px'
+  },
+  sectionTitle: {
+    fontSize: '14px',
+    fontWeight: '600',
+    color: '#475569',
+    margin: '0 0 8px 0'
+  },
+  chipContainer: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '8px'
+  },
+  chip: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '8px',
+    background: '#e2e8f0',
+    padding: '4px 12px 4px 16px',
+    borderRadius: '20px',
+    fontSize: '13px',
+    color: '#1a202c'
+  },
+  removeChip: {
+    background: 'none',
+    border: 'none',
+    cursor: 'pointer',
+    fontSize: '16px',
+    color: '#991b1b',
+    padding: '0 4px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  availableList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+    maxHeight: '200px',
+    overflow: 'auto',
+    border: '1px solid #e2e8f0',
+    borderRadius: '8px',
+    padding: '8px'
+  },
+  availableItem: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '8px 12px',
+    border: '1px solid #f1f5f9',
+    borderRadius: '8px',
+    background: '#fafbfc'
+  },
+  supervisorName: {
+    fontSize: '14px',
+    fontWeight: '500',
+    color: '#1a202c'
+  },
+  supervisorEmail: {
+    fontSize: '12px',
+    color: '#94a3b8'
+  },
+  addButton: {
+    padding: '4px 16px',
+    background: '#1a237e',
+    color: 'white',
+    border: 'none',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontSize: '13px',
+    fontWeight: '500',
+    whiteSpace: 'nowrap'
+  },
+  actions: {
+    display: 'flex',
+    justifyContent: 'flex-end',
+    gap: '12px',
+    marginTop: '20px',
+    paddingTop: '16px',
+    borderTop: '1px solid #e2e8f0'
+  },
+  cancelButton: {
+    padding: '8px 20px',
+    background: 'transparent',
+    border: '1px solid #e2e8f0',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    fontSize: '14px',
+    color: '#475569'
+  },
+  saveButton: {
+    padding: '8px 24px',
+    background: '#1a237e',
+    color: 'white',
+    border: 'none',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    fontSize: '14px',
+    fontWeight: '600'
+  },
+  emptyText: {
+    color: '#94a3b8',
+    fontSize: '13px',
+    fontStyle: 'italic',
+    margin: '4px 0'
+  },
+  loadingContainer: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '40px',
+    gap: '16px'
+  },
+  loadingSpinner: {
+    width: '32px',
+    height: '32px',
+    border: '3px solid #e2e8f0',
+    borderTop: '3px solid #1a237e',
+    borderRadius: '50%',
+    animation: 'spin 1s linear infinite'
+  },
+  errorBox: {
+    background: '#fee2e2',
+    border: '1px solid #fecaca',
+    color: '#991b1b',
+    borderRadius: '8px',
+    padding: '10px 14px',
+    marginBottom: '16px',
+    fontSize: '14px'
+  }
+};
+
+// ============================================================
+// MAIN COMPONENT
+// ============================================================
 export default function AdminBatchManageRedirect() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState({ type: "", text: "" });
+  const [candidates, setCandidates] = useState([]);
+  const [showAssignmentModal, setShowAssignmentModal] = useState(false);
+  const [selectedCandidate, setSelectedCandidate] = useState(null);
+  const [supervisors, setSupervisors] = useState([]);
 
   useEffect(() => {
     checkAdminAndRedirect();
+    loadCandidates();
   }, []);
 
   async function checkAdminAndRedirect() {
@@ -61,7 +507,9 @@ export default function AdminBatchManageRedirect() {
         return;
       }
 
-      router.replace("/supervisor/batch-manage");
+      // Load supervisors for assignment
+      await loadSupervisors();
+
     } catch (error) {
       console.error("Admin batch redirect error:", error);
       setMessage({ type: "error", text: getReadableError(error) });
@@ -71,22 +519,74 @@ export default function AdminBatchManageRedirect() {
     }
   }
 
+  const loadSupervisors = async () => {
+    try {
+      const { data: profiles, error } = await supabase
+        .from('candidate_profiles')
+        .select('id, full_name, email')
+        .not('supervisor_id', 'is', null);
+
+      if (!error && profiles) {
+        setSupervisors(profiles);
+      }
+    } catch (error) {
+      console.error('Error loading supervisors:', error);
+    }
+  };
+
+  const loadCandidates = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('candidate_profiles')
+        .select(`
+          id,
+          full_name,
+          email,
+          university,
+          programme,
+          supervisor_id,
+          created_at
+        `)
+        .order('created_at', { ascending: false });
+
+      if (!error && data) {
+        setCandidates(data);
+      }
+    } catch (error) {
+      console.error('Error loading candidates:', error);
+    }
+  };
+
+  const openAssignmentModal = (candidate) => {
+    setSelectedCandidate(candidate);
+    setShowAssignmentModal(true);
+  };
+
+  const closeAssignmentModal = () => {
+    setShowAssignmentModal(false);
+    setSelectedCandidate(null);
+  };
+
+  const handleAssignmentSaved = () => {
+    loadCandidates();
+    loadSupervisors();
+  };
+
+  const handleBack = () => {
+    router.push('/admin');
+  };
+
   return (
     <AppLayout background="/images/admin-bg.jpg">
       <div style={styles.container}>
         <div style={styles.card}>
-          <div style={styles.icon}>📦</div>
-          <h1 style={styles.title}>Opening Batch Manager</h1>
-          <p style={styles.subtitle}>
-            Redirecting admin access to the shared batch assessment manager.
-          </p>
-
-          {loading && (
-            <div style={styles.loadingBlock}>
-              <div style={styles.spinner} />
-              <span>Redirecting...</span>
-            </div>
-          )}
+          <div style={styles.header}>
+            <button onClick={handleBack} style={styles.backButton}>← Back to Dashboard</button>
+            <h1 style={styles.title}>Admin Batch Manager</h1>
+            <p style={styles.subtitle}>
+              Manage candidates and assign supervisors.
+            </p>
+          </div>
 
           {message.text && (
             <div style={{
@@ -96,6 +596,76 @@ export default function AdminBatchManageRedirect() {
               border: "1px solid " + (message.type === "success" ? "#a5d6a7" : "#ffcdd2")
             }}>
               {message.text}
+            </div>
+          )}
+
+          {/* Candidates Table */}
+          <div style={styles.tableContainer}>
+            <h3 style={styles.tableTitle}>Candidates</h3>
+            <div style={styles.tableWrapper}>
+              <table style={styles.table}>
+                <thead>
+                  <tr>
+                    <th style={styles.th}>Candidate</th>
+                    <th style={styles.th}>University</th>
+                    <th style={styles.th}>Programme</th>
+                    <th style={styles.th}>Supervisors</th>
+                    <th style={styles.th}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {candidates.length === 0 ? (
+                    <tr>
+                      <td colSpan="5" style={styles.emptyState}>
+                        No candidates found.
+                      </td>
+                    </tr>
+                  ) : (
+                    candidates.map((candidate) => (
+                      <tr key={candidate.id} style={styles.tr}>
+                        <td style={styles.td}>
+                          <div style={styles.candidateName}>
+                            {candidate.full_name || 'Unknown'}
+                          </div>
+                          <div style={styles.candidateEmail}>
+                            {candidate.email || ''}
+                          </div>
+                        </td>
+                        <td style={styles.td}>
+                          {candidate.university || 'N/A'}
+                        </td>
+                        <td style={styles.td}>
+                          {candidate.programme || 'N/A'}
+                        </td>
+                        <td style={styles.td}>
+                          {candidate.supervisor_id ? (
+                            <span style={styles.supervisorBadge}>
+                              {candidate.supervisor_id.substring(0, 8)}...
+                            </span>
+                          ) : (
+                            <span style={styles.noSupervisorBadge}>None</span>
+                          )}
+                        </td>
+                        <td style={styles.td}>
+                          <button
+                            onClick={() => openAssignmentModal(candidate)}
+                            style={styles.actionButton}
+                          >
+                            Assign Supervisor
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {loading && (
+            <div style={styles.loadingBlock}>
+              <div style={styles.spinner} />
+              <span>Loading...</span>
             </div>
           )}
 
@@ -109,6 +679,15 @@ export default function AdminBatchManageRedirect() {
           </div>
         </div>
       </div>
+
+      {/* Assignment Modal */}
+      {showAssignmentModal && selectedCandidate && (
+        <SupervisorAssignmentModal
+          candidate={selectedCandidate}
+          onClose={closeAssignmentModal}
+          onSave={handleAssignmentSaved}
+        />
+      )}
 
       <style jsx>{`
         @keyframes spin {
@@ -124,30 +703,31 @@ const styles = {
   container: {
     minHeight: "calc(100vh - 64px)",
     display: "flex",
-    alignItems: "center",
+    alignItems: "flex-start",
     justifyContent: "center",
     padding: "30px 20px"
   },
   card: {
     width: "100%",
-    maxWidth: "520px",
+    maxWidth: "1200px",
     background: "rgba(255,255,255,0.96)",
     borderRadius: "18px",
     padding: "36px",
     boxShadow: "0 20px 60px rgba(0,0,0,0.22)",
-    border: "1px solid rgba(255,255,255,0.45)",
-    textAlign: "center"
+    border: "1px solid rgba(255,255,255,0.45)"
   },
-  icon: {
-    width: "68px",
-    height: "68px",
-    borderRadius: "20px",
-    background: "#e3f2fd",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    margin: "0 auto 18px",
-    fontSize: "34px"
+  header: {
+    marginBottom: '24px'
+  },
+  backButton: {
+    padding: '8px 16px',
+    background: 'transparent',
+    border: '1px solid #e2e8f0',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    fontSize: '14px',
+    color: '#475569',
+    marginBottom: '16px'
   },
   title: {
     margin: "0 0 8px",
@@ -186,11 +766,90 @@ const styles = {
     fontSize: "14px",
     lineHeight: 1.5
   },
+  tableContainer: {
+    marginBottom: '24px',
+    border: '1px solid #e2e8f0',
+    borderRadius: '12px',
+    overflow: 'hidden'
+  },
+  tableTitle: {
+    padding: '16px 20px',
+    margin: 0,
+    fontSize: '16px',
+    fontWeight: '600',
+    background: '#f8fafc',
+    borderBottom: '1px solid #e2e8f0',
+    color: '#0a1929'
+  },
+  tableWrapper: {
+    overflowX: 'auto'
+  },
+  table: {
+    width: '100%',
+    borderCollapse: 'collapse',
+    fontSize: '14px'
+  },
+  th: {
+    padding: '12px 16px',
+    textAlign: 'left',
+    background: '#f8fafc',
+    fontWeight: '600',
+    color: '#475569',
+    borderBottom: '1px solid #e2e8f0',
+    whiteSpace: 'nowrap'
+  },
+  td: {
+    padding: '12px 16px',
+    borderBottom: '1px solid #e2e8f0',
+    verticalAlign: 'middle'
+  },
+  tr: {
+    transition: 'background 0.2s'
+  },
+  candidateName: {
+    fontWeight: '500',
+    color: '#1a202c'
+  },
+  candidateEmail: {
+    fontSize: '12px',
+    color: '#94a3b8'
+  },
+  supervisorBadge: {
+    padding: '2px 8px',
+    background: '#dbeafe',
+    color: '#1e40af',
+    borderRadius: '12px',
+    fontSize: '12px',
+    fontWeight: '500'
+  },
+  noSupervisorBadge: {
+    padding: '2px 8px',
+    background: '#f1f5f9',
+    color: '#94a3b8',
+    borderRadius: '12px',
+    fontSize: '12px'
+  },
+  actionButton: {
+    padding: '4px 12px',
+    background: '#1a237e',
+    color: 'white',
+    border: 'none',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontSize: '12px',
+    fontWeight: '500'
+  },
+  emptyState: {
+    textAlign: 'center',
+    padding: '30px',
+    color: '#94a3b8'
+  },
   actions: {
     display: "flex",
     justifyContent: "center",
     gap: "12px",
-    flexWrap: "wrap"
+    flexWrap: "wrap",
+    marginTop: '16px'
   },
   primaryButton: {
     padding: "11px 18px",
