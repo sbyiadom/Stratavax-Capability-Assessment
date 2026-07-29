@@ -6,6 +6,14 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 export default async function handler(req, res) {
+  // Handle CORS preflight
+  if (req.method === 'OPTIONS') {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+    return res.status(200).end();
+  }
+
   if (req.method !== 'POST') {
     return res.status(405).json({ success: false, error: 'Method not allowed' });
   }
@@ -20,9 +28,10 @@ export default async function handler(req, res) {
       auth: { persistSession: false }
     });
 
-    // Verify admin role
+    // Verify user is admin
     const { data: userData, error: userError } = await supabase.auth.getUser(token);
     if (userError || !userData?.user) {
+      console.error('[Assign API] Auth error:', userError);
       return res.status(401).json({ success: false, error: 'Invalid token' });
     }
 
@@ -33,12 +42,14 @@ export default async function handler(req, res) {
 
     const { candidateId, supervisorIds, action } = req.body;
 
+    console.log('[Assign API] Request:', { candidateId, supervisorIds, action });
+
     if (!candidateId) {
       return res.status(400).json({ success: false, error: 'Missing candidateId' });
     }
 
-    if (action === 'replace' && !supervisorIds) {
-      return res.status(400).json({ success: false, error: 'Missing supervisorIds' });
+    if (!supervisorIds || !Array.isArray(supervisorIds)) {
+      return res.status(400).json({ success: false, error: 'Invalid supervisorIds' });
     }
 
     const adminId = userData.user.id;
@@ -51,69 +62,25 @@ export default async function handler(req, res) {
       .single();
 
     if (candidateError || !candidate) {
+      console.error('[Assign API] Candidate error:', candidateError);
       return res.status(404).json({ success: false, error: 'Candidate not found' });
     }
 
-    // Handle different actions
-    if (action === 'add') {
-      // Add a single supervisor
-      const supervisorId = supervisorIds[0] || supervisorIds;
-      
-      const { error: insertError } = await supabase
-        .from('candidate_supervisors')
-        .insert({
-          candidate_id: candidateId,
-          supervisor_id: supervisorId,
-          assigned_by: adminId
-        });
-
-      if (insertError) {
-        if (insertError.code === '23505') {
-          return res.status(409).json({ success: false, error: 'Assignment already exists' });
-        }
-        return res.status(500).json({ success: false, error: insertError.message });
-      }
-
-      return res.status(200).json({
-        success: true,
-        message: 'Supervisor assigned successfully'
-      });
-    }
-
-    if (action === 'remove') {
-      // Remove a single supervisor
-      const supervisorId = supervisorIds[0] || supervisorIds;
-      
-      const { error: deleteError } = await supabase
-        .from('candidate_supervisors')
-        .delete()
-        .eq('candidate_id', candidateId)
-        .eq('supervisor_id', supervisorId);
-
-      if (deleteError) {
-        return res.status(500).json({ success: false, error: deleteError.message });
-      }
-
-      return res.status(200).json({
-        success: true,
-        message: 'Supervisor removed successfully'
-      });
-    }
-
+    // For replace action: delete all existing and insert new
     if (action === 'replace') {
-      // Replace all supervisors with new list
-      // First, delete all existing assignments
+      // Delete all existing assignments
       const { error: deleteError } = await supabase
         .from('candidate_supervisors')
         .delete()
         .eq('candidate_id', candidateId);
 
       if (deleteError) {
+        console.error('[Assign API] Delete error:', deleteError);
         return res.status(500).json({ success: false, error: deleteError.message });
       }
 
-      // Then insert new assignments
-      if (supervisorIds && supervisorIds.length > 0) {
+      // Insert new assignments
+      if (supervisorIds.length > 0) {
         const assignments = supervisorIds.map(supervisorId => ({
           candidate_id: candidateId,
           supervisor_id: supervisorId,
@@ -125,45 +92,30 @@ export default async function handler(req, res) {
           .insert(assignments);
 
         if (insertError) {
+          console.error('[Assign API] Insert error:', insertError);
           return res.status(500).json({ success: false, error: insertError.message });
         }
       }
 
-      return res.status(200).json({
-        success: true,
-        message: 'Supervisors updated successfully'
+      console.log('[Assign API] Success:', {
+        candidate: candidate.full_name,
+        supervisorCount: supervisorIds.length
       });
-    }
-
-    if (action === 'list') {
-      // Get all supervisors for a candidate
-      const { data: assignments, error: listError } = await supabase
-        .from('candidate_supervisors')
-        .select(`
-          supervisor_id,
-          assigned_at,
-          assigned_by,
-          users:supervisor_id (email, raw_user_meta_data)
-        `)
-        .eq('candidate_id', candidateId);
-
-      if (listError) {
-        return res.status(500).json({ success: false, error: listError.message });
-      }
 
       return res.status(200).json({
         success: true,
-        supervisors: assignments || []
+        message: 'Supervisors updated successfully',
+        count: supervisorIds.length
       });
     }
 
     return res.status(400).json({
       success: false,
-      error: 'Invalid action. Use: add, remove, replace, or list'
+      error: 'Invalid action. Use: replace'
     });
 
   } catch (error) {
-    console.error('[Supervisor Assign API] Error:', error);
+    console.error('[Assign API] Error:', error);
     return res.status(500).json({
       success: false,
       error: error.message || 'Internal server error'
