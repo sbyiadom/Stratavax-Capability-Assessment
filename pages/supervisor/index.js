@@ -1,4 +1,4 @@
-// pages/supervisor/index.js - CORRECTED VERSION
+// pages/supervisor/index.js - COMPLETE FIXED VERSION
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -11,7 +11,7 @@ export default function SupervisorDashboard() {
   const { session, loading: authLoading } = useRequireAuth();
 
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('national_service');
+  const [activeTab, setActiveTab] = useState('candidates');
   const [candidates, setCandidates] = useState([]);
   const [nationalServiceReports, setNationalServiceReports] = useState([]);
   const [otherReports, setOtherReports] = useState([]);
@@ -68,6 +68,10 @@ export default function SupervisorDashboard() {
       const otherRows = Array.isArray(payload.otherReports) ? payload.otherReports : [];
       const dashboardStats = payload.stats || {};
 
+      console.log('[Dashboard] Candidates received:', candidateRows.length);
+      console.log('[Dashboard] National Service reports:', nsRows.length);
+      console.log('[Dashboard] Other reports:', otherRows.length);
+
       setCandidates(candidateRows);
       setNationalServiceReports(nsRows);
       setOtherReports(otherRows);
@@ -84,10 +88,7 @@ export default function SupervisorDashboard() {
         const completedAssessments = Array.isArray(candidate.completedAssessments)
           ? candidate.completedAssessments
           : [];
-        const nonNationalService = completedAssessments.filter((assessment) => !assessment.isNationalService);
-        if (nonNationalService.length > 0) {
-          initialSelected[candidate.id] = nonNationalService[0].assessment_id;
-        } else if (completedAssessments.length > 0) {
+        if (completedAssessments.length > 0) {
           initialSelected[candidate.id] = completedAssessments[0].assessment_id;
         }
       });
@@ -232,12 +233,6 @@ export default function SupervisorDashboard() {
           <div style={styles.loadingSpinner}></div>
           <p>Loading dashboard...</p>
         </div>
-        <style jsx>{`
-          @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-          }
-        `}</style>
       </AppLayout>
     );
   }
@@ -292,12 +287,16 @@ export default function SupervisorDashboard() {
             Assessments: {debugInfo.candidateAssessments || 0} | 
             Results: {debugInfo.resultRows || 0} |
             NS Reports: {debugInfo.nsReports || 0} |
-            Other Reports: {debugInfo.otherReports || 0} |
-            Assignment Method: {debugInfo.assignmentMethod || 'unknown'}
+            Other Reports: {debugInfo.otherReports || 0}
           </div>
         )}
 
         <div style={styles.tabsContainer}>
+          <TabButton
+            active={activeTab === 'candidates'}
+            onClick={() => setActiveTab('candidates')}
+            label={`All Candidates (${candidates.length})`}
+          />
           <TabButton
             active={activeTab === 'national_service'}
             onClick={() => setActiveTab('national_service')}
@@ -308,14 +307,18 @@ export default function SupervisorDashboard() {
             onClick={() => setActiveTab('other')}
             label={`Other Assessments (${otherReports.length})`}
           />
-          <TabButton
-            active={activeTab === 'candidates'}
-            onClick={() => setActiveTab('candidates')}
-            label={`All Candidates (${candidates.length})`}
-          />
         </div>
 
         <div style={styles.tabContent}>
+          {activeTab === 'candidates' && (
+            <CandidatesTab
+              candidates={candidates}
+              selectedAssessments={selectedAssessments}
+              onAssessmentChange={handleAssessmentChange}
+              onAssessmentSelect={handleAssessmentSelect}
+            />
+          )}
+
           {activeTab === 'national_service' && (
             <NationalServiceTab
               reports={nationalServiceReports}
@@ -332,23 +335,8 @@ export default function SupervisorDashboard() {
               onViewReport={handleViewReport}
             />
           )}
-
-          {activeTab === 'candidates' && (
-            <CandidatesTab
-              candidates={candidates}
-              selectedAssessments={selectedAssessments}
-              onAssessmentChange={handleAssessmentChange}
-              onAssessmentSelect={handleAssessmentSelect}
-            />
-          )}
         </div>
       </div>
-      <style jsx>{`
-        @keyframes spin {
-          0% { transform: rotate(0deg); }
-          100% { transform: rotate(360deg); }
-        }
-      `}</style>
     </AppLayout>
   );
 }
@@ -502,9 +490,6 @@ function OtherAssessmentsTab({ reports, onViewReport }) {
                   </td>
                   <td style={styles.td}>
                     {report.assessment_title}
-                    {report.assessment_code === 'national_service' && (
-                      <span style={styles.nsTag}>NS</span>
-                    )}
                   </td>
                   <td style={styles.td}>
                     <span style={styles.scoreBadge}>{Math.round(Number(report.score || 0))}%</span>
@@ -530,7 +515,7 @@ function CandidatesTab({ candidates, selectedAssessments, onAssessmentChange, on
   return (
     <div style={styles.tabPanel}>
       <div style={styles.tabDescription}>
-        <p>All candidates with assessment status and ability to view individual reports.</p>
+        <p>All candidates assigned to you. ({candidates.length} candidates)</p>
       </div>
       {candidates.length === 0 ? (
         <div style={styles.emptyState}>
@@ -544,9 +529,6 @@ function CandidatesTab({ candidates, selectedAssessments, onAssessmentChange, on
                 <th style={styles.th}>Candidate</th>
                 <th style={styles.th}>Completed</th>
                 <th style={styles.th}>In Progress</th>
-                <th style={styles.th}>Ready to Start</th>
-                <th style={styles.th}>Blocked</th>
-                <th style={styles.th}>Not Started</th>
                 <th style={styles.th}>Select Assessment</th>
                 <th style={styles.th}>Action</th>
               </tr>
@@ -567,11 +549,12 @@ function CandidatesTab({ candidates, selectedAssessments, onAssessmentChange, on
                       <div style={styles.cellSub}>{candidate.email || ''}</div>
                       <div style={styles.cellSub}>{candidate.university || ''} • {candidate.programme || ''}</div>
                     </td>
-                    <td style={styles.td}><span style={styles.statBadgeCompleted}>{stats.completed || 0}</span></td>
-                    <td style={styles.td}><span style={styles.statBadgeProgress}>{stats.inProgress || 0}</span></td>
-                    <td style={styles.td}><span style={styles.statBadgeUnblocked}>{stats.unblocked || 0}</span></td>
-                    <td style={styles.td}><span style={styles.statBadgeBlocked}>{stats.blocked || 0}</span></td>
-                    <td style={styles.td}><span style={styles.statBadgeNotStarted}>{stats.notStarted || 0}</span></td>
+                    <td style={styles.td}>
+                      <span style={styles.statBadgeCompleted}>{stats.completed || 0}</span>
+                    </td>
+                    <td style={styles.td}>
+                      <span style={styles.statBadgeProgress}>{stats.inProgress || 0}</span>
+                    </td>
                     <td style={styles.td}>
                       <select
                         onChange={(event) => onAssessmentChange(candidate.id, event.target.value)}
@@ -876,3 +859,15 @@ const styles = {
     borderRadius: '8px'
   }
 };
+
+// Add keyframe animation
+if (typeof document !== 'undefined') {
+  const style = document.createElement('style');
+  style.textContent = `
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  `;
+  document.head.appendChild(style);
+}
