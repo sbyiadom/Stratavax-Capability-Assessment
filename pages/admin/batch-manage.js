@@ -1,4 +1,4 @@
-// pages/admin/batch-manage.js - COMPLETE WITH MULTI-SUPERVISOR ASSIGNMENT
+// pages/admin/batch-manage.js - COMPLETE WITH CORRECT SUPERVISOR LIST
 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/router";
@@ -17,6 +17,7 @@ function getReadableError(error) {
 function SupervisorAssignmentModal({ candidate, onClose, onSave }) {
   const [selectedSupervisors, setSelectedSupervisors] = useState([]);
   const [availableSupervisors, setAvailableSupervisors] = useState([]);
+  const [allSupervisors, setAllSupervisors] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
@@ -30,71 +31,62 @@ function SupervisorAssignmentModal({ candidate, onClose, onSave }) {
       setLoading(true);
       setError(null);
 
-      // Get all supervisors (users with supervisor role)
-      const { data: supervisors, error: supError } = await supabase
-        .from('candidate_profiles')
-        .select('id, full_name, email, supervisor_id')
-        .not('supervisor_id', 'is', null);
+      // ============================================================
+      // STEP 1: Get ALL supervisors from supervisor_profiles table
+      // ============================================================
+      const { data: supervisorProfiles, error: profError } = await supabase
+        .from('supervisor_profiles')
+        .select('id, full_name, email, is_active')
+        .eq('is_active', true);
 
-      if (supError) {
-        console.error('Error loading supervisors:', supError);
+      if (profError) {
+        console.error('[Modal] Error loading supervisors:', profError);
+        setError('Failed to load supervisors.');
+        setLoading(false);
+        return;
       }
 
-      // Also try to get from auth.users via the API
-      const { data: session } = await supabase.auth.getSession();
-      const token = session?.session?.access_token;
+      const supervisors = supervisorProfiles || [];
+      setAllSupervisors(supervisors);
+      console.log('[Modal] Total supervisors loaded:', supervisors.length);
 
-      let allSupervisors = supervisors || [];
-
-      // Fetch additional supervisors from the API if available
-      try {
-        const response = await fetch('/api/admin/supervisors/list', {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        });
-        const data = await response.json();
-        if (data.success && data.supervisors) {
-          // Merge with existing, avoiding duplicates
-          const existingIds = new Set(allSupervisors.map(s => s.id));
-          data.supervisors.forEach(s => {
-            if (!existingIds.has(s.id)) {
-              allSupervisors.push(s);
-            }
-          });
-        }
-      } catch (apiError) {
-        console.log('Supervisor list API not available, using profiles data');
-      }
-
-      // Get current assignments for this candidate
+      // ============================================================
+      // STEP 2: Get current assignments for this candidate
+      // ============================================================
       let currentIds = [];
+
+      // Check candidate_supervisors table
       try {
         const { data: assignments, error: assignError } = await supabase
           .from('candidate_supervisors')
           .select('supervisor_id')
           .eq('candidate_id', candidate.id);
 
-        if (!assignError && assignments) {
+        if (!assignError && assignments && assignments.length > 0) {
           currentIds = assignments.map(a => a.supervisor_id);
+          console.log('[Modal] Current assignments from junction table:', currentIds.length);
         }
       } catch (e) {
-        console.log('candidate_supervisors table may not exist yet');
+        console.log('[Modal] candidate_supervisors table may not exist');
       }
 
       // Also check if supervisor_id is set in candidate_profiles
       if (candidate.supervisor_id && !currentIds.includes(candidate.supervisor_id)) {
-        currentIds.push(candidate.supervisor_id);
+        const existsInList = supervisors.some(s => s.id === candidate.supervisor_id);
+        if (existsInList) {
+          currentIds.push(candidate.supervisor_id);
+          console.log('[Modal] Added supervisor_id from candidate profile');
+        }
       }
 
       setSelectedSupervisors(currentIds);
       
       // Filter out supervisors already assigned
-      const available = allSupervisors.filter(s => !currentIds.includes(s.id));
+      const available = supervisors.filter(s => !currentIds.includes(s.id));
       setAvailableSupervisors(available);
       
     } catch (error) {
-      console.error('Error loading data:', error);
+      console.error('[Modal] Error loading data:', error);
       setError(error.message);
     } finally {
       setLoading(false);
@@ -131,10 +123,11 @@ function SupervisorAssignmentModal({ candidate, onClose, onSave }) {
         throw new Error(data.error || 'Failed to assign supervisors');
       }
 
+      alert(`Successfully assigned ${selectedSupervisors.length} supervisor(s) to ${candidate.full_name}`);
       onSave();
       onClose();
     } catch (error) {
-      console.error('Error assigning supervisors:', error);
+      console.error('[Modal] Error assigning supervisors:', error);
       setError(error.message);
     } finally {
       setSaving(false);
@@ -143,14 +136,21 @@ function SupervisorAssignmentModal({ candidate, onClose, onSave }) {
 
   const addSupervisor = (supervisorId) => {
     setSelectedSupervisors(prev => [...prev, supervisorId]);
+    const supervisor = allSupervisors.find(s => s.id === supervisorId);
     setAvailableSupervisors(prev => prev.filter(s => s.id !== supervisorId));
   };
 
   const removeSupervisor = (supervisorId) => {
     setSelectedSupervisors(prev => prev.filter(id => id !== supervisorId));
-    const supervisor = availableSupervisors.find(s => s.id === supervisorId) || 
-      { id: supervisorId, full_name: 'Unknown', email: '' };
-    setAvailableSupervisors(prev => [...prev, supervisor]);
+    const supervisor = allSupervisors.find(s => s.id === supervisorId);
+    if (supervisor) {
+      setAvailableSupervisors(prev => [...prev, supervisor]);
+    }
+  };
+
+  const getSupervisorName = (id) => {
+    const supervisor = allSupervisors.find(s => s.id === id);
+    return supervisor?.full_name || supervisor?.email || id.substring(0, 8);
   };
 
   if (loading) {
@@ -159,7 +159,7 @@ function SupervisorAssignmentModal({ candidate, onClose, onSave }) {
         <div style={modalStyles.modal}>
           <div style={modalStyles.loadingContainer}>
             <div style={modalStyles.loadingSpinner}></div>
-            <p>Loading assignments...</p>
+            <p>Loading supervisors...</p>
           </div>
         </div>
       </div>
@@ -192,12 +192,10 @@ function SupervisorAssignmentModal({ candidate, onClose, onSave }) {
           ) : (
             <div style={modalStyles.chipContainer}>
               {selectedSupervisors.map(id => {
-                // Try to find in available supervisors first, or create a placeholder
-                const supervisor = availableSupervisors.find(s => s.id === id) || 
-                  { id, full_name: 'Unknown', email: 'Loading...' };
+                const name = getSupervisorName(id);
                 return (
                   <div key={id} style={modalStyles.chip}>
-                    <span>{supervisor.full_name || supervisor.email || id}</span>
+                    <span>{name}</span>
                     <button 
                       onClick={() => removeSupervisor(id)}
                       style={modalStyles.removeChip}
@@ -212,10 +210,10 @@ function SupervisorAssignmentModal({ candidate, onClose, onSave }) {
         </div>
 
         <div style={modalStyles.section}>
-          <h3 style={modalStyles.sectionTitle}>Available Supervisors</h3>
+          <h3 style={modalStyles.sectionTitle}>Available Supervisors ({availableSupervisors.length})</h3>
           <div style={modalStyles.availableList}>
             {availableSupervisors.length === 0 ? (
-              <p style={modalStyles.emptyText}>No available supervisors</p>
+              <p style={modalStyles.emptyText}>All supervisors are already assigned.</p>
             ) : (
               availableSupervisors.map(supervisor => (
                 <div key={supervisor.id} style={modalStyles.availableItem}>
@@ -459,11 +457,10 @@ export default function AdminBatchManageRedirect() {
   const [candidates, setCandidates] = useState([]);
   const [showAssignmentModal, setShowAssignmentModal] = useState(false);
   const [selectedCandidate, setSelectedCandidate] = useState(null);
-  const [supervisors, setSupervisors] = useState([]);
+  const [supervisorList, setSupervisorList] = useState([]);
 
   useEffect(() => {
     checkAdminAndRedirect();
-    loadCandidates();
   }, []);
 
   async function checkAdminAndRedirect() {
@@ -507,7 +504,7 @@ export default function AdminBatchManageRedirect() {
         return;
       }
 
-      // Load supervisors for assignment
+      await loadCandidates();
       await loadSupervisors();
 
     } catch (error) {
@@ -518,21 +515,6 @@ export default function AdminBatchManageRedirect() {
       setLoading(false);
     }
   }
-
-  const loadSupervisors = async () => {
-    try {
-      const { data: profiles, error } = await supabase
-        .from('candidate_profiles')
-        .select('id, full_name, email')
-        .not('supervisor_id', 'is', null);
-
-      if (!error && profiles) {
-        setSupervisors(profiles);
-      }
-    } catch (error) {
-      console.error('Error loading supervisors:', error);
-    }
-  };
 
   const loadCandidates = async () => {
     try {
@@ -551,9 +533,33 @@ export default function AdminBatchManageRedirect() {
 
       if (!error && data) {
         setCandidates(data);
+        console.log('[Admin] Candidates loaded:', data.length);
       }
     } catch (error) {
       console.error('Error loading candidates:', error);
+    }
+  };
+
+  const loadSupervisors = async () => {
+    try {
+      // Get supervisors from supervisor_profiles table
+      const { data, error } = await supabase
+        .from('supervisor_profiles')
+        .select('id, full_name, email, is_active')
+        .eq('is_active', true);
+
+      if (error) {
+        console.error('[Admin] Error loading supervisors:', error);
+        setSupervisorList([]);
+        return;
+      }
+
+      setSupervisorList(data || []);
+      console.log('[Admin] Supervisors loaded:', data?.length || 0);
+
+    } catch (error) {
+      console.error('Error loading supervisors:', error);
+      setSupervisorList([]);
     }
   };
 
@@ -584,7 +590,7 @@ export default function AdminBatchManageRedirect() {
             <button onClick={handleBack} style={styles.backButton}>← Back to Dashboard</button>
             <h1 style={styles.title}>Admin Batch Manager</h1>
             <p style={styles.subtitle}>
-              Manage candidates and assign supervisors.
+              Manage candidates and assign supervisors. ({supervisorList.length} supervisors available)
             </p>
           </div>
 
@@ -599,9 +605,22 @@ export default function AdminBatchManageRedirect() {
             </div>
           )}
 
+          {/* Supervisors Summary */}
+          <div style={styles.supervisorSummary}>
+            <span>👥 Available Supervisors: <strong>{supervisorList.length}</strong></span>
+            {supervisorList.map(s => (
+              <span key={s.id} style={styles.supervisorTag}>
+                {s.full_name || s.email || s.id.substring(0, 8)}
+              </span>
+            ))}
+            {supervisorList.length === 0 && (
+              <span style={styles.supervisorTag}>No supervisors found</span>
+            )}
+          </div>
+
           {/* Candidates Table */}
           <div style={styles.tableContainer}>
-            <h3 style={styles.tableTitle}>Candidates</h3>
+            <h3 style={styles.tableTitle}>Candidates ({candidates.length})</h3>
             <div style={styles.tableWrapper}>
               <table style={styles.table}>
                 <thead>
@@ -621,41 +640,48 @@ export default function AdminBatchManageRedirect() {
                       </td>
                     </tr>
                   ) : (
-                    candidates.map((candidate) => (
-                      <tr key={candidate.id} style={styles.tr}>
-                        <td style={styles.td}>
-                          <div style={styles.candidateName}>
-                            {candidate.full_name || 'Unknown'}
-                          </div>
-                          <div style={styles.candidateEmail}>
-                            {candidate.email || ''}
-                          </div>
-                        </td>
-                        <td style={styles.td}>
-                          {candidate.university || 'N/A'}
-                        </td>
-                        <td style={styles.td}>
-                          {candidate.programme || 'N/A'}
-                        </td>
-                        <td style={styles.td}>
-                          {candidate.supervisor_id ? (
-                            <span style={styles.supervisorBadge}>
-                              {candidate.supervisor_id.substring(0, 8)}...
-                            </span>
-                          ) : (
-                            <span style={styles.noSupervisorBadge}>None</span>
-                          )}
-                        </td>
-                        <td style={styles.td}>
-                          <button
-                            onClick={() => openAssignmentModal(candidate)}
-                            style={styles.actionButton}
-                          >
-                            Assign Supervisor
-                          </button>
-                        </td>
-                      </tr>
-                    ))
+                    candidates.map((candidate) => {
+                      // Find the supervisor name
+                      const supervisorName = candidate.supervisor_id 
+                        ? supervisorList.find(s => s.id === candidate.supervisor_id)?.full_name 
+                        : null;
+                      
+                      return (
+                        <tr key={candidate.id} style={styles.tr}>
+                          <td style={styles.td}>
+                            <div style={styles.candidateName}>
+                              {candidate.full_name || 'Unknown'}
+                            </div>
+                            <div style={styles.candidateEmail}>
+                              {candidate.email || ''}
+                            </div>
+                          </td>
+                          <td style={styles.td}>
+                            {candidate.university || 'N/A'}
+                          </td>
+                          <td style={styles.td}>
+                            {candidate.programme || 'N/A'}
+                          </td>
+                          <td style={styles.td}>
+                            {supervisorName ? (
+                              <span style={styles.supervisorBadge}>
+                                {supervisorName}
+                              </span>
+                            ) : (
+                              <span style={styles.noSupervisorBadge}>None</span>
+                            )}
+                          </td>
+                          <td style={styles.td}>
+                            <button
+                              onClick={() => openAssignmentModal(candidate)}
+                              style={styles.actionButton}
+                            >
+                              Assign Supervisor
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
@@ -740,6 +766,26 @@ const styles = {
     color: "#667085",
     fontSize: "14px",
     lineHeight: 1.6
+  },
+  supervisorSummary: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    padding: '10px 16px',
+    background: '#f8fafc',
+    borderRadius: '8px',
+    border: '1px solid #e2e8f0',
+    marginBottom: '16px',
+    flexWrap: 'wrap',
+    fontSize: '14px',
+    color: '#475569'
+  },
+  supervisorTag: {
+    padding: '2px 10px',
+    background: '#e2e8f0',
+    borderRadius: '12px',
+    fontSize: '12px',
+    color: '#1a202c'
   },
   loadingBlock: {
     display: "flex",
