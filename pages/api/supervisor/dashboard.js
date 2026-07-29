@@ -1,4 +1,4 @@
-// pages/api/supervisor/dashboard.js - COMPLETE UPDATED VERSION
+// pages/api/supervisor/dashboard.js - COMPLETE FIXED VERSION
 
 import { createClient } from '@supabase/supabase-js';
 
