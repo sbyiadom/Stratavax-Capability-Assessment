@@ -1,5 +1,5 @@
 // pages/api/admin/supervisor-assignments.js
-// COMPLETE FIXED VERSION
+// FINAL WORKING VERSION
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -54,14 +54,6 @@ export default async function handler(req, res) {
 
     if (assignError) {
       console.error('[Assignments API] Error:', assignError);
-      // If the table doesn't exist, return empty
-      if (assignError.code === '42P01') {
-        return res.status(200).json({
-          success: true,
-          assignments: {},
-          message: 'candidate_supervisors table not found'
-        });
-      }
       return res.status(500).json({ success: false, error: assignError.message });
     }
 
