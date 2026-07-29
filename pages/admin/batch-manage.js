@@ -1,6 +1,6 @@
-// pages/admin/batch-manage.js - COMPLETE WITH CORRECT SUPERVISOR LIST
+// pages/admin/batch-manage.js - COMPLETE FIXED VERSION
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import AppLayout from "../../components/AppLayout";
@@ -113,13 +113,13 @@ function SupervisorAssignmentModal({ candidate, onClose, onSave }) {
         },
         body: JSON.stringify({
           candidateId: candidate.id,
-          supervisorIds: selectedSupervisors,
-          action: 'replace'
+          supervisorIds: selectedSupervisors
         })
       });
 
       const data = await response.json();
-      if (!data.success) {
+      
+      if (!response.ok || !data.success) {
         throw new Error(data.error || 'Failed to assign supervisors');
       }
 
@@ -542,7 +542,6 @@ export default function AdminBatchManageRedirect() {
 
   const loadSupervisors = async () => {
     try {
-      // Get supervisors from supervisor_profiles table
       const { data, error } = await supabase
         .from('supervisor_profiles')
         .select('id, full_name, email, is_active')
@@ -641,7 +640,6 @@ export default function AdminBatchManageRedirect() {
                     </tr>
                   ) : (
                     candidates.map((candidate) => {
-                      // Find the supervisor name
                       const supervisorName = candidate.supervisor_id 
                         ? supervisorList.find(s => s.id === candidate.supervisor_id)?.full_name 
                         : null;
