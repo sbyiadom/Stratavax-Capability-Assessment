@@ -1,5 +1,5 @@
 // pages/admin/assign-candidates.js
-// MODIFIED: Supports multiple supervisors per candidate with service role key
+// MODIFIED: Uses API route for database operations
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
@@ -136,48 +136,28 @@ export default function AssignCandidates() {
       const candidateRows = candidatesResponse.data || [];
       const supervisorRows = supervisorsResponse.data || [];
 
-      // Fetch existing multiple assignments from candidate_supervisors table
+      // Fetch existing multiple assignments via API
       const candidateIds = candidateRows.map(c => c.id);
       let multipleAssignments = {};
       
       if (candidateIds.length > 0) {
-        // Use service role key to bypass RLS
-        const { createClient } = await import('@supabase/supabase-js');
-        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-        const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+        const { data: session } = await supabase.auth.getSession();
+        const token = session?.session?.access_token;
         
-        let assignmentsData = [];
-        
-        if (supabaseUrl && supabaseServiceKey) {
-          const adminClient = createClient(supabaseUrl, supabaseServiceKey, {
-            auth: { persistSession: false }
+        if (token) {
+          const response = await fetch(`/api/admin/supervisor-assignments?candidateIds=${candidateIds.join(',')}`, {
+            headers: {
+              'Authorization': `Bearer ${token}`
+            }
           });
           
-          const { data: assignments, error: assignError } = await adminClient
-            .from('candidate_supervisors')
-            .select('candidate_id, supervisor_id')
-            .in('candidate_id', candidateIds);
-            
-          if (!assignError && assignments) {
-            assignmentsData = assignments;
-          }
-        } else {
-          // Fallback to regular client
-          const { data: assignments, error: assignError } = await supabase
-            .from('candidate_supervisors')
-            .select('candidate_id, supervisor_id')
-            .in('candidate_id', candidateIds);
-            
-          if (!assignError && assignments) {
-            assignmentsData = assignments;
+          if (response.ok) {
+            const data = await response.json();
+            if (data.success && data.assignments) {
+              multipleAssignments = data.assignments;
+            }
           }
         }
-        
-        multipleAssignments = assignmentsData.reduce((acc, curr) => {
-          if (!acc[curr.candidate_id]) acc[curr.candidate_id] = [];
-          acc[curr.candidate_id].push(curr.supervisor_id);
-          return acc;
-        }, {});
       }
 
       setCandidates(candidateRows);
@@ -247,87 +227,33 @@ export default function AssignCandidates() {
   }
 
   // ============================================================
-  // FIXED: Uses service role key to bypass RLS
+  // UPDATED: Uses API route instead of direct database access
   // ============================================================
   async function syncMultipleAssignments(candidateId, supervisorIds) {
-    // Get the service role key to bypass RLS
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    
-    // Import createClient dynamically
-    const { createClient } = await import('@supabase/supabase-js');
-    
-    // Create admin client with service role key
-    const adminClient = createClient(supabaseUrl, supabaseServiceKey, {
-      auth: { persistSession: false }
-    });
+    const { data: session } = await supabase.auth.getSession();
+    const token = session?.session?.access_token;
 
-    // Remove existing multiple assignments using admin client
-    const { error: deleteError } = await adminClient
-      .from('candidate_supervisors')
-      .delete()
-      .eq('candidate_id', candidateId);
-
-    if (deleteError) throw deleteError;
-
-    // Insert new multiple assignments using admin client
-    if (supervisorIds && supervisorIds.length > 0) {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const userId = sessionData?.session?.user?.id;
-
-      const assignments = supervisorIds.map(sid => ({
-        candidate_id: candidateId,
-        supervisor_id: sid,
-        assigned_by: userId
-      }));
-
-      const { error: insertError } = await adminClient
-        .from('candidate_supervisors')
-        .insert(assignments);
-
-      if (insertError) throw insertError;
+    if (!token) {
+      throw new Error('Not authenticated');
     }
 
-    // Also update the primary supervisor_id in candidate_profiles (first one or null)
-    const primarySupervisor = (supervisorIds && supervisorIds.length > 0) ? supervisorIds[0] : null;
-    const { error: updateError } = await supabase
-      .from('candidate_profiles')
-      .update({
-        supervisor_id: primarySupervisor,
-        updated_at: new Date().toISOString()
+    const response = await fetch('/api/admin/supervisors/assign-multiple', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        candidateId,
+        supervisorIds
       })
-      .eq('id', candidateId);
+    });
 
-    if (updateError) throw updateError;
-
-    // Also sync with supervisor_candidate_access for backward compatibility
-    await syncSingleAccessRecord(candidateId, primarySupervisor);
-  }
-
-  async function syncSingleAccessRecord(candidateId, supervisorId) {
-    const { error: deleteError } = await supabase
-      .from("supervisor_candidate_access")
-      .delete()
-      .eq("candidate_id", candidateId);
-
-    if (deleteError) throw deleteError;
-
-    if (!supervisorId) return;
-
-    const { error: insertError } = await supabase
-      .from("supervisor_candidate_access")
-      .upsert(
-        {
-          supervisor_id: supervisorId,
-          candidate_id: candidateId
-        },
-        {
-          onConflict: "supervisor_id,candidate_id",
-          ignoreDuplicates: true
-        }
-      );
-
-    if (insertError) throw insertError;
+    const result = await response.json();
+    
+    if (!result.success) {
+      throw new Error(result.error || 'Failed to assign supervisors');
+    }
   }
 
   async function handleAssign(candidateId) {
@@ -364,33 +290,29 @@ export default function AssignCandidates() {
       setProcessingCandidate(candidateId);
       setMessage({ type: "", text: "" });
 
-      // Use service role key to bypass RLS for clear
-      const { createClient } = await import('@supabase/supabase-js');
-      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-      const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-      
-      const adminClient = createClient(supabaseUrl, supabaseServiceKey, {
-        auth: { persistSession: false }
+      const { data: session } = await supabase.auth.getSession();
+      const token = session?.session?.access_token;
+
+      if (!token) {
+        throw new Error('Not authenticated');
+      }
+
+      const response = await fetch('/api/admin/supervisors/clear-assignments', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          candidateId
+        })
       });
 
-      const { error: deleteError } = await adminClient
-        .from('candidate_supervisors')
-        .delete()
-        .eq('candidate_id', candidateId);
-
-      if (deleteError) throw deleteError;
-
-      const { error: updateError } = await supabase
-        .from("candidate_profiles")
-        .update({
-          supervisor_id: null,
-          updated_at: new Date().toISOString()
-        })
-        .eq("id", candidateId);
-
-      if (updateError) throw updateError;
-
-      await syncSingleAccessRecord(candidateId, null);
+      const result = await response.json();
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to clear assignments');
+      }
 
       setMessage({ type: "success", text: "All supervisor assignments cleared." });
       await fetchData();
@@ -431,8 +353,32 @@ export default function AssignCandidates() {
       setBulkProcessing(true);
       setMessage({ type: "", text: "" });
 
-      for (const candidate of unassigned) {
-        await syncMultipleAssignments(candidate.id, selectedBulkSupervisors);
+      const { data: session } = await supabase.auth.getSession();
+      const token = session?.session?.access_token;
+
+      if (!token) {
+        throw new Error('Not authenticated');
+      }
+
+      const candidateIds = unassigned.map(c => c.id);
+
+      const response = await fetch('/api/admin/supervisors/assign-multiple', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          candidateIds,
+          supervisorIds: selectedBulkSupervisors,
+          isBulk: true
+        })
+      });
+
+      const result = await response.json();
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to assign supervisors');
       }
 
       setSelectedBulkSupervisors([]);
