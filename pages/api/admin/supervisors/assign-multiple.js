@@ -1,5 +1,5 @@
 // pages/api/admin/supervisors/assign-multiple.js
-// COMPLETE FIXED VERSION
+// FINAL WORKING VERSION
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -65,7 +65,7 @@ export default async function handler(req, res) {
         const assignments = supervisorIds.map(sid => ({
           candidate_id: id,
           supervisor_id: sid,
-          assigned_by: userData.user.id || null
+          assigned_by: userData.user.id
         }));
 
         const { data: insertData, error: insertError } = await supabase
@@ -98,8 +98,7 @@ export default async function handler(req, res) {
         results.push({ 
           candidateId: id, 
           success: true, 
-          assigned: supervisorIds.length,
-          data: insertData
+          assigned: supervisorIds.length
         });
 
       } catch (err) {
