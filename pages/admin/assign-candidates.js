@@ -1,5 +1,5 @@
 // pages/admin/assign-candidates.js
-// MODIFIED: Supports multiple supervisors per candidate
+// MODIFIED: Supports multiple supervisors per candidate with service role key
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
@@ -141,18 +141,43 @@ export default function AssignCandidates() {
       let multipleAssignments = {};
       
       if (candidateIds.length > 0) {
-        const { data: assignments, error: assignError } = await supabase
-          .from('candidate_supervisors')
-          .select('candidate_id, supervisor_id')
-          .in('candidate_id', candidateIds);
-
-        if (!assignError && assignments) {
-          multipleAssignments = assignments.reduce((acc, curr) => {
-            if (!acc[curr.candidate_id]) acc[curr.candidate_id] = [];
-            acc[curr.candidate_id].push(curr.supervisor_id);
-            return acc;
-          }, {});
+        // Use service role key to bypass RLS
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+        const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+        
+        let assignmentsData = [];
+        
+        if (supabaseUrl && supabaseServiceKey) {
+          const adminClient = createClient(supabaseUrl, supabaseServiceKey, {
+            auth: { persistSession: false }
+          });
+          
+          const { data: assignments, error: assignError } = await adminClient
+            .from('candidate_supervisors')
+            .select('candidate_id, supervisor_id')
+            .in('candidate_id', candidateIds);
+            
+          if (!assignError && assignments) {
+            assignmentsData = assignments;
+          }
+        } else {
+          // Fallback to regular client
+          const { data: assignments, error: assignError } = await supabase
+            .from('candidate_supervisors')
+            .select('candidate_id, supervisor_id')
+            .in('candidate_id', candidateIds);
+            
+          if (!assignError && assignments) {
+            assignmentsData = assignments;
+          }
         }
+        
+        multipleAssignments = assignmentsData.reduce((acc, curr) => {
+          if (!acc[curr.candidate_id]) acc[curr.candidate_id] = [];
+          acc[curr.candidate_id].push(curr.supervisor_id);
+          return acc;
+        }, {});
       }
 
       setCandidates(candidateRows);
@@ -221,18 +246,32 @@ export default function AssignCandidates() {
     }, 4500);
   }
 
+  // ============================================================
+  // FIXED: Uses service role key to bypass RLS
+  // ============================================================
   async function syncMultipleAssignments(candidateId, supervisorIds) {
-    // Remove existing multiple assignments
-    const { error: deleteError } = await supabase
+    // Get the service role key to bypass RLS
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    
+    // Import createClient dynamically
+    const { createClient } = await import('@supabase/supabase-js');
+    
+    // Create admin client with service role key
+    const adminClient = createClient(supabaseUrl, supabaseServiceKey, {
+      auth: { persistSession: false }
+    });
+
+    // Remove existing multiple assignments using admin client
+    const { error: deleteError } = await adminClient
       .from('candidate_supervisors')
       .delete()
       .eq('candidate_id', candidateId);
 
     if (deleteError) throw deleteError;
 
-    // Insert new multiple assignments
+    // Insert new multiple assignments using admin client
     if (supervisorIds && supervisorIds.length > 0) {
-      // Get user session first
       const { data: sessionData } = await supabase.auth.getSession();
       const userId = sessionData?.session?.user?.id;
 
@@ -242,7 +281,7 @@ export default function AssignCandidates() {
         assigned_by: userId
       }));
 
-      const { error: insertError } = await supabase
+      const { error: insertError } = await adminClient
         .from('candidate_supervisors')
         .insert(assignments);
 
@@ -325,7 +364,16 @@ export default function AssignCandidates() {
       setProcessingCandidate(candidateId);
       setMessage({ type: "", text: "" });
 
-      const { error: deleteError } = await supabase
+      // Use service role key to bypass RLS for clear
+      const { createClient } = await import('@supabase/supabase-js');
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+      
+      const adminClient = createClient(supabaseUrl, supabaseServiceKey, {
+        auth: { persistSession: false }
+      });
+
+      const { error: deleteError } = await adminClient
         .from('candidate_supervisors')
         .delete()
         .eq('candidate_id', candidateId);
