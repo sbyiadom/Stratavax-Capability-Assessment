@@ -10,6 +10,38 @@ function extractBearerToken(req) {
   return authHeader.slice(7).trim();
 }
 
+function safeNumber(value, fallback = 0) {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : fallback;
+}
+
+function getReportData(result) {
+  const raw = result?.report_data;
+  if (!raw) return {};
+  if (typeof raw === 'object') return raw;
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch (error) {
+      console.error('Failed to parse report_data:', error);
+      return {};
+    }
+  }
+  return {};
+}
+
+function getNationalServiceOverallScore(result) {
+  const reportData = getReportData(result);
+  return safeNumber(
+    reportData?.dimensions?.overallScore ??
+    reportData?.scores?.overall ??
+    reportData?.overallScore ??
+    result?.percentage_score ??
+    0
+  );
+}
+
 function calculateSubScores(categoryScores) {
   let workplaceTotal = 0;
   let workplaceCount = 0;
@@ -59,9 +91,9 @@ function calculateSubScores(categoryScores) {
 }
 
 function calculateRecommendation(workplaceReadiness, intellectualCapability, overallScore) {
-  const workplace = Number(workplaceReadiness || 0);
-  const intellectual = Number(intellectualCapability || 0);
-  const overall = Number(overallScore || 0);
+  const workplace = safeNumber(workplaceReadiness);
+  const intellectual = safeNumber(intellectualCapability);
+  const overall = safeNumber(overallScore);
   
   if (overall > 0) {
     if (overall >= 85) return 'Highly Recommended';
@@ -134,7 +166,7 @@ export default async function handler(req, res) {
       console.log('[Dashboard] Found candidates by supervisor_id:', candidatesBySupervisorId.length);
     }
 
-    // Method 2: Check candidate_supervisors junction table (NEW - for multiple supervisors)
+    // Method 2: Check candidate_supervisors junction table
     try {
       const { data: assignedCandidates, error: assignedError } = await serviceClient
         .from('candidate_supervisors')
@@ -214,9 +246,14 @@ export default async function handler(req, res) {
     console.log('[Dashboard] Assessments found:', assessments?.length || 0);
 
     // ============================================================
-    // STEP 4: Get assessment details
+    // STEP 4: Get assessment details - FIXED: Merge both sources
     // ============================================================
-    const assessmentIds = assessments ? assessments.map(a => a.assessment_id).filter(Boolean) : [];
+    const candidateAssessmentIds = assessments ? assessments.map(a => a.assessment_id).filter(Boolean) : [];
+    const resultAssessmentIds = results ? results.map(r => r.assessment_id).filter(Boolean) : [];
+    const assessmentIds = [...new Set([...candidateAssessmentIds, ...resultAssessmentIds])];
+
+    console.log('[Dashboard] Total unique assessment IDs:', assessmentIds.length);
+
     let assessmentMap = {};
 
     if (assessmentIds.length > 0) {
@@ -264,14 +301,15 @@ export default async function handler(req, res) {
       // Build completed assessments list with scores
       const completedAssessments = completedResults.map(r => {
         const assessment = assessmentMap[r.assessment_id] || {};
-        const type = assessment.assessment_type || {};
+        // FIXED: Use assessment_types alias
+        const type = assessment.assessment_types || assessment.assessment_type || {};
         const isNationalService = 
           type?.code === 'national_service' ||
           assessment?.title === 'National Service Recruitment Assessment' ||
           assessment?.id === NATIONAL_SERVICE_ASSESSMENT_ID;
 
-        let workplace = Number(r.workplace_readiness || 0);
-        let intellectual = Number(r.intellectual_capability || 0);
+        let workplace = safeNumber(r.workplace_readiness || 0);
+        let intellectual = safeNumber(r.intellectual_capability || 0);
 
         if (workplace === 0 && intellectual === 0 && r.category_scores) {
           const calculated = calculateSubScores(r.category_scores);
@@ -279,7 +317,12 @@ export default async function handler(req, res) {
           intellectual = calculated.intellectualCapability;
         }
 
-        const overallScore = Number(r.percentage_score || 0);
+        // FIXED: Prefer report_data for National Service scores
+        let overallScore = safeNumber(r.percentage_score || 0);
+        if (isNationalService) {
+          overallScore = getNationalServiceOverallScore(r);
+        }
+        
         const recommendation = calculateRecommendation(workplace, intellectual, overallScore);
 
         return {
