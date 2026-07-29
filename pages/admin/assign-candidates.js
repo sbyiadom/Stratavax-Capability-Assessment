@@ -1,9 +1,5 @@
 // pages/admin/assign-candidates.js
-// Corrected candidate-to-supervisor assignment page
-// Permanent fix included:
-// 1. Updates candidate_profiles.supervisor_id
-// 2. Synchronizes supervisor_candidate_access at the same time
-// 3. Clears old supervisor access records when reassignment or clear assignment happens
+// MODIFIED: Supports multiple supervisors per candidate
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
@@ -50,13 +46,14 @@ export default function AssignCandidates() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [candidates, setCandidates] = useState([]);
   const [supervisors, setSupervisors] = useState([]);
-  const [selectedSupervisor, setSelectedSupervisor] = useState({});
+  const [selectedSupervisors, setSelectedSupervisors] = useState({}); // Changed to store array
   const [searchTerm, setSearchTerm] = useState("");
   const [filterSupervisor, setFilterSupervisor] = useState("all");
-  const [selectedBulkSupervisor, setSelectedBulkSupervisor] = useState("");
+  const [selectedBulkSupervisors, setSelectedBulkSupervisors] = useState([]); // Changed to array
   const [processingCandidate, setProcessingCandidate] = useState(null);
   const [bulkProcessing, setBulkProcessing] = useState(false);
   const [message, setMessage] = useState({ type: "", text: "" });
+  const [showMultiSelect, setShowMultiSelect] = useState({});
 
   useEffect(() => {
     checkAdminAuth();
@@ -139,14 +136,44 @@ export default function AssignCandidates() {
       const candidateRows = candidatesResponse.data || [];
       const supervisorRows = supervisorsResponse.data || [];
 
+      // Fetch existing multiple assignments from candidate_supervisors table
+      const candidateIds = candidateRows.map(c => c.id);
+      let multipleAssignments = {};
+      
+      if (candidateIds.length > 0) {
+        const { data: assignments, error: assignError } = await supabase
+          .from('candidate_supervisors')
+          .select('candidate_id, supervisor_id')
+          .in('candidate_id', candidateIds);
+
+        if (!assignError && assignments) {
+          // Group by candidate_id
+          multipleAssignments = assignments.reduce((acc, curr) => {
+            if (!acc[curr.candidate_id]) acc[curr.candidate_id] = [];
+            acc[curr.candidate_id].push(curr.supervisor_id);
+            return acc;
+          }, {});
+        }
+      }
+
       setCandidates(candidateRows);
       setSupervisors(supervisorRows);
 
+      // Initialize selected supervisors with existing multiple assignments
       const initialSelected = {};
       candidateRows.forEach((candidate) => {
-        initialSelected[candidate.id] = candidate.supervisor_id || "";
+        initialSelected[candidate.id] = multipleAssignments[candidate.id] || [];
       });
-      setSelectedSupervisor(initialSelected);
+      setSelectedSupervisors(initialSelected);
+      
+      // Initialize showMultiSelect state
+      const initialShowMulti = {};
+      candidateRows.forEach((candidate) => {
+        const hasMultiple = (initialSelected[candidate.id] || []).length > 1;
+        initialShowMulti[candidate.id] = hasMultiple;
+      });
+      setShowMultiSelect(initialShowMulti);
+
     } catch (error) {
       console.error("Error fetching assignment data:", error);
       setMessage({ type: "error", text: "Failed to load assignment data: " + getReadableError(error) });
@@ -159,9 +186,15 @@ export default function AssignCandidates() {
     let filtered = [...candidates];
 
     if (filterSupervisor === "unassigned") {
-      filtered = filtered.filter((candidate) => !candidate.supervisor_id);
+      filtered = filtered.filter((candidate) => {
+        const multi = selectedSupervisors[candidate.id] || [];
+        return !candidate.supervisor_id && multi.length === 0;
+      });
     } else if (filterSupervisor !== "all") {
-      filtered = filtered.filter((candidate) => candidate.supervisor_id === filterSupervisor);
+      filtered = filtered.filter((candidate) => {
+        const multi = selectedSupervisors[candidate.id] || [];
+        return candidate.supervisor_id === filterSupervisor || multi.includes(filterSupervisor);
+      });
     }
 
     if (searchTerm.trim()) {
@@ -179,7 +212,10 @@ export default function AssignCandidates() {
   }
 
   function getUnassignedCandidates() {
-    return candidates.filter((candidate) => !candidate.supervisor_id);
+    return candidates.filter((candidate) => {
+      const multi = selectedSupervisors[candidate.id] || [];
+      return !candidate.supervisor_id && multi.length === 0;
+    });
   }
 
   function clearMessageAfterDelay() {
@@ -188,8 +224,48 @@ export default function AssignCandidates() {
     }, 4500);
   }
 
+  async function syncMultipleAssignments(candidateId, supervisorIds) {
+    // Remove existing multiple assignments
+    const { error: deleteError } = await supabase
+      .from('candidate_supervisors')
+      .delete()
+      .eq('candidate_id', candidateId);
+
+    if (deleteError) throw deleteError;
+
+    // Insert new multiple assignments
+    if (supervisorIds && supervisorIds.length > 0) {
+      const assignments = supervisorIds.map(sid => ({
+        candidate_id: candidateId,
+        supervisor_id: sid,
+        assigned_by: (await supabase.auth.getSession()).data?.session?.user?.id
+      }));
+
+      const { error: insertError } = await supabase
+        .from('candidate_supervisors')
+        .insert(assignments);
+
+      if (insertError) throw insertError;
+    }
+
+    // Also update the primary supervisor_id in candidate_profiles (first one or null)
+    const primarySupervisor = (supervisorIds && supervisorIds.length > 0) ? supervisorIds[0] : null;
+    const { error: updateError } = await supabase
+      .from('candidate_profiles')
+      .update({
+        supervisor_id: primarySupervisor,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', candidateId);
+
+    if (updateError) throw updateError;
+
+    // Also sync with supervisor_candidate_access for backward compatibility
+    await syncSingleAccessRecord(candidateId, primarySupervisor);
+  }
+
   async function syncSingleAccessRecord(candidateId, supervisorId) {
-    // Remove any previous access record for this candidate so reassignment stays clean.
+    // Remove any previous access record for this candidate
     const { error: deleteError } = await supabase
       .from("supervisor_candidate_access")
       .delete()
@@ -215,44 +291,12 @@ export default function AssignCandidates() {
     if (insertError) throw insertError;
   }
 
-  async function syncBulkAccessRecords(candidateIds, supervisorId) {
-    if (!candidateIds || candidateIds.length === 0) return;
-
-    const { error: deleteError } = await supabase
-      .from("supervisor_candidate_access")
-      .delete()
-      .in("candidate_id", candidateIds);
-
-    if (deleteError) throw deleteError;
-
-    if (!supervisorId) return;
-
-    const rows = candidateIds.map((candidateId) => ({
-      supervisor_id: supervisorId,
-      candidate_id: candidateId
-    }));
-
-    const { error: insertError } = await supabase
-      .from("supervisor_candidate_access")
-      .upsert(rows, {
-        onConflict: "supervisor_id,candidate_id",
-        ignoreDuplicates: true
-      });
-
-    if (insertError) throw insertError;
-  }
-
   async function handleAssign(candidateId) {
-    const supervisorId = selectedSupervisor[candidateId] || "";
+    const supervisorIds = selectedSupervisors[candidateId] || [];
     const candidate = candidates.find((item) => item.id === candidateId);
 
-    if (!supervisorId) {
-      setMessage({ type: "error", text: "Please select a supervisor before assigning." });
-      return;
-    }
-
-    if (candidate?.supervisor_id === supervisorId) {
-      setMessage({ type: "error", text: "This candidate is already assigned to the selected supervisor." });
+    if (supervisorIds.length === 0) {
+      setMessage({ type: "error", text: "Please select at least one supervisor before assigning." });
       return;
     }
 
@@ -260,19 +304,9 @@ export default function AssignCandidates() {
       setProcessingCandidate(candidateId);
       setMessage({ type: "", text: "" });
 
-      const { error } = await supabase
-        .from("candidate_profiles")
-        .update({
-          supervisor_id: supervisorId,
-          updated_at: new Date().toISOString()
-        })
-        .eq("id", candidateId);
+      await syncMultipleAssignments(candidateId, supervisorIds);
 
-      if (error) throw error;
-
-      await syncSingleAccessRecord(candidateId, supervisorId);
-
-      setMessage({ type: "success", text: "Candidate assigned successfully and supervisor access synchronized." });
+      setMessage({ type: "success", text: `Candidate assigned to ${supervisorIds.length} supervisor(s) successfully.` });
       await fetchData();
       clearMessageAfterDelay();
     } catch (error) {
@@ -284,14 +318,23 @@ export default function AssignCandidates() {
   }
 
   async function handleClearAssignment(candidateId) {
-    const confirmed = window.confirm("Clear this candidate supervisor assignment?");
+    const confirmed = window.confirm("Clear all supervisor assignments for this candidate?");
     if (!confirmed) return;
 
     try {
       setProcessingCandidate(candidateId);
       setMessage({ type: "", text: "" });
 
-      const { error } = await supabase
+      // Clear from candidate_supervisors
+      const { error: deleteError } = await supabase
+        .from('candidate_supervisors')
+        .delete()
+        .eq('candidate_id', candidateId);
+
+      if (deleteError) throw deleteError;
+
+      // Clear from candidate_profiles
+      const { error: updateError } = await supabase
         .from("candidate_profiles")
         .update({
           supervisor_id: null,
@@ -299,11 +342,11 @@ export default function AssignCandidates() {
         })
         .eq("id", candidateId);
 
-      if (error) throw error;
+      if (updateError) throw updateError;
 
       await syncSingleAccessRecord(candidateId, null);
 
-      setMessage({ type: "success", text: "Candidate assignment cleared and supervisor access removed." });
+      setMessage({ type: "success", text: "All supervisor assignments cleared." });
       await fetchData();
       clearMessageAfterDelay();
     } catch (error) {
@@ -322,18 +365,18 @@ export default function AssignCandidates() {
       return;
     }
 
-    if (!selectedBulkSupervisor) {
-      setMessage({ type: "error", text: "Please select a supervisor for bulk assignment." });
+    if (!selectedBulkSupervisors || selectedBulkSupervisors.length === 0) {
+      setMessage({ type: "error", text: "Please select at least one supervisor for bulk assignment." });
       return;
     }
 
-    const supervisor = supervisors.find((item) => item.id === selectedBulkSupervisor);
+    const supervisorNames = selectedBulkSupervisors.map(id => {
+      const sup = supervisors.find(s => s.id === id);
+      return sup?.full_name || sup?.email || id;
+    }).join(', ');
+
     const confirmed = window.confirm(
-      "Assign " +
-        unassigned.length +
-        " unassigned candidate(s) to " +
-        (supervisor?.full_name || supervisor?.email || "the selected supervisor") +
-        "?"
+      "Assign " + unassigned.length + " unassigned candidate(s) to " + supervisorNames + "?"
     );
 
     if (!confirmed) return;
@@ -342,22 +385,12 @@ export default function AssignCandidates() {
       setBulkProcessing(true);
       setMessage({ type: "", text: "" });
 
-      const candidateIds = unassigned.map((candidate) => candidate.id);
+      for (const candidate of unassigned) {
+        await syncMultipleAssignments(candidate.id, selectedBulkSupervisors);
+      }
 
-      const { error } = await supabase
-        .from("candidate_profiles")
-        .update({
-          supervisor_id: selectedBulkSupervisor,
-          updated_at: new Date().toISOString()
-        })
-        .in("id", candidateIds);
-
-      if (error) throw error;
-
-      await syncBulkAccessRecords(candidateIds, selectedBulkSupervisor);
-
-      setSelectedBulkSupervisor("");
-      setMessage({ type: "success", text: "Bulk assignment completed and supervisor access synchronized." });
+      setSelectedBulkSupervisors([]);
+      setMessage({ type: "success", text: `Bulk assignment completed for ${unassigned.length} candidate(s).` });
       await fetchData();
       clearMessageAfterDelay();
     } catch (error) {
@@ -368,9 +401,33 @@ export default function AssignCandidates() {
     }
   }
 
+  const toggleMultiSelect = (candidateId) => {
+    setShowMultiSelect(prev => ({
+      ...prev,
+      [candidateId]: !prev[candidateId]
+    }));
+  };
+
+  const handleSupervisorToggle = (candidateId, supervisorId) => {
+    setSelectedSupervisors(prev => {
+      const current = prev[candidateId] || [];
+      if (current.includes(supervisorId)) {
+        return { ...prev, [candidateId]: current.filter(id => id !== supervisorId) };
+      } else {
+        return { ...prev, [candidateId]: [...current, supervisorId] };
+      }
+    });
+  };
+
   const visibleCandidates = filteredCandidates();
-  const assignedCount = candidates.filter((candidate) => candidate.supervisor_id).length;
-  const unassignedCount = candidates.filter((candidate) => !candidate.supervisor_id).length;
+  const assignedCount = candidates.filter((candidate) => {
+    const multi = selectedSupervisors[candidate.id] || [];
+    return candidate.supervisor_id || multi.length > 0;
+  }).length;
+  const unassignedCount = candidates.filter((candidate) => {
+    const multi = selectedSupervisors[candidate.id] || [];
+    return !candidate.supervisor_id && multi.length === 0;
+  }).length;
 
   if (checkingAuth) {
     return (
@@ -408,7 +465,7 @@ export default function AssignCandidates() {
           </Link>
           <div style={styles.headerTitleBlock}>
             <h1 style={styles.title}>Assign Candidates to Supervisors</h1>
-            <p style={styles.subtitle}>Manage candidate ownership and supervisor visibility.</p>
+            <p style={styles.subtitle}>Manage candidate ownership and supervisor visibility. Select multiple supervisors per candidate.</p>
           </div>
           <button onClick={fetchData} style={styles.refreshButton}>Refresh</button>
         </div>
@@ -466,24 +523,38 @@ export default function AssignCandidates() {
               {unassignedCount > 0 && (
                 <div style={styles.bulkActions}>
                   <span style={styles.bulkLabel}>Bulk Assign Unassigned:</span>
-                  <select value={selectedBulkSupervisor} onChange={(event) => setSelectedBulkSupervisor(event.target.value)} style={styles.bulkSelect}>
-                    <option value="">Select Supervisor</option>
-                    {supervisors.map((supervisor) => (
-                      <option key={supervisor.id} value={supervisor.id}>
-                        {supervisor.full_name || supervisor.email} {supervisor.role === "admin" ? "(Admin)" : ""}
-                      </option>
-                    ))}
-                  </select>
+                  <div style={styles.bulkMultiSelect}>
+                    <select
+                      multiple
+                      value={selectedBulkSupervisors}
+                      onChange={(event) => {
+                        const options = event.target.options;
+                        const values = [];
+                        for (let i = 0; i < options.length; i++) {
+                          if (options[i].selected) values.push(options[i].value);
+                        }
+                        setSelectedBulkSupervisors(values);
+                      }}
+                      style={styles.bulkMultiSelectInput}
+                    >
+                      {supervisors.map((supervisor) => (
+                        <option key={supervisor.id} value={supervisor.id}>
+                          {supervisor.full_name || supervisor.email} {supervisor.role === "admin" ? "(Admin)" : ""}
+                        </option>
+                      ))}
+                    </select>
+                    <span style={styles.multiSelectHint}>Hold Ctrl/Cmd to select multiple</span>
+                  </div>
                   <button
                     onClick={handleBulkAssign}
-                    disabled={!selectedBulkSupervisor || bulkProcessing}
+                    disabled={selectedBulkSupervisors.length === 0 || bulkProcessing}
                     style={{
                       ...styles.bulkButton,
-                      opacity: !selectedBulkSupervisor || bulkProcessing ? 0.5 : 1,
-                      cursor: !selectedBulkSupervisor || bulkProcessing ? "not-allowed" : "pointer"
+                      opacity: selectedBulkSupervisors.length === 0 || bulkProcessing ? 0.5 : 1,
+                      cursor: selectedBulkSupervisors.length === 0 || bulkProcessing ? "not-allowed" : "pointer"
                     }}
                   >
-                    {bulkProcessing ? "Assigning..." : "Assign All (" + unassignedCount + ")"}
+                    {bulkProcessing ? "Assigning..." : `Assign All (${unassignedCount})`}
                   </button>
                 </div>
               )}
@@ -496,8 +567,8 @@ export default function AssignCandidates() {
                     <tr style={styles.tableHeadRow}>
                       <th style={styles.tableHead}>Candidate</th>
                       <th style={styles.tableHead}>Contact</th>
-                      <th style={styles.tableHead}>Current Supervisor</th>
-                      <th style={styles.tableHead}>Assign To</th>
+                      <th style={styles.tableHead}>Current Supervisor(s)</th>
+                      <th style={styles.tableHead}>Assign Supervisors</th>
                       <th style={styles.tableHead}>Actions</th>
                     </tr>
                   </thead>
@@ -508,9 +579,19 @@ export default function AssignCandidates() {
                       </tr>
                     ) : (
                       visibleCandidates.map((candidate) => {
-                        const candidateSelectedSupervisor = selectedSupervisor[candidate.id] || "";
+                        const candidateSelectedSupervisors = selectedSupervisors[candidate.id] || [];
                         const isProcessing = processingCandidate === candidate.id;
-                        const isAssignDisabled = !candidateSelectedSupervisor || candidateSelectedSupervisor === candidate.supervisor_id || isProcessing;
+                        const isAssignDisabled = candidateSelectedSupervisors.length === 0 || isProcessing;
+                        const isMultiSelect = showMultiSelect[candidate.id] || false;
+
+                        // Get current supervisor names
+                        const currentSupervisorNames = candidate.supervisor ? [candidate.supervisor.full_name || candidate.supervisor.email] : [];
+                        const multiNames = (selectedSupervisors[candidate.id] || [])
+                          .map(id => supervisors.find(s => s.id === id)?.full_name || id)
+                          .filter(name => name);
+
+                        const allNames = [...currentSupervisorNames, ...multiNames];
+                        const uniqueNames = [...new Set(allNames)];
 
                         return (
                           <tr key={candidate.id} style={styles.tableRow}>
@@ -529,28 +610,76 @@ export default function AssignCandidates() {
                               {candidate.phone && <div style={styles.candidatePhone}>{candidate.phone}</div>}
                             </td>
                             <td style={styles.tableCell}>
-                              {candidate.supervisor ? (
+                              {uniqueNames.length > 0 ? (
                                 <div style={styles.assignedBadge}>
-                                  <span style={styles.assignedName}>{candidate.supervisor.full_name || "Supervisor"}</span>
-                                  <span style={styles.assignedEmail}>{candidate.supervisor.email}</span>
+                                  {uniqueNames.map((name, index) => (
+                                    <span key={index} style={styles.assignedName}>{name}</span>
+                                  ))}
                                 </div>
                               ) : (
                                 <span style={styles.unassignedBadge}>Unassigned</span>
                               )}
                             </td>
                             <td style={styles.tableCell}>
-                              <select
-                                value={candidateSelectedSupervisor}
-                                onChange={(event) => setSelectedSupervisor((previous) => ({ ...previous, [candidate.id]: event.target.value }))}
-                                style={styles.assignSelect}
-                              >
-                                <option value="">Select Supervisor</option>
-                                {supervisors.map((supervisor) => (
-                                  <option key={supervisor.id} value={supervisor.id}>
-                                    {supervisor.full_name || supervisor.email} {supervisor.role === "admin" ? "(Admin)" : ""}
-                                  </option>
-                                ))}
-                              </select>
+                              <div style={styles.assignContainer}>
+                                {!isMultiSelect ? (
+                                  <div style={styles.singleSelectMode}>
+                                    <select
+                                      value={candidateSelectedSupervisors[0] || ""}
+                                      onChange={(event) => {
+                                        const value = event.target.value;
+                                        if (value) {
+                                          setSelectedSupervisors(prev => ({
+                                            ...prev,
+                                            [candidate.id]: [value]
+                                          }));
+                                        } else {
+                                          setSelectedSupervisors(prev => ({
+                                            ...prev,
+                                            [candidate.id]: []
+                                          }));
+                                        }
+                                      }}
+                                      style={styles.assignSelect}
+                                    >
+                                      <option value="">Select Supervisor</option>
+                                      {supervisors.map((supervisor) => (
+                                        <option key={supervisor.id} value={supervisor.id}>
+                                          {supervisor.full_name || supervisor.email} {supervisor.role === "admin" ? "(Admin)" : ""}
+                                        </option>
+                                      ))}
+                                    </select>
+                                    <button
+                                      onClick={() => toggleMultiSelect(candidate.id)}
+                                      style={styles.multiToggleButton}
+                                    >
+                                      Multiple
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <div style={styles.multiSelectMode}>
+                                    <div style={styles.checkboxGroup}>
+                                      {supervisors.map((supervisor) => (
+                                        <label key={supervisor.id} style={styles.checkboxLabel}>
+                                          <input
+                                            type="checkbox"
+                                            checked={candidateSelectedSupervisors.includes(supervisor.id)}
+                                            onChange={() => handleSupervisorToggle(candidate.id, supervisor.id)}
+                                            style={styles.checkbox}
+                                          />
+                                          {supervisor.full_name || supervisor.email}
+                                        </label>
+                                      ))}
+                                    </div>
+                                    <button
+                                      onClick={() => toggleMultiSelect(candidate.id)}
+                                      style={styles.multiToggleButton}
+                                    >
+                                      Single
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
                             </td>
                             <td style={styles.tableCell}>
                               <div style={styles.actionGroup}>
@@ -565,7 +694,7 @@ export default function AssignCandidates() {
                                 >
                                   {isProcessing ? "Saving..." : "Assign"}
                                 </button>
-                                {candidate.supervisor_id && (
+                                {(candidate.supervisor_id || (selectedSupervisors[candidate.id] || []).length > 0) && (
                                   <button
                                     onClick={() => handleClearAssignment(candidate.id)}
                                     disabled={isProcessing}
@@ -575,7 +704,7 @@ export default function AssignCandidates() {
                                       cursor: isProcessing ? "not-allowed" : "pointer"
                                     }}
                                   >
-                                    Clear
+                                    Clear All
                                   </button>
                                 )}
                               </div>
@@ -639,7 +768,9 @@ const styles = {
   filterSelect: { width: "100%", padding: "11px 16px", border: "2px solid #e2e8f0", borderRadius: "8px", fontSize: "14px", background: "white", cursor: "pointer", boxSizing: "border-box" },
   bulkActions: { background: "#f0f9f0", padding: "15px 20px", borderRadius: "10px", marginBottom: "20px", display: "flex", gap: "15px", alignItems: "center", flexWrap: "wrap", border: "1px solid #c6f6d5" },
   bulkLabel: { fontWeight: 800, color: "#0a5c2e" },
-  bulkSelect: { padding: "9px 16px", border: "2px solid #c6f6d5", borderRadius: "8px", fontSize: "14px", minWidth: "250px", background: "white" },
+  bulkMultiSelect: { display: "flex", flexDirection: "column", gap: "4px" },
+  bulkMultiSelectInput: { padding: "8px", border: "2px solid #c6f6d5", borderRadius: "8px", fontSize: "14px", minWidth: "250px", background: "white", height: "80px" },
+  multiSelectHint: { fontSize: "11px", color: "#718096" },
   bulkButton: { padding: "9px 20px", background: "#0a5c2e", color: "white", border: "none", borderRadius: "8px", fontSize: "14px", fontWeight: 800, cursor: "pointer" },
   tableContainer: { background: "white", padding: "24px", borderRadius: "16px", boxShadow: "0 4px 12px rgba(0,0,0,0.08)" },
   loadingState: { textAlign: "center", padding: "60px", color: "#667085" },
@@ -660,9 +791,15 @@ const styles = {
   candidatePhone: { fontSize: "12px", color: "#718096" },
   assignedBadge: { display: "flex", flexDirection: "column", gap: "2px" },
   assignedName: { fontWeight: 800, color: "#0a1929", fontSize: "14px" },
-  assignedEmail: { fontSize: "12px", color: "#718096" },
   unassignedBadge: { display: "inline-block", padding: "4px 12px", background: "#fef2f2", color: "#b91c1c", borderRadius: "20px", fontSize: "12px", fontWeight: 800 },
-  assignSelect: { width: "100%", padding: "8px 12px", border: "2px solid #e2e8f0", borderRadius: "6px", fontSize: "13px", background: "white", cursor: "pointer" },
+  assignContainer: { minWidth: "220px" },
+  singleSelectMode: { display: "flex", gap: "6px", alignItems: "center" },
+  multiSelectMode: { display: "flex", flexDirection: "column", gap: "6px" },
+  assignSelect: { flex: 1, padding: "8px 12px", border: "2px solid #e2e8f0", borderRadius: "6px", fontSize: "13px", background: "white", cursor: "pointer", minWidth: "160px" },
+  checkboxGroup: { display: "flex", flexDirection: "column", gap: "4px", maxHeight: "120px", overflowY: "auto", padding: "4px 8px", border: "1px solid #e2e8f0", borderRadius: "6px" },
+  checkboxLabel: { display: "flex", alignItems: "center", gap: "6px", fontSize: "13px", cursor: "pointer" },
+  checkbox: { cursor: "pointer" },
+  multiToggleButton: { padding: "4px 12px", background: "#e2e8f0", border: "none", borderRadius: "4px", fontSize: "12px", fontWeight: 700, cursor: "pointer", color: "#0a1929" },
   actionGroup: { display: "flex", gap: "8px", flexWrap: "wrap" },
   assignButton: { padding: "8px 16px", background: "#4caf50", color: "white", border: "none", borderRadius: "6px", fontSize: "13px", fontWeight: 800, cursor: "pointer" },
   clearAssignmentButton: { padding: "8px 16px", background: "#f44336", color: "white", border: "none", borderRadius: "6px", fontSize: "13px", fontWeight: 800, cursor: "pointer" },
