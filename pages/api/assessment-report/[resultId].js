@@ -112,40 +112,52 @@ function generateRecommendations(categoryScores, overallScore) {
 }
 
 // ============================================================
-// SPLIT CATEGORIES INTO WORKPLACE AND INTELLECTUAL
+// SPLIT CATEGORIES INTO WORKPLACE AND INTELLECTUAL - FIXED
 // ============================================================
-
-const WORKPLACE_KEYWORDS = [
-  'safety', 'risk', 'technical', 'communication', 'teamwork', 
-  'ownership', 'integrity', 'workplace', 'ethics', 'professional',
-  'readiness', 'conduct', 'attitude', 'work ethic', 'collaboration'
-];
-
-const INTELLECTUAL_KEYWORDS = [
-  'numerical', 'logical', 'reasoning', 'measurement', 'engineering',
-  'spatial', 'problem solving', 'troubleshooting', 'analysis',
-  'critical thinking', 'analytical', 'decision making', 'cognitive',
-  'aptitude', 'intellectual', 'capability'
-];
-
-function isWorkplaceCategory(categoryName) {
-  const lower = String(categoryName || '').toLowerCase();
-  return WORKPLACE_KEYWORDS.some(keyword => lower.includes(keyword));
-}
-
-function isIntellectualCategory(categoryName) {
-  const lower = String(categoryName || '').toLowerCase();
-  return INTELLECTUAL_KEYWORDS.some(keyword => lower.includes(keyword));
-}
 
 function splitCategoryScores(categoryScores) {
   const workplace = [];
   const intellectual = [];
 
+  // Exact category names for matching
+  const workplaceCategoryNames = [
+    'Communication & Teamwork',
+    'Ownership & Integrity',
+    'Safety & Risk Awareness',
+    'Technical Fundamentals',
+    'Workplace Ethics',
+    'Professional Conduct',
+    'Work Ethic',
+    'Workplace Readiness'
+  ];
+
+  const intellectualCategoryNames = [
+    'Learning Agility',
+    'Problem Solving & Troubleshooting',
+    'Logical Reasoning',
+    'Numerical Reasoning',
+    'Measurement & Engineering Units',
+    'Problem Solving',
+    'Critical Thinking',
+    'Analytical Skills',
+    'Intellectual Capability'
+  ];
+
   safeArray(categoryScores).forEach(cat => {
     const name = cat.category || cat.name || 'Unknown';
+    const trimmedName = name.trim();
     
-    if (isWorkplaceCategory(name)) {
+    // Check exact matches first
+    const isWorkplace = workplaceCategoryNames.some(catName => 
+      trimmedName === catName || trimmedName.toLowerCase() === catName.toLowerCase()
+    );
+    
+    const isIntellectual = intellectualCategoryNames.some(catName => 
+      trimmedName === catName || trimmedName.toLowerCase() === catName.toLowerCase()
+    );
+    
+    // If exact match found, use it
+    if (isWorkplace) {
       workplace.push({
         category: name,
         name: name,
@@ -153,7 +165,47 @@ function splitCategoryScores(categoryScores) {
         score: safeNumber(cat.earned || cat.score || 0),
         maxScore: safeNumber(cat.max || cat.maxScore || 100)
       });
-    } else if (isIntellectualCategory(name)) {
+      return;
+    }
+    
+    if (isIntellectual) {
+      intellectual.push({
+        category: name,
+        name: name,
+        percentage: safeNumber(cat.percentage || cat.score || 0),
+        score: safeNumber(cat.earned || cat.score || 0),
+        maxScore: safeNumber(cat.max || cat.maxScore || 100)
+      });
+      return;
+    }
+    
+    // Fallback: keyword matching
+    const lowerName = trimmedName.toLowerCase();
+    const workplaceKeywords = [
+      'safety', 'risk', 'technical', 'communication', 'teamwork',
+      'ownership', 'integrity', 'workplace', 'ethics', 'professional',
+      'conduct', 'collaboration', 'work ethic', 'attitude', 'readiness'
+    ];
+    
+    const intellectualKeywords = [
+      'learning agility', 'problem solving', 'troubleshooting',
+      'logical reasoning', 'numerical reasoning',
+      'measurement', 'engineering units', 'engineering',
+      'critical', 'analytical', 'cognitive', 'intellectual'
+    ];
+    
+    const hasWorkplaceKeyword = workplaceKeywords.some(keyword => lowerName.includes(keyword));
+    const hasIntellectualKeyword = intellectualKeywords.some(keyword => lowerName.includes(keyword));
+    
+    if (hasWorkplaceKeyword && !hasIntellectualKeyword) {
+      workplace.push({
+        category: name,
+        name: name,
+        percentage: safeNumber(cat.percentage || cat.score || 0),
+        score: safeNumber(cat.earned || cat.score || 0),
+        maxScore: safeNumber(cat.max || cat.maxScore || 100)
+      });
+    } else if (hasIntellectualKeyword && !hasWorkplaceKeyword) {
       intellectual.push({
         category: name,
         name: name,
@@ -162,14 +214,8 @@ function splitCategoryScores(categoryScores) {
         maxScore: safeNumber(cat.max || cat.maxScore || 100)
       });
     } else {
-      const lowerName = name.toLowerCase();
-      const hasWorkplacePattern = lowerName.includes('safety') || 
-                                  lowerName.includes('technical') || 
-                                  lowerName.includes('work') ||
-                                  lowerName.includes('team') ||
-                                  lowerName.includes('communication');
-      
-      if (hasWorkplacePattern) {
+      // Default: if it contains 'work' or 'team' or 'communication' -> workplace
+      if (lowerName.includes('work') || lowerName.includes('team') || lowerName.includes('communicat')) {
         workplace.push({
           category: name,
           name: name,
@@ -318,11 +364,14 @@ export default async function handler(req, res) {
       categoryScores = result.report_data.category_scores;
     }
 
-    // Split for National Service
+    // Split for National Service - using the improved function
     if (isNationalService && categoryScores.length > 0) {
       const split = splitCategoryScores(categoryScores);
       workplaceSubCategories = split.workplace;
       intellectualSubCategories = split.intellectual;
+      
+      console.log('[API] Workplace sub-categories:', workplaceSubCategories.length);
+      console.log('[API] Intellectual sub-categories:', intellectualSubCategories.length);
     }
 
     // ============================================================
@@ -335,18 +384,23 @@ export default async function handler(req, res) {
 
     // For National Service, calculate from sub-categories if missing
     if (isNationalService) {
+      // Recalculate from sub-categories if the stored values are 0 or missing
       if (workplaceReadiness === 0 && workplaceSubCategories.length > 0) {
         const total = workplaceSubCategories.reduce((sum, cat) => sum + safeNumber(cat.percentage, 0), 0);
         workplaceReadiness = Math.round(total / workplaceSubCategories.length);
+        console.log('[API] Calculated workplaceReadiness:', workplaceReadiness);
       }
 
       if (intellectualCapability === 0 && intellectualSubCategories.length > 0) {
         const total = intellectualSubCategories.reduce((sum, cat) => sum + safeNumber(cat.percentage, 0), 0);
         intellectualCapability = Math.round(total / intellectualSubCategories.length);
+        console.log('[API] Calculated intellectualCapability:', intellectualCapability);
       }
 
-      if (overallScore === 0 && workplaceReadiness > 0 && intellectualCapability > 0) {
+      // If overallScore is 0 but we have workplace and intellectual scores, calculate it
+      if (overallScore === 0 && (workplaceReadiness > 0 || intellectualCapability > 0)) {
         overallScore = Math.round((workplaceReadiness + intellectualCapability) / 2);
+        console.log('[API] Calculated overallScore:', overallScore);
       }
 
       if (!recommendation || recommendation === 'N/A' || recommendation === '') {
@@ -402,9 +456,6 @@ export default async function handler(req, res) {
     let report = {};
 
     if (isNationalService) {
-      // ============================================================
-      // FIX: Get suggested placement
-      // ============================================================
       const suggestedPlacement = getSuggestedPlacement(workplaceReadiness, intellectualCapability);
 
       report = {
@@ -432,14 +483,11 @@ export default async function handler(req, res) {
           preferredDepartment: candidateProfile?.preferred_department || '',
           assessmentDate: result.completed_at ? new Date(result.completed_at).toLocaleDateString() : 'N/A'
         },
-        // ============================================================
-        // ADD SUGGESTED PLACEMENT
-        // ============================================================
         suggestedPlacement: suggestedPlacement,
         reportType: 'national_service'
       };
     } else {
-      // STRATAVAX REPORT - with recommendations
+      // STRATAVAX REPORT
       report = {
         candidateInfo: {
           fullName: candidateProfile?.full_name || 'Candidate',
@@ -496,9 +544,6 @@ export default async function handler(req, res) {
       overallScore: overallScore,
       recommendation: recommendation,
       recommendations: recommendations,
-      // ============================================================
-      // INCLUDE SUGGESTED PLACEMENT IN TOP-LEVEL RESPONSE
-      // ============================================================
       suggestedPlacement: report.suggestedPlacement || []
     });
 
