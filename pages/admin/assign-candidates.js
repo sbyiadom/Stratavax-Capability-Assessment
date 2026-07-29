@@ -46,10 +46,10 @@ export default function AssignCandidates() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [candidates, setCandidates] = useState([]);
   const [supervisors, setSupervisors] = useState([]);
-  const [selectedSupervisors, setSelectedSupervisors] = useState({}); // Changed to store array
+  const [selectedSupervisors, setSelectedSupervisors] = useState({});
   const [searchTerm, setSearchTerm] = useState("");
   const [filterSupervisor, setFilterSupervisor] = useState("all");
-  const [selectedBulkSupervisors, setSelectedBulkSupervisors] = useState([]); // Changed to array
+  const [selectedBulkSupervisors, setSelectedBulkSupervisors] = useState([]);
   const [processingCandidate, setProcessingCandidate] = useState(null);
   const [bulkProcessing, setBulkProcessing] = useState(false);
   const [message, setMessage] = useState({ type: "", text: "" });
@@ -147,7 +147,6 @@ export default function AssignCandidates() {
           .in('candidate_id', candidateIds);
 
         if (!assignError && assignments) {
-          // Group by candidate_id
           multipleAssignments = assignments.reduce((acc, curr) => {
             if (!acc[curr.candidate_id]) acc[curr.candidate_id] = [];
             acc[curr.candidate_id].push(curr.supervisor_id);
@@ -159,14 +158,12 @@ export default function AssignCandidates() {
       setCandidates(candidateRows);
       setSupervisors(supervisorRows);
 
-      // Initialize selected supervisors with existing multiple assignments
       const initialSelected = {};
       candidateRows.forEach((candidate) => {
         initialSelected[candidate.id] = multipleAssignments[candidate.id] || [];
       });
       setSelectedSupervisors(initialSelected);
       
-      // Initialize showMultiSelect state
       const initialShowMulti = {};
       candidateRows.forEach((candidate) => {
         const hasMultiple = (initialSelected[candidate.id] || []).length > 1;
@@ -235,10 +232,14 @@ export default function AssignCandidates() {
 
     // Insert new multiple assignments
     if (supervisorIds && supervisorIds.length > 0) {
+      // Get user session first
+      const { data: sessionData } = await supabase.auth.getSession();
+      const userId = sessionData?.session?.user?.id;
+
       const assignments = supervisorIds.map(sid => ({
         candidate_id: candidateId,
         supervisor_id: sid,
-        assigned_by: (await supabase.auth.getSession()).data?.session?.user?.id
+        assigned_by: userId
       }));
 
       const { error: insertError } = await supabase
@@ -265,7 +266,6 @@ export default function AssignCandidates() {
   }
 
   async function syncSingleAccessRecord(candidateId, supervisorId) {
-    // Remove any previous access record for this candidate
     const { error: deleteError } = await supabase
       .from("supervisor_candidate_access")
       .delete()
@@ -325,7 +325,6 @@ export default function AssignCandidates() {
       setProcessingCandidate(candidateId);
       setMessage({ type: "", text: "" });
 
-      // Clear from candidate_supervisors
       const { error: deleteError } = await supabase
         .from('candidate_supervisors')
         .delete()
@@ -333,7 +332,6 @@ export default function AssignCandidates() {
 
       if (deleteError) throw deleteError;
 
-      // Clear from candidate_profiles
       const { error: updateError } = await supabase
         .from("candidate_profiles")
         .update({
@@ -584,7 +582,6 @@ export default function AssignCandidates() {
                         const isAssignDisabled = candidateSelectedSupervisors.length === 0 || isProcessing;
                         const isMultiSelect = showMultiSelect[candidate.id] || false;
 
-                        // Get current supervisor names
                         const currentSupervisorNames = candidate.supervisor ? [candidate.supervisor.full_name || candidate.supervisor.email] : [];
                         const multiNames = (selectedSupervisors[candidate.id] || [])
                           .map(id => supervisors.find(s => s.id === id)?.full_name || id)
