@@ -1,5 +1,5 @@
 // pages/api/admin/supervisors/assign-multiple.js
-// FINAL WORKING VERSION
+// COMPLETE FIXED VERSION - Simplified, deduplicates, returns detailed errors
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -7,118 +7,174 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 export default async function handler(req, res) {
+  // Only allow POST
   if (req.method !== 'POST') {
-    return res.status(405).json({ success: false, error: 'Method not allowed' });
+    return res.status(405).json({
+      success: false,
+      error: 'Method not allowed. Use POST.'
+    });
   }
 
   try {
+    // 1. Get token
     const token = req.headers.authorization?.replace('Bearer ', '');
     if (!token) {
-      return res.status(401).json({ success: false, error: 'Unauthorized' });
+      return res.status(401).json({
+        success: false,
+        error: 'Authorization token required'
+      });
     }
 
+    // 2. Create Supabase client with service role key
     const supabase = createClient(supabaseUrl, supabaseServiceKey, {
       auth: { persistSession: false }
     });
 
-    // Verify user
+    // 3. Verify user
     const { data: userData, error: userError } = await supabase.auth.getUser(token);
     if (userError || !userData?.user) {
-      console.error('[Assign Multiple API] Auth error:', userError);
-      return res.status(401).json({ success: false, error: 'Invalid token' });
+      console.error('[Assign API] Auth error:', userError);
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid or expired token'
+      });
     }
 
+    // 4. Parse request body
     const { candidateId, candidateIds, supervisorIds, isBulk } = req.body;
 
-    console.log('[Assign Multiple API] Request:', { candidateId, candidateIds, supervisorIds, isBulk });
+    console.log('[Assign API] Request:', {
+      candidateId,
+      candidateIds,
+      supervisorIds,
+      isBulk,
+      userId: userData.user.id
+    });
 
-    if (!supervisorIds || !Array.isArray(supervisorIds) || supervisorIds.length === 0) {
-      return res.status(400).json({ success: false, error: 'supervisorIds is required and must be an array' });
+    // 5. Deduplicate and validate supervisorIds
+    const cleanedSupervisorIds = [...new Set((supervisorIds || []).filter(Boolean))];
+    if (cleanedSupervisorIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'At least one valid supervisor ID is required'
+      });
     }
 
-    let ids = [];
+    // 6. Determine which candidates to process
+    let candidateIdList = [];
     if (isBulk && candidateIds) {
-      ids = Array.isArray(candidateIds) ? candidateIds : [candidateIds];
+      candidateIdList = Array.isArray(candidateIds) ? candidateIds : [candidateIds];
     } else if (candidateId) {
-      ids = [candidateId];
+      candidateIdList = [candidateId];
     } else {
-      return res.status(400).json({ success: false, error: 'candidateId or candidateIds is required' });
+      return res.status(400).json({
+        success: false,
+        error: 'candidateId or candidateIds is required'
+      });
     }
 
+    // Remove any null/undefined values and deduplicate
+    candidateIdList = [...new Set(candidateIdList.filter(Boolean))];
+
+    if (candidateIdList.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'No valid candidate IDs provided'
+      });
+    }
+
+    console.log('[Assign API] Processing candidates:', candidateIdList);
+    console.log('[Assign API] Supervisors to assign:', cleanedSupervisorIds);
+
+    // 7. Process each candidate
     const results = [];
 
-    for (const id of ids) {
+    for (const id of candidateIdList) {
       try {
-        // Step 1: Delete existing assignments for this candidate
+        // Step A: Delete existing assignments for this candidate
         const { error: deleteError } = await supabase
           .from('candidate_supervisors')
           .delete()
           .eq('candidate_id', id);
 
         if (deleteError) {
-          console.error('[Assign Multiple API] Delete error for', id, ':', deleteError);
-          results.push({ candidateId: id, success: false, error: `Delete failed: ${deleteError.message}` });
+          console.error('[Assign API] Delete error for', id, ':', deleteError);
+          results.push({
+            candidateId: id,
+            success: false,
+            error: `Delete failed: ${deleteError.message}`
+          });
           continue;
         }
 
-        // Step 2: Insert new assignments
-        const assignments = supervisorIds.map(sid => ({
+        // Step B: Insert new assignments
+        const assignments = cleanedSupervisorIds.map(sid => ({
           candidate_id: id,
-          supervisor_id: sid,
-          assigned_by: userData.user.id
+          supervisor_id: sid
         }));
 
-        const { data: insertData, error: insertError } = await supabase
+        const { error: insertError } = await supabase
           .from('candidate_supervisors')
-          .insert(assignments)
-          .select();
+          .insert(assignments);
 
         if (insertError) {
-          console.error('[Assign Multiple API] Insert error for', id, ':', insertError);
-          results.push({ candidateId: id, success: false, error: `Insert failed: ${insertError.message}` });
+          console.error('[Assign API] Insert error for', id, ':', insertError);
+          results.push({
+            candidateId: id,
+            success: false,
+            error: `Insert failed: ${insertError.message}`
+          });
           continue;
         }
 
-        // Step 3: Update primary supervisor in candidate_profiles
-        const primarySupervisor = supervisorIds[0];
+        // Step C: Update primary supervisor in candidate_profiles
+        const primarySupervisor = cleanedSupervisorIds[0];
         const { error: updateError } = await supabase
           .from('candidate_profiles')
-          .update({ 
+          .update({
             supervisor_id: primarySupervisor,
             updated_at: new Date().toISOString()
           })
           .eq('id', id);
 
         if (updateError) {
-          console.error('[Assign Multiple API] Update error for', id, ':', updateError);
-          // Don't fail the whole operation, just log it
+          console.error('[Assign API] Update error for', id, ':', updateError);
+          // Don't fail, just log it
         }
 
-        console.log('[Assign Multiple API] Successfully assigned', supervisorIds.length, 'supervisors to', id);
-        results.push({ 
-          candidateId: id, 
-          success: true, 
-          assigned: supervisorIds.length
+        console.log('[Assign API] Success for candidate:', id);
+        results.push({
+          candidateId: id,
+          success: true,
+          assigned: cleanedSupervisorIds.length
         });
 
       } catch (err) {
-        console.error('[Assign Multiple API] Error processing', id, ':', err);
-        results.push({ candidateId: id, success: false, error: err.message });
+        console.error('[Assign API] Error for', id, ':', err);
+        results.push({
+          candidateId: id,
+          success: false,
+          error: err.message || 'Unknown error'
+        });
       }
     }
 
-    const allSuccess = results.every(r => r.success);
-    const failed = results.filter(r => !r.success);
+    // 8. Return results with detailed errors
+    const successCount = results.filter(r => r.success).length;
+    const failedCount = results.filter(r => !r.success).length;
 
     return res.status(200).json({
-      success: allSuccess,
-      message: allSuccess ? 'All assignments completed successfully' : `${failed.length} failed`,
+      success: failedCount === 0,
+      message: failedCount === 0
+        ? `Successfully assigned ${successCount} candidate(s)`
+        : `${failedCount} of ${results.length} failed`,
       results,
-      failedCount: failed.length
+      successCount,
+      failedCount
     });
 
   } catch (error) {
-    console.error('[Assign Multiple API] Error:', error);
+    console.error('[Assign API] Fatal error:', error);
     return res.status(500).json({
       success: false,
       error: error.message || 'Internal server error'
