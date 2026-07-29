@@ -1,5 +1,5 @@
 // pages/api/admin/supervisors/assign-multiple.js
-// FIXED: Assigns multiple supervisors to candidates
+// COMPLETE FIXED VERSION
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -49,7 +49,7 @@ export default async function handler(req, res) {
 
     for (const id of ids) {
       try {
-        // Delete existing assignments
+        // Step 1: Delete existing assignments for this candidate
         const { error: deleteError } = await supabase
           .from('candidate_supervisors')
           .delete()
@@ -57,32 +57,36 @@ export default async function handler(req, res) {
 
         if (deleteError) {
           console.error('[Assign Multiple API] Delete error for', id, ':', deleteError);
-          results.push({ candidateId: id, success: false, error: deleteError.message });
+          results.push({ candidateId: id, success: false, error: `Delete failed: ${deleteError.message}` });
           continue;
         }
 
-        // Insert new assignments
+        // Step 2: Insert new assignments
         const assignments = supervisorIds.map(sid => ({
           candidate_id: id,
           supervisor_id: sid,
-          assigned_by: userData.user.id
+          assigned_by: userData.user.id || null
         }));
 
-        const { error: insertError } = await supabase
+        const { data: insertData, error: insertError } = await supabase
           .from('candidate_supervisors')
-          .insert(assignments);
+          .insert(assignments)
+          .select();
 
         if (insertError) {
           console.error('[Assign Multiple API] Insert error for', id, ':', insertError);
-          results.push({ candidateId: id, success: false, error: insertError.message });
+          results.push({ candidateId: id, success: false, error: `Insert failed: ${insertError.message}` });
           continue;
         }
 
-        // Update primary supervisor in candidate_profiles
+        // Step 3: Update primary supervisor in candidate_profiles
         const primarySupervisor = supervisorIds[0];
         const { error: updateError } = await supabase
           .from('candidate_profiles')
-          .update({ supervisor_id: primarySupervisor })
+          .update({ 
+            supervisor_id: primarySupervisor,
+            updated_at: new Date().toISOString()
+          })
           .eq('id', id);
 
         if (updateError) {
@@ -90,8 +94,13 @@ export default async function handler(req, res) {
           // Don't fail the whole operation, just log it
         }
 
-        results.push({ candidateId: id, success: true });
         console.log('[Assign Multiple API] Successfully assigned', supervisorIds.length, 'supervisors to', id);
+        results.push({ 
+          candidateId: id, 
+          success: true, 
+          assigned: supervisorIds.length,
+          data: insertData
+        });
 
       } catch (err) {
         console.error('[Assign Multiple API] Error processing', id, ':', err);
