@@ -1,5 +1,4 @@
-// components/reports/NationalServiceReport.js - COMPLETE CORRECTED VERSION
-// Uses authoritative National Service scores first, with category averages only as fallback
+// components/reports/NationalServiceReport.js - COMPLETE FIXED VERSION
 
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../../supabase/client';
@@ -525,44 +524,86 @@ export default function NationalServiceReport({
   }
 
   // ============================================================
-  // SPLIT INTO WORKPLACE AND INTELLECTUAL
+  // SPLIT INTO WORKPLACE AND INTELLECTUAL - FIXED
   // ============================================================
   const workplaceSubCategories = [];
   const intellectualSubCategories = [];
 
-  const workplaceKeywords = [
-    'safety', 'risk', 'hazard', 'technical', 'fundamentals',
-    'problem', 'troubleshooting', 'communication', 'teamwork',
-    'collaboration', 'ownership', 'integrity', 'accountability',
-    'professional', 'conduct', 'work_ethic', 'ethics', 'workplace',
-    'readiness', 'learning', 'agility', 'adaptability'
+  // Exact category names for matching
+  const workplaceCategoryNames = [
+    'Communication & Teamwork',
+    'Ownership & Integrity',
+    'Safety & Risk Awareness',
+    'Technical Fundamentals',
+    'Workplace Ethics',
+    'Professional Conduct',
+    'Work Ethic',
+    'Workplace Readiness'
   ];
 
-  const intellectualKeywords = [
-    'numerical', 'math', 'logical', 'logic', 'reasoning',
-    'measurement', 'engineering', 'units', 'spatial', 'analysis',
-    'critical', 'analytical', 'decision', 'intellectual', 'cognitive',
-    'capability'
+  const intellectualCategoryNames = [
+    'Learning Agility',
+    'Problem Solving & Troubleshooting',
+    'Logical Reasoning',
+    'Numerical Reasoning',
+    'Measurement & Engineering Units',
+    'Problem Solving',
+    'Critical Thinking',
+    'Analytical Skills',
+    'Intellectual Capability'
   ];
 
   if (categoryScores && categoryScores.length > 0) {
     categoryScores.forEach(cat => {
       const categoryName = safeString(cat.category || cat.name || cat.key || 'Unknown');
-      const lowerName = categoryName.toLowerCase().replace(/\s+/g, '_');
+      const trimmedName = categoryName.trim();
       const percentage = Number(cat.percentage ?? cat.score_percentage ?? 0);
-      const dimension = safeString(cat.dimension || '').toLowerCase();
       const normalizedCat = { ...cat, category: categoryName, percentage: Number.isFinite(percentage) ? percentage : 0 };
 
-      if (dimension === 'workplace') {
+      // Check exact matches first
+      const isWorkplace = workplaceCategoryNames.some(catName => 
+        trimmedName === catName || trimmedName.toLowerCase() === catName.toLowerCase()
+      );
+      
+      const isIntellectual = intellectualCategoryNames.some(catName => 
+        trimmedName === catName || trimmedName.toLowerCase() === catName.toLowerCase()
+      );
+
+      // Check dimension field
+      const dimension = safeString(cat.dimension || '').toLowerCase();
+
+      if (dimension === 'workplace' || isWorkplace) {
         workplaceSubCategories.push(normalizedCat);
-      } else if (dimension === 'intellectual') {
-        intellectualSubCategories.push(normalizedCat);
-      } else if (workplaceKeywords.some(keyword => lowerName.includes(keyword))) {
-        workplaceSubCategories.push(normalizedCat);
-      } else if (intellectualKeywords.some(keyword => lowerName.includes(keyword))) {
+      } else if (dimension === 'intellectual' || isIntellectual) {
         intellectualSubCategories.push(normalizedCat);
       } else {
-        intellectualSubCategories.push(normalizedCat);
+        // Fallback: keyword matching
+        const lowerName = trimmedName.toLowerCase();
+        const workplaceKeywords = [
+          'safety', 'risk', 'technical', 'communication', 'teamwork',
+          'ownership', 'integrity', 'workplace', 'ethics', 'professional',
+          'conduct', 'collaboration', 'work ethic', 'attitude', 'readiness'
+        ];
+        
+        const intellectualKeywords = [
+          'learning agility', 'problem solving', 'troubleshooting',
+          'logical reasoning', 'numerical reasoning',
+          'measurement', 'engineering units', 'engineering',
+          'critical', 'analytical', 'cognitive', 'intellectual'
+        ];
+        
+        const hasWorkplaceKeyword = workplaceKeywords.some(keyword => lowerName.includes(keyword));
+        const hasIntellectualKeyword = intellectualKeywords.some(keyword => lowerName.includes(keyword));
+        
+        if (hasWorkplaceKeyword && !hasIntellectualKeyword) {
+          workplaceSubCategories.push(normalizedCat);
+        } else if (hasIntellectualKeyword && !hasWorkplaceKeyword) {
+          intellectualSubCategories.push(normalizedCat);
+        } else if (lowerName.includes('work') || lowerName.includes('team') || lowerName.includes('communicat')) {
+          workplaceSubCategories.push(normalizedCat);
+        } else {
+          intellectualSubCategories.push(normalizedCat);
+        }
       }
     });
   }
