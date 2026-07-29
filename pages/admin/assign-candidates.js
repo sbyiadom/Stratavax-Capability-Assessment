@@ -1,5 +1,5 @@
 // pages/admin/assign-candidates.js
-// COMPLETE FIXED VERSION - Uses API routes for database operations
+// COMPLETE FIXED VERSION - Uses API routes for database operations with proper error handling
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
@@ -234,7 +234,7 @@ export default function AssignCandidates() {
   }
 
   // ============================================================
-  // UPDATED: Uses API route instead of direct database access
+  // UPDATED: Uses API route with proper error handling
   // ============================================================
   async function syncMultipleAssignments(candidateId, supervisorIds) {
     const { data: session } = await supabase.auth.getSession();
@@ -258,9 +258,27 @@ export default function AssignCandidates() {
 
     const result = await response.json();
 
-    if (!result.success) {
-      throw new Error(result.error || 'Failed to assign supervisors');
+    if (!response.ok) {
+      console.error('[API Error]', response.status, result);
+      throw new Error(result.error || `API returned ${response.status}`);
     }
+
+    if (!result.success) {
+      const errorMsg = result.error || result.message || 'Failed to assign supervisors';
+      console.error('[API Error]', errorMsg, result);
+      throw new Error(errorMsg);
+    }
+
+    // Check if individual assignments failed
+    if (result.results) {
+      const failed = result.results.filter(r => !r.success);
+      if (failed.length > 0) {
+        console.error('[API Error] Some assignments failed:', failed);
+        throw new Error(`${failed.length} of ${result.results.length} assignments failed`);
+      }
+    }
+
+    return result;
   }
 
   async function handleAssign(candidateId) {
@@ -316,6 +334,10 @@ export default function AssignCandidates() {
       });
 
       const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || `API returned ${response.status}`);
+      }
 
       if (!result.success) {
         throw new Error(result.error || 'Failed to clear assignments');
@@ -383,6 +405,10 @@ export default function AssignCandidates() {
       });
 
       const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || `API returned ${response.status}`);
+      }
 
       if (!result.success) {
         throw new Error(result.error || 'Failed to assign supervisors');
@@ -742,65 +768,416 @@ function StatCard({ icon, label, value }) {
 }
 
 const styles = {
-  checkingContainer: { minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "linear-gradient(135deg, #0a1929 0%, #1a2a3a 100%)", color: "white", padding: "20px", textAlign: "center" },
-  checkingText: { margin: 0, color: "rgba(255,255,255,0.9)", fontSize: "14px" },
-  spinner: { width: "40px", height: "40px", border: "4px solid rgba(255,255,255,0.3)", borderTop: "4px solid white", borderRadius: "50%", animation: "spin 1s linear infinite", marginBottom: "20px" },
-  spinnerDark: { width: "38px", height: "38px", border: "4px solid #e2e8f0", borderTop: "4px solid #0a1929", borderRadius: "50%", animation: "spin 1s linear infinite", margin: "0 auto 16px" },
-  container: { width: "90vw", maxWidth: "1400px", margin: "0 auto", padding: "30px 20px" },
-  header: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: "20px", marginBottom: "24px", background: "white", padding: "22px 30px", borderRadius: "16px", boxShadow: "0 4px 12px rgba(0,0,0,0.08)", flexWrap: "wrap" },
-  headerTitleBlock: { flex: 1, minWidth: "260px" },
-  backButton: { color: "#0a1929", textDecoration: "none", fontSize: "14px", fontWeight: 700, padding: "9px 16px", borderRadius: "8px", border: "1px solid #0a1929", display: "inline-block" },
-  refreshButton: { padding: "10px 18px", background: "#1565c0", color: "white", border: "none", borderRadius: "8px", fontSize: "14px", fontWeight: 700, cursor: "pointer" },
-  title: { margin: 0, color: "#0a1929", fontSize: "24px", fontWeight: 800 },
-  subtitle: { margin: "6px 0 0", color: "#667085", fontSize: "14px" },
-  message: { padding: "13px 18px", borderRadius: "10px", marginBottom: "20px", fontSize: "14px", lineHeight: 1.5 },
-  statsGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "18px", marginBottom: "24px" },
-  statCard: { background: "white", padding: "20px", borderRadius: "12px", display: "flex", alignItems: "center", gap: "15px", boxShadow: "0 4px 12px rgba(0,0,0,0.08)", border: "1px solid #eef2f7" },
-  statIcon: { fontSize: "32px" },
-  statLabel: { fontSize: "13px", color: "#718096", marginBottom: "4px", fontWeight: 700 },
-  statValue: { fontSize: "24px", fontWeight: 800, color: "#0a1929" },
-  filterBar: { background: "white", padding: "20px", borderRadius: "12px", boxShadow: "0 4px 12px rgba(0,0,0,0.08)", marginBottom: "20px", display: "flex", gap: "20px", flexWrap: "wrap", alignItems: "center" },
-  searchBox: { flex: 2, minWidth: "250px" },
-  searchInput: { width: "100%", padding: "11px 16px", border: "2px solid #e2e8f0", borderRadius: "8px", fontSize: "14px", outline: "none", boxSizing: "border-box" },
-  filterGroup: { flex: 1, minWidth: "220px" },
-  filterSelect: { width: "100%", padding: "11px 16px", border: "2px solid #e2e8f0", borderRadius: "8px", fontSize: "14px", background: "white", cursor: "pointer", boxSizing: "border-box" },
-  bulkActions: { background: "#f0f9f0", padding: "15px 20px", borderRadius: "10px", marginBottom: "20px", display: "flex", gap: "15px", alignItems: "center", flexWrap: "wrap", border: "1px solid #c6f6d5" },
-  bulkLabel: { fontWeight: 800, color: "#0a5c2e" },
-  bulkMultiSelect: { display: "flex", flexDirection: "column", gap: "4px" },
-  bulkMultiSelectInput: { padding: "8px", border: "2px solid #c6f6d5", borderRadius: "8px", fontSize: "14px", minWidth: "250px", background: "white", height: "80px" },
-  multiSelectHint: { fontSize: "11px", color: "#718096" },
-  bulkButton: { padding: "9px 20px", background: "#0a5c2e", color: "white", border: "none", borderRadius: "8px", fontSize: "14px", fontWeight: 800, cursor: "pointer" },
-  tableContainer: { background: "white", padding: "24px", borderRadius: "16px", boxShadow: "0 4px 12px rgba(0,0,0,0.08)" },
-  loadingState: { textAlign: "center", padding: "60px", color: "#667085" },
-  resultSummary: { marginBottom: "14px", fontSize: "13px", color: "#667085", fontWeight: 700 },
-  tableWrapper: { overflowX: "auto" },
-  table: { width: "100%", borderCollapse: "collapse", fontSize: "14px", minWidth: "900px" },
-  tableHeadRow: { borderBottom: "2px solid #0a1929", background: "#f8fafc" },
-  tableHead: { padding: "15px", fontWeight: 800, color: "#0a1929", textAlign: "left" },
-  tableRow: { borderBottom: "1px solid #e2e8f0" },
-  tableCell: { padding: "15px", verticalAlign: "top" },
-  noData: { padding: "40px", textAlign: "center", color: "#718096", fontStyle: "italic" },
-  candidateInfo: { display: "flex", alignItems: "center", gap: "12px" },
-  candidateAvatar: { width: "40px", height: "40px", borderRadius: "20px", background: "#0a1929", color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "18px", fontWeight: 800 },
-  candidateName: { fontWeight: 800, color: "#0a1929", marginBottom: "4px" },
-  candidateId: { fontSize: "11px", color: "#718096", fontFamily: "monospace" },
-  createdDate: { fontSize: "11px", color: "#94a3b8", marginTop: "3px" },
-  candidateEmail: { fontSize: "14px", color: "#0a1929", marginBottom: "4px" },
-  candidatePhone: { fontSize: "12px", color: "#718096" },
-  assignedBadge: { display: "flex", flexDirection: "column", gap: "2px" },
-  assignedName: { fontWeight: 800, color: "#0a1929", fontSize: "14px" },
-  unassignedBadge: { display: "inline-block", padding: "4px 12px", background: "#fef2f2", color: "#b91c1c", borderRadius: "20px", fontSize: "12px", fontWeight: 800 },
-  assignContainer: { minWidth: "220px" },
-  singleSelectMode: { display: "flex", gap: "6px", alignItems: "center" },
-  multiSelectMode: { display: "flex", flexDirection: "column", gap: "6px" },
-  assignSelect: { flex: 1, padding: "8px 12px", border: "2px solid #e2e8f0", borderRadius: "6px", fontSize: "13px", background: "white", cursor: "pointer", minWidth: "160px" },
-  checkboxGroup: { display: "flex", flexDirection: "column", gap: "4px", maxHeight: "120px", overflowY: "auto", padding: "4px 8px", border: "1px solid #e2e8f0", borderRadius: "6px" },
-  checkboxLabel: { display: "flex", alignItems: "center", gap: "6px", fontSize: "13px", cursor: "pointer" },
-  checkbox: { cursor: "pointer" },
-  multiToggleButton: { padding: "4px 12px", background: "#e2e8f0", border: "none", borderRadius: "4px", fontSize: "12px", fontWeight: 700, cursor: "pointer", color: "#0a1929" },
-  actionGroup: { display: "flex", gap: "8px", flexWrap: "wrap" },
-  assignButton: { padding: "8px 16px", background: "#4caf50", color: "white", border: "none", borderRadius: "6px", fontSize: "13px", fontWeight: 800, cursor: "pointer" },
-  clearAssignmentButton: { padding: "8px 16px", background: "#f44336", color: "white", border: "none", borderRadius: "6px", fontSize: "13px", fontWeight: 800, cursor: "pointer" },
-  unauthorized: { textAlign: "center", padding: "60px", color: "#667085", background: "white", borderRadius: "16px", maxWidth: "400px", margin: "100px auto" },
-  button: { padding: "10px 20px", background: "#0a1929", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "14px", fontWeight: 700, marginTop: "20px" }
+  checkingContainer: {
+    minHeight: "100vh",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    background: "linear-gradient(135deg, #0a1929 0%, #1a2a3a 100%)",
+    color: "white",
+    padding: "20px",
+    textAlign: "center"
+  },
+  checkingText: {
+    margin: 0,
+    color: "rgba(255,255,255,0.9)",
+    fontSize: "14px"
+  },
+  spinner: {
+    width: "40px",
+    height: "40px",
+    border: "4px solid rgba(255,255,255,0.3)",
+    borderTop: "4px solid white",
+    borderRadius: "50%",
+    animation: "spin 1s linear infinite",
+    marginBottom: "20px"
+  },
+  spinnerDark: {
+    width: "38px",
+    height: "38px",
+    border: "4px solid #e2e8f0",
+    borderTop: "4px solid #0a1929",
+    borderRadius: "50%",
+    animation: "spin 1s linear infinite",
+    margin: "0 auto 16px"
+  },
+  container: {
+    width: "90vw",
+    maxWidth: "1400px",
+    margin: "0 auto",
+    padding: "30px 20px"
+  },
+  header: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "20px",
+    marginBottom: "24px",
+    background: "white",
+    padding: "22px 30px",
+    borderRadius: "16px",
+    boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
+    flexWrap: "wrap"
+  },
+  headerTitleBlock: {
+    flex: 1,
+    minWidth: "260px"
+  },
+  backButton: {
+    color: "#0a1929",
+    textDecoration: "none",
+    fontSize: "14px",
+    fontWeight: 700,
+    padding: "9px 16px",
+    borderRadius: "8px",
+    border: "1px solid #0a1929",
+    display: "inline-block"
+  },
+  refreshButton: {
+    padding: "10px 18px",
+    background: "#1565c0",
+    color: "white",
+    border: "none",
+    borderRadius: "8px",
+    fontSize: "14px",
+    fontWeight: 700,
+    cursor: "pointer"
+  },
+  title: {
+    margin: 0,
+    color: "#0a1929",
+    fontSize: "24px",
+    fontWeight: 800
+  },
+  subtitle: {
+    margin: "6px 0 0",
+    color: "#667085",
+    fontSize: "14px"
+  },
+  message: {
+    padding: "13px 18px",
+    borderRadius: "10px",
+    marginBottom: "20px",
+    fontSize: "14px",
+    lineHeight: 1.5
+  },
+  statsGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+    gap: "18px",
+    marginBottom: "24px"
+  },
+  statCard: {
+    background: "white",
+    padding: "20px",
+    borderRadius: "12px",
+    display: "flex",
+    alignItems: "center",
+    gap: "15px",
+    boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
+    border: "1px solid #eef2f7"
+  },
+  statIcon: {
+    fontSize: "32px"
+  },
+  statLabel: {
+    fontSize: "13px",
+    color: "#718096",
+    marginBottom: "4px",
+    fontWeight: 700
+  },
+  statValue: {
+    fontSize: "24px",
+    fontWeight: 800,
+    color: "#0a1929"
+  },
+  filterBar: {
+    background: "white",
+    padding: "20px",
+    borderRadius: "12px",
+    boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
+    marginBottom: "20px",
+    display: "flex",
+    gap: "20px",
+    flexWrap: "wrap",
+    alignItems: "center"
+  },
+  searchBox: {
+    flex: 2,
+    minWidth: "250px"
+  },
+  searchInput: {
+    width: "100%",
+    padding: "11px 16px",
+    border: "2px solid #e2e8f0",
+    borderRadius: "8px",
+    fontSize: "14px",
+    outline: "none",
+    boxSizing: "border-box"
+  },
+  filterGroup: {
+    flex: 1,
+    minWidth: "220px"
+  },
+  filterSelect: {
+    width: "100%",
+    padding: "11px 16px",
+    border: "2px solid #e2e8f0",
+    borderRadius: "8px",
+    fontSize: "14px",
+    background: "white",
+    cursor: "pointer",
+    boxSizing: "border-box"
+  },
+  bulkActions: {
+    background: "#f0f9f0",
+    padding: "15px 20px",
+    borderRadius: "10px",
+    marginBottom: "20px",
+    display: "flex",
+    gap: "15px",
+    alignItems: "center",
+    flexWrap: "wrap",
+    border: "1px solid #c6f6d5"
+  },
+  bulkLabel: {
+    fontWeight: 800,
+    color: "#0a5c2e"
+  },
+  bulkMultiSelect: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "4px"
+  },
+  bulkMultiSelectInput: {
+    padding: "8px",
+    border: "2px solid #c6f6d5",
+    borderRadius: "8px",
+    fontSize: "14px",
+    minWidth: "250px",
+    background: "white",
+    height: "80px"
+  },
+  multiSelectHint: {
+    fontSize: "11px",
+    color: "#718096"
+  },
+  bulkButton: {
+    padding: "9px 20px",
+    background: "#0a5c2e",
+    color: "white",
+    border: "none",
+    borderRadius: "8px",
+    fontSize: "14px",
+    fontWeight: 800,
+    cursor: "pointer"
+  },
+  tableContainer: {
+    background: "white",
+    padding: "24px",
+    borderRadius: "16px",
+    boxShadow: "0 4px 12px rgba(0,0,0,0.08)"
+  },
+  loadingState: {
+    textAlign: "center",
+    padding: "60px",
+    color: "#667085"
+  },
+  resultSummary: {
+    marginBottom: "14px",
+    fontSize: "13px",
+    color: "#667085",
+    fontWeight: 700
+  },
+  tableWrapper: {
+    overflowX: "auto"
+  },
+  table: {
+    width: "100%",
+    borderCollapse: "collapse",
+    fontSize: "14px",
+    minWidth: "900px"
+  },
+  tableHeadRow: {
+    borderBottom: "2px solid #0a1929",
+    background: "#f8fafc"
+  },
+  tableHead: {
+    padding: "15px",
+    fontWeight: 800,
+    color: "#0a1929",
+    textAlign: "left"
+  },
+  tableRow: {
+    borderBottom: "1px solid #e2e8f0"
+  },
+  tableCell: {
+    padding: "15px",
+    verticalAlign: "top"
+  },
+  noData: {
+    padding: "40px",
+    textAlign: "center",
+    color: "#718096",
+    fontStyle: "italic"
+  },
+  candidateInfo: {
+    display: "flex",
+    alignItems: "center",
+    gap: "12px"
+  },
+  candidateAvatar: {
+    width: "40px",
+    height: "40px",
+    borderRadius: "20px",
+    background: "#0a1929",
+    color: "white",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: "18px",
+    fontWeight: 800
+  },
+  candidateName: {
+    fontWeight: 800,
+    color: "#0a1929",
+    marginBottom: "4px"
+  },
+  candidateId: {
+    fontSize: "11px",
+    color: "#718096",
+    fontFamily: "monospace"
+  },
+  createdDate: {
+    fontSize: "11px",
+    color: "#94a3b8",
+    marginTop: "3px"
+  },
+  candidateEmail: {
+    fontSize: "14px",
+    color: "#0a1929",
+    marginBottom: "4px"
+  },
+  candidatePhone: {
+    fontSize: "12px",
+    color: "#718096"
+  },
+  assignedBadge: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "2px"
+  },
+  assignedName: {
+    fontWeight: 800,
+    color: "#0a1929",
+    fontSize: "14px"
+  },
+  unassignedBadge: {
+    display: "inline-block",
+    padding: "4px 12px",
+    background: "#fef2f2",
+    color: "#b91c1c",
+    borderRadius: "20px",
+    fontSize: "12px",
+    fontWeight: 800
+  },
+  assignContainer: {
+    minWidth: "220px"
+  },
+  singleSelectMode: {
+    display: "flex",
+    gap: "6px",
+    alignItems: "center"
+  },
+  multiSelectMode: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "6px"
+  },
+  assignSelect: {
+    flex: 1,
+    padding: "8px 12px",
+    border: "2px solid #e2e8f0",
+    borderRadius: "6px",
+    fontSize: "13px",
+    background: "white",
+    cursor: "pointer",
+    minWidth: "160px"
+  },
+  checkboxGroup: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "4px",
+    maxHeight: "120px",
+    overflowY: "auto",
+    padding: "4px 8px",
+    border: "1px solid #e2e8f0",
+    borderRadius: "6px"
+  },
+  checkboxLabel: {
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+    fontSize: "13px",
+    cursor: "pointer"
+  },
+  checkbox: {
+    cursor: "pointer"
+  },
+  multiToggleButton: {
+    padding: "4px 12px",
+    background: "#e2e8f0",
+    border: "none",
+    borderRadius: "4px",
+    fontSize: "12px",
+    fontWeight: 700,
+    cursor: "pointer",
+    color: "#0a1929"
+  },
+  actionGroup: {
+    display: "flex",
+    gap: "8px",
+    flexWrap: "wrap"
+  },
+  assignButton: {
+    padding: "8px 16px",
+    background: "#4caf50",
+    color: "white",
+    border: "none",
+    borderRadius: "6px",
+    fontSize: "13px",
+    fontWeight: 800,
+    cursor: "pointer"
+  },
+  clearAssignmentButton: {
+    padding: "8px 16px",
+    background: "#f44336",
+    color: "white",
+    border: "none",
+    borderRadius: "6px",
+    fontSize: "13px",
+    fontWeight: 800,
+    cursor: "pointer"
+  },
+  unauthorized: {
+    textAlign: "center",
+    padding: "60px",
+    color: "#667085",
+    background: "white",
+    borderRadius: "16px",
+    maxWidth: "400px",
+    margin: "100px auto"
+  },
+  button: {
+    padding: "10px 20px",
+    background: "#0a1929",
+    color: "white",
+    border: "none",
+    borderRadius: "8px",
+    cursor: "pointer",
+    fontSize: "14px",
+    fontWeight: 700,
+    marginTop: "20px"
+  }
 };
