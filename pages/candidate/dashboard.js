@@ -1,4 +1,4 @@
-// pages/candidate/dashboard.js - COMPLETE WITH EXPIRATION COUNTDOWN
+// pages/candidate/dashboard.js - COMPLETE FIXED VERSION WITH ASSESSMENT-SPECIFIC CATEGORIES
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
@@ -115,34 +115,268 @@ export default function CandidateDashboard() {
     return diffDays;
   };
 
-  if (authLoading || loading) {
-    return (
-      <div style={styles.loadingContainer}>
-        <div style={styles.loadingBackground} />
-        <div style={styles.loadingContent}>
-          <div style={styles.loadingLogo}>Stratavax</div>
-          <div style={styles.loadingSpinner} />
-          <div style={styles.loadingText}>Loading your dashboard...</div>
-        </div>
-      </div>
-    );
-  }
+  // ============================================================
+  // FIXED: Assessment-specific category mappings
+  // ============================================================
+  const getAssessmentAreas = (typeCode, title) => {
+    // First check by typeCode
+    const areasByType = {
+      // National Service
+      national_service: [
+        "Workplace Readiness",
+        "Intellectual Capability",
+        "Safety & Risk Awareness",
+        "Problem Solving",
+        "Technical Fundamentals",
+        "Communication",
+        "Teamwork",
+        "Professional Conduct"
+      ],
+      // Cognitive Ability
+      cognitive: [
+        "Logical / Abstract Reasoning",
+        "Mechanical Reasoning",
+        "Memory & Attention",
+        "Numerical Reasoning",
+        "Perceptual Speed & Accuracy",
+        "Spatial Reasoning",
+        "Verbal Reasoning"
+      ],
+      // Leadership
+      leadership: [
+        "Change Leadership & Agility",
+        "Communication & Influence",
+        "Cultural Alignment",
+        "Decision-Making & Problem-Solving",
+        "Execution & Results Orientation",
+        "People Management & Coaching",
+        "Resilience & Stress Management",
+        "Role Readiness",
+        "Vision & Strategic Thinking"
+      ],
+      // Technical
+      technical: [
+        "CIP & Maintenance",
+        "Conveyors & Line Efficiency",
+        "Filling & Bottling",
+        "Packaging & Labeling",
+        "Safety & Efficiency",
+        "Water Treatment & Quality"
+      ],
+      // Performance
+      performance: [
+        "Employee Engagement and Behavior",
+        "Financial and Operational Performance",
+        "Goal Achievement and Strategic Alignment",
+        "Productivity and Efficiency",
+        "Work Quality and Effectiveness"
+      ],
+      // Cultural
+      cultural: [
+        "Attitude",
+        "Core Values",
+        "Environmental Fit",
+        "Interpersonal",
+        "Leadership",
+        "Work Style"
+      ],
+      // Personality
+      personality: [
+        "Ownership",
+        "Collaboration",
+        "Action",
+        "Analysis",
+        "Risk Tolerance",
+        "Structure"
+      ],
+      // Strategic
+      strategic: [
+        "Vision / Strategy",
+        "People Leadership",
+        "Decision Making",
+        "Accountability",
+        "Emotional Intelligence",
+        "Execution Drive",
+        "Ethics"
+      ],
+      // Behavioral
+      behavioral: [
+        "Adaptability",
+        "Clinical",
+        "Collaboration",
+        "Communication Style",
+        "Decision-Making",
+        "FBA",
+        "Leadership"
+      ],
+      // Manufacturing Baseline
+      manufacturing_baseline: [
+        "Technical Fundamentals",
+        "Troubleshooting",
+        "Numerical Aptitude",
+        "Safety & Work Ethic"
+      ],
+      // General
+      general: [
+        "Cognitive Ability",
+        "Communication",
+        "Cultural & Attitudinal Fit",
+        "Emotional Intelligence",
+        "Ethics & Integrity",
+        "Leadership & Management",
+        "Performance Metrics",
+        "Personality & Behavioral",
+        "Problem-Solving",
+        "Technical & Manufacturing"
+      ]
+    };
 
-  if (!session) return null;
-
-  const getStatusInfo = (status) => {
-    switch(status) {
-      case 'unblocked': 
-        return { bg: 'rgba(34, 197, 94, 0.15)', color: '#16a34a', label: 'Ready to Start' };
-      case 'in_progress': 
-        return { bg: 'rgba(251, 191, 36, 0.15)', color: '#d97706', label: 'In Progress' };
-      case 'completed': 
-        return { bg: 'rgba(59, 130, 246, 0.15)', color: '#2563eb', label: 'Completed' };
-      default: 
-        return { bg: 'rgba(148, 163, 184, 0.15)', color: '#64748b', label: 'Blocked' };
+    // Also check by title for any special cases
+    const titleLower = (title || '').toLowerCase();
+    if (titleLower.includes('national service')) {
+      return areasByType.national_service;
     }
+    if (titleLower.includes('cognitive')) {
+      return areasByType.cognitive;
+    }
+    if (titleLower.includes('leadership')) {
+      return areasByType.leadership;
+    }
+    if (titleLower.includes('technical')) {
+      return areasByType.technical;
+    }
+    if (titleLower.includes('performance')) {
+      return areasByType.performance;
+    }
+    if (titleLower.includes('cultural')) {
+      return areasByType.cultural;
+    }
+    if (titleLower.includes('personality')) {
+      return areasByType.personality;
+    }
+    if (titleLower.includes('strategic')) {
+      return areasByType.strategic;
+    }
+    if (titleLower.includes('behavioral')) {
+      return areasByType.behavioral;
+    }
+    if (titleLower.includes('manufacturing')) {
+      return areasByType.manufacturing_baseline;
+    }
+
+    // Return by typeCode or default to general
+    return areasByType[typeCode] || areasByType.general;
   };
 
+  // ============================================================
+  // FIXED: Category icons for assessment areas
+  // ============================================================
+  const getCategoryIcon = (area) => {
+    const icons = {
+      'Cognitive Ability': '🧠',
+      'Communication': '💬',
+      'Cultural & Attitudinal Fit': '🌍',
+      'Emotional Intelligence': '❤️',
+      'Ethics & Integrity': '⚖️',
+      'Leadership & Management': '👔',
+      'Performance Metrics': '📊',
+      'Personality & Behavioral': '🧩',
+      'Problem-Solving': '🔍',
+      'Technical & Manufacturing': '🔧',
+      'Workplace Readiness': '🏢',
+      'Intellectual Capability': '💡',
+      'Safety & Risk Awareness': '🛡️',
+      'Professional Conduct': '👔',
+      'Logical / Abstract Reasoning': '📐',
+      'Mechanical Reasoning': '⚙️',
+      'Memory & Attention': '🧠',
+      'Numerical Reasoning': '🔢',
+      'Spatial Reasoning': '📏',
+      'Verbal Reasoning': '📝',
+      'Change Leadership & Agility': '🔄',
+      'Decision-Making & Problem-Solving': '🎯',
+      'Execution & Results Orientation': '✅',
+      'People Management & Coaching': '👥',
+      'Resilience & Stress Management': '💪',
+      'Role Readiness': '🎯',
+      'Vision & Strategic Thinking': '👁️',
+      'CIP & Maintenance': '🔧',
+      'Conveyors & Line Efficiency': '⚡',
+      'Filling & Bottling': '🧴',
+      'Packaging & Labeling': '📦',
+      'Safety & Efficiency': '🛡️',
+      'Water Treatment & Quality': '💧',
+      'Employee Engagement and Behavior': '🤝',
+      'Financial and Operational Performance': '💰',
+      'Goal Achievement and Strategic Alignment': '🎯',
+      'Productivity and Efficiency': '📈',
+      'Work Quality and Effectiveness': '⭐',
+      'Attitude': '😊',
+      'Core Values': '💎',
+      'Environmental Fit': '🌱',
+      'Interpersonal': '🤝',
+      'Work Style': '🔄',
+      'Ownership': '🏠',
+      'Collaboration': '🤝',
+      'Action': '⚡',
+      'Analysis': '📊',
+      'Risk Tolerance': '🎲',
+      'Structure': '📋',
+      'Adaptability': '🔄',
+      'Communication Style': '💬',
+      'Clinical': '🏥',
+      'FBA': '📋',
+      'Technical Fundamentals': '🔧',
+      'Troubleshooting': '🛠️',
+      'Numerical Aptitude': '🔢',
+      'Work Ethic': '💪'
+    };
+    return icons[area] || '•';
+  };
+
+  // ============================================================
+  // FIXED: Color mapping for categories
+  // ============================================================
+  const getCategoryColor = (area) => {
+    const colors = {
+      'Cognitive Ability': '#6366f1',
+      'Communication': '#3b82f6',
+      'Cultural & Attitudinal Fit': '#10b981',
+      'Emotional Intelligence': '#8b5cf6',
+      'Ethics & Integrity': '#f59e0b',
+      'Leadership & Management': '#1d4ed8',
+      'Performance Metrics': '#06b6d4',
+      'Personality & Behavioral': '#a855f7',
+      'Problem-Solving': '#f97316',
+      'Technical & Manufacturing': '#ef4444'
+    };
+    return colors[area] || '#6366f1';
+  };
+
+  const getShortName = (title, isNationalService) => {
+    if (isNationalService) return 'National Service';
+    
+    const shortNames = {
+      'General Assessment': 'General',
+      'Leadership Assessment': 'Leadership',
+      'Cognitive Ability Assessment': 'Cognitive',
+      'Technical Competence Assessment': 'Technical',
+      'Personality Assessment': 'Personality',
+      'Performance Assessment': 'Performance',
+      'Behavioral & Soft Skills': 'Behavioral',
+      'Manufacturing Technical Skills': 'Manufacturing',
+      'Cultural & Attitudinal Fit': 'Cultural',
+      'Strategic Leadership Assessment': 'Strategic',
+      'Manufacturing Baseline Assessment': 'Baseline',
+      'National Service Recruitment Assessment': 'National Service'
+    };
+    
+    return shortNames[title] || title;
+  };
+
+  // ============================================================
+  // Get assessment color scheme
+  // ============================================================
   const getAssessmentColor = (typeCode) => {
     const colors = {
       general: { 
@@ -180,7 +414,7 @@ export default function CandidateDashboard() {
         hover: 'rgba(20, 184, 166, 0.15)',
         glow: 'rgba(20, 184, 166, 0.25)'
       },
-      strategic_leadership: { 
+      strategic: { 
         gradient: 'linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%)', 
         border: '#1e40af', 
         light: 'rgba(30, 64, 175, 0.08)',
@@ -226,42 +460,32 @@ export default function CandidateDashboard() {
     return colors[typeCode] || colors.general;
   };
 
-  const getDefaultAreas = (typeCode) => {
-    const areas = {
-      general: ["Cognitive Ability", "Communication", "Cultural & Attitudinal Fit", "Emotional Intelligence", "Ethics & Integrity", "Leadership & Management", "Performance Metrics", "Personality & Behavioral", "Problem-Solving", "Technical & Manufacturing"],
-      leadership: ["Change Leadership & Agility", "Communication & Influence", "Cultural Alignment", "Decision-Making & Problem-Solving", "Execution & Results Orientation", "People Management & Coaching", "Resilience & Stress Management", "Role Readiness", "Vision & Strategic Thinking"],
-      cognitive: ["Logical / Abstract Reasoning", "Mechanical Reasoning", "Memory & Attention", "Numerical Reasoning", "Perceptual Speed & Accuracy", "Spatial Reasoning", "Verbal Reasoning"],
-      technical: ["CIP & Maintenance", "Conveyors & Line Efficiency", "Filling & Bottling", "Packaging & Labeling", "Safety & Efficiency", "Water Treatment & Quality"],
-      performance: ["Employee Engagement and Behavior", "Financial and Operational Performance", "Goal Achievement and Strategic Alignment", "Productivity and Efficiency", "Work Quality and Effectiveness"],
-      cultural: ["Attitude", "Core Values", "Environmental Fit", "Interpersonal", "Leadership", "Work Style"],
-      personality: ["Ownership", "Collaboration", "Action", "Analysis", "Risk Tolerance", "Structure"],
-      strategic_leadership: ["Vision / Strategy", "People Leadership", "Decision Making", "Accountability", "Emotional Intelligence", "Execution Drive", "Ethics"],
-      behavioral: ["Adaptability", "Clinical", "Collaboration", "Communication Style", "Decision-Making", "FBA", "Leadership"],
-      manufacturing_baseline: ["Technical Fundamentals", "Troubleshooting", "Numerical Aptitude", "Safety & Work Ethic"],
-      national_service: ["Workplace Readiness", "Intellectual Capability", "Safety & Risk Awareness", "Problem Solving", "Technical Fundamentals", "Communication", "Teamwork", "Professional Conduct"]
-    };
-    return areas[typeCode] || ["General Assessment"];
-  };
+  if (authLoading || loading) {
+    return (
+      <div style={styles.loadingContainer}>
+        <div style={styles.loadingBackground} />
+        <div style={styles.loadingContent}>
+          <div style={styles.loadingLogo}>Stratavax</div>
+          <div style={styles.loadingSpinner} />
+          <div style={styles.loadingText}>Loading your dashboard...</div>
+        </div>
+      </div>
+    );
+  }
 
-  const getShortName = (title, isNationalService) => {
-    if (isNationalService) return 'National Service';
-    
-    const shortNames = {
-      'General Assessment': 'General',
-      'Leadership Assessment': 'Leadership',
-      'Cognitive Ability Assessment': 'Cognitive',
-      'Technical Competence Assessment': 'Technical',
-      'Personality Assessment': 'Personality',
-      'Performance Assessment': 'Performance',
-      'Behavioral & Soft Skills': 'Behavioral',
-      'Manufacturing Technical Skills': 'Manufacturing',
-      'Cultural & Attitudinal Fit': 'Cultural',
-      'Strategic Leadership Assessment': 'Strategic',
-      'Manufacturing Baseline Assessment': 'Baseline',
-      'National Service Recruitment Assessment': 'National Service'
-    };
-    
-    return shortNames[title] || title;
+  if (!session) return null;
+
+  const getStatusInfo = (status) => {
+    switch(status) {
+      case 'unblocked': 
+        return { bg: 'rgba(34, 197, 94, 0.15)', color: '#16a34a', label: 'Ready to Start' };
+      case 'in_progress': 
+        return { bg: 'rgba(251, 191, 36, 0.15)', color: '#d97706', label: 'In Progress' };
+      case 'completed': 
+        return { bg: 'rgba(59, 130, 246, 0.15)', color: '#2563eb', label: 'Completed' };
+      default: 
+        return { bg: 'rgba(148, 163, 184, 0.15)', color: '#64748b', label: 'Blocked' };
+    }
   };
 
   return (
@@ -495,12 +719,15 @@ export default function CandidateDashboard() {
                     </div>
                     <p style={styles.detailDescription}>{selectedAssessment.description}</p>
 
+                    {/* ============================================================
+                        FIXED: Assessment-specific categories
+                        ============================================================ */}
                     <div style={styles.detailAreas}>
                       <h4 style={styles.detailAreasTitle}>Assessment Areas</h4>
                       <div style={styles.detailAreasGrid}>
-                        {getDefaultAreas(selectedAssessment.typeCode).map((area, index) => (
+                        {getAssessmentAreas(selectedAssessment.typeCode, selectedAssessment.title).map((area, index) => (
                           <div key={index} style={styles.detailAreaItem}>
-                            <span style={styles.detailAreaDot}>•</span>
+                            <span style={styles.detailAreaIcon}>{getCategoryIcon(area)}</span>
                             <span style={styles.detailAreaText}>{area}</span>
                           </div>
                         ))}
@@ -647,10 +874,6 @@ export default function CandidateDashboard() {
         @keyframes fadeIn {
           from { opacity: 0; transform: translateY(10px); }
           to { opacity: 1; transform: translateY(0); }
-        }
-        @keyframes pulse {
-          0%, 100% { transform: scale(1); }
-          50% { transform: scale(1.02); }
         }
       `}</style>
     </div>
@@ -890,7 +1113,7 @@ const styles = {
   detailAreasTitle: { fontSize: "14px", fontWeight: "600", color: "#0a1929", margin: "0 0 10px 0" },
   detailAreasGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "6px" },
   detailAreaItem: { display: "flex", alignItems: "center", gap: "8px", padding: "4px 12px", background: "#f8fafc", borderRadius: "8px", border: "1px solid #f1f5f9" },
-  detailAreaDot: { color: "#6366f1", fontSize: "16px", fontWeight: "bold" },
+  detailAreaIcon: { fontSize: "14px", fontWeight: "bold" },
   detailAreaText: { fontSize: "13px", color: "#334155" },
   
   detailInfo: { 
