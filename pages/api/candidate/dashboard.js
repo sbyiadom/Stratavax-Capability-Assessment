@@ -1,4 +1,4 @@
-// pages/api/candidate/dashboard.js - SERVER-SIDE ONLY (No frontend imports)
+// pages/api/candidate/dashboard.js - COMPLETE VERSION WITH EXPIRES_AT
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -45,7 +45,7 @@ export default async function handler(req, res) {
       return res.status(401).json({ success: false, error: 'Unauthorized' });
     }
 
-    // Create Supabase client with service role key (bypasses RLS)
+    // Create Supabase client with service role key
     const serviceClient = createClient(supabaseUrl, serviceRoleKey, {
       auth: { persistSession: false }
     });
@@ -156,6 +156,9 @@ export default async function handler(req, res) {
         timeLimitMinutes = assessmentData.time_limit_minutes || 120;
       }
 
+      // ============================================================
+      // INCLUDES expires_at - THE KEY FIELD FOR COUNTDOWN
+      // ============================================================
       return {
         id: ca.assessment_id,
         title: title,
@@ -167,7 +170,7 @@ export default async function handler(req, res) {
         timeLimitMinutes: timeLimitMinutes,
         attemptsAllowed: assessmentData.attempts_allowed || 1,
         isNationalService: isNationalService,
-        expires_at: assessmentData.expires_at || null,
+        expires_at: assessmentData.expires_at || null,  // <-- KEY FIELD
         completedAt: ca.completed_at || null,
         unblockedAt: ca.unblocked_at || null,
         resultId: ca.result_id || null
@@ -175,7 +178,7 @@ export default async function handler(req, res) {
     });
 
     // Log expires_at for debugging
-    console.log('[API] Cards built:', cards.map(c => ({ 
+    console.log('[API] Cards built with expires_at:', cards.map(c => ({ 
       id: c.id, 
       title: c.title,
       expires_at: c.expires_at
