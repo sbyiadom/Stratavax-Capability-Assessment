@@ -1,4 +1,4 @@
-// pages/candidate/dashboard.js - COMPLETE FIXED VERSION WITH ASSESSMENT-SPECIFIC CATEGORIES
+// pages/candidate/dashboard.js - NO EMOJIS, CLEAN PROFESSIONAL VERSION
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
@@ -116,12 +116,10 @@ export default function CandidateDashboard() {
   };
 
   // ============================================================
-  // FIXED: Assessment-specific category mappings
+  // ASSESSMENT-SPECIFIC CATEGORY MAPPINGS (No Emojis)
   // ============================================================
   const getAssessmentAreas = (typeCode, title) => {
-    // First check by typeCode
     const areasByType = {
-      // National Service
       national_service: [
         "Workplace Readiness",
         "Intellectual Capability",
@@ -132,7 +130,6 @@ export default function CandidateDashboard() {
         "Teamwork",
         "Professional Conduct"
       ],
-      // Cognitive Ability
       cognitive: [
         "Logical / Abstract Reasoning",
         "Mechanical Reasoning",
@@ -142,7 +139,6 @@ export default function CandidateDashboard() {
         "Spatial Reasoning",
         "Verbal Reasoning"
       ],
-      // Leadership
       leadership: [
         "Change Leadership & Agility",
         "Communication & Influence",
@@ -154,7 +150,6 @@ export default function CandidateDashboard() {
         "Role Readiness",
         "Vision & Strategic Thinking"
       ],
-      // Technical
       technical: [
         "CIP & Maintenance",
         "Conveyors & Line Efficiency",
@@ -163,7 +158,6 @@ export default function CandidateDashboard() {
         "Safety & Efficiency",
         "Water Treatment & Quality"
       ],
-      // Performance
       performance: [
         "Employee Engagement and Behavior",
         "Financial and Operational Performance",
@@ -171,7 +165,6 @@ export default function CandidateDashboard() {
         "Productivity and Efficiency",
         "Work Quality and Effectiveness"
       ],
-      // Cultural
       cultural: [
         "Attitude",
         "Core Values",
@@ -180,7 +173,6 @@ export default function CandidateDashboard() {
         "Leadership",
         "Work Style"
       ],
-      // Personality
       personality: [
         "Ownership",
         "Collaboration",
@@ -189,7 +181,6 @@ export default function CandidateDashboard() {
         "Risk Tolerance",
         "Structure"
       ],
-      // Strategic
       strategic: [
         "Vision / Strategy",
         "People Leadership",
@@ -199,7 +190,6 @@ export default function CandidateDashboard() {
         "Execution Drive",
         "Ethics"
       ],
-      // Behavioral
       behavioral: [
         "Adaptability",
         "Clinical",
@@ -209,14 +199,12 @@ export default function CandidateDashboard() {
         "FBA",
         "Leadership"
       ],
-      // Manufacturing Baseline
       manufacturing_baseline: [
         "Technical Fundamentals",
         "Troubleshooting",
         "Numerical Aptitude",
         "Safety & Work Ethic"
       ],
-      // General
       general: [
         "Cognitive Ability",
         "Communication",
@@ -231,126 +219,19 @@ export default function CandidateDashboard() {
       ]
     };
 
-    // Also check by title for any special cases
     const titleLower = (title || '').toLowerCase();
-    if (titleLower.includes('national service')) {
-      return areasByType.national_service;
-    }
-    if (titleLower.includes('cognitive')) {
-      return areasByType.cognitive;
-    }
-    if (titleLower.includes('leadership')) {
-      return areasByType.leadership;
-    }
-    if (titleLower.includes('technical')) {
-      return areasByType.technical;
-    }
-    if (titleLower.includes('performance')) {
-      return areasByType.performance;
-    }
-    if (titleLower.includes('cultural')) {
-      return areasByType.cultural;
-    }
-    if (titleLower.includes('personality')) {
-      return areasByType.personality;
-    }
-    if (titleLower.includes('strategic')) {
-      return areasByType.strategic;
-    }
-    if (titleLower.includes('behavioral')) {
-      return areasByType.behavioral;
-    }
-    if (titleLower.includes('manufacturing')) {
-      return areasByType.manufacturing_baseline;
-    }
+    if (titleLower.includes('national service')) return areasByType.national_service;
+    if (titleLower.includes('cognitive')) return areasByType.cognitive;
+    if (titleLower.includes('leadership')) return areasByType.leadership;
+    if (titleLower.includes('technical')) return areasByType.technical;
+    if (titleLower.includes('performance')) return areasByType.performance;
+    if (titleLower.includes('cultural')) return areasByType.cultural;
+    if (titleLower.includes('personality')) return areasByType.personality;
+    if (titleLower.includes('strategic')) return areasByType.strategic;
+    if (titleLower.includes('behavioral')) return areasByType.behavioral;
+    if (titleLower.includes('manufacturing')) return areasByType.manufacturing_baseline;
 
-    // Return by typeCode or default to general
     return areasByType[typeCode] || areasByType.general;
-  };
-
-  // ============================================================
-  // FIXED: Category icons for assessment areas
-  // ============================================================
-  const getCategoryIcon = (area) => {
-    const icons = {
-      'Cognitive Ability': '🧠',
-      'Communication': '💬',
-      'Cultural & Attitudinal Fit': '🌍',
-      'Emotional Intelligence': '❤️',
-      'Ethics & Integrity': '⚖️',
-      'Leadership & Management': '👔',
-      'Performance Metrics': '📊',
-      'Personality & Behavioral': '🧩',
-      'Problem-Solving': '🔍',
-      'Technical & Manufacturing': '🔧',
-      'Workplace Readiness': '🏢',
-      'Intellectual Capability': '💡',
-      'Safety & Risk Awareness': '🛡️',
-      'Professional Conduct': '👔',
-      'Logical / Abstract Reasoning': '📐',
-      'Mechanical Reasoning': '⚙️',
-      'Memory & Attention': '🧠',
-      'Numerical Reasoning': '🔢',
-      'Spatial Reasoning': '📏',
-      'Verbal Reasoning': '📝',
-      'Change Leadership & Agility': '🔄',
-      'Decision-Making & Problem-Solving': '🎯',
-      'Execution & Results Orientation': '✅',
-      'People Management & Coaching': '👥',
-      'Resilience & Stress Management': '💪',
-      'Role Readiness': '🎯',
-      'Vision & Strategic Thinking': '👁️',
-      'CIP & Maintenance': '🔧',
-      'Conveyors & Line Efficiency': '⚡',
-      'Filling & Bottling': '🧴',
-      'Packaging & Labeling': '📦',
-      'Safety & Efficiency': '🛡️',
-      'Water Treatment & Quality': '💧',
-      'Employee Engagement and Behavior': '🤝',
-      'Financial and Operational Performance': '💰',
-      'Goal Achievement and Strategic Alignment': '🎯',
-      'Productivity and Efficiency': '📈',
-      'Work Quality and Effectiveness': '⭐',
-      'Attitude': '😊',
-      'Core Values': '💎',
-      'Environmental Fit': '🌱',
-      'Interpersonal': '🤝',
-      'Work Style': '🔄',
-      'Ownership': '🏠',
-      'Collaboration': '🤝',
-      'Action': '⚡',
-      'Analysis': '📊',
-      'Risk Tolerance': '🎲',
-      'Structure': '📋',
-      'Adaptability': '🔄',
-      'Communication Style': '💬',
-      'Clinical': '🏥',
-      'FBA': '📋',
-      'Technical Fundamentals': '🔧',
-      'Troubleshooting': '🛠️',
-      'Numerical Aptitude': '🔢',
-      'Work Ethic': '💪'
-    };
-    return icons[area] || '•';
-  };
-
-  // ============================================================
-  // FIXED: Color mapping for categories
-  // ============================================================
-  const getCategoryColor = (area) => {
-    const colors = {
-      'Cognitive Ability': '#6366f1',
-      'Communication': '#3b82f6',
-      'Cultural & Attitudinal Fit': '#10b981',
-      'Emotional Intelligence': '#8b5cf6',
-      'Ethics & Integrity': '#f59e0b',
-      'Leadership & Management': '#1d4ed8',
-      'Performance Metrics': '#06b6d4',
-      'Personality & Behavioral': '#a855f7',
-      'Problem-Solving': '#f97316',
-      'Technical & Manufacturing': '#ef4444'
-    };
-    return colors[area] || '#6366f1';
   };
 
   const getShortName = (title, isNationalService) => {
@@ -374,9 +255,6 @@ export default function CandidateDashboard() {
     return shortNames[title] || title;
   };
 
-  // ============================================================
-  // Get assessment color scheme
-  // ============================================================
   const getAssessmentColor = (typeCode) => {
     const colors = {
       general: { 
@@ -545,14 +423,14 @@ export default function CandidateDashboard() {
         <div style={styles.statsBar}>
           <div style={styles.statsGrid}>
             <div style={{ ...styles.statCard, background: '#16a34a', borderColor: '#16a34a' }}>
-              <div style={{ ...styles.statIcon, color: '#ffffff' }}>✓</div>
+              <div style={{ ...styles.statIcon, color: '#ffffff' }}>✔</div>
               <div>
                 <div style={styles.statNumber}>{stats.completed}</div>
                 <div style={styles.statLabel}>Completed</div>
               </div>
             </div>
             <div style={{ ...styles.statCard, background: '#2563eb', borderColor: '#2563eb' }}>
-              <div style={{ ...styles.statIcon, color: '#ffffff' }}>□</div>
+              <div style={{ ...styles.statIcon, color: '#ffffff' }}>▢</div>
               <div>
                 <div style={styles.statNumber}>{stats.ready}</div>
                 <div style={styles.statLabel}>Ready</div>
@@ -579,7 +457,7 @@ export default function CandidateDashboard() {
         <div style={styles.mainContent}>
           {error && (
             <div style={styles.errorBox}>
-              ⚠ {error}
+              {error}
               <button onClick={fetchDashboardData} style={styles.retryButton}>Retry</button>
             </div>
           )}
@@ -596,7 +474,6 @@ export default function CandidateDashboard() {
             
             {assessments.length === 0 ? (
               <div style={styles.emptyState}>
-                <div style={styles.emptyIcon}>○</div>
                 <p style={styles.emptyTitle}>No assessments available</p>
                 <p style={styles.emptySub}>Contact your supervisor to get assessments assigned to you.</p>
               </div>
@@ -656,7 +533,7 @@ export default function CandidateDashboard() {
                                 ...styles.compactExpiry,
                                 color: daysRemaining < 0 || daysRemaining <= 7 ? '#dc2626' : '#64748b'
                               }}>
-                                {daysRemaining < 0 ? 'EXP' : daysRemaining <= 7 ? `⚠${daysRemaining}d` : `${daysRemaining}d`}
+                                {daysRemaining < 0 ? 'EXP' : daysRemaining <= 7 ? `${daysRemaining}d` : `${daysRemaining}d`}
                               </span>
                             )}
                             <span style={{ 
@@ -719,15 +596,13 @@ export default function CandidateDashboard() {
                     </div>
                     <p style={styles.detailDescription}>{selectedAssessment.description}</p>
 
-                    {/* ============================================================
-                        FIXED: Assessment-specific categories
-                        ============================================================ */}
+                    {/* Assessment Areas - No Emojis */}
                     <div style={styles.detailAreas}>
                       <h4 style={styles.detailAreasTitle}>Assessment Areas</h4>
                       <div style={styles.detailAreasGrid}>
                         {getAssessmentAreas(selectedAssessment.typeCode, selectedAssessment.title).map((area, index) => (
                           <div key={index} style={styles.detailAreaItem}>
-                            <span style={styles.detailAreaIcon}>{getCategoryIcon(area)}</span>
+                            <span style={styles.detailAreaBullet}>•</span>
                             <span style={styles.detailAreaText}>{area}</span>
                           </div>
                         ))}
@@ -772,9 +647,9 @@ export default function CandidateDashboard() {
                             {(() => {
                               const days = getDaysRemaining(selectedAssessment.expires_at);
                               if (days === null) return 'N/A';
-                              if (days < 0) return 'EXPIRED';
+                              if (days < 0) return 'Expired';
                               if (days === 0) return 'Today';
-                              if (days <= 7) return `⚠ ${days} days`;
+                              if (days <= 7) return `${days} days`;
                               return `${days} days`;
                             })()}
                           </span>
@@ -788,7 +663,7 @@ export default function CandidateDashboard() {
           </div>
 
           <div style={styles.guidelinesSection}>
-            <h3 style={styles.guidelinesTitle}>Assessment Guidelines & Regulations</h3>
+            <h3 style={styles.guidelinesTitle}>Assessment Guidelines</h3>
             <div style={styles.guidelinesGrid}>
               <div style={styles.guidelineCard}>
                 <div style={styles.guidelineIcon}>⏱</div>
@@ -1113,7 +988,7 @@ const styles = {
   detailAreasTitle: { fontSize: "14px", fontWeight: "600", color: "#0a1929", margin: "0 0 10px 0" },
   detailAreasGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "6px" },
   detailAreaItem: { display: "flex", alignItems: "center", gap: "8px", padding: "4px 12px", background: "#f8fafc", borderRadius: "8px", border: "1px solid #f1f5f9" },
-  detailAreaIcon: { fontSize: "14px", fontWeight: "bold" },
+  detailAreaBullet: { color: "#6366f1", fontSize: "14px", fontWeight: "bold" },
   detailAreaText: { fontSize: "13px", color: "#334155" },
   
   detailInfo: { 
@@ -1128,7 +1003,6 @@ const styles = {
   detailInfoValue: { fontSize: "14px", fontWeight: "500", color: "#0a1929" },
   
   emptyState: { textAlign: "center", padding: "60px 40px", background: "rgba(255,255,255,0.08)", backdropFilter: "blur(20px)", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.06)" },
-  emptyIcon: { fontSize: "48px", marginBottom: "16px" },
   emptyTitle: { fontSize: "18px", fontWeight: "600", color: "white", margin: "0 0 8px 0", textShadow: "0 2px 4px rgba(0,0,0,0.2)" },
   emptySub: { fontSize: "14px", color: "rgba(255,255,255,0.6)", margin: 0 },
   
