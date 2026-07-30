@@ -1,4 +1,4 @@
-// components/reports/NationalServiceReport.js - RESTORED WORKING VERSION WITH COUNTDOWN
+// components/reports/NationalServiceReport.js - DUPLICATE DECLARATION FIXED
 
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../../supabase/client';
@@ -426,9 +426,6 @@ const styles = {
     fontSize: '13px',
     color: '#64748b'
   },
-  // ============================================================
-  // BEHAVIORAL COMMENTARY STYLES
-  // ============================================================
   behavioralCommentary: {
     marginTop: '16px',
     padding: '16px',
@@ -495,6 +492,49 @@ const styles = {
     border: '1px solid #bbf7d0',
     fontSize: '13px',
     color: '#166534'
+  },
+  riskBadge: {
+    display: 'inline-block',
+    padding: '4px 12px',
+    borderRadius: '12px',
+    fontSize: '13px',
+    fontWeight: '600'
+  },
+  riskSummary: {
+    padding: '12px 16px',
+    background: 'white',
+    borderRadius: '8px',
+    border: '1px solid #e2e8f0',
+    marginBottom: '12px',
+    fontSize: '14px',
+    color: '#475569'
+  },
+  flaggedQuestions: {
+    marginTop: '12px'
+  },
+  flaggedTitle: {
+    fontSize: '14px',
+    fontWeight: '600',
+    color: '#0a1929',
+    marginBottom: '8px'
+  },
+  flaggedList: {
+    listStyle: 'none',
+    padding: '0',
+    margin: '0'
+  },
+  flaggedItem: {
+    padding: '6px 12px',
+    background: '#f8fafc',
+    borderRadius: '4px',
+    borderBottom: '1px solid #f1f5f9',
+    fontSize: '13px',
+    color: '#475569'
+  },
+  loadingBehavioral: {
+    textAlign: 'center',
+    padding: '20px',
+    color: '#64748b'
   }
 };
 
@@ -602,16 +642,6 @@ export default function NationalServiceReport({
     const numericValue = Number(value);
     return Number.isFinite(numericValue) ? Math.round(numericValue) : fallback;
   };
-
-  // ============================================================
-  // CHECK IF BEHAVIORAL DATA EXISTS
-  // ============================================================
-  const hasBehavioralData = 
-    behavioralMatrix !== null && 
-    behavioralMatrix !== undefined &&
-    (behavioralMatrix.hasBehavioralData === true ||
-     behavioralMatrix.behavior !== undefined ||
-     Object.keys(behavioralMatrix || {}).length > 0);
 
   if (!report) {
     return <div style={styles.loading}>Loading report...</div>;
@@ -889,7 +919,7 @@ export default function NationalServiceReport({
   const suggestedPlacements = getSuggestedPlacements();
 
   // ============================================================
-  // CHECK IF BEHAVIORAL DATA EXISTS
+  // ✅ FIXED: CHECK IF BEHAVIORAL DATA EXISTS - SINGLE DECLARATION
   // ============================================================
   const hasBehavioralData = 
     behavioralMatrix !== null && 
@@ -945,7 +975,8 @@ export default function NationalServiceReport({
             {displayWorkplace >= 70 ? 'Ready' : displayWorkplace >= 50 ? 'Developing' : 'Needs Improvement'}
           </div>
           <div style={styles.subCategoryCount}>
-            {sortedWorkplace.length} sub-categories assessed          </div>
+            {sortedWorkplace.length} sub-categories assessed
+          </div>
         </div>
         <div style={styles.scoreCard}>
           <div style={styles.scoreLabel}>Intellectual Capability</div>
