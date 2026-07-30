@@ -1,4 +1,4 @@
-// components/reports/NationalServiceReport.js - FULLY CORRECTED WITH BEHAVIORAL COMMENTARY
+// components/reports/NationalServiceReport.js - RESTORED WORKING VERSION WITH COUNTDOWN
 
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../../supabase/client';
@@ -389,8 +389,45 @@ const styles = {
     color: '#94a3b8',
     marginTop: '8px'
   },
+  cleanAssessment: {
+    padding: '16px 20px',
+    background: '#dcfce7',
+    borderRadius: '8px',
+    border: '1px solid #bbf7d0',
+    marginBottom: '16px'
+  },
+  violationComments: {
+    marginTop: '12px',
+    padding: '16px',
+    background: 'white',
+    borderRadius: '8px',
+    border: '1px solid #e2e8f0'
+  },
+  violationCommentItem: {
+    padding: '8px 12px',
+    marginBottom: '4px',
+    borderBottom: '1px solid #f1f5f9'
+  },
+  violationCommentLabel: {
+    fontWeight: '600',
+    marginRight: '8px'
+  },
+  violationCommentCount: {
+    display: 'inline-block',
+    padding: '2px 8px',
+    background: '#e2e8f0',
+    borderRadius: '12px',
+    fontSize: '12px',
+    fontWeight: '600',
+    marginRight: '8px'
+  },
+  violationCommentText: {
+    margin: '4px 0 0 0',
+    fontSize: '13px',
+    color: '#64748b'
+  },
   // ============================================================
-  // BEHAVIORAL COMMENTARY STYLES - ADDED BACK
+  // BEHAVIORAL COMMENTARY STYLES
   // ============================================================
   behavioralCommentary: {
     marginTop: '16px',
@@ -405,19 +442,24 @@ const styles = {
     color: '#0a1929',
     margin: '0 0 12px 0',
     paddingBottom: '8px',
-    borderBottom: '2px solid #e2e8f0'
+    borderBottom: '1px solid #e2e8f0'
+  },
+  commentaryMetrics: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px'
   },
   commentaryItem: {
     display: 'flex',
     alignItems: 'flex-start',
     gap: '8px',
-    padding: '8px 0',
+    padding: '6px 0',
     borderBottom: '1px solid #f8fafc'
   },
   commentaryLabel: {
     fontWeight: '600',
     color: '#475569',
-    minWidth: '130px',
+    minWidth: '120px',
     fontSize: '13px',
     flexShrink: 0
   },
@@ -426,70 +468,33 @@ const styles = {
     color: '#1a202c',
     lineHeight: '1.5'
   },
-  riskBadge: {
-    display: 'inline-block',
-    padding: '4px 12px',
-    borderRadius: '12px',
-    fontSize: '13px',
-    fontWeight: '600'
-  },
-  riskSummary: {
-    padding: '12px 16px',
-    background: 'white',
-    borderRadius: '8px',
-    border: '1px solid #e2e8f0',
-    marginBottom: '12px',
-    fontSize: '14px',
-    color: '#475569'
-  },
-  riskSummaryBox: {
+  recommendationBox: {
     marginTop: '12px',
     padding: '12px 16px',
-    background: '#f8fafc',
+    background: '#fef3c7',
     borderRadius: '8px',
-    border: '1px solid #e2e8f0'
+    border: '1px solid #fcd34d'
   },
-  riskSummaryText: {
-    fontSize: '13px',
-    color: '#1a202c',
-    margin: '0 0 4px 0'
-  },
-  riskDetailText: {
-    fontSize: '13px',
-    color: '#64748b',
-    margin: '0 0 4px 0'
-  },
-  riskActionText: {
-    fontSize: '13px',
-    color: '#1a202c',
-    margin: 0
-  },
-  flaggedQuestions: {
-    marginTop: '12px'
-  },
-  flaggedTitle: {
+  recommendationTitle: {
     fontSize: '13px',
     fontWeight: '600',
-    color: '#0a1929',
-    margin: '0 0 8px 0'
+    color: '#92400e',
+    margin: '0 0 6px 0'
   },
-  flaggedList: {
-    listStyle: 'none',
-    padding: '0',
-    margin: '0'
-  },
-  flaggedItem: {
-    padding: '6px 12px',
-    background: '#f8fafc',
-    borderRadius: '4px',
-    borderBottom: '1px solid #f1f5f9',
+  recommendationList: {
+    margin: '0',
+    paddingLeft: '20px',
     fontSize: '13px',
-    color: '#475569'
+    color: '#78350f'
   },
-  loadingBehavioral: {
-    textAlign: 'center',
-    padding: '20px',
-    color: '#64748b'
+  cleanCommentary: {
+    marginTop: '12px',
+    padding: '12px 16px',
+    background: '#dcfce7',
+    borderRadius: '8px',
+    border: '1px solid #bbf7d0',
+    fontSize: '13px',
+    color: '#166534'
   }
 };
 
@@ -551,6 +556,13 @@ export default function NationalServiceReport({
     }
   };
 
+  const toggleBehavioral = () => {
+    setShowBehavioral(!showBehavioral);
+  };
+
+  // ============================================================
+  // FORMAT TIME HELPER
+  // ============================================================
   const formatTime = (seconds) => {
     if (!seconds) return 'N/A';
     const hrs = Math.floor(seconds / 3600);
@@ -559,6 +571,9 @@ export default function NationalServiceReport({
     return `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
   };
 
+  // ============================================================
+  // SAFE STRING CONVERSION
+  // ============================================================
   const safeString = (value) => {
     if (value === null || value === undefined) return '';
     if (typeof value === 'string') return value;
@@ -572,17 +587,31 @@ export default function NationalServiceReport({
     return String(value);
   };
 
-  const toDisplayScore = (value, fallback = 0) => {
-    const numericValue = Number(value);
-    return Number.isFinite(numericValue) ? Math.round(numericValue) : fallback;
-  };
-
+  // ============================================================
+  // CALCULATE AVERAGE FROM ITEMS
+  // ============================================================
   const getCategoryAverage = (items) => {
     if (!items || items.length === 0) return 0;
     return Math.round(items.reduce((sum, cat) => sum + (Number(cat.percentage) || 0), 0) / items.length);
   };
 
-  const hasBehavioralData = behavioralMatrix !== null && behavioralMatrix !== undefined;
+  // ============================================================
+  // SAFE NUMBER CONVERSION
+  // ============================================================
+  const toDisplayScore = (value, fallback = 0) => {
+    const numericValue = Number(value);
+    return Number.isFinite(numericValue) ? Math.round(numericValue) : fallback;
+  };
+
+  // ============================================================
+  // CHECK IF BEHAVIORAL DATA EXISTS
+  // ============================================================
+  const hasBehavioralData = 
+    behavioralMatrix !== null && 
+    behavioralMatrix !== undefined &&
+    (behavioralMatrix.hasBehavioralData === true ||
+     behavioralMatrix.behavior !== undefined ||
+     Object.keys(behavioralMatrix || {}).length > 0);
 
   if (!report) {
     return <div style={styles.loading}>Loading report...</div>;
@@ -622,95 +651,125 @@ export default function NationalServiceReport({
     categoryScores = report.categoryScores;
   }
 
+  console.log('[Report] category_scores count:', categoryScores.length);
+
   // ============================================================
   // SPLIT INTO WORKPLACE AND INTELLECTUAL
   // ============================================================
   const workplaceSubCategories = [];
   const intellectualSubCategories = [];
 
-  const workplaceKeywords = [
-    'safety', 'risk', 'hazard', 'technical', 'fundamentals',
-    'problem', 'troubleshooting', 'communication', 'teamwork',
-    'collaboration', 'ownership', 'integrity', 'accountability',
-    'professional', 'conduct', 'work_ethic', 'ethics', 'workplace',
-    'readiness', 'learning', 'agility', 'adaptability'
+  const workplaceCategoryNames = [
+    'Communication & Teamwork',
+    'Ownership & Integrity',
+    'Safety & Risk Awareness',
+    'Technical Fundamentals',
+    'Workplace Ethics',
+    'Professional Conduct',
+    'Work Ethic',
+    'Workplace Readiness'
   ];
 
-  const intellectualKeywords = [
-    'numerical', 'math', 'logical', 'logic', 'reasoning',
-    'measurement', 'engineering', 'units', 'spatial', 'analysis',
-    'critical', 'analytical', 'decision', 'intellectual', 'cognitive',
-    'capability'
+  const intellectualCategoryNames = [
+    'Learning Agility',
+    'Problem Solving & Troubleshooting',
+    'Logical Reasoning',
+    'Numerical Reasoning',
+    'Measurement & Engineering Units',
+    'Problem Solving',
+    'Critical Thinking',
+    'Analytical Skills',
+    'Intellectual Capability'
   ];
 
   if (categoryScores && categoryScores.length > 0) {
     categoryScores.forEach(cat => {
       const categoryName = safeString(cat.category || cat.name || cat.key || 'Unknown');
-      const lowerName = categoryName.toLowerCase().replace(/\s+/g, '_');
+      const trimmedName = categoryName.trim();
       const percentage = Number(cat.percentage ?? cat.score_percentage ?? 0);
-      const dimension = safeString(cat.dimension || '').toLowerCase();
       const normalizedCat = { ...cat, category: categoryName, percentage: Number.isFinite(percentage) ? percentage : 0 };
 
-      if (dimension === 'workplace') {
+      const isWorkplace = workplaceCategoryNames.some(catName => 
+        trimmedName === catName || trimmedName.toLowerCase() === catName.toLowerCase()
+      );
+      
+      const isIntellectual = intellectualCategoryNames.some(catName => 
+        trimmedName === catName || trimmedName.toLowerCase() === catName.toLowerCase()
+      );
+
+      const dimension = safeString(cat.dimension || '').toLowerCase();
+
+      if (dimension === 'workplace' || isWorkplace) {
         workplaceSubCategories.push(normalizedCat);
-      } else if (dimension === 'intellectual') {
-        intellectualSubCategories.push(normalizedCat);
-      } else if (workplaceKeywords.some(keyword => lowerName.includes(keyword))) {
-        workplaceSubCategories.push(normalizedCat);
-      } else if (intellectualKeywords.some(keyword => lowerName.includes(keyword))) {
+      } else if (dimension === 'intellectual' || isIntellectual) {
         intellectualSubCategories.push(normalizedCat);
       } else {
-        intellectualSubCategories.push(normalizedCat);
+        const lowerName = trimmedName.toLowerCase();
+        const workplaceKeywords = [
+          'safety', 'risk', 'technical', 'communication', 'teamwork',
+          'ownership', 'integrity', 'workplace', 'ethics', 'professional',
+          'conduct', 'collaboration', 'work ethic', 'attitude', 'readiness'
+        ];
+        
+        const intellectualKeywords = [
+          'learning agility', 'problem solving', 'troubleshooting',
+          'logical reasoning', 'numerical reasoning',
+          'measurement', 'engineering units', 'engineering',
+          'critical', 'analytical', 'cognitive', 'intellectual'
+        ];
+        
+        const hasWorkplaceKeyword = workplaceKeywords.some(keyword => lowerName.includes(keyword));
+        const hasIntellectualKeyword = intellectualKeywords.some(keyword => lowerName.includes(keyword));
+        
+        if (hasWorkplaceKeyword && !hasIntellectualKeyword) {
+          workplaceSubCategories.push(normalizedCat);
+        } else if (hasIntellectualKeyword && !hasWorkplaceKeyword) {
+          intellectualSubCategories.push(normalizedCat);
+        } else if (lowerName.includes('work') || lowerName.includes('team') || lowerName.includes('communicat')) {
+          workplaceSubCategories.push(normalizedCat);
+        } else {
+          intellectualSubCategories.push(normalizedCat);
+        }
       }
     });
   }
 
+  console.log('[Report] Workplace sub-categories:', workplaceSubCategories.length);
+  console.log('[Report] Intellectual sub-categories:', intellectualSubCategories.length);
+
   // ============================================================
-  // DISPLAY SCORES
+  // CALCULATE AVERAGES FROM SUB-CATEGORIES
   // ============================================================
+  const displayWorkplace = workplaceSubCategories.length > 0 
+    ? Math.round(workplaceSubCategories.reduce((sum, cat) => sum + (cat.percentage || 0), 0) / workplaceSubCategories.length)
+    : 0;
+
+  const displayIntellectual = intellectualSubCategories.length > 0 
+    ? Math.round(intellectualSubCategories.reduce((sum, cat) => sum + (cat.percentage || 0), 0) / intellectualSubCategories.length)
+    : 0;
+
   const allCategories = [...workplaceSubCategories, ...intellectualSubCategories];
+  const displayOverall = allCategories.length > 0 
+    ? Math.round(allCategories.reduce((sum, cat) => sum + (cat.percentage || 0), 0) / allCategories.length)
+    : 0;
 
-  const fallbackWorkplace = getCategoryAverage(workplaceSubCategories);
-  const fallbackIntellectual = getCategoryAverage(intellectualSubCategories);
-  const fallbackOverall = getCategoryAverage(allCategories);
-
-  const displayWorkplace = toDisplayScore(
-    reportData?.dimensions?.workplaceReadiness ??
-    reportData?.scores?.workplace ??
-    reportData?.workplaceReadiness ??
-    reportData?.workplace_readiness ??
-    report?.workplaceReadiness ??
-    report?.workplace_readiness,
-    fallbackWorkplace
-  );
-
-  const displayIntellectual = toDisplayScore(
-    reportData?.dimensions?.intellectualCapability ??
-    reportData?.scores?.intellectual ??
-    reportData?.intellectualCapability ??
-    reportData?.intellectual_capability ??
-    report?.intellectualCapability ??
-    report?.intellectual_capability,
-    fallbackIntellectual
-  );
-
-  const displayOverall = Math.round((displayWorkplace + displayIntellectual) / 2);
-
-  console.log('[Report] Display Workplace:', displayWorkplace);
-  console.log('[Report] Display Intellectual:', displayIntellectual);
-  console.log('[Report] Display Overall:', displayOverall);
+  console.log('[Report] Calculated Workplace:', displayWorkplace);
+  console.log('[Report] Calculated Intellectual:', displayIntellectual);
+  console.log('[Report] Calculated Overall:', displayOverall);
 
   // ============================================================
   // RECOMMENDATION LOGIC
   // ============================================================
   let recommendationLevel = 'Not Recommended';
 
-  if (displayOverall >= 85) {
+  if (displayWorkplace >= 90 && displayIntellectual >= 75 && displayOverall >= 80) {
     recommendationLevel = 'Highly Recommended';
-  } else if (displayOverall >= 70) {
+  } else if (displayWorkplace >= 75 && displayIntellectual >= 70 && displayOverall >= 70) {
     recommendationLevel = 'Recommended';
-  } else if (displayOverall >= 50) {
+  } else if (displayWorkplace >= 65 && displayIntellectual >= 65 && displayOverall >= 65) {
     recommendationLevel = 'Reserve Pool';
+  } else if (displayWorkplace >= 50 || displayIntellectual >= 50 || displayOverall >= 50) {
+    recommendationLevel = 'Consider for Development';
   } else {
     recommendationLevel = 'Not Recommended';
   }
@@ -721,6 +780,9 @@ export default function NationalServiceReport({
     recommendationLevel = safeString(report.recommendation);
   }
 
+  // ============================================================
+  // RECOMMENDATION DETAILS
+  // ============================================================
   const getRecommendationDetails = (level, workplace, intellectual, overall) => {
     const details = {
       'Highly Recommended': {
@@ -728,28 +790,35 @@ export default function NationalServiceReport({
         color: '#2e7d32',
         bg: '#e8f5e9',
         icon: '★',
-        narrative: `This candidate demonstrates strong workplace readiness (${workplace}%) and intellectual capability (${intellectual}%). With an overall score of ${overall}%, the candidate is strongly recommended.`
+        narrative: `This candidate demonstrates exceptional workplace readiness (${workplace}%) and strong intellectual capability (${intellectual}%). With an overall score of ${overall}%, they are strongly recommended for immediate placement.`
       },
       'Recommended': {
         label: 'Recommended',
         color: '#1565c0',
         bg: '#e3f2fd',
         icon: '✓',
-        narrative: `This candidate demonstrates acceptable workplace readiness (${workplace}%) and intellectual capability (${intellectual}%). With an overall score of ${overall}%, the candidate is recommended for placement.`
+        narrative: `This candidate demonstrates strong workplace readiness (${workplace}%) and solid intellectual capability (${intellectual}%). With an overall score of ${overall}%, they are recommended for placement with standard supervision.`
       },
       'Reserve Pool': {
         label: 'Reserve Pool',
         color: '#f57c00',
         bg: '#fff3e0',
         icon: '●',
-        narrative: `This candidate may be considered for reserve placement. Workplace readiness is ${workplace}%, intellectual capability is ${intellectual}%, and overall score is ${overall}%.`
+        narrative: `This candidate demonstrates adequate workplace readiness (${workplace}%) and intellectual capability (${intellectual}%). With an overall score of ${overall}%, they may be considered for the reserve pool.`
+      },
+      'Consider for Development': {
+        label: 'Consider for Development',
+        color: '#ea580c',
+        bg: '#fff8e1',
+        icon: '○',
+        narrative: `This candidate shows potential with ${workplace}% workplace readiness and ${intellectual}% intellectual capability. The candidate could benefit from structured development programs.`
       },
       'Not Recommended': {
         label: 'Not Recommended',
         color: '#c62828',
         bg: '#ffebee',
-        icon: '!',
-        narrative: `This candidate does not currently meet the required threshold for placement. Workplace readiness is ${workplace}%, intellectual capability is ${intellectual}%, and overall score is ${overall}%.`
+        icon: '⚠',
+        narrative: `This candidate does not currently meet the required thresholds for placement. Targeted development is recommended before reconsideration.`
       }
     };
 
@@ -758,12 +827,15 @@ export default function NationalServiceReport({
       color: '#64748b',
       bg: '#f1f5f9',
       icon: '?',
-      narrative: 'Assessment results require management review.'
+      narrative: `Assessment results indicate that the candidate's profile should be reviewed by the hiring team.`
     };
   };
 
   const recommendationDetails = getRecommendationDetails(recommendationLevel, displayWorkplace, displayIntellectual, displayOverall);
 
+  // ============================================================
+  // RENDER HELPERS
+  // ============================================================
   const getCategoryComment = (percentage) => {
     if (percentage >= 90) return { text: 'Exceptional', color: '#2e7d32' };
     if (percentage >= 80) return { text: 'Strong', color: '#2e7d32' };
@@ -773,9 +845,11 @@ export default function NationalServiceReport({
     return { text: 'Critical Gap', color: '#c62828' };
   };
 
+  // Sort categories
   const sortedWorkplace = [...workplaceSubCategories].sort((a, b) => (b.percentage || 0) - (a.percentage || 0));
   const sortedIntellectual = [...intellectualSubCategories].sort((a, b) => (b.percentage || 0) - (a.percentage || 0));
 
+  // Top strengths and development areas
   const allSubCategories = [...workplaceSubCategories, ...intellectualSubCategories];
   const topStrengths = [...allSubCategories]
     .filter(c => (c.percentage || 0) > 0)
@@ -786,70 +860,53 @@ export default function NationalServiceReport({
     .filter(c => (c.percentage || 0) > 0 && (c.percentage || 0) < 60)
     .sort((a, b) => (a.percentage || 0) - (b.percentage || 0));
 
+  // Suggested placements
   const getSuggestedPlacements = () => {
-    if (Array.isArray(report.suggestedPlacement) && report.suggestedPlacement.length > 0) {
+    if (report.suggestedPlacement && report.suggestedPlacement.length > 0) {
       return report.suggestedPlacement;
     }
-    if (Array.isArray(reportData.suggestedDepartments) && reportData.suggestedDepartments.length > 0) {
+    if (reportData.suggestedDepartments && reportData.suggestedDepartments.length > 0) {
       return reportData.suggestedDepartments;
     }
-
-    if (displayOverall >= 85) {
+    
+    const workplace = displayWorkplace;
+    const intellectual = displayIntellectual;
+    const overall = (workplace + intellectual) / 2;
+    
+    if (workplace >= 85 && intellectual >= 85) {
       return ['Operations & Production Management', 'Quality Assurance & Control', 'Supply Chain & Logistics', 'Technical Services'];
-    }
-    if (displayOverall >= 70) {
+    } else if (workplace >= 75 && intellectual >= 75) {
       return ['Production Support', 'Maintenance & Engineering', 'Quality Control', 'Warehouse & Distribution'];
-    }
-    if (displayOverall >= 50) {
+    } else if (workplace >= 65 && intellectual >= 65) {
+      return ['General Operations', 'Administrative Support', 'Entry-Level Technical Roles'];
+    } else if (overall >= 50) {
       return ['Structured Training Programs', 'Supervised Development Roles'];
+    } else {
+      return ['Foundation Training', 'Supervised Onboarding'];
     }
-    return ['Foundation Training', 'Supervised Onboarding'];
   };
 
   const suggestedPlacements = getSuggestedPlacements();
 
-  const renderCategoryGrid = (items) => {
-    if (!items || items.length === 0) {
-      return (
-        <div style={styles.emptyState}>
-          <p>No sub-category data available.</p>
-        </div>
-      );
-    }
+  // ============================================================
+  // CHECK IF BEHAVIORAL DATA EXISTS
+  // ============================================================
+  const hasBehavioralData = 
+    behavioralMatrix !== null && 
+    behavioralMatrix !== undefined;
 
-    return (
-      <div style={styles.categoryGrid}>
-        {items.map((cat, index) => {
-          const percentage = Number(cat.percentage) || 0;
-          const comment = getCategoryComment(percentage);
-          const categoryName = cat.category || cat.name || 'Unknown';
-          const score = cat.score ?? cat.earned ?? 0;
-          const maxScore = cat.maxScore ?? cat.max ?? 100;
-
-          return (
-            <div key={index} style={styles.categoryCard}>
-              <div style={styles.categoryHeader}>
-                <span style={styles.categoryName}>{categoryName}</span>
-                <span style={{ ...styles.categoryScore, color: comment.color }}>{Math.round(percentage)}%</span>
-              </div>
-              <div style={styles.categoryBar}>
-                <div style={{ ...styles.categoryBarFill, width: Math.min(percentage, 100) + '%', background: comment.color }} />
-              </div>
-              <div style={styles.categoryDetail}>{Math.round(score)} / {Math.round(maxScore)} points</div>
-              <div style={{ ...styles.categoryComment, color: comment.color }}>{comment.text}</div>
-            </div>
-          );
-        })}
-      </div>
-    );
-  };
-
+  // ============================================================
+  // RENDER
+  // ============================================================
   return (
     <div style={styles.container}>
       {onBack && (
-        <button onClick={onBack} style={styles.backButton}>Back to Dashboard</button>
+        <button onClick={onBack} style={styles.backButton}>
+          ← Back to Dashboard
+        </button>
       )}
 
+      {/* Header */}
       <div style={styles.header}>
         <h1 style={styles.title}>National Service Recruitment Assessment</h1>
         <div style={styles.candidateInfo}>
@@ -864,16 +921,22 @@ export default function NationalServiceReport({
         </div>
       </div>
 
+      {/* Recommendation Banner */}
       <div style={{ ...styles.banner, background: recommendationDetails.bg, border: `3px solid ${recommendationDetails.color}` }}>
         <div style={styles.bannerContent}>
-          <div style={{ ...styles.bannerIcon, color: recommendationDetails.color }}>{recommendationDetails.icon}</div>
+          <div style={{ ...styles.bannerIcon, color: recommendationDetails.color }}>
+            {recommendationDetails.icon}
+          </div>
           <div>
-            <div style={{ ...styles.bannerTitle, color: recommendationDetails.color }}>{recommendationDetails.label}</div>
+            <div style={{ ...styles.bannerTitle, color: recommendationDetails.color }}>
+              {recommendationDetails.label}
+            </div>
             <div style={styles.bannerNarrative}>{recommendationDetails.narrative}</div>
           </div>
         </div>
       </div>
 
+      {/* Score Cards */}
       <div style={styles.scoreGrid}>
         <div style={styles.scoreCard}>
           <div style={styles.scoreLabel}>Workplace Readiness</div>
@@ -881,18 +944,19 @@ export default function NationalServiceReport({
           <div style={{ ...styles.scoreBand, color: displayWorkplace >= 70 ? '#2e7d32' : displayWorkplace >= 50 ? '#f57c00' : '#c62828' }}>
             {displayWorkplace >= 70 ? 'Ready' : displayWorkplace >= 50 ? 'Developing' : 'Needs Improvement'}
           </div>
-          <div style={styles.subCategoryCount}>{sortedWorkplace.length} sub-categories assessed</div>
+          <div style={styles.subCategoryCount}>
+            {sortedWorkplace.length} sub-categories assessed          </div>
         </div>
-
         <div style={styles.scoreCard}>
           <div style={styles.scoreLabel}>Intellectual Capability</div>
           <div style={styles.scoreValue}>{displayIntellectual}%</div>
           <div style={{ ...styles.scoreBand, color: displayIntellectual >= 70 ? '#2e7d32' : displayIntellectual >= 50 ? '#f57c00' : '#c62828' }}>
             {displayIntellectual >= 70 ? 'Ready' : displayIntellectual >= 50 ? 'Developing' : 'Development Required'}
           </div>
-          <div style={styles.subCategoryCount}>{sortedIntellectual.length} sub-categories assessed</div>
+          <div style={styles.subCategoryCount}>
+            {sortedIntellectual.length} sub-categories assessed
+          </div>
         </div>
-
         <div style={styles.scoreCard}>
           <div style={styles.scoreLabel}>Overall Score</div>
           <div style={styles.scoreValue}>{displayOverall}%</div>
@@ -902,65 +966,148 @@ export default function NationalServiceReport({
         </div>
       </div>
 
+      {/* Workplace Readiness Sub-Categories */}
       <div style={styles.section}>
         <div style={styles.sectionHeader}>
           <h2 style={styles.sectionTitle}>Workplace Readiness - Sub-Category Breakdown</h2>
           <span style={styles.sectionScore}>{displayWorkplace}%</span>
         </div>
-        {renderCategoryGrid(sortedWorkplace)}
+        {sortedWorkplace.length > 0 ? (
+          <div style={styles.categoryGrid}>
+            {sortedWorkplace.map((cat, index) => {
+              const percentage = cat.percentage || 0;
+              const comment = getCategoryComment(percentage);
+              const categoryName = cat.category || cat.name || 'Unknown';
+              const score = cat.score || cat.earned || 0;
+              const maxScore = cat.maxScore || cat.max || 100;
+
+              return (
+                <div key={index} style={styles.categoryCard}>
+                  <div style={styles.categoryHeader}>
+                    <span style={styles.categoryName}>{categoryName}</span>
+                    <span style={{ ...styles.categoryScore, color: comment.color }}>
+                      {Math.round(percentage)}%
+                    </span>
+                  </div>
+                  <div style={styles.categoryBar}>
+                    <div style={{ ...styles.categoryBarFill, width: Math.min(percentage, 100) + '%', background: comment.color }} />
+                  </div>
+                  <div style={styles.categoryDetail}>
+                    {Math.round(score)} / {Math.round(maxScore)} points
+                  </div>
+                  <div style={{ ...styles.categoryComment, color: comment.color }}>
+                    {comment.text}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div style={styles.emptyState}>
+            <p>No sub-category data available for Workplace Readiness.</p>
+          </div>
+        )}
       </div>
 
+      {/* Intellectual Capability Sub-Categories */}
       <div style={styles.section}>
         <div style={styles.sectionHeader}>
           <h2 style={styles.sectionTitle}>Intellectual Capability - Sub-Category Breakdown</h2>
           <span style={styles.sectionScore}>{displayIntellectual}%</span>
         </div>
-        {renderCategoryGrid(sortedIntellectual)}
+        {sortedIntellectual.length > 0 ? (
+          <div style={styles.categoryGrid}>
+            {sortedIntellectual.map((cat, index) => {
+              const percentage = cat.percentage || 0;
+              const comment = getCategoryComment(percentage);
+              const categoryName = cat.category || cat.name || 'Unknown';
+              const score = cat.score || cat.earned || 0;
+              const maxScore = cat.maxScore || cat.max || 100;
+
+              return (
+                <div key={index} style={styles.categoryCard}>
+                  <div style={styles.categoryHeader}>
+                    <span style={styles.categoryName}>{categoryName}</span>
+                    <span style={{ ...styles.categoryScore, color: comment.color }}>
+                      {Math.round(percentage)}%
+                    </span>
+                  </div>
+                  <div style={styles.categoryBar}>
+                    <div style={{ ...styles.categoryBarFill, width: Math.min(percentage, 100) + '%', background: comment.color }} />
+                  </div>
+                  <div style={styles.categoryDetail}>
+                    {Math.round(score)} / {Math.round(maxScore)} points
+                  </div>
+                  <div style={{ ...styles.categoryComment, color: comment.color }}>
+                    {comment.text}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div style={styles.emptyState}>
+            <p>No sub-category data available for Intellectual Capability.</p>
+          </div>
+        )}
       </div>
 
-      {topStrengths.length > 0 && (
+      {/* Top Strengths */}
+      {topStrengths.length > 0 && topStrengths[0].percentage > 0 && (
         <div style={styles.section}>
           <h2 style={styles.sectionTitle}>Top Strengths</h2>
           <div style={styles.strengthGrid}>
-            {topStrengths.map((strength, index) => (
-              <div key={index} style={styles.strengthCard}>
-                <div style={styles.strengthRank}>{index + 1}</div>
-                <div style={styles.cardContent}>
-                  <div style={styles.cardName}>{strength.category || strength.name || 'Unknown'}</div>
-                  <div style={{ ...styles.cardScore, color: '#2e7d32' }}>{Math.round(strength.percentage || 0)}%</div>
+            {topStrengths.map((strength, index) => {
+              const percentage = strength.percentage || 0;
+              const categoryName = strength.category || strength.name || 'Unknown';
+              return (
+                <div key={index} style={styles.strengthCard}>
+                  <div style={styles.strengthRank}>{index + 1}</div>
+                  <div style={styles.cardContent}>
+                    <div style={styles.cardName}>{categoryName}</div>
+                    <div style={{ ...styles.cardScore, color: '#2e7d32' }}>{Math.round(percentage)}%</div>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
 
+      {/* Development Areas */}
       {developmentAreas.length > 0 && (
         <div style={styles.section}>
           <h2 style={styles.sectionTitle}>Development Areas</h2>
           <div style={styles.strengthGrid}>
-            {developmentAreas.map((area, index) => (
-              <div key={index} style={styles.strengthCard}>
-                <div style={styles.developmentRank}>{index + 1}</div>
-                <div style={styles.cardContent}>
-                  <div style={styles.cardName}>{area.category || area.name || 'Unknown'}</div>
-                  <div style={{ ...styles.cardScore, color: '#c62828' }}>{Math.round(area.percentage || 0)}%</div>
+            {developmentAreas.map((area, index) => {
+              const percentage = area.percentage || 0;
+              const categoryName = area.category || area.name || 'Unknown';
+              return (
+                <div key={index} style={styles.strengthCard}>
+                  <div style={styles.developmentRank}>{index + 1}</div>
+                  <div style={styles.cardContent}>
+                    <div style={styles.cardName}>{categoryName}</div>
+                    <div style={{ ...styles.cardScore, color: '#c62828' }}>{Math.round(percentage)}%</div>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
 
+      {/* Suggested Placement */}
       <div style={styles.section}>
         <h2 style={styles.sectionTitle}>Suggested Placement</h2>
         <div style={styles.placementContainer}>
-          <p style={styles.placementDescription}>Based on the candidate's performance profile, the following recommendations are suggested:</p>
+          <p style={styles.placementDescription}>
+            Based on the candidate's performance profile, the following recommendations are suggested:
+          </p>
           <div style={styles.placementGrid}>
             {suggestedPlacements.map((dept, index) => (
               <div key={index} style={styles.placementCard}>
-                <span>•</span>
-                <span>{dept}</span>
+                <span style={styles.placementIcon}>•</span>
+                <span style={styles.placementName}>{dept}</span>
               </div>
             ))}
           </div>
@@ -968,10 +1115,10 @@ export default function NationalServiceReport({
       </div>
 
       {/* ============================================================
-          BEHAVIORAL MATRIX SECTION - WITH FULL COMMENTARY
+          BEHAVIORAL MATRIX SECTION
           ============================================================ */}
       <div style={styles.behavioralToggleContainer}>
-        <button onClick={() => setShowBehavioral(!showBehavioral)} style={styles.behavioralToggleButton}>
+        <button onClick={toggleBehavioral} style={styles.behavioralToggleButton}>
           {showBehavioral ? 'Hide Behavioral Matrix' : 'Show Behavioral Matrix'}
         </button>
       </div>
@@ -986,7 +1133,7 @@ export default function NationalServiceReport({
             </div>
           ) : behavioralMatrix && hasBehavioralData ? (
             <>
-              {/* Behavioral Stats - Figures */}
+              {/* Behavioral Stats */}
               <div style={styles.behavioralStats}>
                 <div style={styles.behavioralStat}>
                   <span style={styles.behavioralLabel}>Total Time</span>
@@ -995,7 +1142,7 @@ export default function NationalServiceReport({
                   </span>
                 </div>
                 <div style={styles.behavioralStat}>
-                  <span style={styles.behavioralLabel}>Avg Time / Question</span>
+                  <span style={styles.behavioralLabel}>Avg Time per Question</span>
                   <span style={styles.behavioralValue}>
                     {behavioralMatrix.timing?.averageTimePerQuestion || 0}s
                   </span>
@@ -1049,6 +1196,11 @@ export default function NationalServiceReport({
                 <p>
                   Behavioral flags: {behavioralMatrix.behavior?.violations || 0} violation(s), {behavioralMatrix.behavior?.tabSwitches || 0} tab switches, and {behavioralMatrix.behavior?.answerChanges || 0} answer changes.
                 </p>
+                {behavioralMatrix.riskAssessment?.detail && (
+                  <p style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
+                    {behavioralMatrix.riskAssessment.detail}
+                  </p>
+                )}
               </div>
 
               {/* ============================================================
@@ -1058,100 +1210,111 @@ export default function NationalServiceReport({
                 <div style={styles.behavioralCommentary}>
                   <h4 style={styles.commentaryTitle}>Behavioral Analysis &amp; Recommendations</h4>
 
-                  {/* Tab Switches Commentary */}
-                  <div style={styles.commentaryItem}>
-                    <span style={styles.commentaryLabel}>Tab Switches:</span>
-                    <span style={styles.commentaryText}>
-                      {behavioralMatrix.behavior.tabSwitches === 0
-                        ? 'No tab switching detected. Candidate maintained focus on the assessment.'
-                        : behavioralMatrix.behavior.tabSwitches <= 5
-                          ? `Minimal tab switching (${behavioralMatrix.behavior.tabSwitches} switches). This may indicate occasional distraction.`
-                          : behavioralMatrix.behavior.tabSwitches <= 20
-                            ? `Moderate tab switching (${behavioralMatrix.behavior.tabSwitches} switches). Candidate may have been referencing external materials.`
-                            : `High tab switching (${behavioralMatrix.behavior.tabSwitches} switches). This suggests significant distraction or potential external reference use.`
-                      }
-                    </span>
+                  <div style={styles.commentaryMetrics}>
+                    <div style={styles.commentaryItem}>
+                      <span style={styles.commentaryLabel}>Tab Switches:</span>
+                      <span style={styles.commentaryText}>
+                        {behavioralMatrix.behavior.tabSwitches === 0
+                          ? 'No tab switching detected. Candidate maintained focus on the assessment.'
+                          : behavioralMatrix.behavior.tabSwitches <= 5
+                            ? `Minimal tab switching (${behavioralMatrix.behavior.tabSwitches} switches). This may indicate occasional distraction.`
+                            : behavioralMatrix.behavior.tabSwitches <= 20
+                              ? `Moderate tab switching (${behavioralMatrix.behavior.tabSwitches} switches). Candidate may have been referencing external materials.`
+                              : `High tab switching (${behavioralMatrix.behavior.tabSwitches} switches). This suggests significant distraction or potential external reference use.`
+                        }
+                      </span>
+                    </div>
+
+                    <div style={styles.commentaryItem}>
+                      <span style={styles.commentaryLabel}>Violations:</span>
+                      <span style={styles.commentaryText}>
+                        {behavioralMatrix.behavior.violations === 0
+                          ? 'No rule violations detected. Candidate followed all assessment guidelines.'
+                          : behavioralMatrix.behavior.violations <= 3
+                            ? `Minor violations (${behavioralMatrix.behavior.violations} violations). These may be accidental or due to unfamiliarity with the assessment interface.`
+                            : behavioralMatrix.behavior.violations <= 10
+                              ? `Moderate violations (${behavioralMatrix.behavior.violations} violations). Candidate may have attempted to circumvent assessment rules.`
+                              : `High violations (${behavioralMatrix.behavior.violations} violations). This indicates significant disregard for assessment rules.`
+                        }
+                      </span>
+                    </div>
+
+                    <div style={styles.commentaryItem}>
+                      <span style={styles.commentaryLabel}>Answer Changes:</span>
+                      <span style={styles.commentaryText}>
+                        {behavioralMatrix.behavior.answerChanges === 0
+                          ? 'No answer changes. Candidate answered confidently without second-guessing.'
+                          : behavioralMatrix.behavior.answerChanges <= 3
+                            ? `Minimal answer changes (${behavioralMatrix.behavior.answerChanges} changes). Candidate showed some hesitation on a few questions.`
+                            : behavioralMatrix.behavior.answerChanges <= 10
+                              ? `Moderate answer changes (${behavioralMatrix.behavior.answerChanges} changes). Candidate may have been uncertain about several answers.`
+                              : `High answer changes (${behavioralMatrix.behavior.answerChanges} changes). Candidate showed significant uncertainty throughout the assessment.`
+                        }
+                      </span>
+                    </div>
+
+                    <div style={styles.commentaryItem}>
+                      <span style={styles.commentaryLabel}>Avg Response Time:</span>
+                      <span style={styles.commentaryText}>
+                        {behavioralMatrix.timing?.averageTimePerQuestion <= 15
+                          ? 'Fast average response time. Candidate answered quickly, which may indicate strong confidence or potential rushing.'
+                          : behavioralMatrix.timing?.averageTimePerQuestion <= 45
+                            ? 'Normal average response time. Candidate took reasonable time to consider each question.'
+                            : behavioralMatrix.timing?.averageTimePerQuestion <= 90
+                              ? 'Extended average response time. Candidate took longer than average on questions.'
+                              : 'Very long average response time. Candidate spent excessive time on questions.'
+                        }
+                      </span>
+                    </div>
                   </div>
 
-                  {/* Violations Commentary */}
-                  <div style={styles.commentaryItem}>
-                    <span style={styles.commentaryLabel}>Violations:</span>
-                    <span style={styles.commentaryText}>
-                      {behavioralMatrix.behavior.violations === 0
-                        ? 'No rule violations detected. Candidate followed all assessment guidelines.'
-                        : behavioralMatrix.behavior.violations <= 3
-                          ? `Minor violations (${behavioralMatrix.behavior.violations} violations). These may be accidental or due to unfamiliarity with the assessment interface.`
-                          : behavioralMatrix.behavior.violations <= 10
-                            ? `Moderate violations (${behavioralMatrix.behavior.violations} violations). Candidate may have attempted to circumvent assessment rules.`
-                            : `High violations (${behavioralMatrix.behavior.violations} violations). This indicates significant disregard for assessment rules.`
-                      }
-                    </span>
-                  </div>
-
-                  {/* Answer Changes Commentary */}
-                  <div style={styles.commentaryItem}>
-                    <span style={styles.commentaryLabel}>Answer Changes:</span>
-                    <span style={styles.commentaryText}>
-                      {behavioralMatrix.behavior.answerChanges === 0
-                        ? 'No answer changes. Candidate answered confidently without second-guessing.'
-                        : behavioralMatrix.behavior.answerChanges <= 3
-                          ? `Minimal answer changes (${behavioralMatrix.behavior.answerChanges} changes). Candidate showed some hesitation on a few questions.`
-                          : behavioralMatrix.behavior.answerChanges <= 10
-                            ? `Moderate answer changes (${behavioralMatrix.behavior.answerChanges} changes). Candidate may have been uncertain about several answers.`
-                            : `High answer changes (${behavioralMatrix.behavior.answerChanges} changes). Candidate showed significant uncertainty throughout the assessment.`
-                      }
-                    </span>
-                  </div>
-
-                  {/* Average Time Commentary */}
-                  <div style={styles.commentaryItem}>
-                    <span style={styles.commentaryLabel}>Avg Response Time:</span>
-                    <span style={styles.commentaryText}>
-                      {behavioralMatrix.timing?.averageTimePerQuestion <= 15
-                        ? 'Fast average response time. Candidate answered quickly, which may indicate strong confidence or potential rushing.'
-                        : behavioralMatrix.timing?.averageTimePerQuestion <= 45
-                          ? 'Normal average response time. Candidate took reasonable time to consider each question.'
-                          : behavioralMatrix.timing?.averageTimePerQuestion <= 90
-                            ? 'Extended average response time. Candidate took longer than average on questions.'
-                            : 'Very long average response time. Candidate spent excessive time on questions.'
-                      }
-                    </span>
-                  </div>
-
-                  {/* Risk Assessment */}
-                  <div style={styles.riskSummaryBox}>
-                    <p style={styles.riskSummaryText}>
-                      <strong>Risk Assessment:</strong> {behavioralMatrix.riskAssessment?.summary || 'No behavioral concerns detected.'}
-                    </p>
-                    {behavioralMatrix.riskAssessment?.detail && (
-                      <p style={styles.riskDetailText}>{behavioralMatrix.riskAssessment.detail}</p>
-                    )}
-                    {behavioralMatrix.riskAssessment?.action && (
-                      <p style={styles.riskActionText}>
-                        <strong>Recommendation:</strong> {behavioralMatrix.riskAssessment.action}
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Flagged Questions */}
-                  {behavioralMatrix.flaggedQuestions && behavioralMatrix.flaggedQuestions.length > 0 && (
-                    <div style={styles.flaggedQuestions}>
-                      <h5 style={styles.flaggedTitle}>Flagged Questions</h5>
-                      <ul style={styles.flaggedList}>
-                        {behavioralMatrix.flaggedQuestions.slice(0, 10).map((q, index) => (
-                          <li key={index} style={styles.flaggedItem}>
-                            Question {q.question_id}: {q.time_seconds}s
-                            {q.changed ? ' - Changed' : ''}
-                            {q.violation ? ' - Violation' : ''}
-                            {q.comment ? ` - ${q.comment}` : ''}
-                          </li>
-                        ))}
-                        {behavioralMatrix.flaggedQuestions.length > 10 && (
-                          <li style={styles.flaggedItem}>... and {behavioralMatrix.flaggedQuestions.length - 10} more</li>
+                  {/* Recommendations */}
+                  {(behavioralMatrix.behavior.violations > 0 || behavioralMatrix.behavior.tabSwitches > 5) ? (
+                    <div style={styles.recommendationBox}>
+                      <h5 style={styles.recommendationTitle}>Recommendations</h5>
+                      <ul style={styles.recommendationList}>
+                        {behavioralMatrix.behavior.tabSwitches > 20 && (
+                          <li>Consider invalidating the assessment due to excessive tab switching.</li>
+                        )}
+                        {behavioralMatrix.behavior.violations > 10 && (
+                          <li>Immediate review required. Assessment validity is compromised.</li>
+                        )}
+                        {behavioralMatrix.behavior.tabSwitches > 5 && behavioralMatrix.behavior.tabSwitches <= 20 && (
+                          <li>Conduct a follow-up interview to discuss potential external reference use.</li>
+                        )}
+                        {behavioralMatrix.behavior.violations > 3 && behavioralMatrix.behavior.violations <= 10 && (
+                          <li>Review specific flagged questions and discuss with candidate.</li>
+                        )}
+                        {behavioralMatrix.behavior.answerChanges > 5 && (
+                          <li>Review questions where answers were changed for potential ambiguity.</li>
                         )}
                       </ul>
                     </div>
+                  ) : (
+                    <div style={styles.cleanCommentary}>
+                      No concerning behavioral patterns detected. The candidate completed the assessment with integrity.
+                    </div>
                   )}
+                </div>
+              )}
+
+              {/* Flagged Questions */}
+              {behavioralMatrix.flaggedQuestions && behavioralMatrix.flaggedQuestions.length > 0 && (
+                <div style={styles.flaggedQuestions}>
+                  <h4 style={styles.flaggedTitle}>Flagged Questions</h4>
+                  <ul style={styles.flaggedList}>
+                    {behavioralMatrix.flaggedQuestions.slice(0, 10).map((q, index) => (
+                      <li key={index} style={styles.flaggedItem}>
+                        Question {q.question_id}: {q.time_seconds}s
+                        {q.changed ? ' - Changed' : ''}
+                        {q.violation ? ' - Violation' : ''}
+                        {q.comment ? ` - ${q.comment}` : ''}
+                      </li>
+                    ))}
+                    {behavioralMatrix.flaggedQuestions.length > 10 && (
+                      <li style={styles.flaggedItem}>... and {behavioralMatrix.flaggedQuestions.length - 10} more</li>
+                    )}
+                  </ul>
                 </div>
               )}
             </>
@@ -1191,7 +1354,9 @@ export default function NationalServiceReport({
       </div>
 
       <div style={styles.actions}>
-        <button onClick={() => window.print()} style={styles.printButton}>Print Report</button>
+        <button onClick={() => window.print()} style={styles.printButton}>
+          Print Report
+        </button>
       </div>
     </div>
   );
