@@ -1,4 +1,4 @@
-// pages/candidate/dashboard.js - NO EMOJIS, CLEAN PROFESSIONAL VERSION
+// pages/candidate/dashboard.js - WITH FIXED COUNTDOWN
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
@@ -83,6 +83,37 @@ export default function CandidateDashboard() {
   }
 
   // ============================================================
+  // EXPIRATION COUNTDOWN HELPERS
+  // ============================================================
+  const getDaysRemaining = (expiresAt) => {
+    if (!expiresAt) return null;
+    const now = new Date();
+    const expiry = new Date(expiresAt);
+    const diffTime = expiry - now;
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return diffDays;
+  };
+
+  const getExpirationStatus = (expiresAt) => {
+    if (!expiresAt) return { status: 'no_expiry', label: '', color: '' };
+    
+    const now = new Date();
+    const expiry = new Date(expiresAt);
+    const diffTime = expiry - now;
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    
+    if (diffDays < 0) {
+      return { status: 'expired', label: 'Expired', color: '#dc2626', days: diffDays };
+    } else if (diffDays === 0) {
+      return { status: 'today', label: 'Expires Today', color: '#f59e0b', days: 0 };
+    } else if (diffDays <= 7) {
+      return { status: 'soon', label: `${diffDays} days remaining`, color: '#f59e0b', days: diffDays };
+    } else {
+      return { status: 'ok', label: `${diffDays} days remaining`, color: '#16a34a', days: diffDays };
+    }
+  };
+
+  // ============================================================
   // Helper functions for display values
   // ============================================================
   const isNationalServiceAssessment = (assessment) => {
@@ -104,19 +135,7 @@ export default function CandidateDashboard() {
   };
 
   // ============================================================
-  // Expiration countdown helper
-  // ============================================================
-  const getDaysRemaining = (expiresAt) => {
-    if (!expiresAt) return null;
-    const now = new Date();
-    const expiry = new Date(expiresAt);
-    const diffTime = expiry - now;
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    return diffDays;
-  };
-
-  // ============================================================
-  // ASSESSMENT-SPECIFIC CATEGORY MAPPINGS (No Emojis)
+  // ASSESSMENT-SPECIFIC CATEGORY MAPPINGS
   // ============================================================
   const getAssessmentAreas = (typeCode, title) => {
     const areasByType = {
@@ -485,7 +504,10 @@ export default function CandidateDashboard() {
                     const isSelected = selectedAssessment?.id === assessment.id;
                     const isNationalService = assessment.isNationalService || assessment.typeCode === 'national_service';
                     const displayName = getShortName(assessment.title, isNationalService);
-                    const daysRemaining = getDaysRemaining(assessment.expires_at);
+                    
+                    // Get expiration status
+                    const expiryStatus = getExpirationStatus(assessment.expires_at);
+                    const isExpired = expiryStatus.status === 'expired';
 
                     return (
                       <div 
@@ -498,11 +520,12 @@ export default function CandidateDashboard() {
                             ? `0 8px 32px ${colors.glow}` 
                             : '0 2px 8px rgba(0,0,0,0.04)',
                           transform: isSelected ? 'translateY(-2px)' : 'translateY(0)',
-                          transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
+                          transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                          opacity: isExpired ? 0.5 : 1
                         }}
-                        onClick={() => handleSelectAssessment(assessment)}
+                        onClick={() => !isExpired && handleSelectAssessment(assessment)}
                         onMouseEnter={(e) => {
-                          if (!isSelected) {
+                          if (!isSelected && !isExpired) {
                             e.currentTarget.style.transform = 'translateY(-2px)';
                             e.currentTarget.style.boxShadow = '0 8px 25px rgba(0,0,0,0.08)';
                           }
@@ -521,19 +544,23 @@ export default function CandidateDashboard() {
                             <span style={{ 
                               ...styles.compactName, 
                               color: isSelected ? colors.border : '#0a1929',
-                              fontWeight: isSelected ? '600' : '500'
+                              fontWeight: isSelected ? '600' : '500',
+                              textDecoration: isExpired ? 'line-through' : 'none'
                             }}>{displayName}</span>
+                            {isExpired && (
+                              <span style={styles.expiredTag}>EXPIRED</span>
+                            )}
                           </div>
                           <div style={styles.compactRight}>
                             {isNationalService && (
                               <span style={styles.compactNsTag}>NS</span>
                             )}
-                            {assessment.expires_at && daysRemaining !== null && (
+                            {assessment.expires_at && expiryStatus.status !== 'expired' && expiryStatus.status !== 'no_expiry' && (
                               <span style={{
                                 ...styles.compactExpiry,
-                                color: daysRemaining < 0 || daysRemaining <= 7 ? '#dc2626' : '#64748b'
+                                color: expiryStatus.status === 'soon' ? '#f59e0b' : '#64748b'
                               }}>
-                                {daysRemaining < 0 ? 'EXP' : daysRemaining <= 7 ? `${daysRemaining}d` : `${daysRemaining}d`}
+                                {expiryStatus.days}d
                               </span>
                             )}
                             <span style={{ 
@@ -593,10 +620,33 @@ export default function CandidateDashboard() {
                       {selectedAssessment.isNationalService && (
                         <span style={styles.detailNsBadge}>National Service (Always Available)</span>
                       )}
+                      
+                      {/* ============================================================
+                          EXPIRATION COUNTDOWN - PROMINENT DISPLAY
+                          ============================================================ */}
+                      {selectedAssessment.expires_at && (() => {
+                        const expiryStatus = getExpirationStatus(selectedAssessment.expires_at);
+                        if (expiryStatus.status === 'expired') {
+                          return (
+                            <span style={styles.detailExpiredBadge}>EXPIRED - Assessment No Longer Available</span>
+                          );
+                        } else if (expiryStatus.status !== 'no_expiry') {
+                          return (
+                            <span style={{
+                              ...styles.detailExpiryBadge,
+                              background: expiryStatus.status === 'soon' ? 'rgba(245, 158, 11, 0.15)' : 'rgba(22, 163, 74, 0.15)',
+                              color: expiryStatus.status === 'soon' ? '#d97706' : '#16a34a'
+                            }}>
+                              {expiryStatus.label}
+                            </span>
+                          );
+                        }
+                        return null;
+                      })()}
                     </div>
                     <p style={styles.detailDescription}>{selectedAssessment.description}</p>
 
-                    {/* Assessment Areas - No Emojis */}
+                    {/* Assessment Areas */}
                     <div style={styles.detailAreas}>
                       <h4 style={styles.detailAreasTitle}>Assessment Areas</h4>
                       <div style={styles.detailAreasGrid}>
@@ -626,35 +676,27 @@ export default function CandidateDashboard() {
                         <span style={styles.detailInfoLabel}>Type</span>
                         <span style={styles.detailInfoValue}>{selectedAssessment.typeName}</span>
                       </div>
-                      {selectedAssessment.expires_at && (
-                        <div style={styles.detailInfoItem}>
-                          <span style={styles.detailInfoLabel}>Expires</span>
-                          <span style={{
-                            ...styles.detailInfoValue,
-                            color: (() => {
-                              const days = getDaysRemaining(selectedAssessment.expires_at);
-                              if (days === null) return '#0a1929';
-                              if (days < 0 || days <= 7) return '#dc2626';
-                              return '#0a1929';
-                            })(),
-                            fontWeight: (() => {
-                              const days = getDaysRemaining(selectedAssessment.expires_at);
-                              if (days === null) return '500';
-                              if (days < 0 || days <= 7) return '700';
-                              return '500';
-                            })()
-                          }}>
-                            {(() => {
-                              const days = getDaysRemaining(selectedAssessment.expires_at);
-                              if (days === null) return 'N/A';
-                              if (days < 0) return 'Expired';
-                              if (days === 0) return 'Today';
-                              if (days <= 7) return `${days} days`;
-                              return `${days} days`;
-                            })()}
-                          </span>
-                        </div>
-                      )}
+                      {selectedAssessment.expires_at && (() => {
+                        const expiryStatus = getExpirationStatus(selectedAssessment.expires_at);
+                        if (expiryStatus.status !== 'no_expiry') {
+                          return (
+                            <div style={styles.detailInfoItem}>
+                              <span style={styles.detailInfoLabel}>Expires</span>
+                              <span style={{
+                                ...styles.detailInfoValue,
+                                color: expiryStatus.status === 'expired' ? '#dc2626' : 
+                                       expiryStatus.status === 'soon' ? '#d97706' : '#0a1929',
+                                fontWeight: expiryStatus.status === 'expired' || expiryStatus.status === 'soon' ? '700' : '500'
+                              }}>
+                                {expiryStatus.status === 'expired' ? 'EXPIRED' : 
+                                 expiryStatus.status === 'today' ? 'Today' : 
+                                 `${expiryStatus.days} days remaining`}
+                              </span>
+                            </div>
+                          );
+                        }
+                        return null;
+                      })()}
                     </div>
                   </div>
                 )}
@@ -938,6 +980,15 @@ const styles = {
     fontFamily: "monospace"
   },
   compactArrow: { fontSize: "12px", transition: "transform 0.3s" },
+  expiredTag: {
+    fontSize: "8px",
+    fontWeight: "700",
+    padding: "2px 6px",
+    background: "#dc2626",
+    color: "white",
+    borderRadius: "4px",
+    marginLeft: "6px"
+  },
   
   detailSection: { 
     background: "rgba(255,255,255,0.95)", 
@@ -982,6 +1033,20 @@ const styles = {
   detailStatusRow: { display: "flex", alignItems: "center", gap: "10px", marginBottom: "10px", flexWrap: "wrap" },
   detailStatusBadge: { padding: "4px 14px", borderRadius: "50px", fontSize: "12px", fontWeight: "600" },
   detailNsBadge: { fontSize: "11px", fontWeight: "600", padding: "2px 12px", background: "#dbeafe", color: "#1e40af", borderRadius: "50px" },
+  detailExpiryBadge: {
+    padding: "4px 14px",
+    borderRadius: "50px",
+    fontSize: "12px",
+    fontWeight: "600"
+  },
+  detailExpiredBadge: {
+    padding: "4px 14px",
+    borderRadius: "50px",
+    fontSize: "12px",
+    fontWeight: "600",
+    background: "rgba(220, 38, 38, 0.15)",
+    color: "#dc2626"
+  },
   detailDescription: { fontSize: "14px", color: "#64748b", margin: "0 0 16px 0", lineHeight: "1.6" },
   
   detailAreas: { marginBottom: "16px" },
