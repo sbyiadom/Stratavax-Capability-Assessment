@@ -1,4 +1,4 @@
-// pages/api/assessment-report/[resultId].js - COMPLETE FIXED VERSION
+// pages/api/assessment-report/[resultId].js - COMPLETE WITH PROCTORING DATA
 
 import { createClient } from "@supabase/supabase-js";
 
@@ -112,14 +112,13 @@ function generateRecommendations(categoryScores, overallScore) {
 }
 
 // ============================================================
-// SPLIT CATEGORIES INTO WORKPLACE AND INTELLECTUAL - FIXED
+// SPLIT CATEGORIES INTO WORKPLACE AND INTELLECTUAL
 // ============================================================
 
 function splitCategoryScores(categoryScores) {
   const workplace = [];
   const intellectual = [];
 
-  // Exact category names for matching
   const workplaceCategoryNames = [
     'Communication & Teamwork',
     'Ownership & Integrity',
@@ -147,7 +146,6 @@ function splitCategoryScores(categoryScores) {
     const name = cat.category || cat.name || 'Unknown';
     const trimmedName = name.trim();
     
-    // Check exact matches first
     const isWorkplace = workplaceCategoryNames.some(catName => 
       trimmedName === catName || trimmedName.toLowerCase() === catName.toLowerCase()
     );
@@ -156,7 +154,6 @@ function splitCategoryScores(categoryScores) {
       trimmedName === catName || trimmedName.toLowerCase() === catName.toLowerCase()
     );
     
-    // If exact match found, use it
     if (isWorkplace) {
       workplace.push({
         category: name,
@@ -179,7 +176,6 @@ function splitCategoryScores(categoryScores) {
       return;
     }
     
-    // Fallback: keyword matching
     const lowerName = trimmedName.toLowerCase();
     const workplaceKeywords = [
       'safety', 'risk', 'technical', 'communication', 'teamwork',
@@ -214,7 +210,6 @@ function splitCategoryScores(categoryScores) {
         maxScore: safeNumber(cat.max || cat.maxScore || 100)
       });
     } else {
-      // Default: if it contains 'work' or 'team' or 'communication' -> workplace
       if (lowerName.includes('work') || lowerName.includes('team') || lowerName.includes('communicat')) {
         workplace.push({
           category: name,
@@ -239,7 +234,7 @@ function splitCategoryScores(categoryScores) {
 }
 
 // ============================================================
-// HELPER: Get Suggested Placement based on scores
+// GET SUGGESTED PLACEMENT
 // ============================================================
 function getSuggestedPlacement(workplace, intellectual) {
   const w = Number(workplace) || 0;
@@ -364,14 +359,10 @@ export default async function handler(req, res) {
       categoryScores = result.report_data.category_scores;
     }
 
-    // Split for National Service - using the improved function
     if (isNationalService && categoryScores.length > 0) {
       const split = splitCategoryScores(categoryScores);
       workplaceSubCategories = split.workplace;
       intellectualSubCategories = split.intellectual;
-      
-      console.log('[API] Workplace sub-categories:', workplaceSubCategories.length);
-      console.log('[API] Intellectual sub-categories:', intellectualSubCategories.length);
     }
 
     // ============================================================
@@ -382,25 +373,19 @@ export default async function handler(req, res) {
     let overallScore = safeNumber(result.percentage_score, 0);
     let recommendation = result.recommendation || 'N/A';
 
-    // For National Service, calculate from sub-categories if missing
     if (isNationalService) {
-      // Recalculate from sub-categories if the stored values are 0 or missing
       if (workplaceReadiness === 0 && workplaceSubCategories.length > 0) {
         const total = workplaceSubCategories.reduce((sum, cat) => sum + safeNumber(cat.percentage, 0), 0);
         workplaceReadiness = Math.round(total / workplaceSubCategories.length);
-        console.log('[API] Calculated workplaceReadiness:', workplaceReadiness);
       }
 
       if (intellectualCapability === 0 && intellectualSubCategories.length > 0) {
         const total = intellectualSubCategories.reduce((sum, cat) => sum + safeNumber(cat.percentage, 0), 0);
         intellectualCapability = Math.round(total / intellectualSubCategories.length);
-        console.log('[API] Calculated intellectualCapability:', intellectualCapability);
       }
 
-      // If overallScore is 0 but we have workplace and intellectual scores, calculate it
       if (overallScore === 0 && (workplaceReadiness > 0 || intellectualCapability > 0)) {
         overallScore = Math.round((workplaceReadiness + intellectualCapability) / 2);
-        console.log('[API] Calculated overallScore:', overallScore);
       }
 
       if (!recommendation || recommendation === 'N/A' || recommendation === '') {
@@ -412,6 +397,57 @@ export default async function handler(req, res) {
         else recommendation = 'Not Recommended';
       }
     }
+
+    // ============================================================
+    // EXTRACT PROCTORING DATA (EXTERNAL URLS)
+    // ============================================================
+    let externalUrls = [];
+    let domainVisits = {};
+    let proctoringSummary = {};
+    let violations = [];
+    let tabSwitches = [];
+
+    // Get from proctoring_data
+    if (result.proctoring_data) {
+      const proctoringData = typeof result.proctoring_data === 'string' 
+        ? JSON.parse(result.proctoring_data) 
+        : result.proctoring_data;
+      
+      externalUrls = proctoringData.externalUrls || [];
+      domainVisits = proctoringData.domainVisits || {};
+      proctoringSummary = proctoringData.summary || {};
+      violations = proctoringData.violations || [];
+      tabSwitches = proctoringData.tabSwitches || [];
+    }
+
+    // Also check flattened columns
+    if (result.external_urls_visited && Array.isArray(result.external_urls_visited)) {
+      if (result.external_urls_visited.length > externalUrls.length) {
+        externalUrls = result.external_urls_visited;
+      }
+    }
+
+    if (result.domain_visits && typeof result.domain_visits === 'object') {
+      domainVisits = { ...domainVisits, ...result.domain_visits };
+    }
+
+    if (result.violations && Array.isArray(result.violations)) {
+      violations = result.violations;
+    }
+
+    if (result.tab_switch_details && Array.isArray(result.tab_switch_details)) {
+      tabSwitches = result.tab_switch_details;
+    }
+
+    // Categorize external URLs
+    const categoryStats = {};
+    externalUrls.forEach(url => {
+      const category = url.category || 'other';
+      if (!categoryStats[category]) {
+        categoryStats[category] = 0;
+      }
+      categoryStats[category]++;
+    });
 
     // ============================================================
     // GENERATE RECOMMENDATIONS FOR STRATAVAX
@@ -484,7 +520,24 @@ export default async function handler(req, res) {
           assessmentDate: result.completed_at ? new Date(result.completed_at).toLocaleDateString() : 'N/A'
         },
         suggestedPlacement: suggestedPlacement,
-        reportType: 'national_service'
+        reportType: 'national_service',
+        // ============================================================
+        // PROCTORING DATA
+        // ============================================================
+        proctoring: {
+          externalUrls: externalUrls,
+          domainVisits: domainVisits,
+          categoryStats: categoryStats,
+          summary: proctoringSummary,
+          violations: violations,
+          tabSwitches: tabSwitches,
+          riskLevel: result.risk_level || result.riskLevel || 'Low',
+          riskScore: result.risk_score || 0,
+          totalViolations: violations.length || 0,
+          totalTabSwitches: tabSwitches.length || 0,
+          totalExternalUrls: externalUrls.length || 0,
+          uniqueDomains: [...new Set(externalUrls.map(u => u.domain))].length || 0
+        }
       };
     } else {
       // STRATAVAX REPORT
@@ -513,7 +566,24 @@ export default async function handler(req, res) {
         supervisorImplication: result.supervisor_implication || result.supervisorImplication || '',
         reportType: 'stratavax',
         total_questions: result.total_questions || 0,
-        answered_questions: result.answered_questions || 0
+        answered_questions: result.answered_questions || 0,
+        // ============================================================
+        // PROCTORING DATA
+        // ============================================================
+        proctoring: {
+          externalUrls: externalUrls,
+          domainVisits: domainVisits,
+          categoryStats: categoryStats,
+          summary: proctoringSummary,
+          violations: violations,
+          tabSwitches: tabSwitches,
+          riskLevel: result.risk_level || result.riskLevel || 'Low',
+          riskScore: result.risk_score || 0,
+          totalViolations: violations.length || 0,
+          totalTabSwitches: tabSwitches.length || 0,
+          totalExternalUrls: externalUrls.length || 0,
+          uniqueDomains: [...new Set(externalUrls.map(u => u.domain))].length || 0
+        }
       };
     }
 
@@ -531,7 +601,12 @@ export default async function handler(req, res) {
         categoryScores: categoryScores,
         strengths: strengths,
         weaknesses: weaknesses,
-        recommendations: recommendations
+        recommendations: recommendations,
+        externalUrls: externalUrls,
+        domainVisits: domainVisits,
+        proctoringSummary: proctoringSummary,
+        violations: violations,
+        tabSwitches: tabSwitches
       },
       report: report,
       isNationalService: isNationalService,
@@ -544,7 +619,18 @@ export default async function handler(req, res) {
       overallScore: overallScore,
       recommendation: recommendation,
       recommendations: recommendations,
-      suggestedPlacement: report.suggestedPlacement || []
+      suggestedPlacement: report.suggestedPlacement || [],
+      // Proctoring data in response
+      proctoring: {
+        externalUrls: externalUrls,
+        domainVisits: domainVisits,
+        categoryStats: categoryStats,
+        riskLevel: result.risk_level || result.riskLevel || 'Low',
+        riskScore: result.risk_score || 0,
+        totalViolations: violations.length || 0,
+        totalTabSwitches: tabSwitches.length || 0,
+        totalExternalUrls: externalUrls.length || 0
+      }
     });
 
   } catch (error) {
