@@ -1,4 +1,4 @@
-// pages/api/assessment/submit.js - FIXED VERSION
+// pages/api/assessment/submit.js - COMPLETE FIXED VERSION
 // Handles assessment submission with correct scoring (1 mark per correct answer)
 // Saves category_scores, workplace_readiness, intellectual_capability, AND proctoring data
 
@@ -251,7 +251,11 @@ export default async function handler(req, res) {
     const hasExcessiveTabSwitches = totalTabSwitches > 10;
     const hasExcessiveViolations = totalViolations > 5;
 
-    let riskLevel = 'Low';
+    // ============================================================
+    // FIX: Use lowercase risk levels for the check constraint
+    // Allowed: 'low', 'medium', 'high', 'unknown'
+    // ============================================================
+    let riskLevel = 'low';
     let riskScore = 0;
     
     if (hasSearchEngineUsage) riskScore += 30;
@@ -260,8 +264,9 @@ export default async function handler(req, res) {
     if (hasExcessiveViolations) riskScore += 15;
     riskScore = Math.min(riskScore, 100);
     
-    if (riskScore >= 70) riskLevel = 'High';
-    else if (riskScore >= 40) riskLevel = 'Medium';
+    if (riskScore >= 70) riskLevel = 'high';
+    else if (riskScore >= 40) riskLevel = 'medium';
+    else riskLevel = 'low';
 
     const riskFactors = [];
     if (hasSearchEngineUsage) {
@@ -313,13 +318,13 @@ export default async function handler(req, res) {
     const { data: existingResult, error: resultError } = await serviceClient
       .from("assessment_results")
       .select("id")
-      .eq("session_id", sessionId)  // FIXED: Check by session_id instead of user_id + assessment_id
+      .eq("session_id", sessionId)
       .maybeSingle();
 
     console.log(`[Submit] Existing result: ${existingResult ? existingResult.id : 'None'}`);
 
     // ============================================================
-    // STEP 11: Create or update assessment result
+    // STEP 11: Create or update assessment result (NO status field)
     // ============================================================
     const recommendation = isNationalService ? 
       (workplaceReadiness >= 85 && intellectualCapability >= 85 ? 'Highly Recommended' :
@@ -335,14 +340,16 @@ export default async function handler(req, res) {
       max_score: totalMax,
       percentage_score: percentageScore,
       completed_at: new Date().toISOString(),
-      is_valid: riskLevel !== 'High',
+      is_valid: riskLevel !== 'high',
       is_auto_submitted: autoSubmitted || false,
       
+      // Category scores
       category_scores: categoryScores,
       workplace_readiness: workplaceReadiness,
       intellectual_capability: intellectualCapability,
       recommendation: recommendation,
       
+      // Proctoring data
       proctoring_data: {
         summary: {
           totalViolations: totalViolations,
@@ -363,12 +370,13 @@ export default async function handler(req, res) {
         tabSwitches: tabSwitches
       },
       
+      // Flattened columns
       external_urls_visited: externalUrls,
       domain_visits: domainVisits,
       tab_switch_details: tabSwitches,
       violations: violations,
       risk_score: riskScore,
-      risk_level: riskLevel,
+      risk_level: riskLevel,  // Now using lowercase: 'low', 'medium', 'high'
       total_tab_switches: totalTabSwitches,
       total_external_urls: totalExternalUrls,
       
