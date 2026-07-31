@@ -1,4 +1,4 @@
-// components/reports/NationalServiceReport.js - DUPLICATE DECLARATION FIXED
+// components/reports/NationalServiceReport.js - COMPLETE WITH EXTERNAL URLS
 
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../../supabase/client';
@@ -535,6 +535,108 @@ const styles = {
     textAlign: 'center',
     padding: '20px',
     color: '#64748b'
+  },
+  // ============================================================
+  // EXTERNAL URLS STYLES - ADDED
+  // ============================================================
+  externalUrlsSection: {
+    marginTop: '16px',
+    padding: '16px',
+    background: 'white',
+    borderRadius: '8px',
+    border: '1px solid #e2e8f0',
+    overflowX: 'auto'
+  },
+  externalUrlsTitle: {
+    fontSize: '14px',
+    fontWeight: '600',
+    color: '#0a1929',
+    margin: '0 0 12px 0'
+  },
+  externalUrlsTable: {
+    overflowX: 'auto'
+  },
+  urlTable: {
+    width: '100%',
+    borderCollapse: 'collapse',
+    fontSize: '13px',
+    minWidth: '600px'
+  },
+  urlTableHeader: {
+    background: '#f8fafc',
+    borderBottom: '2px solid #e2e8f0'
+  },
+  urlTableHeaderCell: {
+    padding: '8px 12px',
+    textAlign: 'left',
+    fontWeight: '600',
+    color: '#64748b',
+    fontSize: '11px',
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px'
+  },
+  urlTableRow: {
+    borderBottom: '1px solid #f1f5f9'
+  },
+  urlTableCell: {
+    padding: '8px 12px',
+    verticalAlign: 'middle',
+    fontSize: '13px'
+  },
+  domainBadge: {
+    display: 'inline-block',
+    padding: '2px 8px',
+    background: '#f1f5f9',
+    borderRadius: '4px',
+    fontSize: '12px',
+    fontWeight: '600',
+    color: '#1a202c'
+  },
+  categoryBadge: {
+    display: 'inline-block',
+    padding: '2px 8px',
+    borderRadius: '4px',
+    fontSize: '11px',
+    fontWeight: '500',
+    color: '#1a202c'
+  },
+  urlLink: {
+    color: '#2563eb',
+    textDecoration: 'none',
+    fontSize: '12px',
+    wordBreak: 'break-all'
+  },
+  moreUrlsNote: {
+    padding: '8px 12px',
+    fontSize: '12px',
+    color: '#64748b',
+    textAlign: 'center',
+    fontStyle: 'italic'
+  },
+  domainSummary: {
+    marginTop: '12px',
+    padding: '12px',
+    background: '#f8fafc',
+    borderRadius: '8px'
+  },
+  domainSummaryTitle: {
+    fontSize: '13px',
+    fontWeight: '600',
+    color: '#0a1929',
+    margin: '0 0 8px 0'
+  },
+  domainTags: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '8px'
+  },
+  domainTag: {
+    padding: '4px 12px',
+    background: 'white',
+    borderRadius: '4px',
+    border: '1px solid #e2e8f0',
+    fontSize: '12px',
+    color: '#475569'
   }
 };
 
@@ -919,7 +1021,7 @@ export default function NationalServiceReport({
   const suggestedPlacements = getSuggestedPlacements();
 
   // ============================================================
-  // ✅ FIXED: CHECK IF BEHAVIORAL DATA EXISTS - SINGLE DECLARATION
+  // CHECK IF BEHAVIORAL DATA EXISTS
   // ============================================================
   const hasBehavioralData = 
     behavioralMatrix !== null && 
@@ -1235,7 +1337,7 @@ export default function NationalServiceReport({
               </div>
 
               {/* ============================================================
-                  BEHAVIORAL COMMENTARY - FULLY RESTORED
+                  BEHAVIORAL COMMENTARY
                   ============================================================ */}
               {behavioralMatrix?.behavior && (
                 <div style={styles.behavioralCommentary}>
@@ -1324,6 +1426,84 @@ export default function NationalServiceReport({
                   ) : (
                     <div style={styles.cleanCommentary}>
                       No concerning behavioral patterns detected. The candidate completed the assessment with integrity.
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ============================================================
+                  EXTERNAL URLS SECTION - ADDED
+                  ============================================================ */}
+              {behavioralMatrix?.externalUrls && behavioralMatrix.externalUrls.length > 0 && (
+                <div style={styles.externalUrlsSection}>
+                  <h4 style={styles.externalUrlsTitle}>
+                    🌐 External URLs Visited ({behavioralMatrix.externalUrls.length})
+                  </h4>
+                  
+                  <div style={styles.externalUrlsTable}>
+                    <table style={styles.urlTable}>
+                      <thead>
+                        <tr style={styles.urlTableHeader}>
+                          <th style={styles.urlTableHeaderCell}>Domain</th>
+                          <th style={styles.urlTableHeaderCell}>Category</th>
+                          <th style={styles.urlTableHeaderCell}>URL</th>
+                          <th style={styles.urlTableHeaderCell}>Duration</th>
+                          <th style={styles.urlTableHeaderCell}>Time</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {behavioralMatrix.externalUrls.slice(0, 20).map((url, index) => (
+                          <tr key={index} style={styles.urlTableRow}>
+                            <td style={styles.urlTableCell}>
+                              <span style={styles.domainBadge}>{url.domain || 'Unknown'}</span>
+                            </td>
+                            <td style={styles.urlTableCell}>
+                              <span style={{
+                                ...styles.categoryBadge,
+                                background: url.category === 'search_engine' ? '#fef3c7' :
+                                           url.category === 'ai_tool' ? '#ede9fe' :
+                                           url.category === 'social_media' ? '#fce4ec' :
+                                           url.category === 'messaging' ? '#e3f2fd' :
+                                           url.category === 'educational' ? '#dcfce7' :
+                                           url.category === 'code_reference' ? '#e0e7ff' :
+                                           '#f1f5f9'
+                              }}>
+                                {url.category || 'other'}
+                              </span>
+                            </td>
+                            <td style={styles.urlTableCell}>
+                              <a href={url.url} target="_blank" rel="noopener noreferrer" style={styles.urlLink}>
+                                {url.url && url.url.length > 50 ? url.url.substring(0, 50) + '...' : url.url || 'N/A'}
+                              </a>
+                            </td>
+                            <td style={styles.urlTableCell}>
+                              {url.duration ? `${Math.round(url.duration)}s` : 'N/A'}
+                            </td>
+                            <td style={styles.urlTableCell}>
+                              {url.timestamp ? new Date(url.timestamp).toLocaleTimeString() : 'N/A'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {behavioralMatrix.externalUrls.length > 20 && (
+                      <div style={styles.moreUrlsNote}>
+                        ... and {behavioralMatrix.externalUrls.length - 20} more external URLs
+                      </div>
+                    )}
+                  </div>
+                  
+                  {/* Domain Summary */}
+                  {behavioralMatrix.domainVisits && Object.keys(behavioralMatrix.domainVisits).length > 0 && (
+                    <div style={styles.domainSummary}>
+                      <h5 style={styles.domainSummaryTitle}>Domain Visit Summary</h5>
+                      <div style={styles.domainTags}>
+                        {Object.entries(behavioralMatrix.domainVisits).map(([domain, count]) => (
+                          <span key={domain} style={styles.domainTag}>
+                            {domain}: {count} visit{count > 1 ? 's' : ''}
+                          </span>
+                        ))}
+                      </div>
                     </div>
                   )}
                 </div>
