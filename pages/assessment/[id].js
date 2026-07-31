@@ -1,4 +1,4 @@
-// pages/assessment/[id].js - COMPLETE WORKING VERSION WITH BEHAVIORAL TRACKING
+// pages/assessment/[id].js - UPDATED WITH URL/DOMAIN TRACKING
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
@@ -53,6 +53,52 @@ function getAssessmentDuration(assessmentTypeCode) {
     return 90;
   }
   return 120;
+}
+
+// ============================================================
+// URL TRACKING HELPERS
+// ============================================================
+function extractDomain(url) {
+  if (!url) return null;
+  try {
+    const urlObj = new URL(url);
+    return urlObj.hostname;
+  } catch {
+    return null;
+  }
+}
+
+function isExternalUrl(url) {
+  if (!url) return false;
+  try {
+    const urlObj = new URL(url);
+    const currentDomain = window.location.hostname;
+    return urlObj.hostname !== currentDomain && !url.includes(currentDomain);
+  } catch {
+    return false;
+  }
+}
+
+function getUrlCategory(url) {
+  const domain = extractDomain(url);
+  if (!domain) return 'unknown';
+  
+  const searchEngines = ['google.com', 'bing.com', 'yahoo.com', 'duckduckgo.com'];
+  const aiTools = ['chatgpt.com', 'claude.ai', 'perplexity.ai', 'bard.google.com', 'copilot.microsoft.com'];
+  const socialMedia = ['youtube.com', 'twitter.com', 'facebook.com', 'linkedin.com', 'reddit.com'];
+  const messaging = ['slack.com', 'teams.microsoft.com', 'discord.com', 'whatsapp.com'];
+  const educational = ['wikipedia.org', 'khanacademy.org', 'coursera.org'];
+  const codeRepos = ['github.com', 'gitlab.com', 'stackoverflow.com'];
+  const email = ['gmail.com', 'outlook.com', 'mail.google.com'];
+  
+  if (searchEngines.some(s => domain.includes(s))) return 'search_engine';
+  if (aiTools.some(s => domain.includes(s))) return 'ai_tool';
+  if (socialMedia.some(s => domain.includes(s))) return 'social_media';
+  if (messaging.some(s => domain.includes(s))) return 'messaging';
+  if (educational.some(s => domain.includes(s))) return 'educational';
+  if (codeRepos.some(s => domain.includes(s))) return 'code_reference';
+  if (email.some(s => domain.includes(s))) return 'email';
+  return 'other';
 }
 
 // API HELPERS
@@ -124,7 +170,9 @@ async function submitAssessment(sessionId, autoSubmitted, autoSubmitReason, allo
   return result;
 }
 
+// ============================================================
 // MAIN COMPONENT
+// ============================================================
 function AssessmentContent() {
   const router = useRouter();
   const assessmentId = router.query.id || router.query.assessment_id;
@@ -149,7 +197,7 @@ function AssessmentContent() {
   const [questionStartTime, setQuestionStartTime] = useState(Date.now());
 
   // ============================================================
-  // BEHAVIORAL TRACKING STATE
+  // BEHAVIORAL TRACKING STATE (EXISTING)
   // ============================================================
   const [tabSwitchCount, setTabSwitchCount] = useState(0);
   const [copyAttempts, setCopyAttempts] = useState(0);
@@ -159,6 +207,16 @@ function AssessmentContent() {
   const [violationMessage, setViolationMessage] = useState("");
   const [showViolationWarning, setShowViolationWarning] = useState(false);
   const [questionStartTimes, setQuestionStartTimes] = useState({});
+
+  // ============================================================
+  // URL TRACKING STATE (NEW)
+  // ============================================================
+  const [externalUrlVisits, setExternalUrlVisits] = useState([]);
+  const [domainVisits, setDomainVisits] = useState({});
+  const [currentExternalUrl, setCurrentExternalUrl] = useState(null);
+  const [showUrlWarning, setShowUrlWarning] = useState(false);
+  const [urlVisitStartTime, setUrlVisitStartTime] = useState(null);
+  const [previousUrl, setPreviousUrl] = useState(null);
 
   const [accessDenied, setAccessDenied] = useState(false);
   const [alreadySubmitted, setAlreadySubmitted] = useState(false);
@@ -171,6 +229,7 @@ function AssessmentContent() {
   const sessionIdRef = useRef(null);
   const submittingRef = useRef(false);
   const autoSubmitRef = useRef(false);
+  const urlCheckIntervalRef = useRef(null);
 
   const primaryColor = "#0b2a4e";
   const accentColor = "#f9b83a";
@@ -207,6 +266,87 @@ function AssessmentContent() {
     setTimeout(() => setShowViolationWarning(false), 3000);
   }
 
+  // ============================================================
+  // URL TRACKING FUNCTIONS (NEW)
+  // ============================================================
+  function trackUrlChange() {
+    const currentUrl = window.location.href;
+    const currentDomain = extractDomain(currentUrl);
+    const assessmentDomain = window.location.hostname;
+    
+    if (!previousUrl) {
+      setPreviousUrl(currentUrl);
+      return;
+    }
+    
+    if (previousUrl === currentUrl) return;
+    
+    const isExternal = isExternalUrl(currentUrl);
+    const duration = urlVisitStartTime ? (Date.now() - urlVisitStartTime) / 1000 : null;
+    const category = getUrlCategory(currentUrl);
+    
+    // Track domain visit
+    if (currentDomain) {
+      setDomainVisits(prev => ({
+        ...prev,
+        [currentDomain]: (prev[currentDomain] || 0) + 1
+      }));
+    }
+    
+    if (isExternal && currentDomain) {
+      // External URL visited
+      const visit = {
+        url: currentUrl,
+        domain: currentDomain,
+        category: category,
+        timestamp: new Date().toISOString(),
+        duration: duration,
+        fromUrl: previousUrl
+      };
+      
+      setExternalUrlVisits(prev => [...prev, visit]);
+      setCurrentExternalUrl(currentUrl);
+      setShowUrlWarning(true);
+      
+      // Log violation for external site visit
+      logViolation(`Visited external site: ${currentDomain} (${category})`);
+      
+      console.log(`[URL Track] External: ${currentDomain} (${category})`);
+    } else {
+      // Internal navigation
+      setShowUrlWarning(false);
+      setCurrentExternalUrl(null);
+      console.log(`[URL Track] Internal: ${currentUrl}`);
+    }
+    
+    setPreviousUrl(currentUrl);
+    setUrlVisitStartTime(Date.now());
+  }
+
+  // ============================================================
+  // LOG VIOLATION - UPDATED WITH URL CONTEXT
+  // ============================================================
+  async function logViolation(violationType) {
+    if (!sessionIdRef.current || alreadySubmitted || isAutoSubmitting || isTimeExpired) return;
+    const newCount = violationCount + 1;
+    setViolationCount(newCount);
+    
+    // Include current external URL in violation message
+    let message = violationType;
+    if (currentExternalUrl) {
+      const domain = extractDomain(currentExternalUrl);
+      const category = getUrlCategory(currentExternalUrl);
+      message += ` (${domain} - ${category})`;
+    }
+    
+    showViolation(message + ". Violation " + newCount + " of 3.");
+    
+    if (newCount >= 3) {
+      showViolation("Maximum violations reached. Auto-submitting assessment...");
+      setTimeout(() => handleAutoSubmit("Auto-submitted due to rule violations."), 1000);
+    }
+  }
+
   async function handleAutoSubmit(reason) {
     if (alreadySubmitted || submittingRef.current || autoSubmitRef.current) {
       return;
@@ -218,6 +358,12 @@ function AssessmentContent() {
       setIsSubmitting(true);
       setIsAutoSubmitting(true);
       setIsTimeExpired(true);
+
+      // Clear URL check interval
+      if (urlCheckIntervalRef.current) {
+        clearInterval(urlCheckIntervalRef.current);
+        urlCheckIntervalRef.current = null;
+      }
 
       const answerPromises = Object.entries(answers).map(([qId, answer]) => {
         if (answer === null || answer === undefined || answer === '') return null;
@@ -238,7 +384,9 @@ function AssessmentContent() {
             copy_attempts: copyAttempts,
             paste_attempts: pasteAttempts,
             right_click_attempts: rightClickAttempts,
-            violations: violationCount
+            violations: violationCount,
+            external_urls_visited: externalUrlVisits,
+            domain_visits: domainVisits
           }
         );
       });
@@ -268,7 +416,7 @@ function AssessmentContent() {
   }
 
   // ============================================================
-  // HANDLE ANSWER SELECT - WITH BEHAVIORAL DATA
+  // HANDLE ANSWER SELECT - UPDATED WITH URL DATA
   // ============================================================
   async function handleAnswerSelect(questionId, answerId, multipleCorrect) {
     if (isTimeExpired || elapsedSeconds >= timeLimitSeconds) {
@@ -324,10 +472,7 @@ function AssessmentContent() {
     try {
       const answerToStore = Array.isArray(newSelectedAnswer) ? newSelectedAnswer.join(",") : newSelectedAnswer;
       
-      // ============================================================
-      // SAVE WITH BEHAVIORAL METADATA
-      // ============================================================
-      const result = await saveAnswer(
+      await saveAnswer(
         sessionIdRef.current,
         questionId,
         answerToStore,
@@ -342,15 +487,13 @@ function AssessmentContent() {
           paste_attempts: pasteAttempts,
           right_click_attempts: rightClickAttempts,
           violations: violationCount,
-          previous_question: currentIndex
+          previous_question: currentIndex,
+          external_urls_visited: externalUrlVisits,
+          domain_visits: domainVisits
         }
       );
 
-      if (result && result.success) {
-        setSaveStatus((previous) => ({ ...previous, [questionId]: "saved" }));
-      } else {
-        setSaveStatus((previous) => ({ ...previous, [questionId]: "error" }));
-      }
+      setSaveStatus((previous) => ({ ...previous, [questionId]: "saved" }));
     } catch (err) {
       console.error("Answer save error:", err);
       setSaveStatus((previous) => ({ ...previous, [questionId]: "error" }));
@@ -367,36 +510,37 @@ function AssessmentContent() {
   }
 
   // ============================================================
-  // LOG VIOLATION - WITH BEHAVIORAL TRACKING
-  // ============================================================
-  async function logViolation(violationType) {
-    if (!sessionIdRef.current || alreadySubmitted || isAutoSubmitting || isTimeExpired) return;
-    const newCount = violationCount + 1;
-    setViolationCount(newCount);
-    showViolation(violationType + ". Violation " + newCount + " of 3.");
-    if (newCount >= 3) {
-      showViolation("Maximum violations reached. Auto-submitting assessment...");
-      setTimeout(() => handleAutoSubmit("Auto-submitted due to rule violations."), 1000);
-    }
-  }
-
-  // ============================================================
-  // BEHAVIORAL TRACKING EFFECTS
+  // BEHAVIORAL TRACKING EFFECTS (EXISTING - UPDATED)
   // ============================================================
   
-  // Track tab switches (when user leaves the page)
+  // Track tab switches (when user leaves the page) - UPDATED with URL tracking
   useEffect(() => {
     if (loading || alreadySubmitted || accessDenied || !session || isTimeExpired) return;
 
     const handleVisibilityChange = () => {
       if (document.hidden) {
         setTabSwitchCount(prev => prev + 1);
-        logViolation("Tab switch");
+        
+        // Track the URL when tab is hidden
+        const currentUrl = window.location.href;
+        if (isExternalUrl(currentUrl)) {
+          const domain = extractDomain(currentUrl);
+          const category = getUrlCategory(currentUrl);
+          logViolation(`Tab switch to external site: ${domain} (${category})`);
+        } else {
+          logViolation("Tab switch");
+        }
       }
     };
 
     const handlePageHide = () => {
       setTabSwitchCount(prev => prev + 1);
+      const currentUrl = window.location.href;
+      if (isExternalUrl(currentUrl)) {
+        const domain = extractDomain(currentUrl);
+        const category = getUrlCategory(currentUrl);
+        logViolation(`Page hide to external site: ${domain} (${category})`);
+      }
     };
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
@@ -408,7 +552,7 @@ function AssessmentContent() {
     };
   }, [loading, alreadySubmitted, accessDenied, session, isTimeExpired]);
 
-  // Track right-click attempts
+  // Track right-click attempts (existing)
   useEffect(() => {
     if (loading || alreadySubmitted || accessDenied || !session || isTimeExpired) return;
 
@@ -426,7 +570,7 @@ function AssessmentContent() {
     };
   }, [loading, alreadySubmitted, accessDenied, session, isTimeExpired]);
 
-  // Track question start times
+  // Track question start times (existing)
   useEffect(() => {
     if (currentQuestion.id && !questionStartTimes[currentQuestion.id]) {
       setQuestionStartTimes(prev => ({
@@ -435,6 +579,67 @@ function AssessmentContent() {
       }));
     }
   }, [currentQuestion.id]);
+
+  // ============================================================
+  // URL TRACKING EFFECT (NEW)
+  // ============================================================
+  useEffect(() => {
+    if (loading || alreadySubmitted || accessDenied || !session || isTimeExpired) return;
+
+    // Set initial URL
+    setPreviousUrl(window.location.href);
+    setUrlVisitStartTime(Date.now());
+
+    // Track URL changes
+    const handleUrlChange = () => {
+      trackUrlChange();
+    };
+
+    // Listen for popstate and hashchange
+    window.addEventListener('popstate', handleUrlChange);
+    window.addEventListener('hashchange', handleUrlChange);
+
+    // Also check URL periodically (for SPA navigation)
+    urlCheckIntervalRef.current = setInterval(() => {
+      const currentUrl = window.location.href;
+      if (previousUrl !== currentUrl) {
+        trackUrlChange();
+      }
+    }, 1000);
+
+    // Track external link clicks
+    const handleLinkClick = (e) => {
+      const target = e.target.closest('a');
+      if (target && target.href) {
+        if (isExternalUrl(target.href)) {
+          const domain = extractDomain(target.href);
+          const category = getUrlCategory(target.href);
+          logViolation(`External link click: ${domain} (${category})`);
+          
+          setExternalUrlVisits(prev => [...prev, {
+            url: target.href,
+            domain: domain,
+            category: category,
+            timestamp: new Date().toISOString(),
+            fromUrl: window.location.href,
+            via: 'link_click'
+          }]);
+        }
+      }
+    };
+
+    document.addEventListener('click', handleLinkClick, true);
+
+    return () => {
+      window.removeEventListener('popstate', handleUrlChange);
+      window.removeEventListener('hashchange', handleUrlChange);
+      if (urlCheckIntervalRef.current) {
+        clearInterval(urlCheckIntervalRef.current);
+        urlCheckIntervalRef.current = null;
+      }
+      document.removeEventListener('click', handleLinkClick, true);
+    };
+  }, [loading, alreadySubmitted, accessDenied, session, isTimeExpired]);
 
   // ============================================================
   // INITIALIZATION
@@ -457,6 +662,8 @@ function AssessmentContent() {
         setCopyAttempts(0);
         setPasteAttempts(0);
         setRightClickAttempts(0);
+        setExternalUrlVisits([]);
+        setDomainVisits({});
         setIsTimeExpired(false);
         sessionIdRef.current = null;
         submittingRef.current = false;
@@ -580,7 +787,7 @@ function AssessmentContent() {
   }, [assessmentId, router]);
 
   // ============================================================
-  // TIMER EFFECT - Main timer with localStorage persistence
+  // TIMER EFFECT
   // ============================================================
   useEffect(() => {
     if (loading || alreadySubmitted || accessDenied || !session || isAutoSubmitting || questions.length === 0 || isTimeExpired) return;
@@ -589,7 +796,6 @@ function AssessmentContent() {
       setElapsedSeconds((previous) => {
         const next = previous + 1;
         
-        // Save to localStorage on every tick
         if (sessionIdRef.current) {
           localStorage.setItem(`timer_${sessionIdRef.current}`, String(next));
         }
@@ -609,7 +815,7 @@ function AssessmentContent() {
   }, [loading, alreadySubmitted, accessDenied, session, isAutoSubmitting, timeLimitSeconds, isTimeExpired]);
 
   // ============================================================
-  // TIMER CLEANUP - Remove from localStorage when done
+  // TIMER CLEANUP
   // ============================================================
   useEffect(() => {
     if ((alreadySubmitted || isTimeExpired) && sessionIdRef.current) {
@@ -619,7 +825,7 @@ function AssessmentContent() {
   }, [alreadySubmitted, isTimeExpired, sessionIdRef.current]);
 
   // ============================================================
-  // ANTI-CHEAT EFFECT - With behavioral tracking
+  // ANTI-CHEAT EFFECT - UPDATED WITH URL CONTEXT
   // ============================================================
   useEffect(() => {
     if (loading || alreadySubmitted || accessDenied || !session || isTimeExpired) return;
@@ -781,11 +987,50 @@ function AssessmentContent() {
     );
   }
 
-  // RENDER
+  // ============================================================
+  // RENDER - WITH URL WARNING BANNER
+  // ============================================================
   return (
     <>
-      {showViolationWarning && <div style={styles.violationBanner}><span>⚠️</span><span>{violationMessage}</span></div>}
-      {isAutoSubmitting && <div style={styles.autoSubmitOverlay}><div style={styles.autoSubmitCard}><div style={styles.autoSubmitSpinner} /><h3>Auto-submitting assessment...</h3><p>Please wait while your assessment is submitted.</p></div></div>}
+      {showViolationWarning && (
+        <div style={styles.violationBanner}>
+          <span>⚠️</span>
+          <span>{violationMessage}</span>
+        </div>
+      )}
+      
+      {/* URL Warning Banner - NEW */}
+      {showUrlWarning && currentExternalUrl && (
+        <div style={styles.urlWarningBanner}>
+          <span>🔴</span>
+          <span>
+            <strong>External site detected:</strong> {currentExternalUrl}
+            <span style={{ fontSize: '11px', opacity: 0.8, marginLeft: '8px' }}>
+              ({getUrlCategory(currentExternalUrl)})
+            </span>
+          </span>
+          <button 
+            onClick={() => {
+              // Try to go back to assessment
+              window.history.back();
+              setShowUrlWarning(false);
+            }}
+            style={styles.urlWarningButton}
+          >
+            Return to Assessment
+          </button>
+        </div>
+      )}
+      
+      {isAutoSubmitting && (
+        <div style={styles.autoSubmitOverlay}>
+          <div style={styles.autoSubmitCard}>
+            <div style={styles.autoSubmitSpinner} />
+            <h3>Auto-submitting assessment...</h3>
+            <p>Please wait while your assessment is submitted.</p>
+          </div>
+        </div>
+      )}
       
       {isTimeExpired && !alreadySubmitted && (
         <div style={styles.autoSubmitOverlay}>
@@ -808,8 +1053,31 @@ function AssessmentContent() {
               <div style={styles.modalStat}><span>Completion Rate</span><strong>{Math.round((totalAnswered / questions.length) * 100)}%</strong></div>
               <div style={styles.modalStat}><span>Answer Changes</span><strong>{totalChanges}</strong></div>
               {violationCount > 0 && <div style={styles.modalStat}><span>Violations</span><strong style={{ color: violationCount >= 3 ? dangerColor : warningColor }}>{violationCount}/3</strong></div>}
+              {externalUrlVisits.length > 0 && (
+                <div style={styles.modalStat}>
+                  <span>External Sites Visited</span>
+                  <strong style={{ color: dangerColor }}>{externalUrlVisits.length}</strong>
+                </div>
+              )}
             </div>
-            <div style={styles.modalWarning}><span>⚠️</span><span><strong>One attempt only:</strong> After submission, the assessment cannot be retaken unless reset by your supervisor.</span></div>
+            {externalUrlVisits.length > 0 && (
+              <div style={styles.modalUrlWarning}>
+                <span>🔴</span>
+                <div>
+                  <strong>External sites detected:</strong>
+                  <ul style={{ margin: '4px 0 0 0', paddingLeft: '16px', fontSize: '12px' }}>
+                    {externalUrlVisits.slice(0, 3).map((visit, i) => (
+                      <li key={i}>{visit.domain} ({visit.category})</li>
+                    ))}
+                    {externalUrlVisits.length > 3 && <li>+{externalUrlVisits.length - 3} more</li>}
+                  </ul>
+                </div>
+              </div>
+            )}
+            <div style={styles.modalWarning}>
+              <span>⚠️</span>
+              <span><strong>One attempt only:</strong> After submission, the assessment cannot be retaken unless reset by your supervisor.</span>
+            </div>
             <div style={styles.modalActions}>
               <button onClick={() => setShowSubmitModal(false)} style={styles.modalSecondaryButton}>Continue Reviewing</button>
               <button onClick={handleSubmit} disabled={isSubmitting || isTimeExpired} style={{ ...styles.modalPrimaryButton, background: isSubmitting || isTimeExpired ? "#ccc" : successColor, cursor: isSubmitting || isTimeExpired ? "not-allowed" : "pointer" }}>{isSubmitting ? "Submitting..." : "Submit Assessment"}</button>
@@ -818,7 +1086,16 @@ function AssessmentContent() {
         </div>
       )}
 
-      {showSuccessModal && <div style={styles.modalOverlay}><div style={{ ...styles.modalContent, textAlign: "center" }}><div style={styles.successIconLarge}>✓</div><h2 style={{ color: successColor }}>Assessment Complete!</h2><p>Your assessment has been successfully submitted.</p><p style={{ color: "#64748b" }}>Redirecting to completion page...</p></div></div>}
+      {showSuccessModal && (
+        <div style={styles.modalOverlay}>
+          <div style={{ ...styles.modalContent, textAlign: "center" }}>
+            <div style={styles.successIconLarge}>✓</div>
+            <h2 style={{ color: successColor }}>Assessment Complete!</h2>
+            <p>Your assessment has been successfully submitted.</p>
+            <p style={{ color: "#64748b" }}>Redirecting to completion page...</p>
+          </div>
+        </div>
+      )}
 
       {/* MAIN ASSESSMENT UI */}
       <div style={styles.container}>
@@ -860,6 +1137,15 @@ function AssessmentContent() {
                 <span style={{ ...styles.headerMetaItem, color: accentColor, fontWeight: 600 }}>Select all that apply</span>
               </>
             )}
+            {/* Show external site count in header */}
+            {externalUrlVisits.length > 0 && (
+              <>
+                <span style={styles.headerMetaDivider}>•</span>
+                <span style={{ ...styles.headerMetaItem, color: dangerColor, fontWeight: 600 }}>
+                  🔴 {externalUrlVisits.length} external site{externalUrlVisits.length > 1 ? 's' : ''}
+                </span>
+              </>
+            )}
           </div>
         </div>
 
@@ -882,6 +1168,23 @@ function AssessmentContent() {
                 <div style={{ ...styles.progressFill, width: Math.min((totalAnswered / questions.length) * 100, 100) + '%' }} />
               </div>
             </div>
+
+            {/* External Sites Summary - NEW */}
+            {externalUrlVisits.length > 0 && (
+              <div style={{ ...styles.metaCard, background: '#fff5f5', borderColor: '#fecaca' }}>
+                <div style={{ fontSize: '12px', fontWeight: 600, color: '#dc2626', marginBottom: '6px' }}>
+                  🔴 External Sites Visited ({externalUrlVisits.length})
+                </div>
+                <div style={{ fontSize: '11px', color: '#475569', maxHeight: '100px', overflowY: 'auto' }}>
+                  {externalUrlVisits.map((visit, i) => (
+                    <div key={i} style={{ padding: '2px 0', borderBottom: '1px solid #fee2e2' }}>
+                      <span style={{ fontWeight: 500 }}>{visit.domain}</span>
+                      <span style={{ color: '#64748b', fontSize: '10px' }}> ({visit.category})</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div style={styles.metaCard}>
               <div style={styles.metaItem}>Marked out of 1.00</div>
@@ -1152,6 +1455,36 @@ const styles = {
     alignItems: "center", 
     gap: "10px" 
   },
+  urlWarningBanner: {
+    position: "fixed",
+    top: "70px",
+    left: "50%",
+    transform: "translateX(-50%)",
+    background: "#dc2626",
+    color: "white",
+    padding: "12px 20px",
+    borderRadius: "8px",
+    zIndex: 10000,
+    fontSize: "13px",
+    boxShadow: "0 4px 20px rgba(220, 38, 38, 0.3)",
+    display: "flex",
+    alignItems: "center",
+    gap: "12px",
+    maxWidth: "90%",
+    flexWrap: "wrap",
+    justifyContent: "center"
+  },
+  urlWarningButton: {
+    padding: "6px 16px",
+    background: "white",
+    color: "#dc2626",
+    border: "none",
+    borderRadius: "6px",
+    fontSize: "12px",
+    fontWeight: 600,
+    cursor: "pointer",
+    transition: "0.2s"
+  },
   autoSubmitOverlay: { 
     position: "fixed", 
     top: 0, 
@@ -1387,7 +1720,8 @@ const styles = {
     borderRadius: "12px",
     padding: "12px 16px",
     border: "1px solid #e2e8f0",
-    flexShrink: 0
+    flexShrink: 0,
+    overflow: "hidden"
   },
   metaItem: {
     fontSize: "13px",
@@ -1636,6 +1970,16 @@ const styles = {
     justifyContent: "space-between", 
     marginBottom: "8px",
     fontSize: "14px"
+  },
+  modalUrlWarning: {
+    display: "flex",
+    gap: "10px",
+    padding: "12px",
+    background: "#fee2e2",
+    borderRadius: "10px",
+    fontSize: "13px",
+    marginBottom: "12px",
+    borderLeft: "3px solid #dc2626"
   },
   modalWarning: { 
     display: "flex", 
