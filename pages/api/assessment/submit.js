@@ -1,6 +1,6 @@
-// pages/api/assessment/submit.js - COMPLETE FIXED VERSION
+// pages/api/assessment/submit.js - UPDATED WITH PROCTORING DATA
 // Handles assessment submission with correct scoring (1 mark per correct answer)
-// Saves category_scores, workplace_readiness, and intellectual_capability
+// Saves category_scores, workplace_readiness, intellectual_capability, AND proctoring data
 
 import { createClient } from "@supabase/supabase-js";
 
@@ -58,7 +58,13 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { sessionId, autoSubmitted, autoSubmitReason, allowIncomplete } = req.body;
+    const { 
+      sessionId, 
+      autoSubmitted, 
+      autoSubmitReason, 
+      allowIncomplete,
+      proctoringData // NEW: Receive proctoring data from frontend
+    } = req.body;
 
     if (!sessionId) {
       return res.status(400).json({ success: false, error: "Missing sessionId" });
@@ -80,6 +86,14 @@ export default async function handler(req, res) {
       auth: { persistSession: false, autoRefreshToken: false }
     });
 
+    // Verify user
+    const { data: userData, error: userError } = await serviceClient.auth.getUser(token);
+    if (userError || !userData?.user) {
+      return res.status(401).json({ success: false, error: "Invalid token" });
+    }
+
+    const userId = userData.user.id;
+
     // ============================================================
     // STEP 1: Get session details
     // ============================================================
@@ -87,6 +101,7 @@ export default async function handler(req, res) {
       .from("assessment_sessions")
       .select("*")
       .eq("id", sessionId)
+      .eq("user_id", userId)
       .single();
 
     if (sessionError || !session) {
@@ -98,7 +113,7 @@ export default async function handler(req, res) {
     // ============================================================
     const { data: assessmentType, error: assessmentTypeError } = await serviceClient
       .from("assessment_types")
-      .select("code")
+      .select("code, name")
       .eq("id", session.assessment_type_id)
       .maybeSingle();
 
@@ -109,7 +124,7 @@ export default async function handler(req, res) {
     // ============================================================
     const { data: responses, error: responsesError } = await serviceClient
       .from("responses")
-      .select("question_id, answer_id")
+      .select("question_id, answer_id, metadata")
       .eq("session_id", sessionId);
 
     if (responsesError) {
@@ -156,14 +171,11 @@ export default async function handler(req, res) {
     // Calculate scores for each question - 1 mark per correct answer
     (questions || []).forEach(q => {
       const answers = q.unique_answers || [];
-      // Each question is worth 1 mark
       const maxScore = 1;
       totalMax += maxScore;
 
-      // Get section/category name
       const section = q.section || "General";
       
-      // Initialize category tracking
       if (!categoryMap[section]) {
         categoryMap[section] = 0;
         categoryMaxMap[section] = 0;
@@ -174,7 +186,6 @@ export default async function handler(req, res) {
       if (userAnswer) {
         const selectedAnswer = answers.find(a => String(a.id) === String(userAnswer));
         if (selectedAnswer) {
-          // Correct if score > 0, earns 1 mark
           const earned = Number(selectedAnswer.score) > 0 ? 1 : 0;
           totalEarned += earned;
           categoryMap[section] += earned;
@@ -216,7 +227,85 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 8: Update session status
+    // STEP 8: Process proctoring data - NEW
+    // ============================================================
+    const proctoring = proctoringData || {};
+    const externalUrls = proctoring.externalUrls || [];
+    const violations = proctoring.violations || [];
+    const domainVisits = proctoring.domainVisits || {};
+    const tabSwitches = proctoring.tabSwitches || [];
+    
+    // Calculate proctoring stats
+    const totalViolations = violations.length;
+    const totalTabSwitches = tabSwitches.length;
+    const totalExternalUrls = externalUrls.length;
+    const uniqueDomains = [...new Set(externalUrls.map(u => u.domain))].length;
+    
+    // Categorize external URLs
+    const categoryStats = {};
+    externalUrls.forEach(url => {
+      const category = url.category || 'other';
+      if (!categoryStats[category]) {
+        categoryStats[category] = 0;
+      }
+      categoryStats[category]++;
+    });
+
+    // Check for high-risk activities
+    const hasSearchEngineUsage = externalUrls.some(u => u.category === 'search_engine');
+    const hasAIToolUsage = externalUrls.some(u => u.category === 'ai_tool');
+    const hasExcessiveTabSwitches = totalTabSwitches > 10;
+    const hasExcessiveViolations = totalViolations > 5;
+
+    // Calculate risk level
+    let riskLevel = 'Low';
+    let riskScore = 0;
+    
+    if (hasSearchEngineUsage) riskScore += 30;
+    if (hasAIToolUsage) riskScore += 35;
+    if (hasExcessiveTabSwitches) riskScore += 20;
+    if (hasExcessiveViolations) riskScore += 15;
+    riskScore = Math.min(riskScore, 100);
+    
+    if (riskScore >= 70) riskLevel = 'High';
+    else if (riskScore >= 40) riskLevel = 'Medium';
+
+    // Generate risk factors
+    const riskFactors = [];
+    if (hasSearchEngineUsage) {
+      riskFactors.push({
+        type: 'search_engine_usage',
+        description: `Visited search engines (${externalUrls.filter(u => u.category === 'search_engine').length} times)`,
+        severity: 'high'
+      });
+    }
+    if (hasAIToolUsage) {
+      riskFactors.push({
+        type: 'ai_tool_usage',
+        description: `Visited AI tools (${externalUrls.filter(u => u.category === 'ai_tool').length} times)`,
+        severity: 'high'
+      });
+    }
+    if (hasExcessiveTabSwitches) {
+      riskFactors.push({
+        type: 'excessive_tab_switching',
+        description: `${totalTabSwitches} tab switches detected`,
+        severity: 'medium'
+      });
+    }
+    if (hasExcessiveViolations) {
+      riskFactors.push({
+        type: 'excessive_violations',
+        description: `${totalViolations} violations detected`,
+        severity: 'medium'
+      });
+    }
+
+    console.log(`[Submit] Proctoring: Risk Level ${riskLevel}, Score ${riskScore}`);
+    console.log(`[Submit] External URLs: ${totalExternalUrls}, Violations: ${totalViolations}`);
+
+    // ============================================================
+    // STEP 9: Update session status
     // ============================================================
     await serviceClient
       .from("assessment_sessions")
@@ -228,7 +317,7 @@ export default async function handler(req, res) {
       .eq("id", sessionId);
 
     // ============================================================
-    // STEP 9: Update candidate_assessments
+    // STEP 10: Update candidate_assessments
     // ============================================================
     await serviceClient
       .from("candidate_assessments")
@@ -241,8 +330,14 @@ export default async function handler(req, res) {
       .eq("assessment_id", session.assessment_id);
 
     // ============================================================
-    // STEP 10: Create or update assessment result WITH category_scores
+    // STEP 11: Create or update assessment result WITH proctoring data
     // ============================================================
+    const recommendation = isNationalService ? 
+      (workplaceReadiness >= 85 && intellectualCapability >= 85 ? 'Highly Recommended' :
+       workplaceReadiness >= 75 && intellectualCapability >= 75 ? 'Recommended' :
+       workplaceReadiness >= 65 && intellectualCapability >= 65 ? 'Reserve Pool' : 'Not Recommended')
+      : null;
+
     const resultData = {
       user_id: session.user_id,
       assessment_id: session.assessment_id,
@@ -251,20 +346,48 @@ export default async function handler(req, res) {
       max_score: totalMax,
       percentage_score: percentageScore,
       completed_at: new Date().toISOString(),
-      is_valid: true,
+      is_valid: riskLevel !== 'High', // Invalid if high risk
       is_auto_submitted: autoSubmitted || false,
-      // ============================================================
-      // FIX: Save category_scores, workplace_readiness, intellectual_capability
-      // ============================================================
+      
+      // Category scores
       category_scores: categoryScores,
       workplace_readiness: workplaceReadiness,
       intellectual_capability: intellectualCapability,
-      // For National Service, calculate recommendation
-      recommendation: isNationalService ? 
-        (workplaceReadiness >= 85 && intellectualCapability >= 85 ? 'Highly Recommended' :
-         workplaceReadiness >= 75 && intellectualCapability >= 75 ? 'Recommended' :
-         workplaceReadiness >= 65 && intellectualCapability >= 65 ? 'Reserve Pool' : 'Not Recommended')
-        : null,
+      recommendation: recommendation,
+      
+      // ============================================================
+      // PROCTORING DATA - NEW
+      // ============================================================
+      proctoring_data: {
+        summary: {
+          totalViolations: totalViolations,
+          tabSwitches: totalTabSwitches,
+          externalUrlsVisited: totalExternalUrls,
+          uniqueDomains: uniqueDomains,
+          copyPasteAttempts: proctoring.summary?.copyPasteAttempts || 0,
+          rightClickAttempts: proctoring.summary?.rightClickAttempts || 0,
+          duration: proctoring.summary?.duration || 0,
+          riskLevel: riskLevel,
+          riskScore: riskScore
+        },
+        riskFactors: riskFactors,
+        externalUrls: externalUrls,
+        domainVisits: domainVisits,
+        categoryStats: categoryStats,
+        violations: violations,
+        tabSwitches: tabSwitches
+      },
+      
+      // Flattened columns for easier querying
+      external_urls_visited: externalUrls,
+      domain_visits: domainVisits,
+      tab_switch_details: tabSwitches,
+      violations: violations,
+      risk_score: riskScore,
+      risk_level: riskLevel,
+      total_tab_switches: totalTabSwitches,
+      total_external_urls: totalExternalUrls,
+      
       report_data: {
         categoryScores: categoryScores,
         totalEarned: totalEarned,
@@ -272,12 +395,17 @@ export default async function handler(req, res) {
         percentageScore: percentageScore,
         workplaceReadiness: workplaceReadiness,
         intellectualCapability: intellectualCapability,
-        recommendation: isNationalService ? 
-          (workplaceReadiness >= 85 && intellectualCapability >= 85 ? 'Highly Recommended' :
-           workplaceReadiness >= 75 && intellectualCapability >= 75 ? 'Recommended' :
-           workplaceReadiness >= 65 && intellectualCapability >= 65 ? 'Reserve Pool' : 'Not Recommended')
-          : null,
-        completedAt: new Date().toISOString()
+        recommendation: recommendation,
+        completedAt: new Date().toISOString(),
+        // Proctoring summary in report
+        proctoring: {
+          riskLevel: riskLevel,
+          riskScore: riskScore,
+          totalViolations: totalViolations,
+          externalUrlsVisited: totalExternalUrls,
+          tabSwitches: totalTabSwitches,
+          riskFactors: riskFactors
+        }
       }
     };
 
@@ -320,7 +448,31 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 11: Update candidate_assessments with result_id
+    // STEP 12: Save proctoring violations to proctoring_logs table
+    // ============================================================
+    if (violations.length > 0) {
+      const violationLogs = violations.map(violation => ({
+        assessment_id: session.assessment_id,
+        user_id: session.user_id,
+        session_id: sessionId,
+        violation_type: violation.type,
+        violation_details: violation.details || {},
+        timestamp: violation.timestamp || new Date().toISOString()
+      }));
+
+      const { error: logError } = await serviceClient
+        .from("proctoring_logs")
+        .insert(violationLogs);
+
+      if (logError) {
+        console.error("Error saving proctoring logs:", logError);
+      } else {
+        console.log(`[Submit] Saved ${violationLogs.length} proctoring logs`);
+      }
+    }
+
+    // ============================================================
+    // STEP 13: Update candidate_assessments with result_id
     // ============================================================
     if (resultId) {
       await serviceClient
@@ -333,6 +485,9 @@ export default async function handler(req, res) {
         .eq("assessment_id", session.assessment_id);
     }
 
+    // ============================================================
+    // STEP 14: Return response with proctoring summary
+    // ============================================================
     return res.status(200).json({
       success: true,
       resultId: resultId,
@@ -343,9 +498,19 @@ export default async function handler(req, res) {
       categoryScores: categoryScores,
       workplaceReadiness: workplaceReadiness,
       intellectualCapability: intellectualCapability,
-      recommendation: resultData.recommendation,
+      recommendation: recommendation,
       isNationalService: isNationalService,
-      isAutoSubmitted: autoSubmitted || false
+      isAutoSubmitted: autoSubmitted || false,
+      // Proctoring summary in response
+      proctoring: {
+        riskLevel: riskLevel,
+        riskScore: riskScore,
+        totalViolations: totalViolations,
+        externalUrlsVisited: totalExternalUrls,
+        tabSwitches: totalTabSwitches,
+        riskFactors: riskFactors,
+        categoryStats: categoryStats
+      }
     });
 
   } catch (error) {
