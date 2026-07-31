@@ -1,4 +1,4 @@
-// pages/api/assessment/behavioral-matrix.js - FINAL FIXED VERSION
+// pages/api/assessment/behavioral-matrix.js - COMPLETE WITH EXTERNAL URL TRACKING
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -11,6 +11,24 @@ const VIOLATION_TYPES = {
     severity: 'high',
     comment: 'Candidate switched to another browser tab or window. This may indicate they were looking up answers, using other applications, or multitasking during the assessment.',
     recommendation: 'Flag for review. Excessive tab switches suggests the candidate was not fully focused on the assessment.'
+  },
+  tab_switch_external: {
+    label: 'External Tab Switch',
+    severity: 'critical',
+    comment: 'Candidate switched to an external website or application. This is a serious violation as it may indicate they were searching for answers or using external resources.',
+    recommendation: 'Immediate review required. Consider invalidating the assessment.'
+  },
+  external_url_visit: {
+    label: 'External URL Visit',
+    severity: 'critical',
+    comment: 'Candidate visited an external website during the assessment. This may indicate they were looking up answers or using unauthorized resources.',
+    recommendation: 'Review the specific URLs visited. Search engines and AI tools are high-risk categories.'
+  },
+  external_link_click: {
+    label: 'External Link Click',
+    severity: 'high',
+    comment: 'Candidate clicked on an external link from the assessment page. This may indicate an attempt to leave the assessment environment.',
+    recommendation: 'Flag for review.'
   },
   copy_attempt: {
     label: 'Copy Attempt',
@@ -121,6 +139,90 @@ function getRiskLevel(violations, tabSwitches, changes, avgTime) {
   return 'Low Risk';
 }
 
+// ============================================================
+// EXTRACT EXTERNAL URLS FROM RESULT
+// ============================================================
+function extractExternalUrls(result) {
+  let externalUrls = [];
+  let domainVisits = {};
+  
+  // Check proctoring_data
+  if (result.proctoring_data) {
+    try {
+      const proctoringData = typeof result.proctoring_data === 'string' 
+        ? JSON.parse(result.proctoring_data) 
+        : result.proctoring_data;
+      
+      externalUrls = proctoringData.externalUrls || [];
+      domainVisits = proctoringData.domainVisits || {};
+      
+      // Also check for externalUrls in other formats
+      if (proctoringData.external_urls) {
+        externalUrls = proctoringData.external_urls;
+      }
+      if (proctoringData.urlVisits) {
+        externalUrls = proctoringData.urlVisits;
+      }
+    } catch (e) {
+      console.warn('Error parsing proctoring_data:', e);
+    }
+  }
+  
+  // Check flattened external_urls_visited column
+  if (result.external_urls_visited && Array.isArray(result.external_urls_visited)) {
+    if (result.external_urls_visited.length > externalUrls.length) {
+      externalUrls = result.external_urls_visited;
+    }
+  }
+  
+  // Check domain_visits column
+  if (result.domain_visits && typeof result.domain_visits === 'object') {
+    domainVisits = { ...domainVisits, ...result.domain_visits };
+  }
+  
+  // Categorize external URLs
+  externalUrls = externalUrls.map(url => {
+    if (!url.category) {
+      const domain = url.domain || '';
+      if (domain.includes('google') || domain.includes('bing') || domain.includes('yahoo') || domain.includes('duckduckgo')) {
+        url.category = 'search_engine';
+      } else if (domain.includes('chatgpt') || domain.includes('claude') || domain.includes('perplexity') || domain.includes('bard')) {
+        url.category = 'ai_tool';
+      } else if (domain.includes('youtube') || domain.includes('twitter') || domain.includes('facebook') || domain.includes('linkedin')) {
+        url.category = 'social_media';
+      } else if (domain.includes('slack') || domain.includes('teams') || domain.includes('discord') || domain.includes('whatsapp')) {
+        url.category = 'messaging';
+      } else if (domain.includes('wikipedia') || domain.includes('khanacademy') || domain.includes('coursera')) {
+        url.category = 'educational';
+      } else if (domain.includes('github') || domain.includes('stackoverflow') || domain.includes('gitlab')) {
+        url.category = 'code_reference';
+      } else if (domain.includes('gmail') || domain.includes('outlook') || domain.includes('mail')) {
+        url.category = 'email';
+      } else {
+        url.category = 'other';
+      }
+    }
+    return url;
+  });
+  
+  return { externalUrls, domainVisits };
+}
+
+// ============================================================
+// CATEGORIZE VIOLATIONS
+// ============================================================
+function categorizeViolations(violations) {
+  const categorized = {};
+  violations.forEach(v => {
+    const type = v.type || 'violation';
+    if (!categorized[type]) {
+      categorized[type] = 0;
+    }
+    categorized[type]++;
+  });
+  return categorized;
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'GET') {
     return res.status(405).json({ success: false, error: 'Method not allowed' });
@@ -152,7 +254,7 @@ export default async function handler(req, res) {
       return res.status(401).json({ success: false, error: 'Invalid token' });
     }
 
-    // Get the result
+    // Get the result WITH proctoring data
     const { data: result, error: resultError } = await supabase
       .from('assessment_results')
       .select(`
@@ -164,7 +266,16 @@ export default async function handler(req, res) {
         total_questions,
         answered_questions,
         is_auto_submitted,
-        session_id
+        session_id,
+        proctoring_data,
+        external_urls_visited,
+        domain_visits,
+        violations,
+        tab_switch_details,
+        risk_score,
+        risk_level,
+        total_tab_switches,
+        total_external_urls
       `)
       .eq('id', resultId)
       .single();
@@ -173,6 +284,26 @@ export default async function handler(req, res) {
       console.error('Result error:', resultError);
       return res.status(500).json({ success: false, error: resultError.message });
     }
+
+    // ============================================================
+    // EXTRACT EXTERNAL URLS
+    // ============================================================
+    const { externalUrls, domainVisits } = extractExternalUrls(result);
+    
+    // Get violations from result
+    let violations = [];
+    if (result.violations && Array.isArray(result.violations)) {
+      violations = result.violations;
+    } else if (result.proctoring_data) {
+      try {
+        const proctoringData = typeof result.proctoring_data === 'string' 
+          ? JSON.parse(result.proctoring_data) 
+          : result.proctoring_data;
+        violations = proctoringData.violations || [];
+      } catch (e) {}
+    }
+    
+    const violationTypes = categorizeViolations(violations);
 
     // Get candidate profile
     const { data: candidateProfile, error: profileError } = await supabase
@@ -219,7 +350,6 @@ export default async function handler(req, res) {
     let totalCopyAttempts = 0;
     let totalPasteAttempts = 0;
     let totalRightClicks = 0;
-    let violationTypes = {};
     const timePerQuestion = [];
     const violationTimeline = [];
 
@@ -229,28 +359,23 @@ export default async function handler(req, res) {
         
         const metadata = response.metadata || {};
         const tabSwitches = parseInt(metadata.tab_switches, 10) || 0;
-        const violations = parseInt(metadata.violations, 10) || 0;
+        const violationsCount = parseInt(metadata.violations, 10) || 0;
         const copyAttempts = parseInt(metadata.copy_attempts, 10) || 0;
         const pasteAttempts = parseInt(metadata.paste_attempts, 10) || 0;
         const rightClicks = parseInt(metadata.right_click_attempts, 10) || 0;
         
         totalTabSwitches += tabSwitches;
-        totalViolations += violations;
+        totalViolations += violationsCount;
         totalCopyAttempts += copyAttempts;
         totalPasteAttempts += pasteAttempts;
         totalRightClicks += rightClicks;
 
-        if (tabSwitches > 0) violationTypes.tab_switch = (violationTypes.tab_switch || 0) + tabSwitches;
-        if (copyAttempts > 0) violationTypes.copy_attempt = (violationTypes.copy_attempt || 0) + copyAttempts;
-        if (pasteAttempts > 0) violationTypes.paste_attempt = (violationTypes.paste_attempt || 0) + pasteAttempts;
-        if (rightClicks > 0) violationTypes.right_click_attempt = (violationTypes.right_click_attempt || 0) + rightClicks;
-
-        if (violations > 0 || tabSwitches > 0 || copyAttempts > 0 || pasteAttempts > 0 || rightClicks > 0) {
+        if (violationsCount > 0 || tabSwitches > 0 || copyAttempts > 0 || pasteAttempts > 0 || rightClicks > 0) {
           violationTimeline.push({
             question_id: response.question_id,
             timestamp: response.created_at,
             tab_switches: tabSwitches,
-            violations: violations,
+            violations: violationsCount,
             copy_attempts: copyAttempts,
             paste_attempts: pasteAttempts,
             right_click_attempts: rightClicks
@@ -307,13 +432,14 @@ export default async function handler(req, res) {
       totalCopyAttempts > 0 || 
       totalPasteAttempts > 0 || 
       totalRightClicks > 0 ||
-      timePerQuestion.length > 0;
+      timePerQuestion.length > 0 ||
+      externalUrls.length > 0;
 
-    const riskLevel = getRiskLevel(totalViolations, totalTabSwitches, totalChanges, avgTime);
+    const riskLevel = result.risk_level || getRiskLevel(totalViolations, totalTabSwitches, totalChanges, avgTime);
     const riskComment = getRiskComment(riskLevel, totalViolations, totalTabSwitches);
 
     // ============================================================
-    // BUILD BOTH RESPONSE STRUCTURES FOR COMPATIBILITY
+    // BUILD BEHAVIORAL MATRIX WITH EXTERNAL URLS
     // ============================================================
     const behavioralMatrix = {
       candidate: {
@@ -347,6 +473,18 @@ export default async function handler(req, res) {
         violationComments: violationComments,
         violationTimeline: violationTimeline
       },
+      // ============================================================
+      // EXTERNAL URL DATA - KEY ADDITION
+      // ============================================================
+      externalUrls: externalUrls,
+      domainVisits: domainVisits,
+      externalDomainCounts: externalUrls.reduce((acc, url) => {
+        if (url.domain) {
+          acc[url.domain] = (acc[url.domain] || 0) + 1;
+        }
+        return acc;
+      }, {}),
+      externalUrlsCount: externalUrls.length,
       flaggedQuestions: flaggedQuestions,
       riskAssessment: {
         level: riskLevel,
@@ -357,14 +495,14 @@ export default async function handler(req, res) {
     };
 
     // ============================================================
-    // ✅ FIX: Return BOTH structures to ensure frontend finds it
+    // RETURN BOTH STRUCTURES FOR COMPATIBILITY
     // ============================================================
     return res.status(200).json({
       success: true,
-      behavioralMatrix: behavioralMatrix,     // Original structure
-      matrixData: behavioralMatrix,           // Alternative structure
-      data: behavioralMatrix,                 // Another alternative
-      result: behavioralMatrix                // Yet another alternative
+      behavioralMatrix: behavioralMatrix,
+      matrixData: behavioralMatrix,
+      data: behavioralMatrix,
+      result: behavioralMatrix
     });
 
   } catch (error) {
@@ -372,7 +510,7 @@ export default async function handler(req, res) {
     return res.status(500).json({ 
       success: false, 
       error: error.message,
-      matrixData: null,  // Ensure consistent structure even on error
+      matrixData: null,
       behavioralMatrix: null
     });
   }
