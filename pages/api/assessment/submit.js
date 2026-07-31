@@ -1,4 +1,4 @@
-// pages/api/assessment/submit.js - UPDATED WITH PROCTORING DATA
+// pages/api/assessment/submit.js - FIXED VERSION
 // Handles assessment submission with correct scoring (1 mark per correct answer)
 // Saves category_scores, workplace_readiness, intellectual_capability, AND proctoring data
 
@@ -63,7 +63,7 @@ export default async function handler(req, res) {
       autoSubmitted, 
       autoSubmitReason, 
       allowIncomplete,
-      proctoringData // NEW: Receive proctoring data from frontend
+      proctoringData
     } = req.body;
 
     if (!sessionId) {
@@ -109,7 +109,7 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 2: Get assessment type to check if National Service
+    // STEP 2: Get assessment type
     // ============================================================
     const { data: assessmentType, error: assessmentTypeError } = await serviceClient
       .from("assessment_types")
@@ -120,7 +120,7 @@ export default async function handler(req, res) {
     const isNationalService = assessmentType?.code === 'national_service';
 
     // ============================================================
-    // STEP 3: Get all responses for this session
+    // STEP 3: Get all responses
     // ============================================================
     const { data: responses, error: responsesError } = await serviceClient
       .from("responses")
@@ -153,22 +153,19 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 5: Calculate scores (1 mark per correct answer)
+    // STEP 5: Calculate scores
     // ============================================================
     let totalEarned = 0;
     let totalMax = 0;
 
-    // Build a map of responses for quick lookup
     const responseMap = {};
     (responses || []).forEach(r => {
       responseMap[r.question_id] = r.answer_id;
     });
 
-    // Category scores map
     const categoryMap = {};
     const categoryMaxMap = {};
 
-    // Calculate scores for each question - 1 mark per correct answer
     (questions || []).forEach(q => {
       const answers = q.unique_answers || [];
       const maxScore = 1;
@@ -196,7 +193,7 @@ export default async function handler(req, res) {
     const percentageScore = totalMax > 0 ? Math.round((totalEarned / totalMax) * 100) : 0;
 
     // ============================================================
-    // STEP 6: Build category_scores array
+    // STEP 6: Build category_scores
     // ============================================================
     const categoryScores = Object.keys(categoryMap).map(category => {
       const earned = categoryMap[category];
@@ -214,7 +211,7 @@ export default async function handler(req, res) {
     console.log(`[Submit] Categories: ${categoryScores.length}`);
 
     // ============================================================
-    // STEP 7: Calculate workplace and intellectual scores for National Service
+    // STEP 7: Calculate workplace and intellectual scores
     // ============================================================
     let workplaceReadiness = 0;
     let intellectualCapability = 0;
@@ -227,7 +224,7 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 8: Process proctoring data - NEW
+    // STEP 8: Process proctoring data
     // ============================================================
     const proctoring = proctoringData || {};
     const externalUrls = proctoring.externalUrls || [];
@@ -235,13 +232,11 @@ export default async function handler(req, res) {
     const domainVisits = proctoring.domainVisits || {};
     const tabSwitches = proctoring.tabSwitches || [];
     
-    // Calculate proctoring stats
     const totalViolations = violations.length;
     const totalTabSwitches = tabSwitches.length;
     const totalExternalUrls = externalUrls.length;
     const uniqueDomains = [...new Set(externalUrls.map(u => u.domain))].length;
     
-    // Categorize external URLs
     const categoryStats = {};
     externalUrls.forEach(url => {
       const category = url.category || 'other';
@@ -251,13 +246,11 @@ export default async function handler(req, res) {
       categoryStats[category]++;
     });
 
-    // Check for high-risk activities
     const hasSearchEngineUsage = externalUrls.some(u => u.category === 'search_engine');
     const hasAIToolUsage = externalUrls.some(u => u.category === 'ai_tool');
     const hasExcessiveTabSwitches = totalTabSwitches > 10;
     const hasExcessiveViolations = totalViolations > 5;
 
-    // Calculate risk level
     let riskLevel = 'Low';
     let riskScore = 0;
     
@@ -270,7 +263,6 @@ export default async function handler(req, res) {
     if (riskScore >= 70) riskLevel = 'High';
     else if (riskScore >= 40) riskLevel = 'Medium';
 
-    // Generate risk factors
     const riskFactors = [];
     if (hasSearchEngineUsage) {
       riskFactors.push({
@@ -302,7 +294,6 @@ export default async function handler(req, res) {
     }
 
     console.log(`[Submit] Proctoring: Risk Level ${riskLevel}, Score ${riskScore}`);
-    console.log(`[Submit] External URLs: ${totalExternalUrls}, Violations: ${totalViolations}`);
 
     // ============================================================
     // STEP 9: Update session status
@@ -317,20 +308,18 @@ export default async function handler(req, res) {
       .eq("id", sessionId);
 
     // ============================================================
-    // STEP 10: Update candidate_assessments
+    // STEP 10: Check for existing result by session_id (FIXED)
     // ============================================================
-    await serviceClient
-      .from("candidate_assessments")
-      .update({
-        status: "completed",
-        completed_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      })
-      .eq("user_id", session.user_id)
-      .eq("assessment_id", session.assessment_id);
+    const { data: existingResult, error: resultError } = await serviceClient
+      .from("assessment_results")
+      .select("id")
+      .eq("session_id", sessionId)  // FIXED: Check by session_id instead of user_id + assessment_id
+      .maybeSingle();
+
+    console.log(`[Submit] Existing result: ${existingResult ? existingResult.id : 'None'}`);
 
     // ============================================================
-    // STEP 11: Create or update assessment result WITH proctoring data
+    // STEP 11: Create or update assessment result
     // ============================================================
     const recommendation = isNationalService ? 
       (workplaceReadiness >= 85 && intellectualCapability >= 85 ? 'Highly Recommended' :
@@ -346,18 +335,14 @@ export default async function handler(req, res) {
       max_score: totalMax,
       percentage_score: percentageScore,
       completed_at: new Date().toISOString(),
-      is_valid: riskLevel !== 'High', // Invalid if high risk
+      is_valid: riskLevel !== 'High',
       is_auto_submitted: autoSubmitted || false,
       
-      // Category scores
       category_scores: categoryScores,
       workplace_readiness: workplaceReadiness,
       intellectual_capability: intellectualCapability,
       recommendation: recommendation,
       
-      // ============================================================
-      // PROCTORING DATA - NEW
-      // ============================================================
       proctoring_data: {
         summary: {
           totalViolations: totalViolations,
@@ -378,7 +363,6 @@ export default async function handler(req, res) {
         tabSwitches: tabSwitches
       },
       
-      // Flattened columns for easier querying
       external_urls_visited: externalUrls,
       domain_visits: domainVisits,
       tab_switch_details: tabSwitches,
@@ -397,7 +381,6 @@ export default async function handler(req, res) {
         intellectualCapability: intellectualCapability,
         recommendation: recommendation,
         completedAt: new Date().toISOString(),
-        // Proctoring summary in report
         proctoring: {
           riskLevel: riskLevel,
           riskScore: riskScore,
@@ -409,52 +392,48 @@ export default async function handler(req, res) {
       }
     };
 
-    const { data: existingResult, error: resultError } = await serviceClient
-      .from("assessment_results")
-      .select("id")
-      .eq("user_id", session.user_id)
-      .eq("assessment_id", session.assessment_id)
-      .maybeSingle();
-
     let resultId;
 
-    if (resultError || !existingResult) {
-      // Create new result
-      const { data: newResult, error: createResultError } = await serviceClient
-        .from("assessment_results")
-        .insert(resultData)
-        .select()
-        .single();
-
-      if (!createResultError && newResult) {
-        resultId = newResult.id;
-      } else {
-        console.error("Create result error:", createResultError);
-      }
-    } else {
+    if (existingResult) {
       // Update existing result
-      const { data: updatedResult, error: updateResultError } = await serviceClient
+      const { data: updatedResult, error: updateError } = await serviceClient
         .from("assessment_results")
         .update(resultData)
         .eq("id", existingResult.id)
         .select()
         .single();
 
-      if (!updateResultError && updatedResult) {
+      if (!updateError && updatedResult) {
         resultId = updatedResult.id;
+        console.log(`[Submit] Updated result: ${resultId}`);
       } else {
-        console.error("Update result error:", updateResultError);
+        console.error("Update result error:", updateError);
+      }
+    } else {
+      // Create new result
+      const { data: newResult, error: createError } = await serviceClient
+        .from("assessment_results")
+        .insert(resultData)
+        .select()
+        .single();
+
+      if (!createError && newResult) {
+        resultId = newResult.id;
+        console.log(`[Submit] Created result: ${resultId}`);
+      } else {
+        console.error("Create result error:", createError);
       }
     }
 
     // ============================================================
-    // STEP 12: Save proctoring violations to proctoring_logs table
+    // STEP 12: Save proctoring violations to proctoring_logs
     // ============================================================
-    if (violations.length > 0) {
+    if (violations.length > 0 && resultId) {
       const violationLogs = violations.map(violation => ({
         assessment_id: session.assessment_id,
         user_id: session.user_id,
         session_id: sessionId,
+        result_id: resultId,
         violation_type: violation.type,
         violation_details: violation.details || {},
         timestamp: violation.timestamp || new Date().toISOString()
@@ -472,21 +451,29 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 13: Update candidate_assessments with result_id
+    // STEP 13: Update candidate_assessments with result_id (FIXED)
     // ============================================================
     if (resultId) {
-      await serviceClient
+      const { error: caUpdateError } = await serviceClient
         .from("candidate_assessments")
         .update({
           result_id: resultId,
+          status: "completed",
+          completed_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         })
         .eq("user_id", session.user_id)
         .eq("assessment_id", session.assessment_id);
+
+      if (caUpdateError) {
+        console.error("Error updating candidate_assessments:", caUpdateError);
+      } else {
+        console.log(`[Submit] Updated candidate_assessments with result_id: ${resultId}`);
+      }
     }
 
     // ============================================================
-    // STEP 14: Return response with proctoring summary
+    // STEP 14: Return response
     // ============================================================
     return res.status(200).json({
       success: true,
@@ -501,7 +488,6 @@ export default async function handler(req, res) {
       recommendation: recommendation,
       isNationalService: isNationalService,
       isAutoSubmitted: autoSubmitted || false,
-      // Proctoring summary in response
       proctoring: {
         riskLevel: riskLevel,
         riskScore: riskScore,
