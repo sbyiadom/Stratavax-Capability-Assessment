@@ -1,4 +1,4 @@
-// pages/candidate/dashboard.js - WITH FIXED COUNTDOWN
+// pages/candidate/dashboard.js - FULL CORRECTED VERSION WITH COUNTDOWN
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
@@ -83,7 +83,7 @@ export default function CandidateDashboard() {
   }
 
   // ============================================================
-  // EXPIRATION COUNTDOWN HELPERS
+  // ✅ FIXED: EXPIRATION COUNTDOWN HELPERS
   // ============================================================
   const getDaysRemaining = (expiresAt) => {
     if (!expiresAt) return null;
@@ -95,7 +95,7 @@ export default function CandidateDashboard() {
   };
 
   const getExpirationStatus = (expiresAt) => {
-    if (!expiresAt) return { status: 'no_expiry', label: '', color: '' };
+    if (!expiresAt) return { status: 'no_expiry', label: '', color: '', days: null };
     
     const now = new Date();
     const expiry = new Date(expiresAt);
@@ -103,7 +103,7 @@ export default function CandidateDashboard() {
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
     
     if (diffDays < 0) {
-      return { status: 'expired', label: 'Expired', color: '#dc2626', days: diffDays };
+      return { status: 'expired', label: 'EXPIRED', color: '#dc2626', days: diffDays };
     } else if (diffDays === 0) {
       return { status: 'today', label: 'Expires Today', color: '#f59e0b', days: 0 };
     } else if (diffDays <= 7) {
@@ -505,7 +505,7 @@ export default function CandidateDashboard() {
                     const isNationalService = assessment.isNationalService || assessment.typeCode === 'national_service';
                     const displayName = getShortName(assessment.title, isNationalService);
                     
-                    // Get expiration status
+                    // ✅ FIXED: Get expiration status with days
                     const expiryStatus = getExpirationStatus(assessment.expires_at);
                     const isExpired = expiryStatus.status === 'expired';
 
@@ -555,6 +555,7 @@ export default function CandidateDashboard() {
                             {isNationalService && (
                               <span style={styles.compactNsTag}>NS</span>
                             )}
+                            {/* ✅ FIXED: Show days remaining on compact card */}
                             {assessment.expires_at && expiryStatus.status !== 'expired' && expiryStatus.status !== 'no_expiry' && (
                               <span style={{
                                 ...styles.compactExpiry,
@@ -622,7 +623,7 @@ export default function CandidateDashboard() {
                       )}
                       
                       {/* ============================================================
-                          EXPIRATION COUNTDOWN - PROMINENT DISPLAY
+                          ✅ FIXED: EXPIRATION COUNTDOWN - PROMINENT DISPLAY
                           ============================================================ */}
                       {selectedAssessment.expires_at && (() => {
                         const expiryStatus = getExpirationStatus(selectedAssessment.expires_at);
@@ -631,20 +632,111 @@ export default function CandidateDashboard() {
                             <span style={styles.detailExpiredBadge}>EXPIRED - Assessment No Longer Available</span>
                           );
                         } else if (expiryStatus.status !== 'no_expiry') {
+                          const isUrgent = expiryStatus.status === 'soon' || expiryStatus.status === 'today';
                           return (
                             <span style={{
                               ...styles.detailExpiryBadge,
-                              background: expiryStatus.status === 'soon' ? 'rgba(245, 158, 11, 0.15)' : 'rgba(22, 163, 74, 0.15)',
-                              color: expiryStatus.status === 'soon' ? '#d97706' : '#16a34a'
+                              background: isUrgent ? 'rgba(220, 38, 38, 0.12)' : 'rgba(22, 163, 74, 0.12)',
+                              color: isUrgent ? '#dc2626' : '#16a34a',
+                              border: isUrgent ? '1px solid #dc2626' : '1px solid #16a34a',
+                              padding: '6px 16px',
+                              borderRadius: '8px',
+                              fontSize: '13px',
+                              fontWeight: '700',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '8px'
                             }}>
-                              {expiryStatus.label}
+                              {expiryStatus.status === 'today' ? 'Expires Today' : `${expiryStatus.days} days remaining`}
+                              {isUrgent && (
+                                <span style={{
+                                  background: '#dc2626',
+                                  color: 'white',
+                                  padding: '2px 8px',
+                                  borderRadius: '4px',
+                                  fontSize: '10px',
+                                  fontWeight: '700'
+                                }}>
+                                  URGENT
+                                </span>
+                              )}
                             </span>
                           );
                         }
                         return null;
                       })()}
                     </div>
+
                     <p style={styles.detailDescription}>{selectedAssessment.description}</p>
+
+                    {/* ✅ FIXED: Deadline Notice for National Service */}
+                    {selectedAssessment.isNationalService && selectedAssessment.expires_at && (() => {
+                      const expiryStatus = getExpirationStatus(selectedAssessment.expires_at);
+                      if (expiryStatus.status !== 'expired' && expiryStatus.status !== 'no_expiry') {
+                        const isUrgent = expiryStatus.status === 'soon' || expiryStatus.status === 'today';
+                        return (
+                          <div style={{
+                            ...styles.deadlineNotice,
+                            background: isUrgent ? 'rgba(220, 38, 38, 0.08)' : 'rgba(59, 130, 246, 0.08)',
+                            border: isUrgent ? '2px solid #dc2626' : '2px solid #3b82f6',
+                            borderRadius: '12px',
+                            padding: '16px 20px',
+                            marginBottom: '16px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '12px',
+                            flexWrap: 'wrap'
+                          }}>
+                            <div style={{ fontSize: '28px', lineHeight: '1' }}>
+                              {isUrgent ? '⚠️' : '📅'}
+                            </div>
+                            <div style={{ flex: 1 }}>
+                              <div style={{
+                                fontSize: '16px',
+                                fontWeight: '700',
+                                color: isUrgent ? '#dc2626' : '#1e40af',
+                                marginBottom: '2px'
+                              }}>
+                                {isUrgent ? 'IMPORTANT: Assessment Deadline Approaching' : 'Assessment Available Until'}
+                              </div>
+                              <div style={{
+                                fontSize: '14px',
+                                color: isUrgent ? '#991b1b' : '#475569'
+                              }}>
+                                {expiryStatus.status === 'today' 
+                                  ? 'This assessment expires TODAY. Please complete it now.' 
+                                  : `You have ${expiryStatus.days} days remaining to complete this assessment.`}
+                              </div>
+                              <div style={{
+                                fontSize: '13px',
+                                color: '#64748b',
+                                marginTop: '4px'
+                              }}>
+                                Deadline: {selectedAssessment.expires_at ? new Date(selectedAssessment.expires_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : 'N/A'}
+                              </div>
+                            </div>
+                            {isUrgent && (
+                              <button
+                                onClick={() => handleStartAssessment(selectedAssessment.id)}
+                                style={{
+                                  padding: '8px 20px',
+                                  background: '#dc2626',
+                                  color: 'white',
+                                  border: 'none',
+                                  borderRadius: '8px',
+                                  fontSize: '14px',
+                                  fontWeight: '600',
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                Take Now
+                              </button>
+                            )}
+                          </div>
+                        );
+                      }
+                      return null;
+                    })()}
 
                     {/* Assessment Areas */}
                     <div style={styles.detailAreas}>
@@ -1034,10 +1126,13 @@ const styles = {
   detailStatusBadge: { padding: "4px 14px", borderRadius: "50px", fontSize: "12px", fontWeight: "600" },
   detailNsBadge: { fontSize: "11px", fontWeight: "600", padding: "2px 12px", background: "#dbeafe", color: "#1e40af", borderRadius: "50px" },
   detailExpiryBadge: {
-    padding: "4px 14px",
-    borderRadius: "50px",
-    fontSize: "12px",
-    fontWeight: "600"
+    padding: "6px 16px",
+    borderRadius: "8px",
+    fontSize: "13px",
+    fontWeight: "700",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "8px"
   },
   detailExpiredBadge: {
     padding: "4px 14px",
@@ -1046,6 +1141,15 @@ const styles = {
     fontWeight: "600",
     background: "rgba(220, 38, 38, 0.15)",
     color: "#dc2626"
+  },
+  deadlineNotice: {
+    padding: "16px 20px",
+    borderRadius: "12px",
+    marginBottom: "16px",
+    display: "flex",
+    alignItems: "center",
+    gap: "12px",
+    flexWrap: "wrap"
   },
   detailDescription: { fontSize: "14px", color: "#64748b", margin: "0 0 16px 0", lineHeight: "1.6" },
   
