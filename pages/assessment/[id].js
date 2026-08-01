@@ -1,4 +1,5 @@
-// pages/assessment/[id].js - FULL CORRECTED VERSION WITH PROCTORING DATA SUBMISSION
+// pages/assessment/[id].js - FULL DEPLOYMENT READY VERSION
+// Includes proctoring data submission to /api/assessment/submit
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
@@ -162,7 +163,11 @@ async function saveAnswer(sessionId, questionId, answer, metadata) {
   return result;
 }
 
+// ============================================================
+// FIXED: ROUTE TO THE CORRECT ENDPOINT
+// ============================================================
 async function submitAssessment(sessionId, autoSubmitted, autoSubmitReason, allowIncomplete, proctoringData) {
+  // CRITICAL FIX: Ensure we hit /api/assessment/submit, NOT /api/submit-assessment
   const result = await apiCall('/api/assessment/submit', {
     method: 'POST',
     body: JSON.stringify({ 
@@ -203,7 +208,7 @@ function AssessmentContent() {
   const [questionStartTime, setQuestionStartTime] = useState(Date.now());
 
   // ============================================================
-  // BEHAVIORAL TRACKING STATE (EXISTING)
+  // BEHAVIORAL TRACKING STATE
   // ============================================================
   const [tabSwitchCount, setTabSwitchCount] = useState(0);
   const [copyAttempts, setCopyAttempts] = useState(0);
@@ -215,7 +220,7 @@ function AssessmentContent() {
   const [questionStartTimes, setQuestionStartTimes] = useState({});
 
   // ============================================================
-  // URL TRACKING STATE (NEW)
+  // URL TRACKING STATE
   // ============================================================
   const [externalUrlVisits, setExternalUrlVisits] = useState([]);
   const [domainVisits, setDomainVisits] = useState({});
@@ -405,7 +410,7 @@ function AssessmentContent() {
           tabSwitches: tabSwitchCount,
           copyPasteAttempts: copyAttempts + pasteAttempts,
           rightClickAttempts: rightClickAttempts,
-          violations: violationCount,
+          totalViolations: violationCount,
           externalUrlsVisited: externalUrlVisits.length,
           duration: elapsedSeconds,
           riskLevel: violationCount >= 3 ? 'high' : violationCount >= 1 ? 'medium' : 'low',
@@ -538,7 +543,7 @@ function AssessmentContent() {
   // BEHAVIORAL TRACKING EFFECTS
   // ============================================================
   
-  // Track tab switches (when user leaves the page) - UPDATED with URL tracking
+  // Track tab switches
   useEffect(() => {
     if (loading || alreadySubmitted || accessDenied || !session || isTimeExpired) return;
 
@@ -577,7 +582,7 @@ function AssessmentContent() {
     };
   }, [loading, alreadySubmitted, accessDenied, session, isTimeExpired]);
 
-  // Track right-click attempts (existing)
+  // Track right-click attempts
   useEffect(() => {
     if (loading || alreadySubmitted || accessDenied || !session || isTimeExpired) return;
 
@@ -595,7 +600,7 @@ function AssessmentContent() {
     };
   }, [loading, alreadySubmitted, accessDenied, session, isTimeExpired]);
 
-  // Track question start times (existing)
+  // Track question start times
   useEffect(() => {
     if (currentQuestion.id && !questionStartTimes[currentQuestion.id]) {
       setQuestionStartTimes(prev => ({
@@ -850,7 +855,7 @@ function AssessmentContent() {
   }, [alreadySubmitted, isTimeExpired, sessionIdRef.current]);
 
   // ============================================================
-  // ANTI-CHEAT EFFECT - UPDATED WITH URL CONTEXT
+  // ANTI-CHEAT EFFECT
   // ============================================================
   useEffect(() => {
     if (loading || alreadySubmitted || accessDenied || !session || isTimeExpired) return;
@@ -981,7 +986,7 @@ function AssessmentContent() {
           tabSwitches: tabSwitchCount,
           copyPasteAttempts: copyAttempts + pasteAttempts,
           rightClickAttempts: rightClickAttempts,
-          violations: violationCount,
+          totalViolations: violationCount,
           externalUrlsVisited: externalUrlVisits.length,
           duration: elapsedSeconds,
           riskLevel: violationCount >= 3 ? 'high' : violationCount >= 1 ? 'medium' : 'low',
@@ -1002,7 +1007,7 @@ function AssessmentContent() {
       });
 
       // ============================================================
-      // ✅ SUBMIT WITH PROCTORING DATA
+      // ✅ SUBMIT WITH PROCTORING DATA (CALLING THE CORRECT ENDPOINT)
       // ============================================================
       const result = await submitAssessment(
         sessionIdRef.current, 
