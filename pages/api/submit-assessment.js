@@ -329,9 +329,6 @@ export default async function handler(req, res) {
       recommendation = getRecommendation(workplaceReadiness, intellectualCapability);
       suggestedDepartments = getSuggestedDepartments(workplaceReadiness, intellectualCapability);
       
-      // ============================================================
-      // FIX: Calculate and store category breakdown
-      // ============================================================
       categoryBreakdown = calculateCategoryBreakdown(responses, questions);
       console.log(`[Submit Assessment] Category breakdown calculated: ${categoryBreakdown.length} categories`);
 
@@ -431,19 +428,15 @@ export default async function handler(req, res) {
       ...report,
       reportType: reportType,
       assessmentTypeCode: assessmentTypeCode,
-      // Ensure categoryBreakdown is included for National Service
       ...(isNationalService && { categoryBreakdown })
     };
 
     // ============================================================
-    // FIX: Prepare category_scores for the database
+    // Prepare category_scores for the database
     // ============================================================
-    // For National Service, use categoryBreakdown as the source for category_scores
-    // This ensures the sub-categories are available in the category_scores column
     let categoryScoresForDb = [];
 
     if (isNationalService && categoryBreakdown && categoryBreakdown.length > 0) {
-      // Format category breakdown for the category_scores column
       categoryScoresForDb = categoryBreakdown.map(cat => ({
         category: cat.category || cat.name || 'Unknown',
         name: cat.category || cat.name || 'Unknown',
@@ -451,14 +444,92 @@ export default async function handler(req, res) {
         score: cat.earned || cat.score || 0,
         maxScore: cat.max || cat.maxScore || 100,
         dimension: cat.dimension || 'other',
-        // Include any additional fields
         ...(cat.grade && { grade: cat.grade }),
         ...(cat.comment && { comment: cat.comment })
       }));
       console.log(`[Submit Assessment] category_scores prepared: ${categoryScoresForDb.length} categories`);
     } else if (!isNationalService && report.categoryScores) {
-      // For Stratavax, use categoryScores from the report
       categoryScoresForDb = report.categoryScores;
+    }
+
+    // ============================================================
+    // FIX: Process and extract proctoring data from session & request body
+    // ============================================================
+    console.log(`[Submit Assessment] Processing proctoring data...`);
+    
+    // Extract proctoring data sent from the frontend
+    const proctoringData = body.proctoringData || {};
+    const summary = proctoringData.summary || {};
+    
+    // 1. Get the raw counts (frontend calculated numbers)
+    let totalViolations = Number(summary.totalViolations) || 0;
+    let totalTabSwitches = Number(summary.tabSwitches) || 0;
+    let copyPasteAttempts = Number(summary.copyPasteAttempts) || 0;
+    let rightClickAttempts = Number(summary.rightClickAttempts) || 0;
+    let durationSeconds = Number(summary.duration) || 0;
+    
+    // 2. Fallback to session's raw violation_count if frontend didn't send it
+    if (totalViolations === 0 && session.violation_count > 0) {
+      totalViolations = session.violation_count;
+    }
+
+    console.log(`[Submit Assessment] Proctoring counts: Violations=${totalViolations}, TabSwitches=${totalTabSwitches}`);
+
+    // 3. Prepare arrays for detailed logs
+    const violationsList = Array.isArray(proctoringData.violations) ? proctoringData.violations : [];
+    const tabSwitchesList = Array.isArray(proctoringData.tabSwitches) ? proctoringData.tabSwitches : [];
+    const externalUrlsList = Array.isArray(proctoringData.externalUrls) ? proctoringData.externalUrls : [];
+    
+    const totalExternalUrls = externalUrlsList.length;
+    const uniqueDomains = [...new Set(externalUrlsList.map(u => u.domain || u.url))].length;
+    
+    // 4. Calculate Risk Level based on the actual numbers
+    const hasSearchEngineUsage = externalUrlsList.some(u => u.category === 'search_engine');
+    const hasAIToolUsage = externalUrlsList.some(u => u.category === 'ai_tool');
+    const hasExcessiveTabSwitches = totalTabSwitches > 10;
+    const hasExcessiveViolations = totalViolations > 5;
+
+    let riskLevel = 'low';
+    let riskScore = 0;
+    
+    if (hasSearchEngineUsage) riskScore += 30;
+    if (hasAIToolUsage) riskScore += 35;
+    if (hasExcessiveTabSwitches) riskScore += 20;
+    if (hasExcessiveViolations) riskScore += 15;
+    riskScore = Math.min(riskScore, 100);
+    
+    if (riskScore >= 70) riskLevel = 'high';
+    else if (riskScore >= 40) riskLevel = 'medium';
+    else riskLevel = 'low';
+
+    const riskFactors = [];
+    if (hasSearchEngineUsage) {
+      riskFactors.push({
+        type: 'search_engine_usage',
+        description: `Visited search engines (${externalUrlsList.filter(u => u.category === 'search_engine').length} times)`,
+        severity: 'high'
+      });
+    }
+    if (hasAIToolUsage) {
+      riskFactors.push({
+        type: 'ai_tool_usage',
+        description: `Visited AI tools (${externalUrlsList.filter(u => u.category === 'ai_tool').length} times)`,
+        severity: 'high'
+      });
+    }
+    if (hasExcessiveTabSwitches) {
+      riskFactors.push({
+        type: 'excessive_tab_switching',
+        description: `${totalTabSwitches} tab switches detected`,
+        severity: 'medium'
+      });
+    }
+    if (hasExcessiveViolations) {
+      riskFactors.push({
+        type: 'excessive_violations',
+        description: `${totalViolations} violations detected`,
+        severity: 'medium'
+      });
     }
 
     // ============================================================
@@ -473,20 +544,63 @@ export default async function handler(req, res) {
       percentage_score: overallScore,
       answered_questions: answeredCount,
       total_questions: totalQuestions,
-      is_valid: isComplete && !isAutoSubmit,
+      is_valid: isComplete && !isAutoSubmit && riskLevel !== 'high',
       is_auto_submitted: Boolean(isAutoSubmit || !isComplete),
       completed_at: nowIso(),
       workplace_readiness: isNationalService ? workplaceReadiness : null,
       intellectual_capability: isNationalService ? intellectualCapability : null,
       recommendation: isNationalService ? (recommendation?.recommendation || null) : null,
-      // ============================================================
-      // CRITICAL FIX: Save category_scores directly to the column
-      // ============================================================
       category_scores: categoryScoresForDb,
-      report_data: reportDataWithType
+      report_data: reportDataWithType,
+      
+      // ============================================================
+      // FIX: Write actual proctoring data to the result row
+      // ============================================================
+      violation_count: totalViolations,
+      total_tab_switches: totalTabSwitches,
+      risk_score: riskScore,
+      risk_level: riskLevel, // lowercase: 'low', 'medium', 'high'
+      
+      proctoring_data: {
+        summary: {
+          totalViolations: totalViolations,
+          tabSwitches: totalTabSwitches,
+          externalUrlsVisited: totalExternalUrls,
+          uniqueDomains: uniqueDomains,
+          copyPasteAttempts: copyPasteAttempts,
+          rightClickAttempts: rightClickAttempts,
+          duration: durationSeconds,
+          riskLevel: riskLevel,
+          riskScore: riskScore
+        },
+        riskFactors: riskFactors,
+        externalUrls: externalUrlsList,
+        domainVisits: proctoringData.domainVisits || {},
+        categoryStats: {},
+        violations: violationsList,
+        tabSwitches: tabSwitchesList
+      },
+      
+      // Flattened columns for easier frontend querying
+      external_urls_visited: externalUrlsList,
+      domain_visits: proctoringData.domainVisits || {},
+      tab_switch_details: tabSwitchesList,
+      violations: violationsList
     };
 
-    console.log(`[Submit Assessment] Result data with ${categoryScoresForDb.length} category scores`);
+    // Inject the proctoring summary into report_data as well so the UI picks it up
+    if (resultData.report_data) {
+      resultData.report_data.proctoring = {
+        riskLevel: riskLevel,
+        riskScore: riskScore,
+        totalViolations: totalViolations,
+        externalUrlsVisited: totalExternalUrls,
+        tabSwitches: totalTabSwitches,
+        riskFactors: riskFactors
+      };
+    }
+
+    console.log(`[Submit Assessment] Result data saved with proctoring: ${totalViolations} violations, ${totalTabSwitches} tab switches, risk ${riskLevel}`);
 
     // Check if a result already exists for this session
     const { data: existingResult, error: checkError } = await supabase
@@ -529,6 +643,31 @@ export default async function handler(req, res) {
       console.log('[Submit Assessment] Inserted new result:', result.id);
     }
 
+    // ============================================================
+    // Save proctoring violations to proctoring_logs
+    // ============================================================
+    if (violationsList.length > 0 && result) {
+      const violationLogs = violationsList.map(violation => ({
+        assessment_id: session.assessment_id,
+        user_id: session.user_id,
+        session_id: sessionId,
+        result_id: result.id,
+        violation_type: violation.type,
+        violation_details: violation.details || {},
+        timestamp: violation.timestamp || new Date().toISOString()
+      }));
+
+      const { error: logError } = await supabase
+        .from("proctoring_logs")
+        .insert(violationLogs);
+
+      if (logError) {
+        console.error("Error saving proctoring logs:", logError);
+      } else {
+        console.log(`[Submit Assessment] Saved ${violationLogs.length} proctoring logs`);
+      }
+    }
+
     // Update session
     await supabase
       .from("assessment_sessions")
@@ -567,11 +706,18 @@ export default async function handler(req, res) {
       percentage_score: overallScore,
       answered_questions: answeredCount,
       total_questions: totalQuestions,
-      is_valid: isComplete && !isAutoSubmit,
+      is_valid: isComplete && !isAutoSubmit && riskLevel !== 'high',
       is_auto_submitted: Boolean(!isComplete || isAutoSubmit),
       message: (!isComplete || isAutoSubmit)
         ? `Assessment auto-submitted. ${answeredCount} of ${totalQuestions} questions answered.`
-        : "Assessment submitted successfully!"
+        : "Assessment submitted successfully!",
+      // Return proctoring summary in the API response for debugging
+      proctoring: {
+        totalViolations,
+        totalTabSwitches,
+        riskLevel,
+        riskScore
+      }
     };
 
     if (isNationalService) {
@@ -580,7 +726,6 @@ export default async function handler(req, res) {
       responsePayload.recommendation = recommendation;
       responsePayload.suggestedDepartments = suggestedDepartments;
       responsePayload.categoryBreakdown = categoryBreakdown;
-      // Also include category_scores count for debugging
       responsePayload.categoryScoresCount = categoryScoresForDb.length;
     }
 
