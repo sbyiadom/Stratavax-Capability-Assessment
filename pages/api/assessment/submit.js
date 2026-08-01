@@ -224,18 +224,34 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 8: Process proctoring data
+    // STEP 8: Process proctoring data (FIXED FOR NUMBERS AND ARRAYS)
     // ============================================================
     const proctoring = proctoringData || {};
-    const externalUrls = proctoring.externalUrls || [];
-    const violations = proctoring.violations || [];
-    const domainVisits = proctoring.domainVisits || {};
-    const tabSwitches = proctoring.tabSwitches || [];
     
-    const totalViolations = violations.length;
-    const totalTabSwitches = tabSwitches.length;
+    // Handle arrays safely
+    const externalUrls = Array.isArray(proctoring.externalUrls) ? proctoring.externalUrls : [];
+    const violations = Array.isArray(proctoring.violations) ? proctoring.violations : [];
+    const tabSwitches = Array.isArray(proctoring.tabSwitches) ? proctoring.tabSwitches : [];
+    
+    // Handle nested summary correctly
+    const summary = proctoring.summary || {};
+    
+    // 1. Get totals from the summary first (if the frontend sends numbers, use those)
+    let totalViolations = Number(summary.totalViolations) || 0;
+    let totalTabSwitches = Number(summary.tabSwitches) || 0;
+    
+    // 2. Fallback to counting arrays if the summary numbers are 0 but arrays exist
+    // (This ensures if the backend receives arrays instead of numbers, it still calculates correctly)
+    if (totalViolations === 0 && violations.length > 0) totalViolations = violations.length;
+    if (totalTabSwitches === 0 && tabSwitches.length > 0) totalTabSwitches = tabSwitches.length;
+    
+    // Handle other summary stats
+    const copyPasteAttempts = Number(summary.copyPasteAttempts) || 0;
+    const rightClickAttempts = Number(summary.rightClickAttempts) || 0;
+    const duration = Number(summary.duration) || 0;
+    
     const totalExternalUrls = externalUrls.length;
-    const uniqueDomains = [...new Set(externalUrls.map(u => u.domain))].length;
+    const uniqueDomains = [...new Set(externalUrls.map(u => u.domain || u.url))].length;
     
     const categoryStats = {};
     externalUrls.forEach(url => {
@@ -251,10 +267,6 @@ export default async function handler(req, res) {
     const hasExcessiveTabSwitches = totalTabSwitches > 10;
     const hasExcessiveViolations = totalViolations > 5;
 
-    // ============================================================
-    // FIX: Use lowercase risk levels for the check constraint
-    // Allowed: 'low', 'medium', 'high', 'unknown'
-    // ============================================================
     let riskLevel = 'low';
     let riskScore = 0;
     
@@ -298,6 +310,7 @@ export default async function handler(req, res) {
       });
     }
 
+    console.log(`[Submit] Proctoring: Total Violations ${totalViolations}, Tab Switches ${totalTabSwitches}`);
     console.log(`[Submit] Proctoring: Risk Level ${riskLevel}, Score ${riskScore}`);
 
     // ============================================================
@@ -356,15 +369,15 @@ export default async function handler(req, res) {
           tabSwitches: totalTabSwitches,
           externalUrlsVisited: totalExternalUrls,
           uniqueDomains: uniqueDomains,
-          copyPasteAttempts: proctoring.summary?.copyPasteAttempts || 0,
-          rightClickAttempts: proctoring.summary?.rightClickAttempts || 0,
-          duration: proctoring.summary?.duration || 0,
+          copyPasteAttempts: copyPasteAttempts,
+          rightClickAttempts: rightClickAttempts,
+          duration: duration,
           riskLevel: riskLevel,
           riskScore: riskScore
         },
         riskFactors: riskFactors,
         externalUrls: externalUrls,
-        domainVisits: domainVisits,
+        domainVisits: proctoring.domainVisits || {},
         categoryStats: categoryStats,
         violations: violations,
         tabSwitches: tabSwitches
@@ -372,11 +385,11 @@ export default async function handler(req, res) {
       
       // Flattened columns
       external_urls_visited: externalUrls,
-      domain_visits: domainVisits,
+      domain_visits: proctoring.domainVisits || {},
       tab_switch_details: tabSwitches,
       violations: violations,
       risk_score: riskScore,
-      risk_level: riskLevel,  // Now using lowercase: 'low', 'medium', 'high'
+      risk_level: riskLevel,
       total_tab_switches: totalTabSwitches,
       total_external_urls: totalExternalUrls,
       
