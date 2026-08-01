@@ -396,25 +396,36 @@ export default function AssignAssessments() {
             <div style={styles.noData}>No active assessments found.</div>
           ) : (
             <div style={styles.assessmentGrid}>
-              {assessments.map((assessment) => (
-                <button
-                  key={assessment.id}
-                  type="button"
-                  onClick={() => { setSelectedAssessment(assessment.id); setSelectedCandidates([]); }}
-                  style={{
-                    ...styles.assessmentCard,
-                    border: selectedAssessment === assessment.id ? "2px solid #0a1929" : "1px solid #e2e8f0",
-                    background: selectedAssessment === assessment.id ? "#f8fafc" : "white"
-                  }}
-                >
-                  <div style={styles.assessmentIcon}>{assessment.assessment_type?.icon || "📋"}</div>
-                  <div style={styles.assessmentInfo}>
-                    <div style={styles.assessmentTitle}>{assessment.title}</div>
-                    <div style={styles.assessmentType}>{assessment.assessment_type?.name || "Assessment"}</div>
-                  </div>
-                  {selectedAssessment === assessment.id && <div style={styles.selectedBadge}>Selected</div>}
-                </button>
-              ))}
+              {assessments.map((assessment) => {
+                // Clean 2-letter badge from type
+                const typeName = assessment.assessment_type?.name || "AS";
+                const badgeText = typeName.substring(0, 2).toUpperCase();
+                // Generate a simple pastel color based on the ID to keep it varied
+                const hash = assessment.id.split('').reduce((acc, char) => char.charCodeAt(0) + acc, 0);
+                const hue = hash % 360;
+                
+                return (
+                  <button
+                    key={assessment.id}
+                    type="button"
+                    onClick={() => { setSelectedAssessment(assessment.id); setSelectedCandidates([]); }}
+                    style={{
+                      ...styles.assessmentCard,
+                      border: selectedAssessment === assessment.id ? "2px solid #0a1929" : "1px solid #e2e8f0",
+                      background: selectedAssessment === assessment.id ? "#f8fafc" : "white"
+                    }}
+                  >
+                    <div style={{ ...styles.assessmentBadge, background: `hsl(${hue}, 60%, 85%)`, color: `hsl(${hue}, 80%, 25%)` }}>
+                      {badgeText}
+                    </div>
+                    <div style={styles.assessmentInfo}>
+                      <div style={styles.assessmentTitle}>{assessment.title}</div>
+                      <div style={styles.assessmentType}>{assessment.assessment_type?.name || "Assessment"}</div>
+                    </div>
+                    {selectedAssessment === assessment.id && <div style={styles.selectedBadge}>Selected</div>}
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>
@@ -563,8 +574,8 @@ const styles = {
   assessmentHint: { fontSize: "14px", fontWeight: 500, color: "#667085" },
   assessmentGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "16px" },
   assessmentCard: { display: "flex", alignItems: "center", gap: "16px", padding: "16px", borderRadius: "12px", cursor: "pointer", position: "relative", textAlign: "left" },
-  assessmentIcon: { fontSize: "32px" },
-  assessmentInfo: { flex: 1 },
+  assessmentBadge: { width: "36px", height: "36px", borderRadius: "8px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "12px", fontWeight: 800, flexShrink: 0 },
+  assessmentInfo: { flex: 1, overflow: "hidden" },
   assessmentTitle: { fontSize: "14px", fontWeight: 800, color: "#0a1929", marginBottom: "4px" },
   assessmentType: { fontSize: "12px", color: "#667085" },
   selectedBadge: { position: "absolute", top: "8px", right: "12px", fontSize: "12px", color: "#0a1929", fontWeight: 800 },
