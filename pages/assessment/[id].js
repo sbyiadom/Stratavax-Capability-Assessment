@@ -1,4 +1,4 @@
-// pages/assessment/[id].js - UPDATED WITH URL/DOMAIN TRACKING
+// pages/assessment/[id].js - FULL CORRECTED VERSION WITH PROCTORING DATA SUBMISSION
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
@@ -162,10 +162,16 @@ async function saveAnswer(sessionId, questionId, answer, metadata) {
   return result;
 }
 
-async function submitAssessment(sessionId, autoSubmitted, autoSubmitReason, allowIncomplete) {
+async function submitAssessment(sessionId, autoSubmitted, autoSubmitReason, allowIncomplete, proctoringData) {
   const result = await apiCall('/api/assessment/submit', {
     method: 'POST',
-    body: JSON.stringify({ sessionId, autoSubmitted, autoSubmitReason, allowIncomplete })
+    body: JSON.stringify({ 
+      sessionId, 
+      autoSubmitted, 
+      autoSubmitReason, 
+      allowIncomplete,
+      proctoringData 
+    })
   });
   return result;
 }
@@ -267,7 +273,7 @@ function AssessmentContent() {
   }
 
   // ============================================================
-  // URL TRACKING FUNCTIONS (NEW)
+  // URL TRACKING FUNCTIONS
   // ============================================================
   function trackUrlChange() {
     const currentUrl = window.location.href;
@@ -393,7 +399,26 @@ function AssessmentContent() {
 
       await Promise.all(answerPromises.filter(p => p !== null));
 
-      await submitAssessment(sessionIdRef.current, true, reason || 'Auto-submitted because the assessment timer expired.', true);
+      // ✅ Include proctoring data in auto-submit
+      const proctoringData = {
+        summary: {
+          tabSwitches: tabSwitchCount,
+          copyPasteAttempts: copyAttempts + pasteAttempts,
+          rightClickAttempts: rightClickAttempts,
+          violations: violationCount,
+          externalUrlsVisited: externalUrlVisits.length,
+          duration: elapsedSeconds,
+          riskLevel: violationCount >= 3 ? 'high' : violationCount >= 1 ? 'medium' : 'low',
+          riskScore: Math.min(violationCount * 25 + externalUrlVisits.length * 10, 100)
+        },
+        violations: [],
+        tabSwitches: [],
+        externalUrls: externalUrlVisits,
+        domainVisits: domainVisits,
+        sessionId: sessionIdRef.current
+      };
+
+      await submitAssessment(sessionIdRef.current, true, reason || 'Auto-submitted because the assessment timer expired.', true, proctoringData);
 
       setAlreadySubmitted(true);
       setShowSuccessModal(true);
@@ -510,7 +535,7 @@ function AssessmentContent() {
   }
 
   // ============================================================
-  // BEHAVIORAL TRACKING EFFECTS (EXISTING - UPDATED)
+  // BEHAVIORAL TRACKING EFFECTS
   // ============================================================
   
   // Track tab switches (when user leaves the page) - UPDATED with URL tracking
@@ -581,7 +606,7 @@ function AssessmentContent() {
   }, [currentQuestion.id]);
 
   // ============================================================
-  // URL TRACKING EFFECT (NEW)
+  // URL TRACKING EFFECT
   // ============================================================
   useEffect(() => {
     if (loading || alreadySubmitted || accessDenied || !session || isTimeExpired) return;
@@ -909,6 +934,9 @@ function AssessmentContent() {
     if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
+  // ============================================================
+  // ✅ FIXED: HANDLE SUBMIT WITH PROCTORING DATA
+  // ============================================================
   async function handleSubmit() {
     if (!session || !session.id) {
       alert('Unable to submit: No active session found. Please refresh the page and try again.');
@@ -944,15 +972,55 @@ function AssessmentContent() {
       submittingRef.current = true;
       setIsSubmitting(true);
       setShowSubmitModal(false);
-      
-      await submitAssessment(sessionIdRef.current, false, null, false);
-      
+
+      // ============================================================
+      // ✅ COLLECT PROCTORING DATA
+      // ============================================================
+      const proctoringData = {
+        summary: {
+          tabSwitches: tabSwitchCount,
+          copyPasteAttempts: copyAttempts + pasteAttempts,
+          rightClickAttempts: rightClickAttempts,
+          violations: violationCount,
+          externalUrlsVisited: externalUrlVisits.length,
+          duration: elapsedSeconds,
+          riskLevel: violationCount >= 3 ? 'high' : violationCount >= 1 ? 'medium' : 'low',
+          riskScore: Math.min(violationCount * 25 + externalUrlVisits.length * 10, 100)
+        },
+        violations: [],  // Can be populated with individual violations if tracked
+        tabSwitches: [], // Can be populated with individual tab switches if tracked
+        externalUrls: externalUrlVisits,
+        domainVisits: domainVisits,
+        sessionId: sessionIdRef.current
+      };
+
+      console.log('[Assessment] Submitting with proctoring data:', {
+        externalUrlsCount: externalUrlVisits.length,
+        domainVisits: domainVisits,
+        tabSwitches: tabSwitchCount,
+        violations: violationCount
+      });
+
+      // ============================================================
+      // ✅ SUBMIT WITH PROCTORING DATA
+      // ============================================================
+      const result = await submitAssessment(
+        sessionIdRef.current, 
+        false, 
+        null, 
+        false, 
+        proctoringData
+      );
+
+      console.log('[Assessment] Submit result:', result);
+
       setAlreadySubmitted(true);
       setShowSuccessModal(true);
-      
+
       setTimeout(() => {
         router.push('/candidate/assessment-complete');
       }, 2000);
+
     } catch (err) {
       console.error("Submission error:", err);
       const errorMessage = err && err.message ? err.message : "Unknown error";
@@ -999,7 +1067,7 @@ function AssessmentContent() {
         </div>
       )}
       
-      {/* URL Warning Banner - NEW */}
+      {/* URL Warning Banner */}
       {showUrlWarning && currentExternalUrl && (
         <div style={styles.urlWarningBanner}>
           <span>🔴</span>
@@ -1011,7 +1079,6 @@ function AssessmentContent() {
           </span>
           <button 
             onClick={() => {
-              // Try to go back to assessment
               window.history.back();
               setShowUrlWarning(false);
             }}
@@ -1169,7 +1236,7 @@ function AssessmentContent() {
               </div>
             </div>
 
-            {/* External Sites Summary - NEW */}
+            {/* External Sites Summary */}
             {externalUrlVisits.length > 0 && (
               <div style={{ ...styles.metaCard, background: '#fff5f5', borderColor: '#fecaca' }}>
                 <div style={{ fontSize: '12px', fontWeight: 600, color: '#dc2626', marginBottom: '6px' }}>
