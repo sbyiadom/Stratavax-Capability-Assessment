@@ -27,18 +27,18 @@ function getReadableError(error) {
 
 function statusDetails(status) {
   if (status === "unblocked") {
-    return { text: "Unblocked / Ready", icon: "✅", bg: "#e8f5e9", color: "#2e7d32" };
+    return { text: "Unblocked / Ready", bg: "#e8f5e9", color: "#2e7d32" };
   }
   if (status === "blocked") {
-    return { text: "Blocked", icon: "🔒", bg: "#fff3e0", color: "#f57c00" };
+    return { text: "Blocked", bg: "#fff3e0", color: "#f57c00" };
   }
   if (status === "completed") {
-    return { text: "Completed", icon: "🏁", bg: "#e0f2fe", color: "#0369a1" };
+    return { text: "Completed", bg: "#e0f2fe", color: "#0369a1" };
   }
   if (status === "in_progress") {
-    return { text: "In Progress", icon: "⏳", bg: "#fef9c3", color: "#854d0e" };
+    return { text: "In Progress", bg: "#fef9c3", color: "#854d0e" };
   }
-  return { text: "Not Assigned", icon: "📭", bg: "#f5f5f5", color: "#667085" };
+  return { text: "Not Assigned", bg: "#f5f5f5", color: "#667085" };
 }
 
 export default function AssignAssessments() {
@@ -423,9 +423,9 @@ export default function AssignAssessments() {
           <div style={styles.section}>
             <h3 style={styles.sectionTitle}>2. Choose Action</h3>
             <div style={styles.actionGrid}>
-              <ActionButton active={selectedAction === "assign"} color="#0a1929" icon="📋" title="Assign and Unblock" desc="Create access and make ready" onClick={() => setSelectedAction("assign")} />
-              <ActionButton active={selectedAction === "unblock"} color="#2196f3" icon="🔓" title="Unblock" desc="Make existing access ready" onClick={() => setSelectedAction("unblock")} />
-              <ActionButton active={selectedAction === "block"} color="#f57c00" icon="🔒" title="Block" desc="Restrict assessment access" onClick={() => setSelectedAction("block")} />
+              <ActionButton active={selectedAction === "assign"} color="#0a1929" title="Assign and Unblock" desc="Create access and make ready" onClick={() => setSelectedAction("assign")} />
+              <ActionButton active={selectedAction === "unblock"} color="#2196f3" title="Unblock" desc="Make existing access ready" onClick={() => setSelectedAction("unblock")} />
+              <ActionButton active={selectedAction === "block"} color="#f57c00" title="Block" desc="Restrict assessment access" onClick={() => setSelectedAction("block")} />
             </div>
           </div>
         )}
@@ -485,7 +485,7 @@ export default function AssignAssessments() {
                             </td>
                             <td style={styles.tableCell}><div style={styles.candidateEmail}>{candidate.email || "No email"}</div></td>
                             <td style={styles.tableCell}>{candidate.supervisor ? <span style={styles.supervisorName}>{candidate.supervisor.full_name || candidate.supervisor.email}</span> : <span style={styles.unassignedBadge}>Unassigned</span>}</td>
-                            <td style={styles.tableCell}><span style={{ ...styles.statusBadge, background: details.bg, color: details.color }}>{details.icon} {details.text}</span></td>
+                            <td style={styles.tableCell}><span style={{ ...styles.statusBadge, background: details.bg, color: details.color }}>{details.text}</span></td>
                           </tr>
                         );
                       })
@@ -530,7 +530,7 @@ export default function AssignAssessments() {
   );
 }
 
-function ActionButton({ active, color, icon, title, desc, onClick }) {
+function ActionButton({ active, color, title, desc, onClick }) {
   return (
     <button
       type="button"
@@ -542,7 +542,6 @@ function ActionButton({ active, color, icon, title, desc, onClick }) {
         border: active ? "1px solid " + color : "1px solid #e2e8f0"
       }}
     >
-      <span style={styles.actionIcon}>{icon}</span>
       <span>{title}</span>
       <span style={styles.actionDesc}>{desc}</span>
     </button>
@@ -571,7 +570,6 @@ const styles = {
   selectedBadge: { position: "absolute", top: "8px", right: "12px", fontSize: "12px", color: "#0a1929", fontWeight: 800 },
   actionGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "16px" },
   actionButton: { display: "flex", flexDirection: "column", alignItems: "center", gap: "8px", padding: "20px", borderRadius: "12px", fontSize: "16px", fontWeight: 800, cursor: "pointer", fontFamily: "inherit" },
-  actionIcon: { fontSize: "24px" },
   actionDesc: { fontSize: "11px", fontWeight: 500, opacity: 0.75 },
   filterBar: { display: "flex", gap: "20px", marginBottom: "20px", flexWrap: "wrap" },
   searchBox: { flex: 2, minWidth: "250px" },
