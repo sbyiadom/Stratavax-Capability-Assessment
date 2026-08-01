@@ -1,5 +1,6 @@
 // pages/assessment/[id].js - FULL DEPLOYMENT READY VERSION
 // Includes proctoring data submission to /api/assessment/submit
+// AND real-time violation_count updates to Supabase
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
@@ -335,12 +336,25 @@ function AssessmentContent() {
   }
 
   // ============================================================
-  // LOG VIOLATION - UPDATED WITH URL CONTEXT
+  // LOG VIOLATION - UPDATED WITH URL CONTEXT AND DB SYNC
   // ============================================================
   async function logViolation(violationType) {
     if (!sessionIdRef.current || alreadySubmitted || isAutoSubmitting || isTimeExpired) return;
     const newCount = violationCount + 1;
     setViolationCount(newCount);
+    
+    // ============================================================
+    // 🟢 CRITICAL FIX: UPDATE DATABASE LIVE WHEN VIOLATION OCCURS
+    // ============================================================
+    try {
+      await supabase
+        .from("assessment_sessions")
+        .update({ violation_count: newCount })
+        .eq("id", sessionIdRef.current);
+    } catch (err) {
+      console.error("Failed to sync violation count to DB:", err);
+    }
+    // ============================================================
     
     // Include current external URL in violation message
     let message = violationType;
@@ -416,8 +430,8 @@ function AssessmentContent() {
           riskLevel: violationCount >= 3 ? 'high' : violationCount >= 1 ? 'medium' : 'low',
           riskScore: Math.min(violationCount * 25 + externalUrlVisits.length * 10, 100)
         },
-        violations: [],
-        tabSwitches: [],
+        violations: [],  // Can be populated with individual violations if tracked
+        tabSwitches: [], // Can be populated with individual tab switches if tracked
         externalUrls: externalUrlVisits,
         domainVisits: domainVisits,
         sessionId: sessionIdRef.current
