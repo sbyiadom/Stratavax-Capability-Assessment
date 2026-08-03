@@ -1,6 +1,7 @@
 // pages/assessment/[id].js - FULL DEPLOYMENT READY VERSION
 // Includes proctoring data submission to /api/assessment/submit
 // AND real-time violation_count updates to Supabase
+// AND detailed tab switch tracking with URLs
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
@@ -229,6 +230,11 @@ function AssessmentContent() {
   const [showUrlWarning, setShowUrlWarning] = useState(false);
   const [urlVisitStartTime, setUrlVisitStartTime] = useState(null);
   const [previousUrl, setPreviousUrl] = useState(null);
+  
+  // ============================================================
+  // 🟢 NEW: DETAILED TAB SWITCH HISTORY STATE
+  // ============================================================
+  const [tabSwitchDetails, setTabSwitchDetails] = useState([]);
 
   const [accessDenied, setAccessDenied] = useState(false);
   const [alreadySubmitted, setAlreadySubmitted] = useState(false);
@@ -430,8 +436,8 @@ function AssessmentContent() {
           riskLevel: violationCount >= 3 ? 'high' : violationCount >= 1 ? 'medium' : 'low',
           riskScore: Math.min(violationCount * 25 + externalUrlVisits.length * 10, 100)
         },
-        violations: [],  // Can be populated with individual violations if tracked
-        tabSwitches: [], // Can be populated with individual tab switches if tracked
+        violations: [], 
+        tabSwitches: tabSwitchDetails, // 🟢 SENDING THE DETAILED ARRAY
         externalUrls: externalUrlVisits,
         domainVisits: domainVisits,
         sessionId: sessionIdRef.current
@@ -563,28 +569,57 @@ function AssessmentContent() {
 
     const handleVisibilityChange = () => {
       if (document.hidden) {
-        setTabSwitchCount(prev => prev + 1);
+        const newCount = tabSwitchCount + 1;
+        setTabSwitchCount(newCount);
         
         // Track the URL when tab is hidden
         const currentUrl = window.location.href;
+        let switchDetail = {
+          timestamp: new Date().toISOString(),
+          url: currentUrl,
+          type: 'tab_switch',
+          description: `Tab switch #${newCount}`
+        };
+
         if (isExternalUrl(currentUrl)) {
           const domain = extractDomain(currentUrl);
           const category = getUrlCategory(currentUrl);
+          switchDetail.description = `Tab switch to external site: ${domain} (${category})`;
+          switchDetail.domain = domain;
+          switchDetail.category = category;
           logViolation(`Tab switch to external site: ${domain} (${category})`);
         } else {
           logViolation("Tab switch");
         }
+
+        // 🟢 Push the detail into the history array
+        setTabSwitchDetails(prev => [...prev, switchDetail]);
       }
     };
 
     const handlePageHide = () => {
-      setTabSwitchCount(prev => prev + 1);
+      const newCount = tabSwitchCount + 1;
+      setTabSwitchCount(newCount);
+      
       const currentUrl = window.location.href;
+      let switchDetail = {
+        timestamp: new Date().toISOString(),
+        url: currentUrl,
+        type: 'page_hide',
+        description: `Page hide #${newCount}`
+      };
+
       if (isExternalUrl(currentUrl)) {
         const domain = extractDomain(currentUrl);
         const category = getUrlCategory(currentUrl);
+        switchDetail.description = `Page hide to external site: ${domain} (${category})`;
+        switchDetail.domain = domain;
+        switchDetail.category = category;
         logViolation(`Page hide to external site: ${domain} (${category})`);
       }
+
+      // 🟢 Push the detail into the history array
+      setTabSwitchDetails(prev => [...prev, switchDetail]);
     };
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
@@ -594,7 +629,7 @@ function AssessmentContent() {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('pagehide', handlePageHide);
     };
-  }, [loading, alreadySubmitted, accessDenied, session, isTimeExpired]);
+  }, [loading, alreadySubmitted, accessDenied, session, isTimeExpired, tabSwitchCount]);
 
   // Track right-click attempts
   useEffect(() => {
@@ -708,6 +743,7 @@ function AssessmentContent() {
         setRightClickAttempts(0);
         setExternalUrlVisits([]);
         setDomainVisits({});
+        setTabSwitchDetails([]); // 🟢 Reset details on init
         setIsTimeExpired(false);
         sessionIdRef.current = null;
         submittingRef.current = false;
@@ -1006,8 +1042,8 @@ function AssessmentContent() {
           riskLevel: violationCount >= 3 ? 'high' : violationCount >= 1 ? 'medium' : 'low',
           riskScore: Math.min(violationCount * 25 + externalUrlVisits.length * 10, 100)
         },
-        violations: [],  // Can be populated with individual violations if tracked
-        tabSwitches: [], // Can be populated with individual tab switches if tracked
+        violations: [], 
+        tabSwitches: tabSwitchDetails, // 🟢 SENDING THE DETAILED ARRAY
         externalUrls: externalUrlVisits,
         domainVisits: domainVisits,
         sessionId: sessionIdRef.current
@@ -1017,7 +1053,8 @@ function AssessmentContent() {
         externalUrlsCount: externalUrlVisits.length,
         domainVisits: domainVisits,
         tabSwitches: tabSwitchCount,
-        violations: violationCount
+        violations: violationCount,
+        tabSwitchDetailsCount: tabSwitchDetails.length
       });
 
       // ============================================================
