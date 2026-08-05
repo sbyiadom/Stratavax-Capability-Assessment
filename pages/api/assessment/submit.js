@@ -345,13 +345,18 @@ export default async function handler(req, res) {
        workplaceReadiness >= 65 && intellectualCapability >= 65 ? 'Reserve Pool' : 'Not Recommended')
       : null;
 
+    // ============================================================
+    // 🟢 CRITICAL FIX: Force the exact calculated math into the column
+    // ============================================================
+    const finalPercentage = totalMax > 0 ? Math.round((totalEarned / totalMax) * 100) : 0;
+
     const resultData = {
       user_id: session.user_id,
       assessment_id: session.assessment_id,
       session_id: sessionId,
       total_score: totalEarned,
       max_score: totalMax,
-      percentage_score: percentageScore,
+      percentage_score: finalPercentage, // <-- Guarantees list view matches detail view
       completed_at: new Date().toISOString(),
       is_valid: riskLevel !== 'high',
       is_auto_submitted: autoSubmitted || false,
@@ -397,7 +402,7 @@ export default async function handler(req, res) {
         categoryScores: categoryScores,
         totalEarned: totalEarned,
         totalMax: totalMax,
-        percentageScore: percentageScore,
+        percentageScore: finalPercentage, // <-- Ensures JSON matches column
         workplaceReadiness: workplaceReadiness,
         intellectualCapability: intellectualCapability,
         recommendation: recommendation,
@@ -500,7 +505,7 @@ export default async function handler(req, res) {
       success: true,
       resultId: resultId,
       sessionId: sessionId,
-      score: percentageScore,
+      score: finalPercentage,
       totalEarned: totalEarned,
       totalMax: totalMax,
       categoryScores: categoryScores,
