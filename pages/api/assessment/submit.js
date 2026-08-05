@@ -1,6 +1,5 @@
-// pages/api/assessment/submit.js - COMPLETE FIXED VERSION
-// Handles assessment submission with correct scoring (1 mark per correct answer)
-// Saves category_scores, workplace_readiness, intellectual_capability, AND proctoring data
+// pages/api/assessment/submit.js - FINAL VERSION
+// Handles assessment submission with correct scoring, proctoring, and Risk/Recommendation Logic
 
 import { createClient } from "@supabase/supabase-js";
 
@@ -190,7 +189,7 @@ export default async function handler(req, res) {
       }
     });
 
-    const percentageScore = totalMax > 0 ? Math.round((totalEarned / totalMax) * 100) : 0;
+    const finalPercentage = totalMax > 0 ? Math.round((totalEarned / totalMax) * 100) : 0;
 
     // ============================================================
     // STEP 6: Build category_scores
@@ -207,7 +206,7 @@ export default async function handler(req, res) {
       };
     });
 
-    console.log(`[Submit] Score: ${totalEarned}/${totalMax} = ${percentageScore}%`);
+    console.log(`[Submit] Score: ${totalEarned}/${totalMax} = ${finalPercentage}%`);
     console.log(`[Submit] Categories: ${categoryScores.length}`);
 
     // ============================================================
@@ -224,28 +223,23 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 8: Process proctoring data (FIXED FOR NUMBERS AND ARRAYS)
+    // STEP 8: Process proctoring data
     // ============================================================
     const proctoring = proctoringData || {};
     
-    // Handle arrays safely
     const externalUrls = Array.isArray(proctoring.externalUrls) ? proctoring.externalUrls : [];
     const violations = Array.isArray(proctoring.violations) ? proctoring.violations : [];
     const tabSwitches = Array.isArray(proctoring.tabSwitches) ? proctoring.tabSwitches : [];
     
-    // Handle nested summary correctly
     const summary = proctoring.summary || {};
     
-    // 1. Get totals from the summary first (if the frontend sends numbers, use those)
     let totalViolations = Number(summary.totalViolations) || 0;
     let totalTabSwitches = Number(summary.tabSwitches) || 0;
     
-    // 2. Fallback to counting arrays if the summary numbers are 0 but arrays exist
-    // (This ensures if the backend receives arrays instead of numbers, it still calculates correctly)
+    // Fallback safety
     if (totalViolations === 0 && violations.length > 0) totalViolations = violations.length;
     if (totalTabSwitches === 0 && tabSwitches.length > 0) totalTabSwitches = tabSwitches.length;
     
-    // Handle other summary stats
     const copyPasteAttempts = Number(summary.copyPasteAttempts) || 0;
     const rightClickAttempts = Number(summary.rightClickAttempts) || 0;
     const duration = Number(summary.duration) || 0;
@@ -253,60 +247,53 @@ export default async function handler(req, res) {
     const totalExternalUrls = externalUrls.length;
     const uniqueDomains = [...new Set(externalUrls.map(u => u.domain || u.url))].length;
     
-    const categoryStats = {};
-    externalUrls.forEach(url => {
-      const category = url.category || 'other';
-      if (!categoryStats[category]) {
-        categoryStats[category] = 0;
-      }
-      categoryStats[category]++;
-    });
-
-    const hasSearchEngineUsage = externalUrls.some(u => u.category === 'search_engine');
-    const hasAIToolUsage = externalUrls.some(u => u.category === 'ai_tool');
-    const hasExcessiveTabSwitches = totalTabSwitches > 10;
-    const hasExcessiveViolations = totalViolations > 5;
-
-    let riskLevel = 'low';
+    // ============================================================
+    // 🟢 FIX: INDEPENDENT RISK CALCULATION
+    // ============================================================
     let riskScore = 0;
     
-    if (hasSearchEngineUsage) riskScore += 30;
-    if (hasAIToolUsage) riskScore += 35;
-    if (hasExcessiveTabSwitches) riskScore += 20;
-    if (hasExcessiveViolations) riskScore += 15;
+    // Factor 1: Tab Switches
+    if (totalTabSwitches > 50) riskScore += 30;
+    else if (totalTabSwitches > 10) riskScore += 20;
+    else if (totalTabSwitches > 0) riskScore += 5;
+    
+    // Factor 2: Violations
+    if (totalViolations > 10) riskScore += 30;
+    else if (totalViolations > 5) riskScore += 20;
+    else if (totalViolations > 0) riskScore += 10;
+    
+    // Factor 3: External URLs
+    if (totalExternalUrls > 0) {
+      const hasSearchEngine = externalUrls.some(u => u.category === 'search_engine');
+      const hasAITool = externalUrls.some(u => u.category === 'ai_tool');
+      if (hasAITool) riskScore += 35;
+      else if (hasSearchEngine) riskScore += 30;
+      else riskScore += 15;
+    }
+    
     riskScore = Math.min(riskScore, 100);
     
+    let riskLevel = 'low';
     if (riskScore >= 70) riskLevel = 'high';
     else if (riskScore >= 40) riskLevel = 'medium';
-    else riskLevel = 'low';
-
+    
+    // Build Risk Factors Array
     const riskFactors = [];
-    if (hasSearchEngineUsage) {
-      riskFactors.push({
-        type: 'search_engine_usage',
-        description: `Visited search engines (${externalUrls.filter(u => u.category === 'search_engine').length} times)`,
-        severity: 'high'
-      });
-    }
-    if (hasAIToolUsage) {
-      riskFactors.push({
-        type: 'ai_tool_usage',
-        description: `Visited AI tools (${externalUrls.filter(u => u.category === 'ai_tool').length} times)`,
-        severity: 'high'
-      });
-    }
-    if (hasExcessiveTabSwitches) {
-      riskFactors.push({
-        type: 'excessive_tab_switching',
-        description: `${totalTabSwitches} tab switches detected`,
-        severity: 'medium'
-      });
-    }
-    if (hasExcessiveViolations) {
-      riskFactors.push({
-        type: 'excessive_violations',
-        description: `${totalViolations} violations detected`,
-        severity: 'medium'
+    if (totalTabSwitches > 50) riskFactors.push({ type: 'excessive_tab_switching', description: `${totalTabSwitches} extreme tab switches detected`, severity: 'high' });
+    else if (totalTabSwitches > 10) riskFactors.push({ type: 'excessive_tab_switching', description: `${totalTabSwitches} tab switches detected`, severity: 'medium' });
+    else if (totalTabSwitches > 0) riskFactors.push({ type: 'tab_switching', description: `${totalTabSwitches} tab switches detected`, severity: 'low' });
+    
+    if (totalViolations > 10) riskFactors.push({ type: 'excessive_violations', description: `${totalViolations} violations detected`, severity: 'high' });
+    else if (totalViolations > 5) riskFactors.push({ type: 'excessive_violations', description: `${totalViolations} violations detected`, severity: 'medium' });
+    else if (totalViolations > 0) riskFactors.push({ type: 'violations', description: `${totalViolations} violations detected`, severity: 'low' });
+    
+    if (totalExternalUrls > 0) {
+      externalUrls.forEach(u => {
+        riskFactors.push({
+          type: 'external_url_visit',
+          description: `Visited ${u.domain} (${u.category})`,
+          severity: u.category === 'ai_tool' ? 'high' : u.category === 'search_engine' ? 'high' : 'medium'
+        });
       });
     }
 
@@ -326,7 +313,7 @@ export default async function handler(req, res) {
       .eq("id", sessionId);
 
     // ============================================================
-    // STEP 10: Check for existing result by session_id (FIXED)
+    // STEP 10: Check for existing result
     // ============================================================
     const { data: existingResult, error: resultError } = await serviceClient
       .from("assessment_results")
@@ -334,40 +321,36 @@ export default async function handler(req, res) {
       .eq("session_id", sessionId)
       .maybeSingle();
 
-    console.log(`[Submit] Existing result: ${existingResult ? existingResult.id : 'None'}`);
+    // ============================================================
+    // STEP 11: Calculate Recommendation based on finalPercentage
+    // ============================================================
+    let recommendation = null;
+    if (isNationalService) {
+      if (finalPercentage >= 85) recommendation = 'Highly Recommended';
+      else if (finalPercentage >= 75) recommendation = 'Recommended';
+      else if (finalPercentage >= 65) recommendation = 'Reserve Pool';
+      else recommendation = 'Not Recommended';
+    }
 
     // ============================================================
-    // STEP 11: Create or update assessment result (NO status field)
+    // STEP 12: Build resultData
     // ============================================================
-    const recommendation = isNationalService ? 
-      (workplaceReadiness >= 85 && intellectualCapability >= 85 ? 'Highly Recommended' :
-       workplaceReadiness >= 75 && intellectualCapability >= 75 ? 'Recommended' :
-       workplaceReadiness >= 65 && intellectualCapability >= 65 ? 'Reserve Pool' : 'Not Recommended')
-      : null;
-
-    // ============================================================
-    // 🟢 CRITICAL FIX: Force the exact calculated math into the column
-    // ============================================================
-    const finalPercentage = totalMax > 0 ? Math.round((totalEarned / totalMax) * 100) : 0;
-
     const resultData = {
       user_id: session.user_id,
       assessment_id: session.assessment_id,
       session_id: sessionId,
       total_score: totalEarned,
       max_score: totalMax,
-      percentage_score: finalPercentage, // <-- Guarantees list view matches detail view
+      percentage_score: finalPercentage,
       completed_at: new Date().toISOString(),
       is_valid: riskLevel !== 'high',
       is_auto_submitted: autoSubmitted || false,
       
-      // Category scores
       category_scores: categoryScores,
       workplace_readiness: workplaceReadiness,
       intellectual_capability: intellectualCapability,
       recommendation: recommendation,
       
-      // Proctoring data
       proctoring_data: {
         summary: {
           totalViolations: totalViolations,
@@ -383,12 +366,11 @@ export default async function handler(req, res) {
         riskFactors: riskFactors,
         externalUrls: externalUrls,
         domainVisits: proctoring.domainVisits || {},
-        categoryStats: categoryStats,
+        categoryStats: {},
         violations: violations,
         tabSwitches: tabSwitches
       },
       
-      // Flattened columns
       external_urls_visited: externalUrls,
       domain_visits: proctoring.domainVisits || {},
       tab_switch_details: tabSwitches,
@@ -402,7 +384,7 @@ export default async function handler(req, res) {
         categoryScores: categoryScores,
         totalEarned: totalEarned,
         totalMax: totalMax,
-        percentageScore: finalPercentage, // <-- Ensures JSON matches column
+        percentageScore: finalPercentage,
         workplaceReadiness: workplaceReadiness,
         intellectualCapability: intellectualCapability,
         recommendation: recommendation,
@@ -421,7 +403,6 @@ export default async function handler(req, res) {
     let resultId;
 
     if (existingResult) {
-      // Update existing result
       const { data: updatedResult, error: updateError } = await serviceClient
         .from("assessment_results")
         .update(resultData)
@@ -436,7 +417,6 @@ export default async function handler(req, res) {
         console.error("Update result error:", updateError);
       }
     } else {
-      // Create new result
       const { data: newResult, error: createError } = await serviceClient
         .from("assessment_results")
         .insert(resultData)
@@ -452,7 +432,7 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 12: Save proctoring violations to proctoring_logs
+    // STEP 13: Save proctoring violations to logs
     // ============================================================
     if (violations.length > 0 && resultId) {
       const violationLogs = violations.map(violation => ({
@@ -465,22 +445,14 @@ export default async function handler(req, res) {
         timestamp: violation.timestamp || new Date().toISOString()
       }));
 
-      const { error: logError } = await serviceClient
-        .from("proctoring_logs")
-        .insert(violationLogs);
-
-      if (logError) {
-        console.error("Error saving proctoring logs:", logError);
-      } else {
-        console.log(`[Submit] Saved ${violationLogs.length} proctoring logs`);
-      }
+      await serviceClient.from("proctoring_logs").insert(violationLogs);
     }
 
     // ============================================================
-    // STEP 13: Update candidate_assessments with result_id (FIXED)
+    // STEP 14: Update candidate_assessments
     // ============================================================
     if (resultId) {
-      const { error: caUpdateError } = await serviceClient
+      await serviceClient
         .from("candidate_assessments")
         .update({
           result_id: resultId,
@@ -490,16 +462,10 @@ export default async function handler(req, res) {
         })
         .eq("user_id", session.user_id)
         .eq("assessment_id", session.assessment_id);
-
-      if (caUpdateError) {
-        console.error("Error updating candidate_assessments:", caUpdateError);
-      } else {
-        console.log(`[Submit] Updated candidate_assessments with result_id: ${resultId}`);
-      }
     }
 
     // ============================================================
-    // STEP 14: Return response
+    // STEP 15: Return response
     // ============================================================
     return res.status(200).json({
       success: true,
@@ -520,8 +486,7 @@ export default async function handler(req, res) {
         totalViolations: totalViolations,
         externalUrlsVisited: totalExternalUrls,
         tabSwitches: totalTabSwitches,
-        riskFactors: riskFactors,
-        categoryStats: categoryStats
+        riskFactors: riskFactors
       }
     });
 
