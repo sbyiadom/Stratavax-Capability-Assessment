@@ -1,4 +1,5 @@
-// pages/api/assessment/behavioral-matrix.js - COMPLETE WITH EXTERNAL URL TRACKING
+// pages/api/assessment/behavioral-matrix.js - FULLY CORRECTED (Step 3)
+// Added formatDuration, totalTimeSeconds, and the summary object.
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -223,6 +224,17 @@ function categorizeViolations(violations) {
   return categorized;
 }
 
+// ============================================================
+// 🟢 NEW HELPER: FORMAT DURATION (Step 3.1)
+// ============================================================
+function formatDuration(seconds) {
+  const totalSeconds = Number(seconds) || 0;
+  const hrs = Math.floor(totalSeconds / 3600);
+  const mins = Math.floor((totalSeconds % 3600) / 60);
+  const secs = totalSeconds % 60;
+  return `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'GET') {
     return res.status(405).json({ success: false, error: 'Method not allowed' });
@@ -306,10 +318,11 @@ export default async function handler(req, res) {
     const violationTypes = categorizeViolations(violations);
 
     // Get candidate profile
+    // 🟢 STEP 5: Confirmed candidate_profiles uses "id" as the primary key, not "user_id"
     const { data: candidateProfile, error: profileError } = await supabase
       .from('candidate_profiles')
       .select('full_name, email, university, programme')
-      .eq('user_id', result.user_id)
+      .eq('id', result.user_id)
       .single();
 
     if (profileError) {
@@ -400,6 +413,29 @@ export default async function handler(req, res) {
       ? Math.round(timePerQuestion.reduce((sum, q) => sum + q.time_seconds, 0) / timePerQuestion.length)
       : 0;
 
+    // 🟢 STEP 3.2: Calculate totalTimeSeconds
+    let totalTimeSeconds = 0;
+    if (result.proctoring_data) {
+      try {
+        const proctoringData = typeof result.proctoring_data === 'string' 
+          ? JSON.parse(result.proctoring_data) 
+          : result.proctoring_data;
+        totalTimeSeconds = proctoringData.summary?.duration || 0;
+      } catch (e) {}
+    }
+    // Fallback if not found in proctoring_data
+    if (totalTimeSeconds === 0 && result.completed_at) {
+      const { data: sessionData } = await supabase
+        .from('assessment_sessions')
+        .select('started_at, completed_at')
+        .eq('id', result.session_id)
+        .single();
+      
+      if (sessionData?.started_at && sessionData?.completed_at) {
+        totalTimeSeconds = Math.floor((new Date(sessionData.completed_at) - new Date(sessionData.started_at)) / 1000);
+      }
+    }
+
     const rawFlaggedQuestions = timePerQuestion.filter(q => 
       q.time_seconds > 60 || q.changed || q.violation
     );
@@ -455,11 +491,12 @@ export default async function handler(req, res) {
         totalQuestions: result.total_questions || 0,
         answeredQuestions: result.answered_questions || 0
       },
+      // 🟢 STEP 3.3: Updated timing object with totalTimeSeconds
       timing: {
-        totalTimeSeconds: 0,
+        totalTimeSeconds: totalTimeSeconds,
         averageTimePerQuestion: avgTime,
         timePerQuestion: timePerQuestion,
-        formattedTotalTime: '00:00:00'
+        formattedTotalTime: formatDuration(totalTimeSeconds)
       },
       behavior: {
         answerChanges: totalChanges,
@@ -473,8 +510,26 @@ export default async function handler(req, res) {
         violationComments: violationComments,
         violationTimeline: violationTimeline
       },
+      // 🟢 STEP 3.3: ADDED SUMMARY OBJECT FOR REPORT COMPONENT COMPATIBILITY
+      summary: {
+        duration: totalTimeSeconds,
+        averageTimePerQuestion: avgTime,
+        answerChanges: totalChanges,
+        tabSwitches: totalTabSwitches,
+        totalViolations: totalViolations,
+        copyAttempts: totalCopyAttempts,
+        pasteAttempts: totalPasteAttempts,
+        copyPasteAttempts: totalCopyAttempts + totalPasteAttempts,
+        rightClickAttempts: totalRightClicks,
+        riskLevel: String(riskLevel || 'Low Risk')
+          .toLowerCase()
+          .replace('risk', '')
+          .trim(),
+        hasBehavioralData: hasBehavioralData,
+        externalUrlsCount: externalUrls.length
+      },
       // ============================================================
-      // EXTERNAL URL DATA - KEY ADDITION
+      // EXTERNAL URL DATA
       // ============================================================
       externalUrls: externalUrls,
       domainVisits: domainVisits,
