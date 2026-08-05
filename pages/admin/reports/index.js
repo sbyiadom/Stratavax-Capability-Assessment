@@ -1,4 +1,5 @@
 // pages/admin/reports/index.js - COMPLETE WITH FIXED SCORES
+// FIXED: Recommendations now dynamically calculated for National Service in the Admin List.
 
 import { useState, useEffect, Fragment } from 'react';
 import { useRouter } from 'next/router';
@@ -92,6 +93,17 @@ function calculateNationalServiceScores(reportData, categoryScores, result) {
   }
 
   return { workplaceReadiness, intellectualCapability, overallScore };
+}
+
+// 🟢 NEW HELPER: CALCULATE RECOMMENDATION FOR NATIONAL SERVICE
+function calculateNationalServiceRecommendation(workplaceReadiness, intellectualCapability) {
+  const workplace = Number(workplaceReadiness || 0);
+  const intellectual = Number(intellectualCapability || 0);
+
+  if (workplace >= 85 && intellectual >= 85) return 'Highly Recommended';
+  if (workplace >= 75 && intellectual >= 75) return 'Recommended';
+  if (workplace >= 65 && intellectual >= 65) return 'Reserve Pool';
+  return 'Not Recommended';
 }
 
 export default function AdminReportsList() {
@@ -333,6 +345,11 @@ export default function AdminReportsList() {
               nsReports.map((report) => {
                 // Use displayScore for National Service reports
                 const score = Math.round(report.displayScore || report.percentage_score || 0);
+                const workplace = report.workplaceReadiness || 0;
+                const intellectual = report.intellectualCapability || 0;
+                
+                // 🟢 FIX: Calculate recommendation dynamically
+                const displayRecommendation = calculateNationalServiceRecommendation(workplace, intellectual);
                 
                 return (
                   <tr key={report.id} style={styles.tr}>
@@ -361,14 +378,14 @@ export default function AdminReportsList() {
                     <td style={styles.td}>
                       <span style={{
                         ...styles.recommendationBadge,
-                        background: report.recommendation === 'Highly Recommended' ? '#dcfce7' :
-                                   report.recommendation === 'Recommended' ? '#dbeafe' :
-                                   report.recommendation === 'Reserve Pool' ? '#fef3c7' : '#fee2e2',
-                        color: report.recommendation === 'Highly Recommended' ? '#166534' :
-                               report.recommendation === 'Recommended' ? '#1e40af' :
-                               report.recommendation === 'Reserve Pool' ? '#92400e' : '#991b1b'
+                        background: displayRecommendation === 'Highly Recommended' ? '#dcfce7' :
+                                   displayRecommendation === 'Recommended' ? '#dbeafe' :
+                                   displayRecommendation === 'Reserve Pool' ? '#fef3c7' : '#fee2e2',
+                        color: displayRecommendation === 'Highly Recommended' ? '#166534' :
+                               displayRecommendation === 'Recommended' ? '#1e40af' :
+                               displayRecommendation === 'Reserve Pool' ? '#92400e' : '#991b1b'
                       }}>
-                        {report.recommendation || 'N/A'}
+                        {displayRecommendation}
                       </span>
                     </td>
                     <td style={styles.td}>
@@ -546,6 +563,14 @@ export default function AdminReportsList() {
                 const isNationalService = report.isNationalService;
                 const score = Math.round(report.displayScore || report.percentage_score || 0);
                 
+                // 🟢 FIX: Calculate recommendation dynamically for National Service
+                let displayRecommendation = report.recommendation || 'N/A';
+                if (isNationalService) {
+                  const workplace = report.workplaceReadiness || 0;
+                  const intellectual = report.intellectualCapability || 0;
+                  displayRecommendation = calculateNationalServiceRecommendation(workplace, intellectual);
+                }
+                
                 return (
                   <tr key={report.id} style={styles.tr}>
                     <td style={styles.td}>
@@ -582,14 +607,14 @@ export default function AdminReportsList() {
                     <td style={styles.td}>
                       <span style={{
                         ...styles.recommendationBadge,
-                        background: report.recommendation === 'Highly Recommended' ? '#dcfce7' :
-                                   report.recommendation === 'Recommended' ? '#dbeafe' :
-                                   report.recommendation === 'Reserve Pool' ? '#fef3c7' : '#fee2e2',
-                        color: report.recommendation === 'Highly Recommended' ? '#166534' :
-                               report.recommendation === 'Recommended' ? '#1e40af' :
-                               report.recommendation === 'Reserve Pool' ? '#92400e' : '#991b1b'
+                        background: displayRecommendation === 'Highly Recommended' ? '#dcfce7' :
+                                   displayRecommendation === 'Recommended' ? '#dbeafe' :
+                                   displayRecommendation === 'Reserve Pool' ? '#fef3c7' : '#fee2e2',
+                        color: displayRecommendation === 'Highly Recommended' ? '#166534' :
+                               displayRecommendation === 'Recommended' ? '#1e40af' :
+                               displayRecommendation === 'Reserve Pool' ? '#92400e' : '#991b1b'
                       }}>
-                        {report.recommendation || 'N/A'}
+                        {displayRecommendation}
                       </span>
                     </td>
                     <td style={styles.td}>
