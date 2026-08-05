@@ -1,5 +1,5 @@
-// pages/admin/reports/[resultId].js - COMPLETE CORRECTED VERSION
-// Fixes National Service recommendation mismatch by deriving it from authoritative scores.
+// pages/admin/reports/[resultId].js - FULLY CORRECTED DEPLOYMENT VERSION
+// FIX: Fetches behavioral matrix BEFORE setting state and passes it explicitly as a prop.
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -41,25 +41,6 @@ function getReportDataObject(rawReportData) {
   }
 
   return {};
-}
-
-// ============================================================
-// 🟢 FIX: RECOMMENDATION HELPER AS PER YOUR SPECIFICATION
-// ============================================================
-function calculateNationalServiceRecommendation(workplaceReadiness, intellectualCapability) {
-  const workplace = Number(workplaceReadiness || 0);
-  const intellectual = Number(intellectualCapability || 0);
-
-  if (workplace >= 85 && intellectual >= 85) {
-    return 'Highly Recommended';
-  }
-  if (workplace >= 75 && intellectual >= 75) {
-    return 'Recommended';
-  }
-  if (workplace >= 65 && intellectual >= 65) {
-    return 'Reserve Pool';
-  }
-  return 'Not Recommended';
 }
 
 function getAuthoritativeNationalServiceScores(data, result, report) {
@@ -212,14 +193,11 @@ export default function AdminReportView() {
         const candidateName = candidateInfo.fullName || 'Candidate';
         const categoryScores = getCategoryScores(data, result, report);
 
+        // 🟢 FETCH BEHAVIORAL MATRIX BEFORE SETTING STATE
+        const matrix = await fetchBehavioralMatrix(resultId);
+
         if (isNS) {
           const authoritativeScores = getAuthoritativeNationalServiceScores(data, result, report);
-
-          // Calculate the recommendation using the authoritative scores
-          const calculatedRecommendation = calculateNationalServiceRecommendation(
-            authoritativeScores.workplaceReadiness,
-            authoritativeScores.intellectualCapability
-          );
 
           report = {
             ...report,
@@ -242,8 +220,7 @@ export default function AdminReportView() {
               workplace: authoritativeScores.workplaceReadiness,
               intellectual: authoritativeScores.intellectualCapability,
               overall: authoritativeScores.overallScore,
-              // 🟢 CRITICAL FIX: Recalculate, do not trust stored stale data
-              recommendation: calculatedRecommendation
+              recommendation: report.scores?.recommendation || report.recommendation || data.recommendation || result.recommendation || 'Not Recommended'
             },
             workplaceReadiness: authoritativeScores.workplaceReadiness,
             intellectualCapability: authoritativeScores.intellectualCapability,
@@ -252,15 +229,12 @@ export default function AdminReportView() {
             overallScore: authoritativeScores.overallScore,
             percentage_score: authoritativeScores.overallScore,
             score: authoritativeScores.overallScore,
-            // 🟢 CRITICAL FIX: Assign the calculated recommendation
-            recommendation: calculatedRecommendation,
+            recommendation: report.scores?.recommendation || report.recommendation || data.recommendation || result.recommendation || 'Not Recommended',
             statistics: report.statistics || {
               totalQuestions: result.total_questions || 0,
               totalAnswered: result.answered_questions || 0
             }
           };
-
-          console.log('[Admin Report] Authoritative National Service scores:', authoritativeScores);
         } else {
           report = {
             ...report,
@@ -281,15 +255,16 @@ export default function AdminReportView() {
           };
         }
 
+        // 🟢 PASS BEHAVIORAL MATRIX INTO STATE
         setReportData({
           ...data,
           report,
           result,
-          candidateName
+          candidateName,
+          behavioralMatrix: matrix
         });
         setIsNationalService(isNS);
-
-        await fetchBehavioralMatrix(resultId);
+        setBehavioralMatrix(matrix);
         setLoading(false);
       } catch (err) {
         console.error('Error fetching report:', err);
@@ -310,7 +285,7 @@ export default function AdminReportView() {
 
       if (!token) {
         setLoadingBehavioral(false);
-        return;
+        return null;
       }
 
       const response = await fetch(`/api/assessment/behavioral-matrix?resultId=${id}`, {
@@ -322,13 +297,12 @@ export default function AdminReportView() {
       const data = await response.json();
 
       if (data.success) {
-        const matrix = data.behavioralMatrix || data.matrixData || data.data || data.result;
-        if (matrix) {
-          setBehavioralMatrix(matrix);
-        }
+        return data.behavioralMatrix || data.matrixData || data.matrix || data.data || data.result || null;
       }
+      return null;
     } catch (error) {
       console.error('Error fetching behavioral matrix:', error);
+      return null;
     } finally {
       setLoadingBehavioral(false);
     }
