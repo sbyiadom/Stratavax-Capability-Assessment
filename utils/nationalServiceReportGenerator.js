@@ -1,6 +1,6 @@
-// utils/nationalServiceReportGenerator.js - FIXED VERSION
+// utils/nationalServiceReportGenerator.js - FULLY FIXED VERSION
 // Handles all National Service specific report generation logic
-// Now properly generates sub-categories for the frontend
+// Now properly generates sub-categories for the frontend AND fixes recommendation thresholds.
 
 import { roundNumber, safeArray } from './scoring';
 
@@ -63,17 +63,20 @@ export function classifyIntellectualCapability(score) {
 }
 
 // ============================================================
-// RECOMMENDATION FUNCTIONS
+// RECOMMENDATION FUNCTIONS - FIXED LOGIC
 // ============================================================
 
 export function getRecommendation(workplaceReadiness, intellectualCapability) {
-  if (workplaceReadiness >= 85 && intellectualCapability >= 85) {
+  // 🟢 FIX: Calculate the average, just like the detail report does
+  const averageScore = (workplaceReadiness + intellectualCapability) / 2;
+
+  if (averageScore >= 85) {
     return { recommendation: 'Highly Recommended', priority: 1 };
   }
-  if (workplaceReadiness >= 75 && intellectualCapability >= 75) {
+  if (averageScore >= 75) {
     return { recommendation: 'Recommended', priority: 2 };
   }
-  if (workplaceReadiness >= 65 && intellectualCapability >= 65) {
+  if (averageScore >= 65) {
     return { recommendation: 'Reserve Pool', priority: 3 };
   }
   return { recommendation: 'Not Recommended', priority: 4 };
@@ -384,7 +387,8 @@ export function generateNationalServiceReport({
       overall: overallScore,
       workplace: workplaceReadiness,
       intellectual: intellectualCapability,
-      recommendation: recommendation.recommendation
+      // 🟢 RECALCULATE THE RECOMMENDATION SO IT MATCHES OUR NEW FIX
+      recommendation: getRecommendation(workplaceReadiness, intellectualCapability).recommendation
     }
   };
 }
