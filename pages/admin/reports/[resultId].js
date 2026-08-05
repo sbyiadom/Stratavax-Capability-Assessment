@@ -1,5 +1,5 @@
 // pages/admin/reports/[resultId].js - COMPLETE CORRECTED VERSION
-// Fixes National Service score mismatch by passing authoritative scores into NationalServiceReport
+// Fixes National Service recommendation mismatch by deriving it from authoritative scores.
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -41,6 +41,25 @@ function getReportDataObject(rawReportData) {
   }
 
   return {};
+}
+
+// ============================================================
+// 🟢 FIX: RECOMMENDATION HELPER AS PER YOUR SPECIFICATION
+// ============================================================
+function calculateNationalServiceRecommendation(workplaceReadiness, intellectualCapability) {
+  const workplace = Number(workplaceReadiness || 0);
+  const intellectual = Number(intellectualCapability || 0);
+
+  if (workplace >= 85 && intellectual >= 85) {
+    return 'Highly Recommended';
+  }
+  if (workplace >= 75 && intellectual >= 75) {
+    return 'Recommended';
+  }
+  if (workplace >= 65 && intellectual >= 65) {
+    return 'Reserve Pool';
+  }
+  return 'Not Recommended';
 }
 
 function getAuthoritativeNationalServiceScores(data, result, report) {
@@ -196,6 +215,12 @@ export default function AdminReportView() {
         if (isNS) {
           const authoritativeScores = getAuthoritativeNationalServiceScores(data, result, report);
 
+          // Calculate the recommendation using the authoritative scores
+          const calculatedRecommendation = calculateNationalServiceRecommendation(
+            authoritativeScores.workplaceReadiness,
+            authoritativeScores.intellectualCapability
+          );
+
           report = {
             ...report,
             reportType: 'national_service',
@@ -217,8 +242,8 @@ export default function AdminReportView() {
               workplace: authoritativeScores.workplaceReadiness,
               intellectual: authoritativeScores.intellectualCapability,
               overall: authoritativeScores.overallScore,
-              // 🟢 FIX: Explicitly ensure the recommendation is passed through scores
-              recommendation: report.scores?.recommendation || report.recommendation || data.recommendation || result.recommendation || 'Not Recommended'
+              // 🟢 CRITICAL FIX: Recalculate, do not trust stored stale data
+              recommendation: calculatedRecommendation
             },
             workplaceReadiness: authoritativeScores.workplaceReadiness,
             intellectualCapability: authoritativeScores.intellectualCapability,
@@ -227,8 +252,8 @@ export default function AdminReportView() {
             overallScore: authoritativeScores.overallScore,
             percentage_score: authoritativeScores.overallScore,
             score: authoritativeScores.overallScore,
-            // 🟢 FIX: Prioritize the scores object in the final output
-            recommendation: report.scores?.recommendation || report.recommendation || data.recommendation || result.recommendation || 'Not Recommended',
+            // 🟢 CRITICAL FIX: Assign the calculated recommendation
+            recommendation: calculatedRecommendation,
             statistics: report.statistics || {
               totalQuestions: result.total_questions || 0,
               totalAnswered: result.answered_questions || 0
