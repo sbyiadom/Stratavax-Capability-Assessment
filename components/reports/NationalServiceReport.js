@@ -1,5 +1,6 @@
-// components/reports/NationalServiceReport.js - COMPLETE WITH EXTERNAL URLS
-// FIXED: Removed stale recommendation overrides from reportData/report.
+// components/reports/NationalServiceReport.js - FULLY CORRECTED VERSION
+// FIXED: Mapped behavioral data to 'summary' object from Supabase. 
+// Added defensive checks for null/undefined data.
 
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../../supabase/client';
@@ -687,7 +688,7 @@ export default function NationalServiceReport({
       const data = await response.json();
 
       if (data.success) {
-        const matrix = data.behavioralMatrix || data.matrixData || data.data || data.result;
+        const matrix = data.matrix || data.data || data.result || data.behavioralMatrix;
         if (matrix) {
           setLocalBehavioralMatrix(matrix);
         }
@@ -891,7 +892,7 @@ export default function NationalServiceReport({
   console.log('[Report] Calculated Overall:', displayOverall);
 
   // ============================================================
-  // 🟢 FIX: CALCULATE RECOMMENDATION DIRECTLY FROM MATH
+  // RECOMMENDATION LOGIC
   // ============================================================
   let recommendationLevel = 'Not Recommended';
 
@@ -906,10 +907,6 @@ export default function NationalServiceReport({
   } else {
     recommendationLevel = 'Not Recommended';
   }
-
-  // 🟢 CRITICAL FIX: REMOVED the overrides below!
-  // We do NOT trust reportData.recommendation or report.recommendation.
-  // We trust the math from displayWorkplace, displayIntellectual, and displayOverall.
 
   // ============================================================
   // RECOMMENDATION DETAILS
@@ -1247,7 +1244,7 @@ export default function NationalServiceReport({
       </div>
 
       {/* ============================================================
-          BEHAVIORAL MATRIX SECTION
+          BEHAVIORAL MATRIX SECTION (NOW CORRECTED)
           ============================================================ */}
       <div style={styles.behavioralToggleContainer}>
         <button onClick={toggleBehavioral} style={styles.behavioralToggleButton}>
@@ -1265,12 +1262,12 @@ export default function NationalServiceReport({
             </div>
           ) : behavioralMatrix && hasBehavioralData ? (
             <>
-              {/* Behavioral Stats */}
+              {/* Behavioral Stats - MAPPED TO SUMMARY OBJECT */}
               <div style={styles.behavioralStats}>
                 <div style={styles.behavioralStat}>
                   <span style={styles.behavioralLabel}>Total Time</span>
                   <span style={styles.behavioralValue}>
-                    {formatTime(behavioralMatrix.timing?.totalTimeSeconds || 0)}
+                    {formatTime(behavioralMatrix.summary?.duration || 0)}
                   </span>
                 </div>
                 <div style={styles.behavioralStat}>
@@ -1282,43 +1279,45 @@ export default function NationalServiceReport({
                 <div style={styles.behavioralStat}>
                   <span style={styles.behavioralLabel}>Answer Changes</span>
                   <span style={styles.behavioralValue}>
-                    {behavioralMatrix.behavior?.answerChanges || 0}
+                    {behavioralMatrix.summary?.answerChanges || 0}
                   </span>
                 </div>
                 <div style={styles.behavioralStat}>
                   <span style={styles.behavioralLabel}>Tab Switches</span>
                   <span style={styles.behavioralValue}>
-                    {behavioralMatrix.behavior?.tabSwitches || 0}
+                    {behavioralMatrix.summary?.tabSwitches || 0}
                   </span>
                 </div>
                 <div style={styles.behavioralStat}>
                   <span style={styles.behavioralLabel}>Violations</span>
                   <span style={styles.behavioralValue}>
-                    {behavioralMatrix.behavior?.violations || 0}
+                    {behavioralMatrix.summary?.totalViolations || 0}
                   </span>
                 </div>
                 <div style={styles.behavioralStat}>
                   <span style={styles.behavioralLabel}>Copy/Paste Attempts</span>
                   <span style={styles.behavioralValue}>
-                    {(behavioralMatrix.behavior?.copyAttempts || 0) + (behavioralMatrix.behavior?.pasteAttempts || 0)}
+                    {(behavioralMatrix.summary?.copyPasteAttempts || 0)}
                   </span>
                 </div>
                 <div style={styles.behavioralStat}>
                   <span style={styles.behavioralLabel}>Right-Click Attempts</span>
                   <span style={styles.behavioralValue}>
-                    {behavioralMatrix.behavior?.rightClickAttempts || 0}
+                    {behavioralMatrix.summary?.rightClickAttempts || 0}
                   </span>
                 </div>
                 <div style={styles.behavioralStat}>
                   <span style={styles.behavioralLabel}>Risk Level</span>
                   <span style={{
                     ...styles.riskBadge,
-                    background: behavioralMatrix.riskAssessment?.level === 'High Risk' ? '#fee2e2' :
-                               behavioralMatrix.riskAssessment?.level === 'Medium Risk' ? '#fef3c7' : '#dcfce7',
-                    color: behavioralMatrix.riskAssessment?.level === 'High Risk' ? '#991b1b' :
-                           behavioralMatrix.riskAssessment?.level === 'Medium Risk' ? '#92400e' : '#166534'
+                    background: behavioralMatrix.summary?.riskLevel === 'high' ? '#fee2e2' :
+                               behavioralMatrix.summary?.riskLevel === 'medium' ? '#fef3c7' : '#dcfce7',
+                    color: behavioralMatrix.summary?.riskLevel === 'high' ? '#991b1b' :
+                           behavioralMatrix.summary?.riskLevel === 'medium' ? '#92400e' : '#166534'
                   }}>
-                    {behavioralMatrix.riskAssessment?.level || 'Low Risk'}
+                    {behavioralMatrix.summary?.riskLevel ? 
+                      (behavioralMatrix.summary.riskLevel.charAt(0).toUpperCase() + behavioralMatrix.summary.riskLevel.slice(1)) + ' Risk' 
+                      : 'Low Risk'}
                   </span>
                 </div>
               </div>
@@ -1326,7 +1325,7 @@ export default function NationalServiceReport({
               {/* Risk Summary */}
               <div style={styles.riskSummary}>
                 <p>
-                  Behavioral flags: {behavioralMatrix.behavior?.violations || 0} violation(s), {behavioralMatrix.behavior?.tabSwitches || 0} tab switches, and {behavioralMatrix.behavior?.answerChanges || 0} answer changes.
+                  Behavioral flags: {behavioralMatrix.summary?.totalViolations || 0} violation(s), {behavioralMatrix.summary?.tabSwitches || 0} tab switches, and {behavioralMatrix.summary?.answerChanges || 0} answer changes.
                 </p>
                 {behavioralMatrix.riskAssessment?.detail && (
                   <p style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
@@ -1338,7 +1337,7 @@ export default function NationalServiceReport({
               {/* ============================================================
                   BEHAVIORAL COMMENTARY
                   ============================================================ */}
-              {behavioralMatrix?.behavior && (
+              {behavioralMatrix?.summary && (
                 <div style={styles.behavioralCommentary}>
                   <h4 style={styles.commentaryTitle}>Behavioral Analysis &amp; Recommendations</h4>
 
@@ -1346,13 +1345,13 @@ export default function NationalServiceReport({
                     <div style={styles.commentaryItem}>
                       <span style={styles.commentaryLabel}>Tab Switches:</span>
                       <span style={styles.commentaryText}>
-                        {behavioralMatrix.behavior.tabSwitches === 0
+                        {behavioralMatrix.summary.tabSwitches === 0
                           ? 'No tab switching detected. Candidate maintained focus on the assessment.'
-                          : behavioralMatrix.behavior.tabSwitches <= 5
-                            ? `Minimal tab switching (${behavioralMatrix.behavior.tabSwitches} switches). This may indicate occasional distraction.`
-                            : behavioralMatrix.behavior.tabSwitches <= 20
-                              ? `Moderate tab switching (${behavioralMatrix.behavior.tabSwitches} switches). Candidate may have been referencing external materials.`
-                              : `High tab switching (${behavioralMatrix.behavior.tabSwitches} switches). This suggests significant distraction or potential external reference use.`
+                          : behavioralMatrix.summary.tabSwitches <= 5
+                            ? `Minimal tab switching (${behavioralMatrix.summary.tabSwitches} switches). This may indicate occasional distraction.`
+                            : behavioralMatrix.summary.tabSwitches <= 20
+                              ? `Moderate tab switching (${behavioralMatrix.summary.tabSwitches} switches). Candidate may have been referencing external materials.`
+                              : `High tab switching (${behavioralMatrix.summary.tabSwitches} switches). This suggests significant distraction or potential external reference use.`
                         }
                       </span>
                     </div>
@@ -1360,13 +1359,13 @@ export default function NationalServiceReport({
                     <div style={styles.commentaryItem}>
                       <span style={styles.commentaryLabel}>Violations:</span>
                       <span style={styles.commentaryText}>
-                        {behavioralMatrix.behavior.violations === 0
+                        {behavioralMatrix.summary.totalViolations === 0
                           ? 'No rule violations detected. Candidate followed all assessment guidelines.'
-                          : behavioralMatrix.behavior.violations <= 3
-                            ? `Minor violations (${behavioralMatrix.behavior.violations} violations). These may be accidental or due to unfamiliarity with the assessment interface.`
-                            : behavioralMatrix.behavior.violations <= 10
-                              ? `Moderate violations (${behavioralMatrix.behavior.violations} violations). Candidate may have attempted to circumvent assessment rules.`
-                              : `High violations (${behavioralMatrix.behavior.violations} violations). This indicates significant disregard for assessment rules.`
+                          : behavioralMatrix.summary.totalViolations <= 3
+                            ? `Minor violations (${behavioralMatrix.summary.totalViolations} violations). These may be accidental or due to unfamiliarity with the assessment interface.`
+                            : behavioralMatrix.summary.totalViolations <= 10
+                              ? `Moderate violations (${behavioralMatrix.summary.totalViolations} violations). Candidate may have attempted to circumvent assessment rules.`
+                              : `High violations (${behavioralMatrix.summary.totalViolations} violations). This indicates significant disregard for assessment rules.`
                         }
                       </span>
                     </div>
@@ -1374,13 +1373,13 @@ export default function NationalServiceReport({
                     <div style={styles.commentaryItem}>
                       <span style={styles.commentaryLabel}>Answer Changes:</span>
                       <span style={styles.commentaryText}>
-                        {behavioralMatrix.behavior.answerChanges === 0
+                        {behavioralMatrix.summary.answerChanges === 0
                           ? 'No answer changes. Candidate answered confidently without second-guessing.'
-                          : behavioralMatrix.behavior.answerChanges <= 3
-                            ? `Minimal answer changes (${behavioralMatrix.behavior.answerChanges} changes). Candidate showed some hesitation on a few questions.`
-                            : behavioralMatrix.behavior.answerChanges <= 10
-                              ? `Moderate answer changes (${behavioralMatrix.behavior.answerChanges} changes). Candidate may have been uncertain about several answers.`
-                              : `High answer changes (${behavioralMatrix.behavior.answerChanges} changes). Candidate showed significant uncertainty throughout the assessment.`
+                          : behavioralMatrix.summary.answerChanges <= 3
+                            ? `Minimal answer changes (${behavioralMatrix.summary.answerChanges} changes). Candidate showed some hesitation on a few questions.`
+                            : behavioralMatrix.summary.answerChanges <= 10
+                              ? `Moderate answer changes (${behavioralMatrix.summary.answerChanges} changes). Candidate may have been uncertain about several answers.`
+                              : `High answer changes (${behavioralMatrix.summary.answerChanges} changes). Candidate showed significant uncertainty throughout the assessment.`
                         }
                       </span>
                     </div>
@@ -1401,23 +1400,23 @@ export default function NationalServiceReport({
                   </div>
 
                   {/* Recommendations */}
-                  {(behavioralMatrix.behavior.violations > 0 || behavioralMatrix.behavior.tabSwitches > 5) ? (
+                  {(behavioralMatrix.summary.totalViolations > 0 || behavioralMatrix.summary.tabSwitches > 5) ? (
                     <div style={styles.recommendationBox}>
                       <h5 style={styles.recommendationTitle}>Recommendations</h5>
                       <ul style={styles.recommendationList}>
-                        {behavioralMatrix.behavior.tabSwitches > 20 && (
+                        {behavioralMatrix.summary.tabSwitches > 20 && (
                           <li>Consider invalidating the assessment due to excessive tab switching.</li>
                         )}
-                        {behavioralMatrix.behavior.violations > 10 && (
+                        {behavioralMatrix.summary.totalViolations > 10 && (
                           <li>Immediate review required. Assessment validity is compromised.</li>
                         )}
-                        {behavioralMatrix.behavior.tabSwitches > 5 && behavioralMatrix.behavior.tabSwitches <= 20 && (
+                        {behavioralMatrix.summary.tabSwitches > 5 && behavioralMatrix.summary.tabSwitches <= 20 && (
                           <li>Conduct a follow-up interview to discuss potential external reference use.</li>
                         )}
-                        {behavioralMatrix.behavior.violations > 3 && behavioralMatrix.behavior.violations <= 10 && (
+                        {behavioralMatrix.summary.totalViolations > 3 && behavioralMatrix.summary.totalViolations <= 10 && (
                           <li>Review specific flagged questions and discuss with candidate.</li>
                         )}
-                        {behavioralMatrix.behavior.answerChanges > 5 && (
+                        {behavioralMatrix.summary.answerChanges > 5 && (
                           <li>Review questions where answers were changed for potential ambiguity.</li>
                         )}
                       </ul>
@@ -1436,7 +1435,7 @@ export default function NationalServiceReport({
               {behavioralMatrix?.externalUrls && behavioralMatrix.externalUrls.length > 0 && (
                 <div style={styles.externalUrlsSection}>
                   <h4 style={styles.externalUrlsTitle}>
-                    🌐 External URLs Visited ({behavioralMatrix.externalUrls.length})
+                    External URLs Visited ({behavioralMatrix.externalUrls.length})
                   </h4>
                   
                   <div style={styles.externalUrlsTable}>
