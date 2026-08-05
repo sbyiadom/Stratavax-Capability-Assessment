@@ -216,7 +216,9 @@ export default function AdminReportView() {
               ...(report.scores || {}),
               workplace: authoritativeScores.workplaceReadiness,
               intellectual: authoritativeScores.intellectualCapability,
-              overall: authoritativeScores.overallScore
+              overall: authoritativeScores.overallScore,
+              // 🟢 FIX: Explicitly ensure the recommendation is passed through scores
+              recommendation: report.scores?.recommendation || report.recommendation || data.recommendation || result.recommendation || 'Not Recommended'
             },
             workplaceReadiness: authoritativeScores.workplaceReadiness,
             intellectualCapability: authoritativeScores.intellectualCapability,
@@ -225,7 +227,8 @@ export default function AdminReportView() {
             overallScore: authoritativeScores.overallScore,
             percentage_score: authoritativeScores.overallScore,
             score: authoritativeScores.overallScore,
-            recommendation: report.recommendation || data.recommendation || result.recommendation || 'Not Recommended',
+            // 🟢 FIX: Prioritize the scores object in the final output
+            recommendation: report.scores?.recommendation || report.recommendation || data.recommendation || result.recommendation || 'Not Recommended',
             statistics: report.statistics || {
               totalQuestions: result.total_questions || 0,
               totalAnswered: result.answered_questions || 0
