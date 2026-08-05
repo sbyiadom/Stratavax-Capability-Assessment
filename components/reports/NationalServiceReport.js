@@ -1,4 +1,5 @@
 // components/reports/NationalServiceReport.js - COMPLETE WITH EXTERNAL URLS
+// FIXED: Removed stale recommendation overrides from reportData/report.
 
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../../supabase/client';
@@ -890,7 +891,7 @@ export default function NationalServiceReport({
   console.log('[Report] Calculated Overall:', displayOverall);
 
   // ============================================================
-  // RECOMMENDATION LOGIC
+  // 🟢 FIX: CALCULATE RECOMMENDATION DIRECTLY FROM MATH
   // ============================================================
   let recommendationLevel = 'Not Recommended';
 
@@ -906,11 +907,9 @@ export default function NationalServiceReport({
     recommendationLevel = 'Not Recommended';
   }
 
-  if (reportData.recommendation && reportData.recommendation !== 'N/A') {
-    recommendationLevel = safeString(reportData.recommendation);
-  } else if (report.recommendation && report.recommendation !== 'N/A') {
-    recommendationLevel = safeString(report.recommendation);
-  }
+  // 🟢 CRITICAL FIX: REMOVED the overrides below!
+  // We do NOT trust reportData.recommendation or report.recommendation.
+  // We trust the math from displayWorkplace, displayIntellectual, and displayOverall.
 
   // ============================================================
   // RECOMMENDATION DETAILS
