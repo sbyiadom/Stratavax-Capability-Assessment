@@ -1,4 +1,5 @@
 // pages/admin/index.js - COMPLETE FIXED VERSION WITH EXPIRATION SETTING
+// FIX: Explicitly fetching 'recommendation' and sub-scores from the database.
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
@@ -170,6 +171,7 @@ export default function AdminDashboard() {
             max_score, 
             percentage_score, 
             completed_at,
+            recommendation,  -- 🟢 ADDED: Explicitly fetch recommendation from DB
             candidate_profiles:user_id(full_name, email),
             assessments:assessment_id(title)
           `)
