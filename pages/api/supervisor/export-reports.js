@@ -1,5 +1,5 @@
-// pages/api/supervisor/export-reports.js - FIXED VERSION
-// Uses the same proven 2-step query strategy as the working Admin export.
+// pages/api/supervisor/export-reports.js - FULLY CORRECTED VERSION
+// FIXED: Uses candidate_supervisors, normalizes scores from report_data, and recalculates recommendations dynamically.
 
 import { createClient } from '@supabase/supabase-js';
 import XLSX from 'xlsx';
@@ -12,41 +12,84 @@ function extractBearerToken(req) {
   return authHeader.slice(7).trim();
 }
 
-function calculateSubScores(categoryScores) {
-  let workplaceTotal = 0;
-  let workplaceCount = 0;
-  let intellectualTotal = 0;
-  let intellectualCount = 0;
+// ============================================================
+// HELPER FUNCTIONS (5.1)
+// ============================================================
+function safeNumber(value, fallback = 0) {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : fallback;
+}
 
-  const workplaceCategories = ['Safety & Risk Awareness', 'Technical Fundamentals', 'Communication & Teamwork', 'Ownership & Integrity', 'Professional Conduct', 'Work Ethic'];
-  const intellectualCategories = ['Problem Solving & Troubleshooting', 'Logical Reasoning', 'Numerical Reasoning', 'Measurement & Engineering Units', 'Learning Agility', 'Cognitive Ability', 'Analytical Thinking'];
+function roundScore(value) {
+  return Math.round(safeNumber(value, 0));
+}
 
-  if (!categoryScores || !Array.isArray(categoryScores)) {
-    return { workplaceReadiness: 0, intellectualCapability: 0 };
-  }
-
-  categoryScores.forEach(cat => {
-    const name = (cat.category || cat.name || '').toLowerCase();
-    const percentage = Number(cat.percentage || cat.score || 0);
-    
-    const isWorkplace = workplaceCategories.some(keyword => name.includes(keyword.toLowerCase()));
-    const isIntellectual = intellectualCategories.some(keyword => name.includes(keyword.toLowerCase()));
-
-    if (isWorkplace) {
-      workplaceTotal += percentage;
-      workplaceCount++;
-    } else if (isIntellectual) {
-      intellectualTotal += percentage;
-      intellectualCount++;
+function getReportData(result) {
+  const raw = result?.report_data;
+  if (!raw) return {};
+  if (typeof raw === 'object') return raw;
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch (error) {
+      console.error('[Export Reports] Failed to parse report_data:', error);
+      return {};
     }
-  });
+  }
+  return {};
+}
 
+function getOverallFromTotalScore(result) {
+  const total = safeNumber(result?.total_score || 0);
+  const max = safeNumber(result?.max_score || 0);
+  if (total > 0 && max > 0) {
+    return Math.round((total / max) * 100);
+  }
+  return 0;
+}
+
+function getNationalServiceScores(result) {
+  const reportData = getReportData(result);
+  
   return {
-    workplaceReadiness: workplaceCount > 0 ? Math.round(workplaceTotal / workplaceCount) : 0,
-    intellectualCapability: intellectualCount > 0 ? Math.round(intellectualTotal / intellectualCount) : 0
+    workplaceReadiness: roundScore(
+      reportData?.dimensions?.workplaceReadiness ??
+      reportData?.scores?.workplace ??
+      result?.workplace_readiness ??
+      0
+    ),
+    intellectualCapability: roundScore(
+      reportData?.dimensions?.intellectualCapability ??
+      reportData?.scores?.intellectual ??
+      result?.intellectual_capability ??
+      0
+    ),
+    overallScore: roundScore(
+      reportData?.dimensions?.overallScore ??
+      reportData?.scores?.overall ??
+      reportData?.overallScore ??
+      reportData?.percentageScore ??
+      result?.percentage_score ??
+      getOverallFromTotalScore(result) ??
+      0
+    )
   };
 }
 
+function calculateNationalServiceRecommendation(workplaceReadiness, intellectualCapability) {
+  const workplace = safeNumber(workplaceReadiness);
+  const intellectual = safeNumber(intellectualCapability);
+
+  if (workplace >= 85 && intellectual >= 85) return 'Highly Recommended';
+  if (workplace >= 75 && intellectual >= 75) return 'Recommended';
+  if (workplace >= 65 && intellectual >= 65) return 'Reserve Pool';
+  return 'Not Recommended';
+}
+
+// ============================================================
+// EXPORT HANDLER (5.3 - 5.5)
+// ============================================================
 export default async function handler(req, res) {
   if (req.method !== 'GET') {
     return res.status(405).json({ success: false, error: 'Method not allowed' });
@@ -59,17 +102,17 @@ export default async function handler(req, res) {
     }
 
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-    if (!supabaseUrl || !serviceRoleKey) {
+    if (!supabaseUrl || !supabaseKey) {
       return res.status(500).json({ success: false, error: 'Missing env vars' });
     }
 
-    const serviceClient = createClient(supabaseUrl, serviceRoleKey, {
+    const serviceClient = createClient(supabaseUrl, supabaseKey, {
       auth: { persistSession: false }
     });
 
-    // Get user from token
+    // Verify user
     const { data: userData, error: userError } = await serviceClient.auth.getUser(token);
     if (userError || !userData?.user) {
       return res.status(401).json({ success: false, error: 'Invalid token' });
@@ -79,33 +122,89 @@ export default async function handler(req, res) {
     const { type } = req.query;
 
     // ============================================================
-    // STEP 1: Get candidates for this supervisor
+    // 5.3 FETCH CANDIDATES (MERGED LOOKUP)
     // ============================================================
-    const { data: candidates, error: candidatesError } = await serviceClient
+    const candidateMap = {};
+    const candidateIdsSet = new Set();
+
+    // 1. Legacy supervisor_id assignments
+    const { data: legacyCandidates, error: legacyError } = await serviceClient
       .from('candidate_profiles')
-      .select('id, full_name, email, university, programme, graduation_year, preferred_department')
+      .select('id, full_name, email, university, programme, graduation_year, preferred_department, supervisor_id')
       .eq('supervisor_id', supervisorId);
 
-    if (candidatesError) {
-      console.error('[Export] Candidates error:', candidatesError);
-      return res.status(500).json({ success: false, error: candidatesError.message });
-    }
-
-    const candidateIds = candidates.map(c => c.id);
-
-    if (candidateIds.length === 0) {
-      return res.status(404).json({ 
-        success: false, 
-        error: 'No candidates assigned to you' 
+    if (!legacyError && legacyCandidates) {
+      legacyCandidates.forEach(c => {
+        if (!candidateIdsSet.has(c.id)) {
+          candidateIdsSet.add(c.id);
+          candidateMap[c.id] = c;
+        }
       });
     }
 
+    // 2. New multi-supervisor assignments (junction table)
+    const { data: junctionAssignments, error: junctionError } = await serviceClient
+      .from('candidate_supervisors')
+      .select('candidate_id')
+      .eq('supervisor_id', supervisorId);
+
+    if (!junctionError && junctionAssignments && junctionAssignments.length > 0) {
+      const junctionCandidateIds = [...new Set(junctionAssignments.map(a => a.candidate_id).filter(Boolean))];
+      const missingIds = junctionCandidateIds.filter(id => !candidateIdsSet.has(id));
+
+      if (missingIds.length > 0) {
+        const { data: junctionCandidates, error: junctionCandidatesError } = await serviceClient
+          .from('candidate_profiles')
+          .select('id, full_name, email, university, programme, graduation_year, preferred_department, supervisor_id')
+          .in('id', missingIds);
+
+        if (!junctionCandidatesError && junctionCandidates) {
+          junctionCandidates.forEach(c => {
+            if (!candidateIdsSet.has(c.id)) {
+              candidateIdsSet.add(c.id);
+              candidateMap[c.id] = c;
+            }
+          });
+        }
+      }
+    }
+
+    const candidates = Object.values(candidateMap);
+    const candidateIds = candidates.map(c => c.id);
+
+    if (candidateIds.length === 0) {
+      return res.status(404).json({ success: false, error: 'No candidates assigned to you' });
+    }
+
     // ============================================================
-    // STEP 2: Get assessment results for these candidates
+    // FETCH ASSESSMENT RESULTS
     // ============================================================
     const { data: results, error: resultsError } = await serviceClient
       .from('assessment_results')
-      .select('*')
+      .select(`
+        id,
+        user_id,
+        assessment_id,
+        percentage_score,
+        total_score,
+        max_score,
+        workplace_readiness,
+        intellectual_capability,
+        recommendation,
+        completed_at,
+        category_scores,
+        report_data,
+        assessments:assessment_id (
+          id,
+          title,
+          assessment_type_id,
+          assessment_types:assessment_type_id (
+            id,
+            code,
+            name
+          )
+        )
+      `)
       .in('user_id', candidateIds)
       .order('completed_at', { ascending: false });
 
@@ -114,80 +213,45 @@ export default async function handler(req, res) {
       return res.status(500).json({ success: false, error: resultsError.message });
     }
 
-    if (!results || results.length === 0) {
-      return res.status(404).json({ success: false, error: 'No results found for your candidates' });
-    }
-
     // ============================================================
-    // STEP 3: Build Lookup Maps (Just like the Admin export does)
-    // ============================================================
-    let candidateMap = {};
-    if (candidateIds.length > 0) {
-      candidates.forEach(c => {
-        candidateMap[c.id] = c;
-      });
-    }
-
-    // Get all unique assessment IDs from results
-    const assessmentIds = results.map(r => r.assessment_id).filter(Boolean);
-    let assessmentMap = {};
-    if (assessmentIds.length > 0) {
-      const { data: assessments } = await serviceClient
-        .from('assessments')
-        .select('id, title, assessment_type_id')
-        .in('id', assessmentIds);
-      
-      if (assessments) {
-        assessments.forEach(a => {
-          assessmentMap[a.id] = a;
-        });
-      }
-    }
-
-    // Get assessment types
-    const typeIds = Object.values(assessmentMap).map(a => a.assessment_type_id).filter(Boolean);
-    let typeMap = {};
-    if (typeIds.length > 0) {
-      const { data: types } = await serviceClient
-        .from('assessment_types')
-        .select('id, code, name')
-        .in('id', typeIds);
-      
-      if (types) {
-        types.forEach(t => {
-          typeMap[t.id] = t;
-        });
-      }
-    }
-
-    // ============================================================
-    // STEP 4: Process and filter results
+    // 5.4 PROCESS & NORMALIZE ROWS
     // ============================================================
     let processedResults = results.map(result => {
       const candidate = candidateMap[result.user_id] || {};
-      const assessment = assessmentMap[result.assessment_id] || {};
-      const assessmentType = assessment ? typeMap[assessment.assessment_type_id] : null;
+      const assessment = result.assessments || {};
+      const type = assessment.assessment_types || {};
       
+      // Robust National Service Classification
+      const assessmentTitle = String(assessment?.title || '').toLowerCase().trim();
+      const assessmentCode = String(type?.code || '').toLowerCase().trim();
+      const assessmentTypeName = String(type?.name || '').toLowerCase().trim();
+
       const isNationalService = 
         assessment.id === NATIONAL_SERVICE_ASSESSMENT_ID ||
-        assessment.title === 'National Service Recruitment Assessment' ||
-        assessmentType?.code === 'national_service';
+        assessmentCode.includes('national') ||
+        assessmentTypeName.includes('national service') ||
+        assessmentTitle === 'national service recruitment assessment' ||
+        assessmentTitle.includes('national service') ||
+        assessmentTitle.includes('nationalservice') ||
+        assessmentTitle.includes('service recruitment');
 
-      let workplaceReadiness = Number(result.workplace_readiness || 0);
-      let intellectualCapability = Number(result.intellectual_capability || 0);
+      // Normalize Scores & Recommendation
+      let workplaceReadiness = 0;
+      let intellectualCapability = 0;
+      let overallScore = 0;
+      let recommendation = 'Not Available';
 
-      if (workplaceReadiness === 0 && intellectualCapability === 0 && result.category_scores) {
-        const calculated = calculateSubScores(result.category_scores);
-        workplaceReadiness = calculated.workplaceReadiness;
-        intellectualCapability = calculated.intellectualCapability;
-      }
-
-      let recommendation = result.recommendation || 'N/A';
-      if (isNationalService && (recommendation === 'N/A' || !recommendation)) {
-        if (workplaceReadiness >= 85 && intellectualCapability >= 85) recommendation = 'Highly Recommended';
-        else if (workplaceReadiness >= 75 && intellectualCapability >= 75) recommendation = 'Recommended';
-        else if (workplaceReadiness >= 65 && intellectualCapability >= 65) recommendation = 'Reserve Pool';
-        else recommendation = 'Not Recommended';
+      if (isNationalService) {
+        const nsScores = getNationalServiceScores(result);
+        workplaceReadiness = nsScores.workplaceReadiness;
+        intellectualCapability = nsScores.intellectualCapability;
+        overallScore = nsScores.overallScore;
+        recommendation = calculateNationalServiceRecommendation(workplaceReadiness, intellectualCapability);
+      } else {
+        workplaceReadiness = roundScore(result.workplace_readiness || 0);
+        intellectualCapability = roundScore(result.intellectual_capability || 0);
+        overallScore = roundScore(result.percentage_score || getOverallFromTotalScore(result) || 0);
+        recommendation = result.recommendation || 'Not Available';
       }
 
       let categoryBreakdown = '';
@@ -196,6 +260,21 @@ export default async function handler(req, res) {
           .map(cat => `${cat.category || cat.name}: ${cat.percentage || cat.score || 0}%`)
           .join('; ');
       }
+
+      // 🟢 6.0 DEBUG LOGGING
+      console.log('[EXPORT SCORE CHECK]', {
+        resultId: result.id,
+        candidate: candidate.full_name,
+        isNationalService,
+        db_percentage_score: result.percentage_score,
+        total_score: result.total_score,
+        max_score: result.max_score,
+        workplaceReadiness,
+        intellectualCapability,
+        overallScore,
+        storedRecommendation: result.recommendation,
+        exportedRecommendation: recommendation
+      });
 
       return {
         'Candidate Name': candidate.full_name || 'Unknown',
@@ -206,11 +285,11 @@ export default async function handler(req, res) {
         'Preferred Department': candidate.preferred_department || '',
         'Assessment': assessment.title || 'Unknown',
         'Type': isNationalService ? 'National Service' : 'Stratavax',
-        'Overall Score (%)': Math.round(result.percentage_score || 0),
+        'Overall Score (%)': overallScore,
         'Total Score': result.total_score || 0,
         'Max Score': result.max_score || 0,
-        'Workplace Readiness (%)': Math.round(workplaceReadiness || 0),
-        'Intellectual Capability (%)': Math.round(intellectualCapability || 0),
+        'Workplace Readiness (%)': workplaceReadiness,
+        'Intellectual Capability (%)': intellectualCapability,
         'Recommendation': recommendation,
         'Category Breakdown': categoryBreakdown,
         'Completed Date': result.completed_at ? new Date(result.completed_at).toLocaleDateString() : 'N/A',
@@ -236,7 +315,7 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 5: Generate Excel file
+    // GENERATE EXCEL FILE
     // ============================================================
     const worksheet = XLSX.utils.json_to_sheet(processedResults);
     
