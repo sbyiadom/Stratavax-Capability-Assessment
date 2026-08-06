@@ -1,5 +1,5 @@
-// pages/api/supervisor/dashboard.js - COMPLETE FIXED VERSION
-// FIXED: Recommendation is now recalculated from corrected scores, not stale DB text.
+// pages/api/supervisor/dashboard.js - FULLY CORRECTED VERSION
+// FIXED: Merges Legacy + Junction Table assignments to show ALL candidates and reports.
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -92,7 +92,7 @@ function calculateSubScores(categoryScores) {
   };
 }
 
-// 🟢 SECTION 5.1: ADD RECOMMENDATION HELPER
+// 🟢 RECOMMENDATION HELPER
 function calculateNationalServiceRecommendation(workplaceReadiness, intellectualCapability, overallScore) {
   const workplace = safeNumber(workplaceReadiness);
   const intellectual = safeNumber(intellectualCapability);
@@ -134,23 +134,58 @@ export default async function handler(req, res) {
     const NATIONAL_SERVICE_ASSESSMENT_ID = 'bdb9d46e-9fac-4d00-8478-1f649e7ac600';
 
     // ============================================================
-    // STEP 1: GET CANDIDATES
+    // STEP 1: GET CANDIDATES ASSIGNED TO SUPERVISOR (MERGED LOGIC)
     // ============================================================
-    const { data: candidates, error: candidatesError } = await supabase
-      .from('candidate_profiles')
-      .select('id, full_name, email, university, programme, graduation_year, preferred_department')
-      .eq('supervisor_id', supervisorId)
-      .order('full_name', { ascending: true });
+    let allCandidates = [];
+    const candidateIdsSet = new Set();
 
-    if (candidatesError) {
-      console.error('[Dashboard] Candidates error:', candidatesError);
-      return res.status(500).json({ success: false, error: candidatesError.message });
+    // 1. Fetch via the new Junction Table (candidate_supervisors)
+    const { data: junctionAssignments, error: junctionError } = await supabase
+      .from('candidate_supervisors')
+      .select('candidate_id')
+      .eq('supervisor_id', supervisorId);
+
+    if (!junctionError && junctionAssignments && junctionAssignments.length > 0) {
+      const junctionIds = junctionAssignments.map(j => j.candidate_id).filter(Boolean);
+      if (junctionIds.length > 0) {
+        const { data: junctionCandidates, error: junctionCandError } = await supabase
+          .from('candidate_profiles')
+          .select('id, full_name, email, university, programme, graduation_year, preferred_department')
+          .in('id', junctionIds);
+        
+        if (!junctionCandError && junctionCandidates) {
+          junctionCandidates.forEach(c => {
+            if (!candidateIdsSet.has(c.id)) {
+              candidateIdsSet.add(c.id);
+              allCandidates.push(c);
+            }
+          });
+        }
+      }
     }
 
+    // 2. Fetch via the Legacy supervisor_id field (for backward compatibility)
+    const { data: legacyCandidates, error: legacyError } = await supabase
+      .from('candidate_profiles')
+      .select('id, full_name, email, university, programme, graduation_year, preferred_department')
+      .eq('supervisor_id', supervisorId);
+
+    if (!legacyError && legacyCandidates) {
+      legacyCandidates.forEach(c => {
+        if (!candidateIdsSet.has(c.id)) {
+          candidateIdsSet.add(c.id);
+          allCandidates.push(c);
+        }
+      });
+    }
+
+    const candidates = allCandidates;
     const candidateIds = candidates.map(c => c.id);
 
+    console.log(`[Dashboard] Supervisor ${supervisorId} has ${candidates.length} unique candidates assigned.`);
+
     // ============================================================
-    // STEP 2: GET ASSESSMENTS AND RESULTS
+    // STEP 2: GET ASSESSMENT STATUS AND RESULTS
     // ============================================================
     const { data: candidateAssessments, error: caError } = await supabase
       .from('candidate_assessments')
@@ -269,7 +304,7 @@ export default async function handler(req, res) {
           overallScore = Math.round((workplace + intellectual) / 2);
         }
 
-        // 🟢 SECTION 5.1 & 5.2: CALCULATE RECOMMENDATION FROM CORRECTED SCORES
+        // CALCULATE RECOMMENDATION FROM CORRECTED SCORES
         let recommendation = 'Not Available';
         if (isNationalService) {
           recommendation = calculateNationalServiceRecommendation(workplace, intellectual, overallScore);
@@ -281,7 +316,7 @@ export default async function handler(req, res) {
           else recommendation = 'Not Recommended';
         }
 
-        // 🟢 SECTION 7: TEMPORARY DEBUG LOG
+        // TEMPORARY DEBUG LOG
         console.log('[NS RECOMMENDATION CHECK]', {
           candidate: c.full_name,
           resultId: r?.id,
@@ -307,7 +342,7 @@ export default async function handler(req, res) {
           workplace_readiness: workplace,
           intellectual_capability: intellectual,
           completed_at: ca.completed_at,
-          recommendation: recommendation // 🟢 FIXED: Uses recalculated value
+          recommendation: recommendation // Uses recalculated value
         };
       });
 
@@ -319,7 +354,7 @@ export default async function handler(req, res) {
         notStarted: userAssessments.filter(a => a.status === 'not_started').length
       };
 
-      // 🟢 SECTION 5.3: PUSH CORRECT RECOMMENDATION TO ALL REPORTS
+      // PUSH CORRECT RECOMMENDATION TO ALL REPORTS
       completedAssessments.forEach(a => {
         allReports.push({
           result_id: a.result_id,
@@ -337,7 +372,7 @@ export default async function handler(req, res) {
           is_national_service: a.isNationalService || false,
           workplace_readiness: a.workplace_readiness || 0,
           intellectual_capability: a.intellectual_capability || 0,
-          recommendation: a.recommendation || 'Not Available', // Already recalculated above
+          recommendation: a.recommendation || 'Not Available',
           status: 'completed',
           completed_at: a.completed_at
         });
