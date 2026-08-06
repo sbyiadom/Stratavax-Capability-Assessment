@@ -1,5 +1,5 @@
 // pages/supervisor/index.js - COMPLETE FIXED VERSION
-// FIXED: Overall Score logic now prioritizes score and overallScore for defensive rendering.
+// FIXED: Defensive recalculation ensures Recommendation matches displayed scores.
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -400,14 +400,29 @@ function NationalServiceTab({ reports, getScoreColor, getScoreTextColor, getReco
             </thead>
             <tbody>
               {reports.map((report) => {
-                // 🟢 Defensive Fix: Prefer score and overallScore before percentage_score
+                // Defensive Overall Score
                 const overallScore = Number(report.score || report.overallScore || report.percentage_score || 0);
                 const workplaceScore = Number(report.workplace_readiness || 0);
                 const intellectualScore = Number(report.intellectual_capability || 0);
-                const recommendation = report.recommendation || 'Not Available';
                 const status = report.status || 'unknown';
                 const isCompleted = status === 'completed' || report.result_id !== null;
                 const hasScores = workplaceScore > 0 || intellectualScore > 0 || overallScore > 0;
+
+                // 🟢 DEFENSIVE RECALCULATION
+                // Even if the API sends a stale recommendation, we recalculate it here based on the visible scores.
+                const calculateNationalServiceRecommendation = (workplace, intellectual, overall) => {
+                  if (workplace >= 85 && intellectual >= 85) return 'Highly Recommended';
+                  if (workplace >= 75 && intellectual >= 75) return 'Recommended';
+                  if (workplace >= 65 && intellectual >= 65) return 'Reserve Pool';
+                  if (workplace >= 50 || intellectual >= 50 || overall >= 50) return 'Consider for Development';
+                  return 'Not Recommended';
+                };
+
+                const displayRecommendation = calculateNationalServiceRecommendation(
+                  workplaceScore, 
+                  intellectualScore, 
+                  overallScore
+                );
 
                 return (
                   <tr key={report.result_id || report.candidate_id} style={styles.tr}>
@@ -440,8 +455,8 @@ function NationalServiceTab({ reports, getScoreColor, getScoreTextColor, getReco
                       </span>
                     </td>
                     <td style={styles.td}>
-                      <span style={{ ...styles.recommendationBadge, color: getRecommendationColor(recommendation) }}>
-                        {hasScores ? recommendation : 'Pending'}
+                      <span style={{ ...styles.recommendationBadge, color: getRecommendationColor(displayRecommendation) }}>
+                        {hasScores ? displayRecommendation : 'Pending'}
                       </span>
                     </td>
                     <td style={styles.td}>
@@ -494,7 +509,6 @@ function OtherAssessmentsTab({ reports, onViewReport }) {
                     {report.assessment_title}
                   </td>
                   <td style={styles.td}>
-                    {/* 🟢 Defensive Fix: Prefer score and overallScore before percentage_score */}
                     <span style={styles.scoreBadge}>
                       {Math.round(Number(report.score || report.overallScore || report.percentage_score || 0))}%
                     </span>
