@@ -1,4 +1,5 @@
-// pages/api/supervisor/reports.js - COMPLETE FIXED VERSION
+// pages/api/supervisor/reports.js - FULLY CORRECTED DEPLOYMENT VERSION
+// FIX: Properly extracts type from Supabase array, adds broader NS detection.
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -112,7 +113,7 @@ export default async function handler(req, res) {
       console.log('[Supervisor Reports] Found candidates by legacy fields:', candidatesByField.length);
     }
 
-    // Method 2: NEW candidate_supervisors junction table (THE FIX)
+    // Method 2: NEW candidate_supervisors junction table
     const { data: junctionAssignments, error: junctionError } = await supabase
       .from('candidate_supervisors')
       .select('candidate_id')
@@ -204,12 +205,23 @@ export default async function handler(req, res) {
     // ============================================================
     const reports = (results || []).map(result => {
       const assessment = result.assessments || {};
-      // Fix: Use assessment_types alias
-      const type = assessment.assessment_types || assessment.assessment_type || {};
       
+      // 🟢 CRITICAL FIX: Correctly extract the type from the Supabase Array
+      const typeArray = assessment.assessment_types || assessment.assessment_type || [];
+      const type = Array.isArray(typeArray) && typeArray.length > 0 ? typeArray[0] : {};
+
+      // 🟢 BROADER NATIONAL SERVICE DETECTION
+      const assessmentTitle = String(assessment?.title || '').toLowerCase().trim();
+      const assessmentCode = String(type?.code || '').toLowerCase().trim();
+      const assessmentTypeName = String(type?.name || '').toLowerCase().trim();
+
       const isNationalService = 
-        type?.code === 'national_service' ||
-        assessment?.title === 'National Service Recruitment Assessment';
+        assessment?.id === 'bdb9d46e-9fac-4d00-8478-1f649e7ac600' ||
+        assessmentCode.includes('national') ||
+        assessmentTypeName.includes('national service') ||
+        assessmentTitle.includes('national service') ||
+        assessmentTitle.includes('nationalservice') ||
+        assessmentTitle.includes('service recruitment');
 
       const candidate = assignedCandidates.find(c => c.id === result.user_id) || {};
 
