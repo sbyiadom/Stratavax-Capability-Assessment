@@ -1,5 +1,5 @@
 // pages/api/supervisor/dashboard.js - FULLY CORRECTED VERSION
-// FIXED: National Service detection now recognizes the exact title "National Service Recruitment Assessment".
+// FIXED: Uses isReportableResult to include valid results even if completed_at is null.
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -28,6 +28,25 @@ function getReportData(result) {
     }
   }
   return {};
+}
+
+// 🟢 SECTION 5.1: ADD HELPER FUNCTIONS
+function hasReportData(result) {
+  const reportData = getReportData(result);
+  return reportData && Object.keys(reportData).length > 0;
+}
+
+function isReportableResult(result) {
+  if (!result || result.is_valid === false) return false;
+
+  return (
+    result.completed_at !== null ||
+    result.completed_at !== undefined ||
+    safeNumber(result.percentage_score) > 0 ||
+    hasReportData(result) ||
+    String(result.status || '').toLowerCase() === 'completed' ||
+    result.result_id
+  );
 }
 
 function getNationalServiceScores(result) {
@@ -92,7 +111,6 @@ function calculateSubScores(categoryScores) {
   };
 }
 
-// 🟢 RECOMMENDATION HELPER
 function calculateNationalServiceRecommendation(workplaceReadiness, intellectualCapability, overallScore) {
   const workplace = safeNumber(workplaceReadiness);
   const intellectual = safeNumber(intellectualCapability);
@@ -254,32 +272,53 @@ export default async function handler(req, res) {
     // ============================================================
     candidates.forEach(c => {
       const userAssessments = caMap[c.id] || [];
-      const completed = userAssessments.filter(a => a.status === 'completed');
       const inProgress = userAssessments.filter(a => a.status === 'in_progress');
-      
-      totalCompleted += completed.length;
       totalInProgress += inProgress.length;
 
-      const completedAssessments = completed.map(ca => {
-        const r = results.find(res => res.id === ca.result_id);
-        const assessment = assessmentMap[ca.assessment_id];
+      // 🟢 SECTION 5.2: REPLACE STRICT completed_at FILTER
+      // First, get all results for this candidate
+      const candidateResults = results.filter(r => r.user_id === c.id);
+      
+      // Filter using the new isReportableResult() helper
+      const completedResults = candidateResults.filter(r => isReportableResult(r));
+
+      // 🟢 SECTION 6: DEBUG LOGGING FOR EXCLUDED RESULTS
+      candidateResults.forEach(r => {
+        if (!isReportableResult(r)) {
+          console.log('[EXCLUDED RESULT]', {
+            candidate: c.full_name,
+            resultId: r.id,
+            assessmentId: r.assessment_id,
+            completed_at: r.completed_at,
+            status: r.status,
+            percentage_score: r.percentage_score,
+            hasReportData: hasReportData(r),
+            is_valid: r.is_valid
+          });
+        }
+      });
+
+      totalCompleted += completedResults.length;
+
+      const completedAssessments = completedResults.map(r => {
+        const assessment = assessmentMap[r.assessment_id];
         const type = assessment ? typeMap[assessment.assessment_type_id] : null;
 
-        // 🟢 FIXED: Broader National Service Detection
+        // 🟢 SECTION 5.3: ROBUST NATIONAL SERVICE DETECTION
         const assessmentTitle = String(assessment?.title || '').toLowerCase().trim();
         const assessmentCode = String(type?.code || '').toLowerCase().trim();
         const assessmentTypeName = String(type?.name || '').toLowerCase().trim();
 
         const isNationalService = 
-          ca.assessment_id === NATIONAL_SERVICE_ASSESSMENT_ID ||
+          r.assessment_id === NATIONAL_SERVICE_ASSESSMENT_ID ||
           assessmentCode.includes('national') ||
           assessmentTypeName.includes('national service') ||
-          assessmentTitle === 'national service recruitment assessment' || // 🟢 EXACT MATCH (Fixes the 60)
+          assessmentTitle === 'national service recruitment assessment' ||
           assessmentTitle.includes('national service') ||
           assessmentTitle.includes('nationalservice') ||
           assessmentTitle.includes('service recruitment');
 
-        // Normalize Scores
+        // 🟢 SECTION 5.4: NORMALIZE SCORES AND RECOMMENDATION
         let workplace = 0;
         let intellectual = 0;
         let overallScore = 0;
@@ -295,12 +334,14 @@ export default async function handler(req, res) {
           overallScore = safeNumber(r?.percentage_score || 0);
         }
 
+        // Fallback to category_scores if dimensions are missing
         if (workplace === 0 && intellectual === 0 && r?.category_scores) {
           const calculated = calculateSubScores(r.category_scores);
           workplace = calculated.workplaceReadiness;
           intellectual = calculated.intellectualCapability;
         }
 
+        // Ensure overallScore is never 0 if sub-scores exist
         if (overallScore === 0 && (workplace > 0 || intellectual > 0)) {
           overallScore = Math.round((workplace + intellectual) / 2);
         }
@@ -317,23 +358,12 @@ export default async function handler(req, res) {
           else recommendation = 'Not Recommended';
         }
 
-        // TEMPORARY DEBUG LOG
-        console.log('[NS RECOMMENDATION CHECK]', {
-          candidate: c.full_name,
-          resultId: r?.id,
-          workplace,
-          intellectual,
-          overallScore,
-          storedRecommendation: r?.recommendation,
-          calculatedRecommendation: recommendation,
-          reportRecommendation: getReportData(r)?.recommendation
-        });
-
         if (isNationalService) nationalServiceReports++;
 
+        // 🟢 SECTION 5.5: RETURN COMPLETE SCORE ALIASES
         return {
-          assessment_id: ca.assessment_id,
-          result_id: ca.result_id,
+          assessment_id: r.assessment_id,
+          result_id: r.id,
           title: assessment?.title || 'Assessment',
           assessment_code: type?.code || 'general',
           score: overallScore,
@@ -342,20 +372,20 @@ export default async function handler(req, res) {
           isNationalService: isNationalService,
           workplace_readiness: workplace,
           intellectual_capability: intellectual,
-          completed_at: ca.completed_at,
-          recommendation: recommendation // Uses recalculated value
+          completed_at: r.completed_at,
+          recommendation: recommendation
         };
       });
 
       const stats = {
-        completed: completed.length,
+        completed: completedResults.length,
         inProgress: inProgress.length,
         unblocked: userAssessments.filter(a => a.status === 'unblocked').length,
         blocked: userAssessments.filter(a => a.status === 'blocked').length,
         notStarted: userAssessments.filter(a => a.status === 'not_started').length
       };
 
-      // PUSH CORRECT RECOMMENDATION TO ALL REPORTS
+      // 🟢 SECTION 5.6: PUSH COMPLETE ROWS TO ALL REPORTS
       completedAssessments.forEach(a => {
         allReports.push({
           result_id: a.result_id,
@@ -395,6 +425,15 @@ export default async function handler(req, res) {
 
     const nationalServiceReportsList = allReports.filter(r => r.is_national_service === true);
     const otherReportsList = allReports.filter(r => r.is_national_service === false);
+
+    // 🟢 SECTION 6: REPORT SUMMARY LOG
+    console.log('[REPORT SUMMARY]', {
+      candidates: candidates.length,
+      resultRows: results ? results.length : 0,
+      allReports: allReports.length,
+      nsReports: nationalServiceReportsList.length,
+      otherReports: otherReportsList.length
+    });
 
     return res.status(200).json({
       success: true,
