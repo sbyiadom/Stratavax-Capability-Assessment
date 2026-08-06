@@ -1,4 +1,5 @@
 // pages/supervisor/index.js - COMPLETE FIXED VERSION
+// FIXED: Reordered variable priorities to ensure percentage_score is read first.
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -399,8 +400,8 @@ function NationalServiceTab({ reports, getScoreColor, getScoreTextColor, getReco
             </thead>
             <tbody>
               {reports.map((report) => {
-                // FIXED: Prefer score and overallScore before percentage_score
-                const overallScore = Number(report.score || report.overallScore || report.percentage_score || 0);
+                // 🟢 FIX: percentage_score is the source of truth.
+                const overallScore = Number(report.percentage_score || report.score || report.overallScore || 0);
                 const workplaceScore = Number(report.workplace_readiness || 0);
                 const intellectualScore = Number(report.intellectual_capability || 0);
                 const recommendation = report.recommendation || 'Not Available';
@@ -493,9 +494,9 @@ function OtherAssessmentsTab({ reports, onViewReport }) {
                     {report.assessment_title}
                   </td>
                   <td style={styles.td}>
-                    {/* FIXED: Prefer score and overallScore before percentage_score */}
+                    {/* 🟢 FIX: percentage_score is the source of truth. */}
                     <span style={styles.scoreBadge}>
-                      {Math.round(Number(report.score || report.overallScore || report.percentage_score || 0))}%
+                      {Math.round(Number(report.percentage_score || report.score || report.overallScore || 0))}%
                     </span>
                   </td>
                   <td style={styles.td}>
@@ -568,7 +569,7 @@ function CandidatesTab({ candidates, selectedAssessments, onAssessmentChange, on
                         <option value="">-- Select --</option>
                         {completedAssessments.map((assessment) => (
                           <option key={`${candidate.id}-${assessment.assessment_id}`} value={assessment.assessment_id}>
-                            {assessment.title} ({Math.round(Number(assessment.score || assessment.percentage_score || 0))}%)
+                            {assessment.title} ({Math.round(Number(assessment.percentage_score || assessment.score || 0))}%)
                           </option>
                         ))}
                         {completedAssessments.length === 0 && (
