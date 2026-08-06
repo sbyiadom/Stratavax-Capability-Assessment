@@ -1,5 +1,5 @@
 // pages/api/supervisor/dashboard.js - FULLY CORRECTED VERSION
-// FIXED: Merges Legacy + Junction Table assignments to show ALL candidates and reports.
+// FIXED: National Service detection now recognizes the exact title "National Service Recruitment Assessment".
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -265,7 +265,7 @@ export default async function handler(req, res) {
         const assessment = assessmentMap[ca.assessment_id];
         const type = assessment ? typeMap[assessment.assessment_type_id] : null;
 
-        // Broader National Service detection
+        // 🟢 FIXED: Broader National Service Detection
         const assessmentTitle = String(assessment?.title || '').toLowerCase().trim();
         const assessmentCode = String(type?.code || '').toLowerCase().trim();
         const assessmentTypeName = String(type?.name || '').toLowerCase().trim();
@@ -274,6 +274,7 @@ export default async function handler(req, res) {
           ca.assessment_id === NATIONAL_SERVICE_ASSESSMENT_ID ||
           assessmentCode.includes('national') ||
           assessmentTypeName.includes('national service') ||
+          assessmentTitle === 'national service recruitment assessment' || // 🟢 EXACT MATCH (Fixes the 60)
           assessmentTitle.includes('national service') ||
           assessmentTitle.includes('nationalservice') ||
           assessmentTitle.includes('service recruitment');
