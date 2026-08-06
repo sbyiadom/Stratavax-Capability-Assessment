@@ -1,8 +1,7 @@
 // pages/api/supervisor/dashboard.js - COMPLETE FIXED VERSION
+// Fixes 0% Overall Score on Supervisor Dashboard by normalizing National Service scores from report_data.
 
 import { createClient } from '@supabase/supabase-js';
-
-const NATIONAL_SERVICE_ASSESSMENT_ID = 'bdb9d46e-9fac-4d00-8478-1f649e7ac600';
 
 function extractBearerToken(req) {
   const authHeader = req.headers.authorization || req.headers.Authorization || '';
@@ -11,10 +10,11 @@ function extractBearerToken(req) {
 }
 
 function safeNumber(value, fallback = 0) {
-  const num = Number(value);
-  return Number.isFinite(num) ? num : fallback;
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? numberValue : fallback;
 }
 
+// 🟢 Helper: Extract JSON from report_data column safely
 function getReportData(result) {
   const raw = result?.report_data;
   if (!raw) return {};
@@ -24,22 +24,39 @@ function getReportData(result) {
       const parsed = JSON.parse(raw);
       return parsed && typeof parsed === 'object' ? parsed : {};
     } catch (error) {
-      console.error('Failed to parse report_data:', error);
+      console.error('[Dashboard] Failed to parse report_data:', error);
       return {};
     }
   }
   return {};
 }
 
-function getNationalServiceOverallScore(result) {
+// 🟢 Helper: Normalize National Service scores from report_data
+function getNationalServiceScores(result) {
   const reportData = getReportData(result);
-  return safeNumber(
-    reportData?.dimensions?.overallScore ??
-    reportData?.scores?.overall ??
-    reportData?.overallScore ??
-    result?.percentage_score ??
-    0
-  );
+  
+  return {
+    workplaceReadiness: safeNumber(
+      reportData?.dimensions?.workplaceReadiness ??
+      reportData?.scores?.workplace ??
+      result?.workplace_readiness ??
+      0
+    ),
+    intellectualCapability: safeNumber(
+      reportData?.dimensions?.intellectualCapability ??
+      reportData?.scores?.intellectual ??
+      result?.intellectual_capability ??
+      0
+    ),
+    overallScore: safeNumber(
+      reportData?.dimensions?.overallScore ??
+      reportData?.scores?.overall ??
+      reportData?.overallScore ??
+      reportData?.percentageScore ??
+      result?.percentage_score ??
+      0
+    )
+  };
 }
 
 function calculateSubScores(categoryScores) {
@@ -48,17 +65,8 @@ function calculateSubScores(categoryScores) {
   let intellectualTotal = 0;
   let intellectualCount = 0;
 
-  const workplaceCategories = [
-    'Safety & Risk Awareness', 'Technical Fundamentals', 
-    'Communication & Teamwork', 'Ownership & Integrity', 
-    'Professional Conduct', 'Work Ethic'
-  ];
-  
-  const intellectualCategories = [
-    'Problem Solving & Troubleshooting', 'Logical Reasoning', 
-    'Numerical Reasoning', 'Measurement & Engineering Units', 
-    'Learning Agility', 'Cognitive Ability', 'Analytical Thinking'
-  ];
+  const workplaceCategories = ['Safety & Risk Awareness', 'Technical Fundamentals', 'Communication & Teamwork', 'Ownership & Integrity', 'Professional Conduct', 'Work Ethic'];
+  const intellectualCategories = ['Problem Solving & Troubleshooting', 'Logical Reasoning', 'Numerical Reasoning', 'Measurement & Engineering Units', 'Learning Agility', 'Cognitive Ability', 'Analytical Thinking'];
 
   if (!categoryScores || !Array.isArray(categoryScores)) {
     return { workplaceReadiness: 0, intellectualCapability: 0 };
@@ -68,12 +76,8 @@ function calculateSubScores(categoryScores) {
     const name = (cat.category || cat.name || '').toLowerCase();
     const percentage = Number(cat.percentage || cat.score || 0);
     
-    const isWorkplace = workplaceCategories.some(keyword => 
-      name.includes(keyword.toLowerCase())
-    );
-    const isIntellectual = intellectualCategories.some(keyword => 
-      name.includes(keyword.toLowerCase())
-    );
+    const isWorkplace = workplaceCategories.some(keyword => name.includes(keyword.toLowerCase()));
+    const isIntellectual = intellectualCategories.some(keyword => name.includes(keyword.toLowerCase()));
 
     if (isWorkplace) {
       workplaceTotal += percentage;
@@ -90,341 +94,266 @@ function calculateSubScores(categoryScores) {
   };
 }
 
-function calculateRecommendation(workplaceReadiness, intellectualCapability, overallScore) {
-  const workplace = safeNumber(workplaceReadiness);
-  const intellectual = safeNumber(intellectualCapability);
-  const overall = safeNumber(overallScore);
-  
-  if (overall > 0) {
-    if (overall >= 85) return 'Highly Recommended';
-    if (overall >= 75) return 'Recommended';
-    if (overall >= 65) return 'Reserve Pool';
-    if (overall >= 50) return 'Consider for Development';
-    return 'Not Recommended';
-  }
-  
-  if (workplace >= 85 && intellectual >= 85) return 'Highly Recommended';
-  if (workplace >= 75 && intellectual >= 75) return 'Recommended';
-  if (workplace >= 65 && intellectual >= 65) return 'Reserve Pool';
-  if (workplace >= 50 || intellectual >= 50) return 'Consider for Development';
-  return 'Not Recommended';
-}
-
 export default async function handler(req, res) {
-  if (req.method !== "GET") {
-    return res.status(405).json({ success: false, error: "Method not allowed" });
+  if (req.method !== 'GET') {
+    return res.status(405).json({ success: false, error: 'Method not allowed' });
   }
 
   try {
     const token = extractBearerToken(req);
     if (!token) {
-      return res.status(401).json({ success: false, error: "Missing token" });
+      return res.status(401).json({ success: false, error: 'Missing token' });
     }
 
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-    if (!supabaseUrl || !serviceRoleKey) {
-      return res.status(500).json({ success: false, error: "Missing env vars" });
+    if (!supabaseUrl || !supabaseKey) {
+      return res.status(500).json({ success: false, error: 'Missing env vars' });
     }
 
-    const serviceClient = createClient(supabaseUrl, serviceRoleKey, {
-      auth: { persistSession: false }
-    });
+    const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Get user from token
-    const { data: userData, error: userError } = await serviceClient.auth.getUser(token);
+    const { data: userData, error: userError } = await supabase.auth.getUser(token);
     if (userError || !userData?.user) {
-      return res.status(401).json({ success: false, error: "Invalid token", details: userError?.message });
+      return res.status(401).json({ success: false, error: 'Invalid token' });
     }
 
-    const user = userData.user;
-    const supervisorId = user.id;
-
-    console.log('[Dashboard] Supervisor ID:', supervisorId);
+    const supervisorId = userData.user.id;
+    const NATIONAL_SERVICE_ASSESSMENT_ID = 'bdb9d46e-9fac-4d00-8478-1f649e7ac600';
 
     // ============================================================
-    // STEP 1: Get candidates assigned to this supervisor
-    // Supports both: single supervisor_id AND multiple via junction table
+    // STEP 1: GET CANDIDATES ASSIGNED TO SUPERVISOR
     // ============================================================
-    let candidates = [];
-    const candidateIdsSet = new Set();
-
-    // Method 1: Check supervisor_id in candidate_profiles (backward compatibility)
-    const { data: candidatesBySupervisorId, error: error1 } = await serviceClient
+    const { data: candidates, error: candidatesError } = await supabase
       .from('candidate_profiles')
-      .select('id, full_name, email, university, programme, supervisor_id')
-      .eq('supervisor_id', supervisorId);
+      .select('id, full_name, email, university, programme, graduation_year, preferred_department')
+      .eq('supervisor_id', supervisorId)
+      .order('full_name', { ascending: true });
 
-    if (!error1 && candidatesBySupervisorId && candidatesBySupervisorId.length > 0) {
-      candidatesBySupervisorId.forEach(c => {
-        if (!candidateIdsSet.has(c.id)) {
-          candidateIdsSet.add(c.id);
-          candidates.push(c);
-        }
-      });
-      console.log('[Dashboard] Found candidates by supervisor_id:', candidatesBySupervisorId.length);
-    }
-
-    // Method 2: Check candidate_supervisors junction table
-    try {
-      const { data: assignedCandidates, error: assignedError } = await serviceClient
-        .from('candidate_supervisors')
-        .select('candidate_id')
-        .eq('supervisor_id', supervisorId);
-
-      if (!assignedError && assignedCandidates && assignedCandidates.length > 0) {
-        const assignedIds = assignedCandidates.map(a => a.candidate_id);
-        
-        const { data: junctionCandidates, error: junctionError } = await serviceClient
-          .from('candidate_profiles')
-          .select('id, full_name, email, university, programme, supervisor_id')
-          .in('id', assignedIds);
-
-        if (!junctionError && junctionCandidates) {
-          junctionCandidates.forEach(c => {
-            if (!candidateIdsSet.has(c.id)) {
-              candidateIdsSet.add(c.id);
-              candidates.push(c);
-            }
-          });
-          console.log('[Dashboard] Found candidates via junction table:', junctionCandidates.length);
-        }
-      }
-    } catch (junctionError) {
-      console.log('[Dashboard] Junction table not found:', junctionError.message);
-    }
-
-    console.log('[Dashboard] Total unique candidates found:', candidates.length);
-
-    if (candidates.length === 0) {
-      return res.status(200).json({
-        success: true,
-        supervisor: { id: user.id, email: user.email },
-        stats: { totalCandidates: 0, completedAssessments: 0, nationalServiceReports: 0, pendingReviews: 0 },
-        candidates: [],
-        nationalServiceReports: [],
-        otherReports: [],
-        debug: {
-          assignedCandidates: 0,
-          candidateAssessments: 0,
-          resultRows: 0,
-          supervisorId: supervisorId,
-          message: 'No candidates found. Check supervisor_id or candidate_supervisors table.'
-        }
-      });
+    if (candidatesError) {
+      console.error('[Dashboard] Candidates error:', candidatesError);
+      return res.status(500).json({ success: false, error: candidatesError.message });
     }
 
     const candidateIds = candidates.map(c => c.id);
 
     // ============================================================
-    // STEP 2: Get ALL assessment results for these candidates
+    // STEP 2: GET ASSESSMENT STATUS AND RESULTS
     // ============================================================
-    const { data: results, error: resultsError } = await serviceClient
+    const { data: candidateAssessments, error: caError } = await supabase
+      .from('candidate_assessments')
+      .select('user_id, assessment_id, status, result_id, completed_at, updated_at')
+      .in('user_id', candidateIds);
+
+    if (caError) {
+      console.error('[Dashboard] Candidate assessments error:', caError);
+      return res.status(500).json({ success: false, error: caError.message });
+    }
+
+    const { data: results, error: resultsError } = await supabase
       .from('assessment_results')
       .select('*')
       .in('user_id', candidateIds);
 
     if (resultsError) {
       console.error('[Dashboard] Results error:', resultsError);
+      return res.status(500).json({ success: false, error: resultsError.message });
     }
 
-    console.log('[Dashboard] Results found:', results?.length || 0);
-
-    // ============================================================
-    // STEP 3: Get candidate assessments (for status tracking)
-    // ============================================================
-    const { data: assessments, error: assessmentsError } = await serviceClient
-      .from('candidate_assessments')
-      .select('*')
-      .in('user_id', candidateIds);
+    const { data: assessments, error: assessmentsError } = await supabase
+      .from('assessments')
+      .select('id, title, assessment_type_id')
+      .in('id', candidateAssessments.map(a => a.assessment_id));
 
     if (assessmentsError) {
       console.error('[Dashboard] Assessments error:', assessmentsError);
+      return res.status(500).json({ success: false, error: assessmentsError.message });
     }
 
-    console.log('[Dashboard] Assessments found:', assessments?.length || 0);
-
-    // ============================================================
-    // STEP 4: Get assessment details - FIXED: Merge both sources
-    // ============================================================
-    const candidateAssessmentIds = assessments ? assessments.map(a => a.assessment_id).filter(Boolean) : [];
-    const resultAssessmentIds = results ? results.map(r => r.assessment_id).filter(Boolean) : [];
-    const assessmentIds = [...new Set([...candidateAssessmentIds, ...resultAssessmentIds])];
-
-    console.log('[Dashboard] Total unique assessment IDs:', assessmentIds.length);
-
-    let assessmentMap = {};
-
-    if (assessmentIds.length > 0) {
-      const { data: assessmentData, error: assessmentError } = await serviceClient
-        .from('assessments')
-        .select(`
-          id, 
-          title, 
-          assessment_type_id,
-          assessment_types:assessment_type_id (id, code, name)
-        `)
-        .in('id', assessmentIds);
-
-      if (assessmentError) {
-        console.error('[Dashboard] Assessment details error:', assessmentError);
-        const { data: simpleAssessments, error: simpleError } = await serviceClient
-          .from('assessments')
-          .select('id, title, assessment_type_id')
-          .in('id', assessmentIds);
-
-        if (!simpleError && simpleAssessments) {
-          simpleAssessments.forEach(a => {
-            assessmentMap[a.id] = { ...a, assessment_type: null };
-          });
-        }
-      } else if (assessmentData) {
-        assessmentData.forEach(a => {
-          assessmentMap[a.id] = a;
-        });
-      }
+    const typeIds = assessments.map(a => a.assessment_type_id).filter(Boolean);
+    let typeMap = {};
+    if (typeIds.length > 0) {
+      const { data: types } = await supabase
+        .from('assessment_types')
+        .select('id, code, name')
+        .in('id', typeIds);
+      if (types) types.forEach(t => typeMap[t.id] = t);
     }
 
     // ============================================================
-    // STEP 5: Build candidates with correct counts and recommendations
+    // STEP 3: BUILD DATA STRUCTURES
     // ============================================================
-    const candidatesWithStats = candidates.map(c => {
-      // Get results for this candidate
-      const candidateResults = results ? results.filter(r => r.user_id === c.id) : [];
-      const completedResults = candidateResults.filter(r => r.completed_at !== null && r.is_valid !== false);
+    const assessmentMap = assessments.reduce((acc, a) => ({ ...acc, [a.id]: a }), {});
+    const resultMap = results.reduce((acc, r) => ({ ...acc, [r.user_id]: r }), {});
+    const caMap = candidateAssessments.reduce((acc, ca) => {
+      if (!acc[ca.user_id]) acc[ca.user_id] = [];
+      acc[ca.user_id].push(ca);
+      return acc;
+    }, {});
+
+    let totalCompleted = 0;
+    let totalInProgress = 0;
+    let nationalServiceReports = 0;
+    const allReports = [];
+    const candidateRows = [];
+
+    // ============================================================
+    // STEP 4: PROCESS CANDIDATES
+    // ============================================================
+    candidates.forEach(c => {
+      const userAssessments = caMap[c.id] || [];
+      const completed = userAssessments.filter(a => a.status === 'completed');
+      const inProgress = userAssessments.filter(a => a.status === 'in_progress');
       
-      // Get assessments for this candidate
-      const candidateAssessments = assessments ? assessments.filter(a => a.user_id === c.id) : [];
-      const inProgressAssessments = candidateAssessments.filter(a => a.status === 'in_progress' && !a.result_id);
+      totalCompleted += completed.length;
+      totalInProgress += inProgress.length;
 
-      // Build completed assessments list with scores
-      const completedAssessments = completedResults.map(r => {
-        const assessment = assessmentMap[r.assessment_id] || {};
-        // FIXED: Use assessment_types alias
-        const type = assessment.assessment_types || assessment.assessment_type || {};
+      const completedAssessments = completed.map(ca => {
+        const r = results.find(res => res.id === ca.result_id);
+        const assessment = assessmentMap[ca.assessment_id];
+        const type = assessment ? typeMap[assessment.assessment_type_id] : null;
         const isNationalService = 
-          type?.code === 'national_service' ||
+          ca.assessment_id === NATIONAL_SERVICE_ASSESSMENT_ID ||
           assessment?.title === 'National Service Recruitment Assessment' ||
-          assessment?.id === NATIONAL_SERVICE_ASSESSMENT_ID;
+          type?.code === 'national_service';
 
-        let workplace = safeNumber(r.workplace_readiness || 0);
-        let intellectual = safeNumber(r.intellectual_capability || 0);
+        let workplace = 0;
+        let intellectual = 0;
+        let overallScore = 0;
 
-        if (workplace === 0 && intellectual === 0 && r.category_scores) {
+        if (isNationalService) {
+          // 🟢 FIX: Use report_data as source of truth for National Service
+          const nsScores = getNationalServiceScores(r);
+          workplace = nsScores.workplaceReadiness;
+          intellectual = nsScores.intellectualCapability;
+          overallScore = nsScores.overallScore;
+        } else {
+          // Non-National Service: use database columns
+          workplace = safeNumber(r?.workplace_readiness || 0);
+          intellectual = safeNumber(r?.intellectual_capability || 0);
+          overallScore = safeNumber(r?.percentage_score || 0);
+        }
+
+        // Fallback: if workplace and intellectual are 0, try to calculate from category_scores
+        if (workplace === 0 && intellectual === 0 && r?.category_scores) {
           const calculated = calculateSubScores(r.category_scores);
           workplace = calculated.workplaceReadiness;
           intellectual = calculated.intellectualCapability;
         }
 
-        // FIXED: Prefer report_data for National Service scores
-        let overallScore = safeNumber(r.percentage_score || 0);
-        if (isNationalService) {
-          overallScore = getNationalServiceOverallScore(r);
+        // Recalculate overallScore if it's still 0 but dimensions exist
+        if (overallScore === 0 && (workplace > 0 || intellectual > 0)) {
+          overallScore = Math.round((workplace + intellectual) / 2);
         }
-        
-        const recommendation = calculateRecommendation(workplace, intellectual, overallScore);
 
+        // Calculate recommendation if it's missing
+        let recommendation = r?.recommendation || 'Not Available';
+        if (isNationalService && (recommendation === 'Not Available' || !recommendation || recommendation === 'N/A')) {
+          if (workplace >= 85 && intellectual >= 85) recommendation = 'Highly Recommended';
+          else if (workplace >= 75 && intellectual >= 75) recommendation = 'Recommended';
+          else if (workplace >= 65 && intellectual >= 65) recommendation = 'Reserve Pool';
+          else recommendation = 'Not Recommended';
+        }
+
+        if (isNationalService) nationalServiceReports++;
+
+        // 🟢 Return all score aliases so frontend never falls back to 0
         return {
-          assessment_id: r.assessment_id,
-          result_id: r.id,
-          title: assessment.title || 'Assessment',
-          score: overallScore,
-          isNationalService: isNationalService,
+          assessment_id: ca.assessment_id,
+          result_id: ca.result_id,
+          title: assessment?.title || 'Assessment',
           assessment_code: type?.code || 'general',
+          score: overallScore,
+          percentage_score: overallScore,
+          overallScore: overallScore,
+          isNationalService: isNationalService,
           workplace_readiness: workplace,
           intellectual_capability: intellectual,
-          completed_at: r.completed_at,
+          completed_at: ca.completed_at,
           recommendation: recommendation
         };
       });
 
-      return {
-        ...c,
-        stats: {
-          completed: completedResults.length,
-          inProgress: inProgressAssessments.length,
-          totalAssessments: candidateResults.length + inProgressAssessments.length
-        },
-        completedAssessments: completedAssessments
+      const stats = {
+        completed: completed.length,
+        inProgress: inProgress.length,
+        unblocked: userAssessments.filter(a => a.status === 'unblocked').length,
+        blocked: userAssessments.filter(a => a.status === 'blocked').length,
+        notStarted: userAssessments.filter(a => a.status === 'not_started').length
       };
-    });
 
-    // ============================================================
-    // STEP 6: Build reports for National Service and Other tabs
-    // ============================================================
-    const allReports = [];
-
-    candidatesWithStats.forEach(candidate => {
-      candidate.completedAssessments.forEach(assessment => {
+      // Build allReports array
+      completedAssessments.forEach(a => {
         allReports.push({
-          result_id: assessment.result_id,
-          candidate_id: candidate.id,
-          candidate_name: candidate.full_name || 'Unknown',
-          candidate_email: candidate.email || '',
-          university: candidate.university || '',
-          programme: candidate.programme || '',
-          assessment_id: assessment.assessment_id,
-          assessment_title: assessment.title || 'Assessment',
-          assessment_code: assessment.assessment_code || 'general',
-          score: assessment.score || 0,
-          is_national_service: assessment.isNationalService || false,
-          workplace_readiness: assessment.workplace_readiness || 0,
-          intellectual_capability: assessment.intellectual_capability || 0,
-          recommendation: assessment.recommendation || 'Not Available',
+          result_id: a.result_id,
+          candidate_id: c.id,
+          candidate_name: c.full_name || 'Unknown',
+          candidate_email: c.email || '',
+          university: c.university || '',
+          programme: c.programme || '',
+          assessment_id: a.assessment_id,
+          assessment_title: a.title || 'Assessment',
+          assessment_code: a.assessment_code || 'general',
+          // 🟢 Send all 3 aliases with the exact same corrected value
+          score: a.score || 0,
+          percentage_score: a.percentage_score || 0,
+          overallScore: a.overallScore || 0,
+          is_national_service: a.isNationalService || false,
+          workplace_readiness: a.workplace_readiness || 0,
+          intellectual_capability: a.intellectual_capability || 0,
+          recommendation: a.recommendation || 'Not Available',
           status: 'completed',
-          completed_at: assessment.completed_at
+          completed_at: a.completed_at
         });
       });
+
+      candidateRows.push({
+        id: c.id,
+        full_name: c.full_name || 'Unknown',
+        email: c.email || '',
+        university: c.university || '',
+        programme: c.programme || '',
+        graduation_year: c.graduation_year || '',
+        preferred_department: c.preferred_department || '',
+        stats: stats,
+        completedAssessments: completedAssessments,
+        inProgressAssessments: inProgress
+      });
     });
 
-    const nationalServiceReports = allReports.filter(r => r.is_national_service === true);
-    const otherReports = allReports.filter(r => r.is_national_service === false);
+    // Separate reports into National Service and Other
+    const nationalServiceReportsList = allReports.filter(r => r.is_national_service === true);
+    const otherReportsList = allReports.filter(r => r.is_national_service === false);
 
-    console.log('[Dashboard] National Service reports:', nationalServiceReports.length);
-    console.log('[Dashboard] Other reports:', otherReports.length);
-
-    if (nationalServiceReports.length > 0) {
-      console.log('[Dashboard] Sample recommendation:', {
-        name: nationalServiceReports[0].candidate_name,
-        workplace: nationalServiceReports[0].workplace_readiness,
-        intellectual: nationalServiceReports[0].intellectual_capability,
-        overall: nationalServiceReports[0].score,
-        recommendation: nationalServiceReports[0].recommendation
-      });
-    }
-
-    const stats = {
-      totalCandidates: candidates.length,
-      completedAssessments: allReports.length,
-      pendingReviews: allReports.filter(r => r.status === 'completed').length,
-      nationalServiceReports: nationalServiceReports.length
-    };
-
+    // ============================================================
+    // STEP 5: RETURN RESPONSE
+    // ============================================================
     return res.status(200).json({
       success: true,
-      supervisor: { id: user.id, email: user.email },
-      stats,
-      candidates: candidatesWithStats,
-      nationalServiceReports,
-      otherReports,
+      stats: {
+        totalCandidates: candidates.length,
+        completedAssessments: totalCompleted,
+        pendingReviews: totalInProgress,
+        nationalServiceReports: nationalServiceReports
+      },
+      candidates: candidateRows,
+      nationalServiceReports: nationalServiceReportsList,
+      otherReports: otherReportsList,
       debug: {
         assignedCandidates: candidates.length,
-        candidateAssessments: assessments ? assessments.length : 0,
-        resultRows: results ? results.length : 0,
-        totalReports: allReports.length,
-        nsReports: nationalServiceReports.length,
-        otherReports: otherReports.length,
-        supervisorId: supervisorId,
-        supportsMultiSupervisor: true
+        candidateAssessments: candidateAssessments.length,
+        resultRows: results.length,
+        nsReports: nationalServiceReportsList.length,
+        otherReports: otherReportsList.length
       }
     });
 
   } catch (error) {
-    console.error('[Dashboard API] Error:', error);
+    console.error('[Supervisor Dashboard] Error:', error);
     return res.status(500).json({ 
       success: false, 
-      error: error.message || 'Internal error'
+      error: error.message || 'Internal server error' 
     });
   }
 }
