@@ -1,5 +1,5 @@
-// pages/api/supervisor/export-reports.js - CORRECTED VERSION
-// Uses explicit JOIN to bypass Supabase schema cache error.
+// pages/api/supervisor/export-reports.js - FIXED VERSION
+// Uses the same proven 2-step query strategy as the working Admin export.
 
 import { createClient } from '@supabase/supabase-js';
 import XLSX from 'xlsx';
@@ -78,7 +78,9 @@ export default async function handler(req, res) {
     const supervisorId = userData.user.id;
     const { type } = req.query;
 
+    // ============================================================
     // STEP 1: Get candidates for this supervisor
+    // ============================================================
     const { data: candidates, error: candidatesError } = await serviceClient
       .from('candidate_profiles')
       .select('id, full_name, email, university, programme, graduation_year, preferred_department')
@@ -99,42 +101,11 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // 🟢 STEP 2: USE RAW JOIN TO BYPASS SCHEMA CACHE
+    // STEP 2: Get assessment results for these candidates
     // ============================================================
     const { data: results, error: resultsError } = await serviceClient
       .from('assessment_results')
-      .select(`
-        id,
-        user_id,
-        assessment_id,
-        percentage_score,
-        total_score,
-        max_score,
-        workplace_readiness,
-        intellectual_capability,
-        recommendation,
-        completed_at,
-        category_scores,
-        candidate_profiles!inner(
-          id,
-          full_name,
-          email,
-          university,
-          programme,
-          graduation_year,
-          preferred_department
-        ),
-        assessments!inner(
-          id,
-          title,
-          assessment_type_id,
-          assessment_types (
-            id,
-            code,
-            name
-          )
-        )
-      `)
+      .select('*')
       .in('user_id', candidateIds)
       .order('completed_at', { ascending: false });
 
@@ -147,17 +118,60 @@ export default async function handler(req, res) {
       return res.status(404).json({ success: false, error: 'No results found for your candidates' });
     }
 
-    // STEP 3: Process and filter results
+    // ============================================================
+    // STEP 3: Build Lookup Maps (Just like the Admin export does)
+    // ============================================================
+    let candidateMap = {};
+    if (candidateIds.length > 0) {
+      candidates.forEach(c => {
+        candidateMap[c.id] = c;
+      });
+    }
+
+    // Get all unique assessment IDs from results
+    const assessmentIds = results.map(r => r.assessment_id).filter(Boolean);
+    let assessmentMap = {};
+    if (assessmentIds.length > 0) {
+      const { data: assessments } = await serviceClient
+        .from('assessments')
+        .select('id, title, assessment_type_id')
+        .in('id', assessmentIds);
+      
+      if (assessments) {
+        assessments.forEach(a => {
+          assessmentMap[a.id] = a;
+        });
+      }
+    }
+
+    // Get assessment types
+    const typeIds = Object.values(assessmentMap).map(a => a.assessment_type_id).filter(Boolean);
+    let typeMap = {};
+    if (typeIds.length > 0) {
+      const { data: types } = await serviceClient
+        .from('assessment_types')
+        .select('id, code, name')
+        .in('id', typeIds);
+      
+      if (types) {
+        types.forEach(t => {
+          typeMap[t.id] = t;
+        });
+      }
+    }
+
+    // ============================================================
+    // STEP 4: Process and filter results
+    // ============================================================
     let processedResults = results.map(result => {
-      const candidate = result.candidate_profiles || {};
-      const assessment = result.assessments || {};
-      const assessmentType = assessment.assessment_types || {};
+      const candidate = candidateMap[result.user_id] || {};
+      const assessment = assessmentMap[result.assessment_id] || {};
+      const assessmentType = assessment ? typeMap[assessment.assessment_type_id] : null;
       
       const isNationalService = 
         assessment.id === NATIONAL_SERVICE_ASSESSMENT_ID ||
         assessment.title === 'National Service Recruitment Assessment' ||
-        assessmentType.code === 'national_service' ||
-        assessmentType.name === 'National Service Recruitment Assessment';
+        assessmentType?.code === 'national_service';
 
       let workplaceReadiness = Number(result.workplace_readiness || 0);
       let intellectualCapability = Number(result.intellectual_capability || 0);
@@ -168,8 +182,8 @@ export default async function handler(req, res) {
         intellectualCapability = calculated.intellectualCapability;
       }
 
-      let recommendation = result.recommendation || 'Not Available';
-      if (isNationalService && (recommendation === 'Not Available' || !recommendation || recommendation === 'N/A')) {
+      let recommendation = result.recommendation || 'N/A';
+      if (isNationalService && (recommendation === 'N/A' || !recommendation)) {
         if (workplaceReadiness >= 85 && intellectualCapability >= 85) recommendation = 'Highly Recommended';
         else if (workplaceReadiness >= 75 && intellectualCapability >= 75) recommendation = 'Recommended';
         else if (workplaceReadiness >= 65 && intellectualCapability >= 65) recommendation = 'Reserve Pool';
@@ -221,7 +235,9 @@ export default async function handler(req, res) {
       });
     }
 
-    // STEP 4: Generate Excel file
+    // ============================================================
+    // STEP 5: Generate Excel file
+    // ============================================================
     const worksheet = XLSX.utils.json_to_sheet(processedResults);
     
     const colWidths = [
