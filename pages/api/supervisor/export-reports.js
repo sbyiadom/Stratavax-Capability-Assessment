@@ -1,4 +1,5 @@
-// pages/api/supervisor/export-reports.js
+// pages/api/supervisor/export-reports.js - CORRECTED VERSION
+// Uses explicit JOIN to bypass Supabase schema cache error.
 
 import { createClient } from '@supabase/supabase-js';
 import XLSX from 'xlsx';
@@ -97,7 +98,9 @@ export default async function handler(req, res) {
       });
     }
 
-    // STEP 2: Get assessment results for these candidates
+    // ============================================================
+    // 🟢 STEP 2: USE RAW JOIN TO BYPASS SCHEMA CACHE
+    // ============================================================
     const { data: results, error: resultsError } = await serviceClient
       .from('assessment_results')
       .select(`
@@ -112,7 +115,7 @@ export default async function handler(req, res) {
         recommendation,
         completed_at,
         category_scores,
-        candidate_profiles:user_id (
+        candidate_profiles!inner(
           id,
           full_name,
           email,
@@ -121,7 +124,7 @@ export default async function handler(req, res) {
           graduation_year,
           preferred_department
         ),
-        assessments:assessment_id (
+        assessments!inner(
           id,
           title,
           assessment_type_id,
