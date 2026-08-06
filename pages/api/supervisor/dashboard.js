@@ -1,5 +1,5 @@
 // pages/api/supervisor/dashboard.js - COMPLETE FIXED VERSION
-// FIXED: Broader National Service detection & Result-Candidate ID matching.
+// FIXED: Recommendation is now recalculated from corrected scores, not stale DB text.
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -92,6 +92,19 @@ function calculateSubScores(categoryScores) {
   };
 }
 
+// 🟢 SECTION 5.1: ADD RECOMMENDATION HELPER
+function calculateNationalServiceRecommendation(workplaceReadiness, intellectualCapability, overallScore) {
+  const workplace = safeNumber(workplaceReadiness);
+  const intellectual = safeNumber(intellectualCapability);
+  const overall = safeNumber(overallScore);
+
+  if (workplace >= 85 && intellectual >= 85) return 'Highly Recommended';
+  if (workplace >= 75 && intellectual >= 75) return 'Recommended';
+  if (workplace >= 65 && intellectual >= 65) return 'Reserve Pool';
+  if (workplace >= 50 || intellectual >= 50 || overall >= 50) return 'Consider for Development';
+  return 'Not Recommended';
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'GET') {
     return res.status(405).json({ success: false, error: 'Method not allowed' });
@@ -121,7 +134,7 @@ export default async function handler(req, res) {
     const NATIONAL_SERVICE_ASSESSMENT_ID = 'bdb9d46e-9fac-4d00-8478-1f649e7ac600';
 
     // ============================================================
-    // STEP 1: GET CANDIDATES ASSIGNED TO SUPERVISOR
+    // STEP 1: GET CANDIDATES
     // ============================================================
     const { data: candidates, error: candidatesError } = await supabase
       .from('candidate_profiles')
@@ -137,7 +150,7 @@ export default async function handler(req, res) {
     const candidateIds = candidates.map(c => c.id);
 
     // ============================================================
-    // STEP 2: GET ASSESSMENT STATUS AND RESULTS
+    // STEP 2: GET ASSESSMENTS AND RESULTS
     // ============================================================
     const { data: candidateAssessments, error: caError } = await supabase
       .from('candidate_assessments')
@@ -149,7 +162,7 @@ export default async function handler(req, res) {
       return res.status(500).json({ success: false, error: caError.message });
     }
 
-    // 🟢 STEP 7: Handle potential ID mismatches by grabbing both id and user_id
+    // Handle potential ID mismatches
     const candidateResultIds = [...new Set(
       candidates.flatMap(c => [c.id, c.user_id]).filter(Boolean)
     )];
@@ -157,7 +170,7 @@ export default async function handler(req, res) {
     const { data: results, error: resultsError } = await supabase
       .from('assessment_results')
       .select('*')
-      .in('user_id', candidateResultIds); // Uses expanded ID list
+      .in('user_id', candidateResultIds);
 
     if (resultsError) {
       console.error('[Dashboard] Results error:', resultsError);
@@ -217,7 +230,7 @@ export default async function handler(req, res) {
         const assessment = assessmentMap[ca.assessment_id];
         const type = assessment ? typeMap[assessment.assessment_type_id] : null;
 
-        // 🟢 SECTION 5.1: BROADER NATIONAL SERVICE DETECTION
+        // Broader National Service detection
         const assessmentTitle = String(assessment?.title || '').toLowerCase().trim();
         const assessmentCode = String(type?.code || '').toLowerCase().trim();
         const assessmentTypeName = String(type?.name || '').toLowerCase().trim();
@@ -230,17 +243,7 @@ export default async function handler(req, res) {
           assessmentTitle.includes('nationalservice') ||
           assessmentTitle.includes('service recruitment');
 
-        // 🟢 SECTION 5.2: TEMPORARY CLASSIFICATION DEBUG LOG
-        console.log('[NS CLASSIFICATION CHECK]', {
-          candidate: c.full_name,
-          resultId: r?.id,
-          assessmentId: assessment?.id,
-          title: assessment?.title,
-          typeCode: type?.code,
-          typeName: type?.name,
-          isNationalService
-        });
-
+        // Normalize Scores
         let workplace = 0;
         let intellectual = 0;
         let overallScore = 0;
@@ -266,13 +269,29 @@ export default async function handler(req, res) {
           overallScore = Math.round((workplace + intellectual) / 2);
         }
 
-        let recommendation = r?.recommendation || 'Not Available';
-        if (isNationalService && (recommendation === 'Not Available' || !recommendation || recommendation === 'N/A')) {
-          if (workplace >= 85 && intellectual >= 85) recommendation = 'Highly Recommended';
-          else if (workplace >= 75 && intellectual >= 75) recommendation = 'Recommended';
-          else if (workplace >= 65 && intellectual >= 65) recommendation = 'Reserve Pool';
+        // 🟢 SECTION 5.1 & 5.2: CALCULATE RECOMMENDATION FROM CORRECTED SCORES
+        let recommendation = 'Not Available';
+        if (isNationalService) {
+          recommendation = calculateNationalServiceRecommendation(workplace, intellectual, overallScore);
+        } else {
+          if (overallScore >= 85) recommendation = 'Highly Recommended';
+          else if (overallScore >= 75) recommendation = 'Recommended';
+          else if (overallScore >= 65) recommendation = 'Reserve Pool';
+          else if (overallScore >= 50) recommendation = 'Consider for Development';
           else recommendation = 'Not Recommended';
         }
+
+        // 🟢 SECTION 7: TEMPORARY DEBUG LOG
+        console.log('[NS RECOMMENDATION CHECK]', {
+          candidate: c.full_name,
+          resultId: r?.id,
+          workplace,
+          intellectual,
+          overallScore,
+          storedRecommendation: r?.recommendation,
+          calculatedRecommendation: recommendation,
+          reportRecommendation: getReportData(r)?.recommendation
+        });
 
         if (isNationalService) nationalServiceReports++;
 
@@ -288,7 +307,7 @@ export default async function handler(req, res) {
           workplace_readiness: workplace,
           intellectual_capability: intellectual,
           completed_at: ca.completed_at,
-          recommendation: recommendation
+          recommendation: recommendation // 🟢 FIXED: Uses recalculated value
         };
       });
 
@@ -300,6 +319,7 @@ export default async function handler(req, res) {
         notStarted: userAssessments.filter(a => a.status === 'not_started').length
       };
 
+      // 🟢 SECTION 5.3: PUSH CORRECT RECOMMENDATION TO ALL REPORTS
       completedAssessments.forEach(a => {
         allReports.push({
           result_id: a.result_id,
@@ -317,7 +337,7 @@ export default async function handler(req, res) {
           is_national_service: a.isNationalService || false,
           workplace_readiness: a.workplace_readiness || 0,
           intellectual_capability: a.intellectual_capability || 0,
-          recommendation: a.recommendation || 'Not Available',
+          recommendation: a.recommendation || 'Not Available', // Already recalculated above
           status: 'completed',
           completed_at: a.completed_at
         });
@@ -340,9 +360,6 @@ export default async function handler(req, res) {
     const nationalServiceReportsList = allReports.filter(r => r.is_national_service === true);
     const otherReportsList = allReports.filter(r => r.is_national_service === false);
 
-    // ============================================================
-    // STEP 5: RETURN RESPONSE
-    // ============================================================
     return res.status(200).json({
       success: true,
       stats: {
@@ -354,7 +371,6 @@ export default async function handler(req, res) {
       candidates: candidateRows,
       nationalServiceReports: nationalServiceReportsList,
       otherReports: otherReportsList,
-      // 🟢 SECTION 5.3: CLASSIFICATION SUMMARY
       debug: {
         assignedCandidates: candidates.length,
         candidateAssessments: candidateAssessments.length,
