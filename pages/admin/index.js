@@ -1,5 +1,5 @@
-// pages/admin/index.js - MULTI-SELECT FILTERS
-// FIXED: Replaced single-select program dropdown with multi-select.
+// pages/admin/index.js - SMART NORMALIZATION ENGINE
+// Automatically deduplicates and corrects spelling variations of Program names.
 
 import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/router";
@@ -69,6 +69,123 @@ async function getExactCount(tableName, configureQuery) {
   }
 }
 
+// ============================================================
+// 🟢 THE PROGRAM NORMALIZATION ENGINE
+// ============================================================
+
+// 1. Abbreviation Dictionary
+const ABBREVIATIONS = {
+  'bsc': 'BSc',
+  'b.sc': 'BSc',
+  'b. sc': 'BSc',
+  'b.s.c': 'BSc',
+  'bachelor': 'Bachelor',
+  'btech': 'B-Tech',
+  'b.tech': 'B-Tech',
+  'b. tech': 'B-Tech',
+  'eng': 'Engineering',
+  'engr': 'Engineering',
+  'elec': 'Electrical',
+  'electronics': 'Electronics',
+  'mech': 'Mechanical',
+  'mechanical': 'Mechanical',
+  'admin': 'Administration',
+  'adminis': 'Administration',
+  'of': 'of',
+  'and': 'and',
+  'in': 'in',
+  'with': 'with'
+};
+
+// 2. Normalize a single program string
+function normalizeProgramName(raw) {
+  if (!raw || typeof raw !== 'string') return '';
+  
+  let cleaned = raw
+    .toLowerCase()
+    .replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, ' ') // Replace punctuation with space
+    .replace(/\s+/g, ' ') // Collapse multiple spaces
+    .trim();
+    
+  // Split into words and replace using the dictionary
+  const words = cleaned.split(' ');
+  const mappedWords = words.map(word => ABBREVIATIONS[word] || word.charAt(0).toUpperCase() + word.slice(1));
+  
+  return mappedWords.join(' ');
+}
+
+// 3. Group similar names using Fuzzy Logic (Levenshtein distance)
+// Returns an array of unique "Master" names.
+function getUniqueMasterNames(rawPrograms) {
+  if (!rawPrograms || rawPrograms.length === 0) return [];
+  
+  // Step A: Normalize all raw programs
+  const normalizedMap = {};
+  rawPrograms.forEach(p => {
+    const normalized = normalizeProgramName(p);
+    normalizedMap[p] = normalized; // Store mapping from raw -> clean
+  });
+
+  // Step B: Get unique clean names
+  const uniqueCleanNames = [...new Set(Object.values(normalizedMap))];
+  
+  // Step C: Group names that are extremely similar (Fuzzy matching)
+  const groups = [];
+  const processed = new Set();
+
+  uniqueCleanNames.forEach(name1 => {
+    if (processed.has(name1)) return;
+    
+    const group = [name1];
+    processed.add(name1);
+    
+    uniqueCleanNames.forEach(name2 => {
+      if (processed.has(name2)) return;
+      // Calculate similarity (Jaccard Index / Overlap)
+      const words1 = name1.split(' ');
+      const words2 = name2.split(' ');
+      const intersection = words1.filter(w => words2.includes(w)).length;
+      const union = new Set([...words1, ...words2]).size;
+      const similarity = union > 0 ? intersection / union : 0;
+      
+      // If they share 60% of their words, they are the same program.
+      if (similarity > 0.6) {
+        group.push(name2);
+        processed.add(name2);
+      }
+    });
+    
+    // Pick the longest name in the group as the "Master" name
+    const masterName = group.reduce((a, b) => a.length >= b.length ? a : b);
+    groups.push(masterName);
+  });
+
+  // 4. Create a mapping from Master Name -> List of Raw Strings
+  const masterToRawMap = {};
+  groups.forEach(master => {
+    masterToRawMap[master] = [];
+    rawPrograms.forEach(raw => {
+      const clean = normalizeProgramName(raw);
+      // Check if this clean name belongs to this master group
+      const words1 = master.split(' ');
+      const words2 = clean.split(' ');
+      const intersection = words1.filter(w => words2.includes(w)).length;
+      const union = new Set([...words1, ...words2]).size;
+      const similarity = union > 0 ? intersection / union : 0;
+      
+      if (similarity > 0.6) {
+        masterToRawMap[master].push(raw);
+      }
+    });
+  });
+
+  return { groups, masterToRawMap };
+}
+
+// ============================================================
+// MAIN COMPONENT
+// ============================================================
+
 export default function AdminDashboard() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -76,8 +193,6 @@ export default function AdminDashboard() {
   const [authError, setAuthError] = useState(null);
   
   const [selectedUniversity, setSelectedUniversity] = useState('all');
-
-  // 🟢 ADVANCED MULTI-SELECT FILTERS
   const [selectedPrograms, setSelectedPrograms] = useState([]);
   const [minScore, setMinScore] = useState(0);
   const [maxScore, setMaxScore] = useState(100);
@@ -117,15 +232,30 @@ export default function AdminDashboard() {
     return allCandidates.filter(c => c.university === selectedUniversity);
   }, [allCandidates, selectedUniversity]);
 
-  // 🟢 MULTI-SELECT PROGRAM FILTER
+  // 🟢 GENERATE NORMALIZED PROGRAM LIST
+  const rawPrograms = useMemo(() => {
+    return universityFilteredCandidates.map(c => c.programme).filter(Boolean);
+  }, [universityFilteredCandidates]);
+
+  const { groups: uniqueProgramMasterNames, masterToRawMap } = useMemo(() => {
+    return getUniqueMasterNames(rawPrograms);
+  }, [rawPrograms]);
+
+  // 🟢 MULTI-SELECT FILTER USING MASTER NAMES
   const programFilteredCandidates = useMemo(() => {
     if (selectedPrograms.length === 0) return universityFilteredCandidates;
+    
+    // Map selected master names back to ALL raw names that belong to them
+    const allowedRawNames = [];
+    selectedPrograms.forEach(master => {
+      const rawList = masterToRawMap[master] || [];
+      allowedRawNames.push(...rawList);
+    });
+
     return universityFilteredCandidates.filter(c => 
-      selectedPrograms.some(selected => 
-        c.programme?.toLowerCase().trim() === selected.toLowerCase().trim()
-      )
+      allowedRawNames.includes(c.programme)
     );
-  }, [universityFilteredCandidates, selectedPrograms]);
+  }, [universityFilteredCandidates, selectedPrograms, masterToRawMap]);
 
   const filteredCandidates = useMemo(() => {
     return programFilteredCandidates.filter(c => {
@@ -134,25 +264,25 @@ export default function AdminDashboard() {
     });
   }, [programFilteredCandidates, minScore, maxScore]);
 
-  // Generate Program Options (Unique, normalizing case for display)
-  const programOptions = useMemo(() => {
-    const rawPrograms = universityFilteredCandidates
-      .map(c => c.programme)
-      .filter(Boolean);
-    // Use a Set to remove duplicates
-    return [...new Set(rawPrograms)].sort();
-  }, [universityFilteredCandidates]);
-
+  // 🟢 CHART DATA (Uses cleaned Master Names)
   const programmeStats = useMemo(() => {
     const map = {};
     filteredCandidates.forEach(c => {
-      const prog = c.programme || 'Not Specified';
-      map[prog] = (map[prog] || 0) + 1;
+      const raw = c.programme || 'Not Specified';
+      // Map raw name back to its Master Name
+      let master = 'Other';
+      for (const [m, rawList] of Object.entries(masterToRawMap)) {
+        if (rawList.includes(raw)) {
+          master = m;
+          break;
+        }
+      }
+      map[master] = (map[master] || 0) + 1;
     });
     return Object.entries(map)
       .sort((a, b) => b[1] - a[1])
       .map(([name, value]) => ({ name, value }));
-  }, [filteredCandidates]);
+  }, [filteredCandidates, masterToRawMap]);
 
   const filteredAverageScore = useMemo(() => {
     const scores = filteredCandidates
@@ -454,7 +584,8 @@ export default function AdminDashboard() {
                   }}
                 >
                   <option value="" disabled>Select Programs...</option>
-                  {programOptions.map(p => (
+                  {/* 🟢 Using Deduplicated Master Names */}
+                  {uniqueProgramMasterNames.map(p => (
                     <option key={p} value={p}>{p}</option>
                   ))}
                 </select>
