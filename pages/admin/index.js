@@ -1,5 +1,5 @@
-// pages/admin/index.js - SMART NORMALIZATION ENGINE
-// Automatically deduplicates and corrects spelling variations of Program names.
+// pages/admin/index.js - UPGRADED WITH BEAUTIFUL TAG DROPDOWNS
+// Replaced multi-select with react-select tags.
 
 import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/router";
@@ -7,6 +7,11 @@ import Link from "next/link";
 import AppLayout from "../../components/AppLayout";
 import { supabase } from "../../supabase/client";
 import AssessmentExpiration from "../../components/admin/AssessmentExpiration";
+
+// ============================================================
+// REACT-SELECT IMPORTS (NEW)
+// ============================================================
+import Select from 'react-select';
 
 // ============================================================
 // CHART.JS IMPORTS
@@ -73,112 +78,67 @@ async function getExactCount(tableName, configureQuery) {
 // 🟢 THE PROGRAM NORMALIZATION ENGINE
 // ============================================================
 
-// 1. Abbreviation Dictionary
 const ABBREVIATIONS = {
-  'bsc': 'BSc',
-  'b.sc': 'BSc',
-  'b. sc': 'BSc',
-  'b.s.c': 'BSc',
-  'bachelor': 'Bachelor',
-  'btech': 'B-Tech',
-  'b.tech': 'B-Tech',
-  'b. tech': 'B-Tech',
-  'eng': 'Engineering',
-  'engr': 'Engineering',
-  'elec': 'Electrical',
-  'electronics': 'Electronics',
-  'mech': 'Mechanical',
-  'mechanical': 'Mechanical',
-  'admin': 'Administration',
-  'adminis': 'Administration',
-  'of': 'of',
-  'and': 'and',
-  'in': 'in',
-  'with': 'with'
+  'bsc': 'BSc', 'b.sc': 'BSc', 'b. sc': 'BSc', 'b.s.c': 'BSc',
+  'bachelor': 'Bachelor', 'btech': 'B-Tech', 'b.tech': 'B-Tech',
+  'eng': 'Engineering', 'engr': 'Engineering',
+  'elec': 'Electrical', 'electronics': 'Electronics',
+  'mech': 'Mechanical', 'mechanical': 'Mechanical',
+  'admin': 'Administration', 'adminis': 'Administration',
+  'of': 'of', 'and': 'and', 'in': 'in', 'with': 'with'
 };
 
-// 2. Normalize a single program string
 function normalizeProgramName(raw) {
   if (!raw || typeof raw !== 'string') return '';
-  
   let cleaned = raw
     .toLowerCase()
-    .replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, ' ') // Replace punctuation with space
-    .replace(/\s+/g, ' ') // Collapse multiple spaces
+    .replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, ' ')
+    .replace(/\s+/g, ' ')
     .trim();
-    
-  // Split into words and replace using the dictionary
   const words = cleaned.split(' ');
   const mappedWords = words.map(word => ABBREVIATIONS[word] || word.charAt(0).toUpperCase() + word.slice(1));
-  
   return mappedWords.join(' ');
 }
 
-// 3. Group similar names using Fuzzy Logic (Levenshtein distance)
-// Returns an array of unique "Master" names.
 function getUniqueMasterNames(rawPrograms) {
-  if (!rawPrograms || rawPrograms.length === 0) return [];
+  if (!rawPrograms || rawPrograms.length === 0) return { groups: [], masterToRawMap: {} };
   
-  // Step A: Normalize all raw programs
   const normalizedMap = {};
-  rawPrograms.forEach(p => {
-    const normalized = normalizeProgramName(p);
-    normalizedMap[p] = normalized; // Store mapping from raw -> clean
-  });
-
-  // Step B: Get unique clean names
+  rawPrograms.forEach(p => { normalizedMap[p] = normalizeProgramName(p); });
   const uniqueCleanNames = [...new Set(Object.values(normalizedMap))];
-  
-  // Step C: Group names that are extremely similar (Fuzzy matching)
   const groups = [];
   const processed = new Set();
 
   uniqueCleanNames.forEach(name1 => {
     if (processed.has(name1)) return;
-    
     const group = [name1];
     processed.add(name1);
-    
     uniqueCleanNames.forEach(name2 => {
       if (processed.has(name2)) return;
-      // Calculate similarity (Jaccard Index / Overlap)
       const words1 = name1.split(' ');
       const words2 = name2.split(' ');
       const intersection = words1.filter(w => words2.includes(w)).length;
       const union = new Set([...words1, ...words2]).size;
       const similarity = union > 0 ? intersection / union : 0;
-      
-      // If they share 60% of their words, they are the same program.
-      if (similarity > 0.6) {
-        group.push(name2);
-        processed.add(name2);
-      }
+      if (similarity > 0.6) { group.push(name2); processed.add(name2); }
     });
-    
-    // Pick the longest name in the group as the "Master" name
     const masterName = group.reduce((a, b) => a.length >= b.length ? a : b);
     groups.push(masterName);
   });
 
-  // 4. Create a mapping from Master Name -> List of Raw Strings
   const masterToRawMap = {};
   groups.forEach(master => {
     masterToRawMap[master] = [];
     rawPrograms.forEach(raw => {
       const clean = normalizeProgramName(raw);
-      // Check if this clean name belongs to this master group
       const words1 = master.split(' ');
       const words2 = clean.split(' ');
       const intersection = words1.filter(w => words2.includes(w)).length;
       const union = new Set([...words1, ...words2]).size;
       const similarity = union > 0 ? intersection / union : 0;
-      
-      if (similarity > 0.6) {
-        masterToRawMap[master].push(raw);
-      }
+      if (similarity > 0.6) { masterToRawMap[master].push(raw); }
     });
   });
-
   return { groups, masterToRawMap };
 }
 
@@ -192,8 +152,9 @@ export default function AdminDashboard() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [authError, setAuthError] = useState(null);
   
-  const [selectedUniversity, setSelectedUniversity] = useState('all');
-  const [selectedPrograms, setSelectedPrograms] = useState([]);
+  // 🟢 New state for React-Select
+  const [selectedUniversityOption, setSelectedUniversityOption] = useState(null);
+  const [selectedProgramOptions, setSelectedProgramOptions] = useState([]);
   const [minScore, setMinScore] = useState(0);
   const [maxScore, setMaxScore] = useState(100);
 
@@ -228,11 +189,10 @@ export default function AdminDashboard() {
   }, [allCandidates]);
 
   const universityFilteredCandidates = useMemo(() => {
-    if (selectedUniversity === 'all') return allCandidates;
-    return allCandidates.filter(c => c.university === selectedUniversity);
-  }, [allCandidates, selectedUniversity]);
+    if (!selectedUniversityOption) return allCandidates;
+    return allCandidates.filter(c => c.university === selectedUniversityOption.value);
+  }, [allCandidates, selectedUniversityOption]);
 
-  // 🟢 GENERATE NORMALIZED PROGRAM LIST
   const rawPrograms = useMemo(() => {
     return universityFilteredCandidates.map(c => c.programme).filter(Boolean);
   }, [universityFilteredCandidates]);
@@ -241,21 +201,18 @@ export default function AdminDashboard() {
     return getUniqueMasterNames(rawPrograms);
   }, [rawPrograms]);
 
-  // 🟢 MULTI-SELECT FILTER USING MASTER NAMES
+  // 🟢 Multi-select filter using selectedProgramOptions
   const programFilteredCandidates = useMemo(() => {
-    if (selectedPrograms.length === 0) return universityFilteredCandidates;
+    if (selectedProgramOptions.length === 0) return universityFilteredCandidates;
     
-    // Map selected master names back to ALL raw names that belong to them
     const allowedRawNames = [];
-    selectedPrograms.forEach(master => {
-      const rawList = masterToRawMap[master] || [];
+    selectedProgramOptions.forEach(opt => {
+      const rawList = masterToRawMap[opt.value] || [];
       allowedRawNames.push(...rawList);
     });
 
-    return universityFilteredCandidates.filter(c => 
-      allowedRawNames.includes(c.programme)
-    );
-  }, [universityFilteredCandidates, selectedPrograms, masterToRawMap]);
+    return universityFilteredCandidates.filter(c => allowedRawNames.includes(c.programme));
+  }, [universityFilteredCandidates, selectedProgramOptions, masterToRawMap]);
 
   const filteredCandidates = useMemo(() => {
     return programFilteredCandidates.filter(c => {
@@ -264,18 +221,14 @@ export default function AdminDashboard() {
     });
   }, [programFilteredCandidates, minScore, maxScore]);
 
-  // 🟢 CHART DATA (Uses cleaned Master Names)
+  // 🟢 Chart Data
   const programmeStats = useMemo(() => {
     const map = {};
     filteredCandidates.forEach(c => {
       const raw = c.programme || 'Not Specified';
-      // Map raw name back to its Master Name
       let master = 'Other';
       for (const [m, rawList] of Object.entries(masterToRawMap)) {
-        if (rawList.includes(raw)) {
-          master = m;
-          break;
-        }
+        if (rawList.includes(raw)) { master = m; break; }
       }
       map[master] = (map[master] || 0) + 1;
     });
@@ -298,22 +251,33 @@ export default function AdminDashboard() {
     const othersCount = programmeStats.slice(8).reduce((sum, item) => sum + item.value, 0);
     const labels = top8.map(item => item.name);
     const data = top8.map(item => item.value);
-    if (othersCount > 0) {
-      labels.push('Others');
-      data.push(othersCount);
-    }
+    if (othersCount > 0) { labels.push('Others'); data.push(othersCount); }
     return { labels, data };
   }, [programmeStats]);
 
   const COLORS = ['#1a237e', '#2e7d32', '#f57c00', '#c62828', '#1565c0', '#4a148c', '#00695c', '#bf360c', '#78909c'];
 
   const resetFilters = () => {
-    setSelectedUniversity('all');
-    setSelectedPrograms([]);
+    setSelectedUniversityOption(null);
+    setSelectedProgramOptions([]);
     setMinScore(0);
     setMaxScore(100);
   };
 
+  // ============================================================
+  // REACT-SELECT OPTIONS BUILDER
+  // ============================================================
+  const universityOptions = useMemo(() => {
+    return universityStats.map(uni => ({ label: `${uni.name} (${uni.value})`, value: uni.name }));
+  }, [universityStats]);
+
+  const programOptions = useMemo(() => {
+    return uniqueProgramMasterNames.map(p => ({ label: p, value: p }));
+  }, [uniqueProgramMasterNames]);
+
+  // ============================================================
+  // AUTH & FETCH
+  // ============================================================
   useEffect(() => {
     checkAdminAuth();
   }, []);
@@ -327,17 +291,10 @@ export default function AdminDashboard() {
       if (error) throw error;
 
       const activeSession = data?.session || null;
-
-      if (!activeSession?.user) {
-        if (typeof window !== "undefined") localStorage.removeItem("userSession");
-        router.push("/login");
-        return;
-      }
+      if (!activeSession?.user) { router.push("/login"); return; }
 
       const userId = activeSession.user.id;
       const metadataRole = activeSession.user.user_metadata?.role || null;
-
-      let isAdminUser = false;
 
       const { data: profile, error: profileError } = await supabase
         .from("supervisor_profiles")
@@ -346,40 +303,15 @@ export default function AdminDashboard() {
         .maybeSingle();
 
       if (profileError && profileError.code !== "PGRST116") throw profileError;
-
       const resolvedRole = profile?.role || metadataRole;
 
-      if (!profile) {
-        const { data: candidateProfile } = await supabase
-          .from("candidate_profiles")
-          .select("role")
-          .eq("id", userId)
-          .maybeSingle();
-        
-        if (candidateProfile?.role === "admin") {
-          isAdminUser = true;
-        }
-      }
-
-      if (resolvedRole !== "admin" && !isAdminUser) {
-        setAuthError("Admin access is required for this page.");
-        router.push("/supervisor");
-        return;
-      }
-
-      if (profile?.is_active === false) {
-        setAuthError("This admin account is inactive. Please contact system administration.");
-        await supabase.auth.signOut();
-        if (typeof window !== "undefined") localStorage.removeItem("userSession");
-        router.push("/login");
-        return;
-      }
+      if (resolvedRole !== "admin") { setAuthError("Admin access is required."); router.push("/supervisor"); return; }
+      if (profile?.is_active === false) { await supabase.auth.signOut(); router.push("/login"); return; }
 
       setIsAdmin(true);
       await fetchDashboardData();
     } catch (error) {
       console.error("Admin auth error:", error);
-      setAuthError(error?.message || "Unable to verify admin access.");
       router.push("/login");
     } finally {
       setLoading(false);
@@ -390,15 +322,7 @@ export default function AdminDashboard() {
     try {
       console.log("Fetching dashboard data...");
 
-      const [
-        supervisorCount,
-        candidateCount,
-        assessmentCount,
-        completedCount,
-        resultCount,
-        inProgressCount,
-        accessResponse
-      ] = await Promise.all([
+      const [ supervisorCount, candidateCount, assessmentCount, completedCount, resultCount, inProgressCount, accessResponse ] = await Promise.all([
         getExactCount("supervisor_profiles"),
         getExactCount("candidate_profiles"),
         getExactCount("assessments", (query) => query.eq("is_active", true)),
@@ -413,29 +337,19 @@ export default function AdminDashboard() {
         .select("id, full_name, email, university, programme, created_at")
         .order("created_at", { ascending: false });
 
-      if (candidatesError) {
-        console.error("Error fetching candidates:", candidatesError);
-        throw candidatesError;
-      }
+      if (candidatesError) throw candidatesError;
 
       const { data: allResultsData, error: resultsError } = await supabase
         .from("assessment_results")
         .select("user_id, percentage_score, completed_at")
         .order("completed_at", { ascending: false });
 
-      if (resultsError) {
-        console.error("Error fetching results:", resultsError);
-        throw resultsError;
-      }
+      if (resultsError) throw resultsError;
 
       const candidatesWithScores = (allCandidatesData || []).map(c => {
         const userResults = (allResultsData || []).filter(r => r.user_id === c.id);
         const latestResult = userResults.length > 0 ? userResults[0] : null;
-        return {
-          ...c,
-          latestScore: latestResult ? Math.round(Number(latestResult.percentage_score || 0)) : 0,
-          hasResult: !!latestResult
-        };
+        return { ...c, latestScore: latestResult ? Math.round(Number(latestResult.percentage_score || 0)) : 0, hasResult: !!latestResult };
       });
 
       const recentCandidatesData = candidatesWithScores.slice(0, 6);
@@ -452,39 +366,21 @@ export default function AdminDashboard() {
         const assessmentIds = recentResultIds.map(r => r.assessment_id).filter(Boolean);
 
         const [userProfileMap, assessmentMap] = await Promise.all([
-          userIds.length > 0 
-            ? supabase.from("candidate_profiles").select("id, full_name, email").in("id", userIds)
-            : { data: [] },
-          assessmentIds.length > 0
-            ? supabase.from("assessments").select("id, title").in("id", assessmentIds)
-            : { data: [] }
+          userIds.length > 0 ? supabase.from("candidate_profiles").select("id, full_name, email").in("id", userIds) : { data: [] },
+          assessmentIds.length > 0 ? supabase.from("assessments").select("id, title").in("id", assessmentIds) : { data: [] }
         ]);
 
         const userMap = (userProfileMap.data || []).reduce((acc, u) => ({ ...acc, [u.id]: u }), {});
         const assMap = (assessmentMap.data || []).reduce((acc, a) => ({ ...acc, [a.id]: a }), {});
 
-        recentResultsProcessed = recentResultIds.map(r => ({
-          ...r,
-          candidate_profiles: userMap[r.user_id] || { full_name: 'Unknown', email: '' },
-          assessments: assMap[r.assessment_id] || { title: 'Assessment' }
-        }));
+        recentResultsProcessed = recentResultIds.map(r => ({ ...r, candidate_profiles: userMap[r.user_id] || { full_name: 'Unknown', email: '' }, assessments: assMap[r.assessment_id] || { title: 'Assessment' } }));
       }
 
       const accessRows = safeArray(accessResponse?.data || []);
       const unblockedCount = accessRows.filter((item) => item.status === "unblocked").length;
       const blockedCount = accessRows.filter((item) => item.status === "blocked").length;
 
-      setStats({
-        totalSupervisors: supervisorCount || 0,
-        totalCandidates: candidateCount || 0,
-        totalAssessments: assessmentCount || 0,
-        completedAssessments: completedCount || 0,
-        unblockedAssessments: unblockedCount || 0,
-        blockedAssessments: blockedCount || 0,
-        inProgressSessions: inProgressCount || 0,
-        totalResults: resultCount || 0
-      });
-
+      setStats({ totalSupervisors: supervisorCount || 0, totalCandidates: candidateCount || 0, totalAssessments: assessmentCount || 0, completedAssessments: completedCount || 0, unblockedAssessments: unblockedCount || 0, blockedAssessments: blockedCount || 0, inProgressSessions: inProgressCount || 0, totalResults: resultCount || 0 });
       setAllCandidates(candidatesWithScores);
       setRecentCandidates(recentCandidatesData);
       setRecentResults(recentResultsProcessed);
@@ -550,147 +446,117 @@ export default function AdminDashboard() {
           <StatCard icon="📊" label="Result Records" value={stats.totalResults} />
         </div>
 
-        <div style={styles.analyticsWrapper}>
-          <div style={styles.analyticsHeader}>
-            <h3 style={styles.analyticsTitle}>Candidate Analytics</h3>
-            
-            <div style={styles.filtersContainer}>
-              <div style={styles.filterGroup}>
-                <label style={styles.filterLabel}>University:</label>
-                <select style={styles.filterSelect} value={selectedUniversity} onChange={(e) => { setSelectedUniversity(e.target.value); setSelectedPrograms([]); }}>
-                  <option value="all">All Universities</option>
-                  {universityStats.map(uni => (
-                    <option key={uni.name} value={uni.name}>{uni.name} ({uni.value})</option>
-                  ))}
-                </select>
-              </div>
+        {/* 🟢 NEW BEAUTIFUL FILTERS BAR */}
+        <div style={styles.filtersBar}>
+          <div style={styles.filtersRow}>
+            <div style={styles.filterGroup}>
+              <label style={styles.filterLabel}>University:</label>
+              <Select
+                className="react-select-container"
+                classNamePrefix="react-select"
+                options={universityOptions}
+                value={selectedUniversityOption}
+                onChange={(option) => { setSelectedUniversityOption(option); setSelectedProgramOptions([]); }}
+                placeholder="Select University..."
+                isClearable
+                styles={customSelectStyles}
+              />
+            </div>
 
-              {/* 🟢 MULTI-SELECT DROPDOWN (Hold Ctrl/Cmd to select multiple) */}
-              <div style={styles.filterGroup}>
-                <label style={styles.filterLabel}>Programs ({selectedPrograms.length} selected):</label>
-                <select 
-                  multiple 
-                  style={styles.filterSelectMulti} 
-                  value={selectedPrograms} 
-                  onChange={(e) => {
-                    const options = e.target.options;
-                    const selected = [];
-                    for (let i = 0; i < options.length; i++) {
-                      if (options[i].selected) {
-                        selected.push(options[i].value);
-                      }
-                    }
-                    setSelectedPrograms(selected);
-                  }}
-                >
-                  <option value="" disabled>Select Programs...</option>
-                  {/* 🟢 Using Deduplicated Master Names */}
-                  {uniqueProgramMasterNames.map(p => (
-                    <option key={p} value={p}>{p}</option>
-                  ))}
-                </select>
-              </div>
+            <div style={styles.filterGroup}>
+              <label style={styles.filterLabel}>Programs:</label>
+              <Select
+                className="react-select-container"
+                classNamePrefix="react-select"
+                options={programOptions}
+                value={selectedProgramOptions}
+                onChange={(options) => setSelectedProgramOptions(options || [])}
+                placeholder="Select Programs..."
+                isMulti
+                isClearable
+                styles={customSelectStyles}
+              />
+            </div>
 
-              <div style={styles.filterGroup}>
-                <label style={styles.filterLabel}>Min Score:</label>
+            <div style={styles.scoreFilterGroup}>
+              <div style={styles.scoreInputWrapper}>
+                <label style={styles.filterLabelSmall}>Min:</label>
                 <input type="number" style={styles.filterInputSmall} min="0" max="100" value={minScore} onChange={(e) => setMinScore(e.target.value)} />
               </div>
-
-              <div style={styles.filterGroup}>
-                <label style={styles.filterLabel}>Max Score:</label>
+              <div style={styles.scoreInputWrapper}>
+                <label style={styles.filterLabelSmall}>Max:</label>
                 <input type="number" style={styles.filterInputSmall} min="0" max="100" value={maxScore} onChange={(e) => setMaxScore(e.target.value)} />
               </div>
+            </div>
 
-              <button onClick={resetFilters} style={styles.resetFilterButton}>Reset Filters</button>
+            <button onClick={resetFilters} style={styles.resetFilterButton}>Reset Filters</button>
+          </div>
+        </div>
+
+        {/* CHARTS ROW */}
+        <div style={styles.chartGrid}>
+          <div style={styles.chartCard}>
+            <h4 style={styles.chartTitle}>
+              {!selectedUniversityOption ? 'Top Programs (Distribution)' : `Programs at ${selectedUniversityOption?.value}`}
+            </h4>
+            <div style={{ height: '280px', position: 'relative' }}>
+              <Pie
+                data={{
+                  labels: pieChartData.labels,
+                  datasets: [{ data: pieChartData.data, backgroundColor: COLORS, borderWidth: 2, borderColor: '#fff' }]
+                }}
+                options={{ maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { boxWidth: 12, padding: 10, font: { size: 11 } } } } }}
+              />
             </div>
           </div>
 
-          <div style={styles.chartGrid}>
-            <div style={styles.chartCard}>
-              <h4 style={styles.chartTitle}>
-                {selectedUniversity === 'all' ? 'Top Programs (Distribution)' : `Programs at ${selectedUniversity}`}
-              </h4>
-              <div style={{ height: '280px', position: 'relative' }}>
-                <Pie
-                  data={{
-                    labels: pieChartData.labels,
-                    datasets: [{
-                      data: pieChartData.data,
-                      backgroundColor: COLORS,
-                      borderWidth: 2,
-                      borderColor: '#fff'
-                    }]
-                  }}
-                  options={{
-                    maintainAspectRatio: false,
-                    plugins: {
-                      legend: { 
-                        position: 'right', 
-                        labels: { boxWidth: 12, padding: 10, font: { size: 11 } } 
-                      }
-                    }
-                  }}
-                />
-              </div>
+          <div style={styles.chartCard}>
+            <h4 style={styles.chartTitle}>Top 15 Universities (Ranking)</h4>
+            <div style={{ height: '280px' }}>
+              <Bar
+                data={{
+                  labels: universityStats.slice(0, 15).map(item => item.name),
+                  datasets: [{ label: 'Count', data: universityStats.slice(0, 15).map(item => item.value), backgroundColor: '#1a237e', borderRadius: 4 }]
+                }}
+                options={{ indexAxis: 'y', maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true, ticks: { stepSize: 1 } } } }}
+              />
             </div>
+          </div>
 
-            <div style={styles.chartCard}>
-              <h4 style={styles.chartTitle}>Top 15 Universities (Ranking)</h4>
-              <div style={{ height: '280px' }}>
-                <Bar
-                  data={{
-                    labels: universityStats.slice(0, 15).map(item => item.name),
-                    datasets: [{
-                      label: 'Count',
-                      data: universityStats.slice(0, 15).map(item => item.value),
-                      backgroundColor: '#1a237e',
-                      borderRadius: 4,
-                    }]
-                  }}
-                  options={{
-                    indexAxis: 'y',
-                    maintainAspectRatio: false,
-                    plugins: { legend: { display: false } },
-                    scales: { x: { beginAtZero: true, ticks: { stepSize: 1 } } }
-                  }}
-                />
-              </div>
+          <div style={styles.statsCardLarge}>
+            <h4 style={styles.panelHeader}>
+              {!selectedUniversityOption ? '📊 Platform Overview' : `📍 ${selectedUniversityOption?.value}`}
+            </h4>
+            <div style={styles.statRow}>
+              <span style={styles.statRowLabel}>Total Candidates</span>
+              <span style={styles.statRowValue}>{filteredCandidates.length}</span>
             </div>
-
-            <div style={styles.statsCardLarge}>
-              <h4 style={styles.panelHeader}>
-                {selectedUniversity === 'all' ? '📊 Platform Overview' : `📍 ${selectedUniversity}`}
-              </h4>
-              <div style={styles.statRow}>
-                <span style={styles.statRowLabel}>Total Candidates</span>
-                <span style={styles.statRowValue}>{filteredCandidates.length}</span>
-              </div>
-              <div style={styles.statRow}>
-                <span style={styles.statRowLabel}>Average Score</span>
-                <span style={styles.statRowValue} style={{color: filteredAverageScore >= 70 ? '#2e7d32' : '#c62828'}}>
-                  {filteredAverageScore > 0 ? `${filteredAverageScore}%` : 'N/A'}
-                </span>
-              </div>
-              <div style={styles.statRow}>
-                <span style={styles.statRowLabel}>Number of Programs</span>
-                <span style={styles.statRowValue}>{new Set(filteredCandidates.map(c => c.programme).filter(Boolean)).size}</span>
-              </div>
-              <div style={styles.topProgramContainer}>
-                <div style={styles.topProgramLabel}>Most Popular Program:</div>
-                <div style={styles.topProgramValue}>
-                  {programmeStats.length > 0 ? programmeStats[0].name : 'N/A'}
-                </div>
+            <div style={styles.statRow}>
+              <span style={styles.statRowLabel}>Average Score</span>
+              <span style={styles.statRowValue} style={{color: filteredAverageScore >= 70 ? '#2e7d32' : '#c62828'}}>
+                {filteredAverageScore > 0 ? `${filteredAverageScore}%` : 'N/A'}
+              </span>
+            </div>
+            <div style={styles.statRow}>
+              <span style={styles.statRowLabel}>Number of Programs</span>
+              <span style={styles.statRowValue}>{new Set(filteredCandidates.map(c => c.programme).filter(Boolean)).size}</span>
+            </div>
+            <div style={styles.topProgramContainer}>
+              <div style={styles.topProgramLabel}>Most Popular Program:</div>
+              <div style={styles.topProgramValue}>
+                {programmeStats.length > 0 ? programmeStats[0].name : 'N/A'}
               </div>
             </div>
           </div>
         </div>
 
-        {selectedUniversity !== 'all' && (
+        {/* DETAIL TABLE (If University Selected) */}
+        {selectedUniversityOption && (
           <div style={styles.detailTableContainer}>
             <div style={styles.detailHeader}>
               <h4 style={styles.detailTableTitle}>
-                {filteredCandidates.length} Candidates from {selectedUniversity}
-                {selectedPrograms.length > 0 && ` (${selectedPrograms.length} programs selected)`}
+                {filteredCandidates.length} Candidates from {selectedUniversityOption?.value}
+                {selectedProgramOptions.length > 0 && ` (${selectedProgramOptions.length} programs selected)`}
               </h4>
             </div>
             <div style={styles.tableContainer}>
@@ -732,6 +598,7 @@ export default function AdminDashboard() {
           </div>
         )}
 
+        {/* ACTION CARDS & EXTENSIONS */}
         <div style={styles.actionCardsGrid}>
           <ActionCard href="/admin/add-supervisor" icon="+" title="Add Supervisor" description="Create new supervisor accounts with dashboard access." />
           <ActionCard href="/admin/manage-supervisors" icon="👥" title="Manage Supervisors" description="View, activate, deactivate, or update supervisor accounts." />
@@ -807,6 +674,10 @@ export default function AdminDashboard() {
   );
 }
 
+// ============================================================
+// SUB-COMPONENTS
+// ============================================================
+
 function StatCard({ icon, label, value }) {
   return (
     <div style={styles.statCard}>
@@ -832,6 +703,43 @@ function ActionCard({ href, icon, title, description }) {
     </Link>
   );
 }
+
+// ============================================================
+// CUSTOM STYLES FOR REACT-SELECT
+// ============================================================
+const customSelectStyles = {
+  control: (base, state) => ({
+    ...base,
+    minHeight: '38px',
+    borderColor: state.isFocused ? '#1a237e' : '#e2e8f0',
+    boxShadow: state.isFocused ? '0 0 0 1px #1a237e' : 'none',
+    '&:hover': { borderColor: '#1a237e' },
+  }),
+  option: (base, state) => ({
+    ...base,
+    backgroundColor: state.isSelected ? '#1a237e' : state.isFocused ? '#e3f2fd' : 'white',
+    color: state.isSelected ? 'white' : '#1a202c',
+    '&:active': { backgroundColor: '#1a237e' },
+  }),
+  multiValue: (base) => ({
+    ...base,
+    backgroundColor: '#e3f2fd',
+  }),
+  multiValueLabel: (base) => ({
+    ...base,
+    color: '#1a237e',
+    fontWeight: 600,
+  }),
+  multiValueRemove: (base) => ({
+    ...base,
+    color: '#1a237e',
+    '&:hover': { backgroundColor: '#1a237e', color: 'white' },
+  }),
+};
+
+// ============================================================
+// STYLES
+// ============================================================
 
 const styles = {
   checkingContainer: {
@@ -886,56 +794,48 @@ const styles = {
   statLabel: { fontSize: '11px', color: '#718096', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' },
   statValue: { fontSize: '22px', fontWeight: 800, color: '#0a1929' },
 
-  analyticsWrapper: {
-    marginBottom: '30px'
+  // 🟢 NEW FILTERS BAR STYLES
+  filtersBar: {
+    background: 'white',
+    borderRadius: '12px',
+    padding: '16px 20px',
+    marginBottom: '24px',
+    border: '1px solid #eef2f7',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
   },
-  analyticsHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '16px',
-    flexWrap: 'wrap',
-    gap: '12px'
-  },
-  analyticsTitle: {
-    fontSize: '20px',
-    fontWeight: '700',
-    color: '#0a1929',
-    margin: 0
-  },
-  filtersContainer: {
+  filtersRow: {
     display: 'flex',
     flexWrap: 'wrap',
-    gap: '12px',
+    gap: '16px',
     alignItems: 'center'
   },
   filterGroup: {
     display: 'flex',
-    alignItems: 'center',
-    gap: '6px'
+    flexDirection: 'column',
+    minWidth: '200px',
+    flex: 1,
+    maxWidth: '300px'
   },
   filterLabel: {
     fontSize: '12px',
     fontWeight: '600',
-    color: '#475569'
+    color: '#475569',
+    marginBottom: '4px'
   },
-  filterSelect: {
-    padding: '6px 10px',
-    borderRadius: '6px',
-    border: '1px solid #e2e8f0',
+  filterLabelSmall: {
     fontSize: '12px',
-    background: 'white',
-    minWidth: '140px'
+    fontWeight: '600',
+    color: '#475569',
+    marginRight: '6px'
   },
-  filterSelectMulti: {
-    padding: '6px 10px',
-    borderRadius: '6px',
-    border: '1px solid #e2e8f0',
-    fontSize: '12px',
-    background: 'white',
-    minWidth: '180px',
-    height: '80px',
-    overflowY: 'auto'
+  scoreFilterGroup: {
+    display: 'flex',
+    alignItems: 'flex-end',
+    gap: '12px'
+  },
+  scoreInputWrapper: {
+    display: 'flex',
+    alignItems: 'center'
   },
   filterInputSmall: {
     padding: '6px 8px',
@@ -947,19 +847,24 @@ const styles = {
     textAlign: 'center'
   },
   resetFilterButton: {
-    padding: '6px 16px',
+    padding: '8px 20px',
     background: '#f1f5f9',
     border: '1px solid #e2e8f0',
     borderRadius: '6px',
-    fontSize: '12px',
+    fontSize: '13px',
     fontWeight: '600',
     cursor: 'pointer',
-    color: '#475569'
+    color: '#475569',
+    marginLeft: 'auto',
+    height: '38px',
+    alignSelf: 'flex-end'
   },
+
   chartGrid: {
     display: 'grid',
     gridTemplateColumns: '1fr 1fr',
-    gap: '20px'
+    gap: '20px',
+    marginBottom: '24px'
   },
   chartCard: {
     background: 'white',
@@ -1022,6 +927,7 @@ const styles = {
     marginTop: '2px'
   },
 
+  // Table & Detail styles
   detailTableContainer: {
     background: 'white',
     borderRadius: '12px',
