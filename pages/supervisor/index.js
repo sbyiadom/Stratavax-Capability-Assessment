@@ -1,11 +1,37 @@
-// pages/supervisor/index.js - COMPLETE FIXED VERSION
-// FIXED: Defensive recalculation ensures Recommendation matches displayed scores.
+// pages/supervisor/index.js - UPGRADED WITH CHARTS & ADVANCED FILTERS
+// Built using chart.js & react-chartjs-2 (Already installed in your project)
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/router';
 import { supabase } from '../../supabase/client';
 import { useRequireAuth } from '../../utils/requireAuth';
 import AppLayout from '../../components/AppLayout';
+
+// ============================================================
+// CHART.JS IMPORTS (Using your existing dependencies)
+// ============================================================
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  Title,
+  Tooltip,
+  Legend,
+  ArcElement,
+} from 'chart.js';
+import { Pie, Bar } from 'react-chartjs-2';
+
+// Register ChartJS components
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  Title,
+  Tooltip,
+  Legend,
+  ArcElement
+);
 
 export default function SupervisorDashboard() {
   const router = useRouter();
@@ -26,6 +52,62 @@ export default function SupervisorDashboard() {
     pendingReviews: 0,
     nationalServiceReports: 0
   });
+
+  // 🟢 NEW: FILTER & SEARCH STATE
+  const [filters, setFilters] = useState({
+    search: '',
+    university: 'all',
+    programme: 'all',
+    minScore: 0,
+    maxScore: 100,
+    recommendation: 'all'
+  });
+
+  // 🟢 NEW: CHART DATA (Derived from candidates)
+  const universityStats = useMemo(() => {
+    const map = {};
+    candidates.forEach(c => {
+      const uni = c.university || 'Not Specified';
+      map[uni] = (map[uni] || 0) + 1;
+    });
+    return Object.entries(map).map(([name, value]) => ({ name, value }));
+  }, [candidates]);
+
+  const programmeStats = useMemo(() => {
+    const map = {};
+    candidates.forEach(c => {
+      const prog = c.programme || 'Not Specified';
+      map[prog] = (map[prog] || 0) + 1;
+    });
+    return Object.entries(map).map(([name, value]) => ({ name, value }));
+  }, [candidates]);
+
+  // 🟢 NEW: FILTERED CANDIDATES LIST
+  const filteredCandidates = useMemo(() => {
+    return candidates.filter(c => {
+      // Search filter
+      const searchTerm = filters.search.toLowerCase().trim();
+      const matchesSearch = !searchTerm || 
+        (c.full_name || '').toLowerCase().includes(searchTerm) ||
+        (c.email || '').toLowerCase().includes(searchTerm);
+
+      // Dropdown filters
+      const matchUniversity = filters.university === 'all' || c.university === filters.university;
+      const matchProgramme = filters.programme === 'all' || c.programme === filters.programme;
+      
+      // Score filter
+      const avgScore = c.stats?.completed > 0 
+        ? Math.round((c.completedAssessments || []).reduce((sum, a) => sum + (a.score || 0), 0) / (c.completedAssessments?.length || 1))
+        : 0;
+      const matchScore = avgScore >= Number(filters.minScore) && avgScore <= Number(filters.maxScore);
+
+      // Recommendation filter (pulls from latest completed assessment)
+      const latestRec = c.completedAssessments?.length > 0 ? c.completedAssessments[0].recommendation : 'N/A';
+      const matchRec = filters.recommendation === 'all' || latestRec === filters.recommendation;
+
+      return matchesSearch && matchUniversity && matchProgramme && matchScore && matchRec;
+    });
+  }, [candidates, filters]);
 
   useEffect(() => {
     if (!session) return;
@@ -227,6 +309,18 @@ export default function SupervisorDashboard() {
     return '#991b1b';
   };
 
+  // 🟢 NEW: Reset filters function
+  const resetFilters = () => {
+    setFilters({
+      search: '',
+      university: 'all',
+      programme: 'all',
+      minScore: 0,
+      maxScore: 100,
+      recommendation: 'all'
+    });
+  };
+
   if (authLoading || loading) {
     return (
       <AppLayout background="/images/supervisor-bg.jpg">
@@ -292,6 +386,50 @@ export default function SupervisorDashboard() {
           </div>
         )}
 
+        {/* 🟢 CHARTS SECTION */}
+        {candidates.length > 0 && (
+          <div style={styles.chartGrid}>
+            <div style={styles.chartCard}>
+              <h4 style={styles.chartTitle}>Candidates by University</h4>
+              <div style={{ height: '250px' }}>
+                <Pie
+                  data={{
+                    labels: universityStats.map(item => item.name),
+                    datasets: [{
+                      data: universityStats.map(item => item.value),
+                      backgroundColor: ['#1a237e', '#2e7d32', '#f57c00', '#c62828', '#1565c0', '#4a148c', '#00695c', '#bf360c', '#880e4f'],
+                      borderWidth: 1,
+                    }]
+                  }}
+                  options={{ maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12 } } } }}
+                />
+              </div>
+            </div>
+
+            <div style={styles.chartCard}>
+              <h4 style={styles.chartTitle}>Candidates by Programme</h4>
+              <div style={{ height: '250px' }}>
+                <Bar
+                  data={{
+                    labels: programmeStats.map(item => item.name),
+                    datasets: [{
+                      label: 'Number of Candidates',
+                      data: programmeStats.map(item => item.value),
+                      backgroundColor: '#1a237e',
+                      borderRadius: 4,
+                    }]
+                  }}
+                  options={{
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
         <div style={styles.tabsContainer}>
           <TabButton
             active={activeTab === 'candidates'}
@@ -310,10 +448,56 @@ export default function SupervisorDashboard() {
           />
         </div>
 
+        {/* 🟢 FILTERS & SEARCH BAR */}
+        {activeTab === 'candidates' && (
+          <div style={styles.filterBar}>
+            <div style={styles.searchBox}>
+              <input 
+                type="text" 
+                placeholder="Search by name or email..." 
+                value={filters.search}
+                onChange={(e) => setFilters({...filters, search: e.target.value})}
+                style={styles.searchInput}
+              />
+            </div>
+            <div style={styles.filterGroup}>
+              <label style={styles.filterLabel}>Uni:</label>
+              <select style={styles.filterSelect} value={filters.university} onChange={(e) => setFilters({...filters, university: e.target.value})}>
+                <option value="all">All</option>
+                {[...new Set(candidates.map(c => c.university).filter(Boolean))].map(u => <option key={u} value={u}>{u}</option>)}
+              </select>
+            </div>
+            <div style={styles.filterGroup}>
+              <label style={styles.filterLabel}>Program:</label>
+              <select style={styles.filterSelect} value={filters.programme} onChange={(e) => setFilters({...filters, programme: e.target.value})}>
+                <option value="all">All</option>
+                {[...new Set(candidates.map(c => c.programme).filter(Boolean))].map(p => <option key={p} value={p}>{p}</option>)}
+              </select>
+            </div>
+            <div style={styles.filterGroup}>
+              <label style={styles.filterLabel}>Score:</label>
+              <input type="number" style={styles.filterInputMini} min="0" max="100" placeholder="Min" value={filters.minScore} onChange={(e) => setFilters({...filters, minScore: e.target.value})} />
+              <span style={styles.filterSeparator}>-</span>
+              <input type="number" style={styles.filterInputMini} min="0" max="100" placeholder="Max" value={filters.maxScore} onChange={(e) => setFilters({...filters, maxScore: e.target.value})} />
+            </div>
+            <div style={styles.filterGroup}>
+              <label style={styles.filterLabel}>Rec:</label>
+              <select style={styles.filterSelect} value={filters.recommendation} onChange={(e) => setFilters({...filters, recommendation: e.target.value})}>
+                <option value="all">All</option>
+                <option value="Highly Recommended">Highly Recommended</option>
+                <option value="Recommended">Recommended</option>
+                <option value="Reserve Pool">Reserve Pool</option>
+                <option value="Not Recommended">Not Recommended</option>
+              </select>
+            </div>
+            <button onClick={resetFilters} style={styles.clearFilterButton}>✕</button>
+          </div>
+        )}
+
         <div style={styles.tabContent}>
           {activeTab === 'candidates' && (
             <CandidatesTab
-              candidates={candidates}
+              candidates={filteredCandidates} // Uses filtered list
               selectedAssessments={selectedAssessments}
               onAssessmentChange={handleAssessmentChange}
               onAssessmentSelect={handleAssessmentSelect}
@@ -400,7 +584,6 @@ function NationalServiceTab({ reports, getScoreColor, getScoreTextColor, getReco
             </thead>
             <tbody>
               {reports.map((report) => {
-                // Defensive Overall Score
                 const overallScore = Number(report.score || report.overallScore || report.percentage_score || 0);
                 const workplaceScore = Number(report.workplace_readiness || 0);
                 const intellectualScore = Number(report.intellectual_capability || 0);
@@ -408,8 +591,6 @@ function NationalServiceTab({ reports, getScoreColor, getScoreTextColor, getReco
                 const isCompleted = status === 'completed' || report.result_id !== null;
                 const hasScores = workplaceScore > 0 || intellectualScore > 0 || overallScore > 0;
 
-                // 🟢 DEFENSIVE RECALCULATION
-                // Even if the API sends a stale recommendation, we recalculate it here based on the visible scores.
                 const calculateNationalServiceRecommendation = (workplace, intellectual, overall) => {
                   if (workplace >= 85 && intellectual >= 85) return 'Highly Recommended';
                   if (workplace >= 75 && intellectual >= 75) return 'Recommended';
@@ -419,9 +600,7 @@ function NationalServiceTab({ reports, getScoreColor, getScoreTextColor, getReco
                 };
 
                 const displayRecommendation = calculateNationalServiceRecommendation(
-                  workplaceScore, 
-                  intellectualScore, 
-                  overallScore
+                  workplaceScore, intellectualScore, overallScore
                 );
 
                 return (
@@ -715,6 +894,94 @@ const styles = {
   statIcon: { fontSize: '28px' },
   statLabel: { fontSize: '12px', color: '#718096', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.04em' },
   statValue: { fontSize: '24px', fontWeight: '800', color: '#0a1929' },
+  
+  // 🟢 NEW: CHART & FILTER STYLES
+  chartGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))',
+    gap: '20px',
+    marginBottom: '24px'
+  },
+  chartCard: {
+    background: 'white',
+    padding: '20px',
+    borderRadius: '12px',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+    border: '1px solid #eef2f7'
+  },
+  chartTitle: {
+    fontSize: '16px',
+    fontWeight: '600',
+    color: '#0a1929',
+    margin: '0 0 12px 0'
+  },
+  filterBar: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '12px',
+    padding: '12px 16px',
+    background: 'white',
+    borderRadius: '8px',
+    marginBottom: '16px',
+    border: '1px solid #e2e8f0',
+    alignItems: 'center'
+  },
+  searchBox: {
+    flex: 1,
+    minWidth: '180px'
+  },
+  searchInput: {
+    width: '100%',
+    padding: '8px 12px',
+    borderRadius: '6px',
+    border: '1px solid #e2e8f0',
+    fontSize: '13px',
+    outline: 'none',
+    background: 'white'
+  },
+  filterGroup: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px'
+  },
+  filterLabel: {
+    fontSize: '11px',
+    fontWeight: '600',
+    color: '#475569',
+    textTransform: 'uppercase'
+  },
+  filterSelect: {
+    padding: '6px 10px',
+    borderRadius: '6px',
+    border: '1px solid #e2e8f0',
+    fontSize: '12px',
+    background: 'white',
+    minWidth: '100px'
+  },
+  filterInputMini: {
+    padding: '6px 8px',
+    borderRadius: '6px',
+    border: '1px solid #e2e8f0',
+    fontSize: '12px',
+    background: 'white',
+    width: '50px',
+    textAlign: 'center'
+  },
+  filterSeparator: {
+    color: '#94a3b8',
+    fontWeight: 'bold'
+  },
+  clearFilterButton: {
+    padding: '6px 12px',
+    background: '#f1f5f9',
+    border: '1px solid #e2e8f0',
+    borderRadius: '6px',
+    fontSize: '14px',
+    fontWeight: 'bold',
+    cursor: 'pointer',
+    color: '#64748b'
+  },
+
   tabsContainer: {
     display: 'flex',
     gap: '8px',
