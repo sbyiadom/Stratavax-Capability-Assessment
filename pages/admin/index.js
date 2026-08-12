@@ -1,5 +1,5 @@
-// pages/admin/index.js - ULTIMATE FIX (Direct Data Fetching)
-// FIXED: Bypassed nested relationship error. Fetches scores directly and merges in JavaScript.
+// pages/admin/index.js - FINAL STABLE FIX
+// FIXED: Removed the Supabase Relationship Error blocking the dashboard.
 
 import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/router";
@@ -252,7 +252,7 @@ export default function AdminDashboard() {
         throw candidatesError;
       }
 
-      // 3. Fetch ALL Results (Directly, without nested errors)
+      // 3. Fetch ALL Results (Directly)
       const { data: allResultsData, error: resultsError } = await supabase
         .from("assessment_results")
         .select("user_id, percentage_score, completed_at")
@@ -276,28 +276,44 @@ export default function AdminDashboard() {
         };
       });
 
-      // 5. Fetch Recent Candidates and Results
+      // 5. Fetch Recent Candidates (Using the already computed data)
       const recentCandidatesData = candidatesWithScores.slice(0, 6);
 
-      const { data: recentResultsResponse, error: recentResultsError } = await supabase
+      // ✅ FIX: Fetch recent results safely, ignoring the schema cache error
+      // We first get the result IDs, then fetch the profiles separately
+      const { data: recentResultIds, error: recentError } = await supabase
         .from("assessment_results")
-        .select(`
-          id, 
-          user_id, 
-          assessment_id, 
-          total_score, 
-          max_score, 
-          percentage_score, 
-          completed_at,
-          recommendation,
-          candidate_profiles:user_id(full_name, email),
-          assessments:assessment_id(title)
-        `)
+        .select("id, user_id, assessment_id, percentage_score, completed_at")
         .order("completed_at", { ascending: false })
         .limit(6);
 
-      if (recentResultsError) {
-        console.error("Error fetching recent results:", recentResultsError);
+      if (recentError) {
+        console.warn("Warning: Could not fetch full recent results details, dashboard will remain stable.");
+      }
+
+      // Try to fetch details for these results
+      let recentResultsProcessed = [];
+      if (recentResultIds && recentResultIds.length > 0) {
+        const userIds = recentResultIds.map(r => r.user_id).filter(Boolean);
+        const assessmentIds = recentResultIds.map(r => r.assessment_id).filter(Boolean);
+
+        const [userProfileMap, assessmentMap] = await Promise.all([
+          userIds.length > 0 
+            ? supabase.from("candidate_profiles").select("id, full_name, email").in("id", userIds)
+            : { data: [] },
+          assessmentIds.length > 0
+            ? supabase.from("assessments").select("id, title").in("id", assessmentIds)
+            : { data: [] }
+        ]);
+
+        const userMap = (userProfileMap.data || []).reduce((acc, u) => ({ ...acc, [u.id]: u }), {});
+        const assMap = (assessmentMap.data || []).reduce((acc, a) => ({ ...acc, [a.id]: a }), {});
+
+        recentResultsProcessed = recentResultIds.map(r => ({
+          ...r,
+          candidate_profiles: userMap[r.user_id] || { full_name: 'Unknown', email: '' },
+          assessments: assMap[r.assessment_id] || { title: 'Assessment' }
+        }));
       }
 
       console.log("Counts:", { supervisorCount, candidateCount, assessmentCount, completedCount, resultCount, inProgressCount });
@@ -319,7 +335,7 @@ export default function AdminDashboard() {
 
       setAllCandidates(candidatesWithScores);
       setRecentCandidates(recentCandidatesData);
-      setRecentResults(recentResultsResponse?.data || []);
+      setRecentResults(recentResultsProcessed);
     } catch (error) {
       console.error("Error fetching admin dashboard data:", error);
     }
