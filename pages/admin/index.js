@@ -1,5 +1,5 @@
-// pages/admin/index.js - UPGRADED WITH DRILL-DOWN FILTERS & CLEAN CHARTS
-// Built using chart.js & react-chartjs-2
+// pages/admin/index.js - PROFESSIONAL INFOGRAPHIC DASHBOARD (PIE + BAR)
+// FIXED: Score extraction logic now correctly maps assessment results.
 
 import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/router";
@@ -21,7 +21,7 @@ import {
   Legend,
   ArcElement,
 } from 'chart.js';
-import { Bar } from 'react-chartjs-2';
+import { Pie, Bar } from 'react-chartjs-2';
 
 ChartJS.register(
   CategoryScale,
@@ -75,7 +75,6 @@ export default function AdminDashboard() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [authError, setAuthError] = useState(null);
   
-  // 🟢 NEW: State for Drill-Down Filter
   const [selectedUniversity, setSelectedUniversity] = useState('all');
 
   const [stats, setStats] = useState({
@@ -93,7 +92,11 @@ export default function AdminDashboard() {
   const [recentCandidates, setRecentCandidates] = useState([]);
   const [recentResults, setRecentResults] = useState([]);
 
-  // 🟢 DERIVED STATS & CHARTS
+  // ============================================================
+  // DATA PROCESSING FOR CHARTS
+  // ============================================================
+  
+  // 1. Compute University Stats
   const universityStats = useMemo(() => {
     const map = {};
     allCandidates.forEach(c => {
@@ -101,17 +104,17 @@ export default function AdminDashboard() {
       map[uni] = (map[uni] || 0) + 1;
     });
     return Object.entries(map)
-      .sort((a, b) => b[1] - a[1]) // Sort by highest count
+      .sort((a, b) => b[1] - a[1])
       .map(([name, value]) => ({ name, value }));
   }, [allCandidates]);
 
-  // 🟢 FILTERED CANDIDATES (Based on University Selection)
+  // 2. Filter Candidates based on dropdown
   const filteredCandidates = useMemo(() => {
     if (selectedUniversity === 'all') return allCandidates;
     return allCandidates.filter(c => c.university === selectedUniversity);
   }, [allCandidates, selectedUniversity]);
 
-  // 🟢 PROGRAMME STATS (Based on Filtered Candidates)
+  // 3. Compute Programme Stats for the Filtered View
   const programmeStats = useMemo(() => {
     const map = {};
     filteredCandidates.forEach(c => {
@@ -119,19 +122,42 @@ export default function AdminDashboard() {
       map[prog] = (map[prog] || 0) + 1;
     });
     return Object.entries(map)
-      .sort((a, b) => b[1] - a[1]) // Sort by highest count
-      .slice(0, 15) // Only show top 15 programs to keep it clean
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 15)
       .map(([name, value]) => ({ name, value }));
   }, [filteredCandidates]);
 
-  // 🟢 CALCULATE AVERAGE SCORE FOR FILTERED GROUP
+  // 4. 🟢 FIXED: Average Score Calculation (Extracts from nested results)
   const filteredAverageScore = useMemo(() => {
+    // Safely pull scores from the candidate's completed assessments (nested in the API response)
     const scores = filteredCandidates
-      .flatMap(c => c.completedAssessments || [])
-      .map(a => a.score || 0);
+      .flatMap(c => (c.completedAssessments || []).map(a => a.score || 0))
+      .filter(s => s > 0);
+      
     if (scores.length === 0) return 0;
     return Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
   }, [filteredCandidates]);
+
+  // 5. 🟢 PIE CHART DATA (Group everything outside Top 8 into "Others")
+  const pieChartData = useMemo(() => {
+    if (universityStats.length === 0) return { labels: [], data: [] };
+    
+    // Take the top 8 universities
+    const top8 = universityStats.slice(0, 8);
+    const othersCount = universityStats.slice(8).reduce((sum, item) => sum + item.value, 0);
+    
+    const labels = top8.map(item => item.name);
+    const data = top8.map(item => item.value);
+    
+    if (othersCount > 0) {
+      labels.push('Others');
+      data.push(othersCount);
+    }
+    
+    return { labels, data };
+  }, [universityStats]);
+
+  const COLORS = ['#1a237e', '#2e7d32', '#f57c00', '#c62828', '#1565c0', '#4a148c', '#00695c', '#bf360c', '#78909c'];
 
   useEffect(() => {
     checkAdminAuth();
@@ -261,9 +287,6 @@ export default function AdminDashboard() {
       const unblockedCount = accessRows.filter((item) => item.status === "unblocked").length;
       const blockedCount = accessRows.filter((item) => item.status === "blocked").length;
 
-      if (accessResponse?.error) console.error("Access status warning:", accessResponse.error);
-      if (allCandidatesResponse?.error) console.error("All candidates warning:", allCandidatesResponse.error);
-
       setStats({
         totalSupervisors: supervisorCount || 0,
         totalCandidates: candidateCount || 0,
@@ -331,95 +354,129 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        <div style={styles.statsGrid}>
+        {/* STATS CARDS ROW */}
+        <div style={styles.statsRow}>
           <StatCard icon="👑" label="Supervisors" value={stats.totalSupervisors} />
           <StatCard icon="👥" label="Candidates" value={stats.totalCandidates} />
           <StatCard icon="📋" label="Active Assessments" value={stats.totalAssessments} />
           <StatCard icon="✓" label="Completed" value={stats.completedAssessments} />
-          <StatCard icon="○" label="Unblocked" value={stats.unblockedAssessments} />
-          <StatCard icon="●" label="Blocked" value={stats.blockedAssessments} />
           <StatCard icon="◉" label="In Progress" value={stats.inProgressSessions} />
-          <StatCard icon="▤" label="Result Records" value={stats.totalResults} />
+          <StatCard icon="📊" label="Result Records" value={stats.totalResults} />
         </div>
 
-        {/* 🟢 INTERACTIVE DATA SECTION */}
-        <div style={styles.analyticsHeader}>
-          <h3 style={styles.analyticsTitle}>Candidate Analytics</h3>
-          <div style={styles.analyticsControls}>
-            <label style={styles.filterLabel}>Drill Down by University:</label>
-            <select 
-              style={styles.universitySelect} 
-              value={selectedUniversity} 
-              onChange={(e) => setSelectedUniversity(e.target.value)}
-            >
-              <option value="all">Show All Universities</option>
-              {universityStats.map(uni => (
-                <option key={uni.name} value={uni.name}>{uni.name} ({uni.value})</option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        <div style={styles.chartGrid}>
-          {/* Left Chart: Horizontal Bar Chart (Readable) */}
-          <div style={styles.chartCardLarge}>
-            <h4 style={styles.chartTitle}>
-              {selectedUniversity === 'all' ? 'Top 15 Universities (Total Candidates)' : `Program Breakdown: ${selectedUniversity}`}
-            </h4>
-            <div style={{ height: '280px' }}>
-              <Bar
-                data={{
-                  labels: selectedUniversity === 'all' 
-                    ? universityStats.slice(0, 15).map(item => item.name) // Show top 15 only
-                    : programmeStats.map(item => item.name),
-                  datasets: [{
-                    label: 'Number of Candidates',
-                    data: selectedUniversity === 'all' 
-                      ? universityStats.slice(0, 15).map(item => item.value)
-                      : programmeStats.map(item => item.value),
-                    backgroundColor: '#1a237e',
-                    borderRadius: 4,
-                  }]
-                }}
-                options={{
-                  indexAxis: 'y', // 🟢 THIS MAKES IT HORIZONTAL (Highly readable)
-                  maintainAspectRatio: false,
-                  plugins: { legend: { display: false } },
-                  scales: { x: { beginAtZero: true, ticks: { stepSize: 1 } } }
-                }}
-              />
+        {/* MAIN ANALYTICS SECTION */}
+        <div style={styles.analyticsWrapper}>
+          <div style={styles.analyticsHeader}>
+            <h3 style={styles.analyticsTitle}>Candidate Analytics</h3>
+            <div style={styles.analyticsControls}>
+              <label style={styles.filterLabel}>Drill Down by University:</label>
+              <select 
+                style={styles.universitySelect} 
+                value={selectedUniversity} 
+                onChange={(e) => setSelectedUniversity(e.target.value)}
+              >
+                <option value="all">View All Universities</option>
+                {universityStats.map(uni => (
+                  <option key={uni.name} value={uni.name}>{uni.name} ({uni.value})</option>
+                ))}
+              </select>
             </div>
           </div>
 
-          {/* Right Panel: Quick Stats Panel */}
-          <div style={styles.statsPanel}>
-            <h4 style={styles.panelHeader}>
-              {selectedUniversity === 'all' ? '📊 Platform Overview' : `📍 ${selectedUniversity}`}
-            </h4>
-            <div style={styles.statRow}>
-              <span style={styles.statRowLabel}>Total Candidates</span>
-              <span style={styles.statRowValue}>{filteredCandidates.length}</span>
+          <div style={styles.chartGrid}>
+            {/* LEFT: PIE CHART (Beautiful Snapshot) */}
+            <div style={styles.chartCard}>
+              <h4 style={styles.chartTitle}>
+                {selectedUniversity === 'all' ? 'Top Universities (Distribution)' : `Program Distribution: ${selectedUniversity}`}
+              </h4>
+              <div style={{ height: '280px', position: 'relative' }}>
+                <Pie
+                  data={{
+                    labels: selectedUniversity === 'all' 
+                      ? pieChartData.labels
+                      : programmeStats.map(item => item.name),
+                    datasets: [{
+                      data: selectedUniversity === 'all' 
+                        ? pieChartData.data
+                        : programmeStats.map(item => item.value),
+                      backgroundColor: COLORS,
+                      borderWidth: 2,
+                      borderColor: '#fff'
+                    }]
+                  }}
+                  options={{
+                    maintainAspectRatio: false,
+                    plugins: {
+                      legend: { 
+                        position: 'right', 
+                        labels: { boxWidth: 12, padding: 10, font: { size: 11 } } 
+                      }
+                    }
+                  }}
+                />
+              </div>
             </div>
-            <div style={styles.statRow}>
-              <span style={styles.statRowLabel}>Average Assessment Score</span>
-              <span style={styles.statRowValue} style={{color: filteredAverageScore >= 70 ? '#2e7d32' : '#c62828'}}>
-                {filteredAverageScore}%
-              </span>
+
+            {/* RIGHT: HORIZONTAL BAR CHART (Detailed Ranking) */}
+            <div style={styles.chartCard}>
+              <h4 style={styles.chartTitle}>
+                {selectedUniversity === 'all' ? 'Top 15 Universities (Ranking)' : `Program Breakdown: ${selectedUniversity}`}
+              </h4>
+              <div style={{ height: '280px' }}>
+                <Bar
+                  data={{
+                    labels: selectedUniversity === 'all' 
+                      ? universityStats.slice(0, 15).map(item => item.name)
+                      : programmeStats.map(item => item.name),
+                    datasets: [{
+                      label: 'Count',
+                      data: selectedUniversity === 'all' 
+                        ? universityStats.slice(0, 15).map(item => item.value)
+                        : programmeStats.map(item => item.value),
+                      backgroundColor: '#1a237e',
+                      borderRadius: 4,
+                    }]
+                  }}
+                  options={{
+                    indexAxis: 'y', // Horizontal Bar Chart
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: { x: { beginAtZero: true, ticks: { stepSize: 1 } } }
+                  }}
+                />
+              </div>
             </div>
-            <div style={styles.statRow}>
-              <span style={styles.statRowLabel}>Number of Programs</span>
-              <span style={styles.statRowValue}>{new Set(filteredCandidates.map(c => c.programme).filter(Boolean)).size}</span>
-            </div>
-            <div style={styles.topProgramContainer}>
-              <div style={styles.topProgramLabel}>Most Popular Program:</div>
-              <div style={styles.topProgramValue}>
-                {programmeStats.length > 0 ? programmeStats[0].name : 'N/A'}
+
+            {/* BOTTOM RIGHT: QUICK STATS INFOGRAPHIC */}
+            <div style={styles.statsCardLarge}>
+              <h4 style={styles.panelHeader}>
+                {selectedUniversity === 'all' ? '📊 Platform Overview' : `📍 ${selectedUniversity}`}
+              </h4>
+              <div style={styles.statRow}>
+                <span style={styles.statRowLabel}>Total Candidates</span>
+                <span style={styles.statRowValue}>{filteredCandidates.length}</span>
+              </div>
+              <div style={styles.statRow}>
+                <span style={styles.statRowLabel}>Average Score</span>
+                <span style={styles.statRowValue} style={{color: filteredAverageScore >= 70 ? '#2e7d32' : '#c62828'}}>
+                  {filteredAverageScore > 0 ? `${filteredAverageScore}%` : 'N/A'}
+                </span>
+              </div>
+              <div style={styles.statRow}>
+                <span style={styles.statRowLabel}>Number of Programs</span>
+                <span style={styles.statRowValue}>{new Set(filteredCandidates.map(c => c.programme).filter(Boolean)).size}</span>
+              </div>
+              <div style={styles.topProgramContainer}>
+                <div style={styles.topProgramLabel}>Most Popular Program:</div>
+                <div style={styles.topProgramValue}>
+                  {programmeStats.length > 0 ? programmeStats[0].name : 'N/A'}
+                </div>
               </div>
             </div>
           </div>
         </div>
 
-        {/* 🟢 DETAILED CANDIDATE TABLE (Drill Down) */}
+        {/* DETAIL TABLE (If University Selected) */}
         {selectedUniversity !== 'all' && (
           <div style={styles.detailTableContainer}>
             <div style={styles.detailHeader}>
@@ -440,9 +497,10 @@ export default function AdminDashboard() {
                     <tr><td colSpan="3" style={styles.emptyState}>No candidates found for this university.</td></tr>
                   ) : (
                     filteredCandidates.map((c) => {
+                      // Correctly map the average score from the nested assessments
                       const latestScore = c.completedAssessments?.length > 0 
-                        ? Math.round(c.completedAssessments[0].score || 0) 
-                        : 'N/A';
+                        ? Math.round(c.completedAssessments.reduce((sum, a) => sum + (a.score || 0), 0) / c.completedAssessments.length)
+                        : 0;
                       const scoreColor = latestScore >= 70 ? '#dcfce7' : '#fee2e2';
                       const scoreTextColor = latestScore >= 70 ? '#166534' : '#991b1b';
                       return (
@@ -467,7 +525,7 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* ACTION CARDS */}
+        {/* ACTION CARDS & EXTENSIONS */}
         <div style={styles.actionCardsGrid}>
           <ActionCard href="/admin/add-supervisor" icon="+" title="Add Supervisor" description="Create new supervisor accounts with dashboard access." />
           <ActionCard href="/admin/manage-supervisors" icon="👥" title="Manage Supervisors" description="View, activate, deactivate, or update supervisor accounts." />
@@ -601,13 +659,31 @@ const styles = {
   headerActions: { display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" },
   refreshButton: { background: "#0a1929", color: "white", border: "none", padding: "10px 20px", borderRadius: "8px", cursor: "pointer", fontSize: "14px", fontWeight: 700 },
   logoutButton: { background: "#f44336", color: "white", border: "none", padding: "10px 20px", borderRadius: "8px", cursor: "pointer", fontSize: "14px", fontWeight: 700 },
-  statsGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "18px", marginBottom: "30px" },
-  statCard: { background: "white", padding: "20px", borderRadius: "12px", display: "flex", alignItems: "center", gap: "14px", boxShadow: "0 2px 8px rgba(0,0,0,0.08)", border: "1px solid #eef2f7" },
-  statIcon: { fontSize: "30px" },
-  statLabel: { fontSize: "12px", color: "#718096", marginBottom: "4px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em" },
-  statValue: { fontSize: "24px", fontWeight: 800, color: "#0a1929" },
   
-  // 🟢 NEW ANALYTICS STYLES
+  // 🟢 NEW: LAYOUT STYLES
+  statsRow: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+    gap: '16px',
+    marginBottom: '30px'
+  },
+  statCard: {
+    background: 'white',
+    padding: '16px 20px',
+    borderRadius: '12px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '14px',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+    border: '1px solid #eef2f7'
+  },
+  statIcon: { fontSize: '28px' },
+  statLabel: { fontSize: '11px', color: '#718096', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' },
+  statValue: { fontSize: '22px', fontWeight: 800, color: '#0a1929' },
+
+  analyticsWrapper: {
+    marginBottom: '30px'
+  },
   analyticsHeader: {
     display: 'flex',
     justifyContent: 'space-between',
@@ -625,7 +701,8 @@ const styles = {
   analyticsControls: {
     display: 'flex',
     alignItems: 'center',
-    gap: '8px'
+    gap: '12px',
+    flexWrap: 'wrap'
   },
   filterLabel: {
     fontSize: '13px',
@@ -638,15 +715,14 @@ const styles = {
     border: '1px solid #e2e8f0',
     fontSize: '13px',
     background: 'white',
-    minWidth: '200px'
+    minWidth: '220px'
   },
   chartGrid: {
     display: 'grid',
-    gridTemplateColumns: '2fr 1fr',
-    gap: '20px',
-    marginBottom: '24px'
+    gridTemplateColumns: '1fr 1fr',
+    gap: '20px'
   },
-  chartCardLarge: {
+  chartCard: {
     background: 'white',
     padding: '20px',
     borderRadius: '12px',
@@ -659,7 +735,7 @@ const styles = {
     color: '#0a1929',
     margin: '0 0 12px 0'
   },
-  statsPanel: {
+  statsCardLarge: {
     background: 'white',
     padding: '20px',
     borderRadius: '12px',
@@ -667,13 +743,13 @@ const styles = {
     border: '1px solid #eef2f7',
     display: 'flex',
     flexDirection: 'column',
-    gap: '12px'
+    justifyContent: 'space-between'
   },
   panelHeader: {
     fontSize: '16px',
     fontWeight: '600',
     color: '#0a1929',
-    margin: 0
+    margin: '0 0 12px 0'
   },
   statRow: {
     display: 'flex',
@@ -694,7 +770,7 @@ const styles = {
     background: '#f8fafc',
     padding: '12px',
     borderRadius: '8px',
-    marginTop: 'auto'
+    marginTop: '12px'
   },
   topProgramLabel: {
     fontSize: '12px',
@@ -706,6 +782,8 @@ const styles = {
     color: '#0a1929',
     marginTop: '2px'
   },
+
+  // Table & Detail styles
   detailTableContainer: {
     background: 'white',
     borderRadius: '12px',
@@ -731,8 +809,16 @@ const styles = {
     fontWeight: '500',
     color: '#64748b'
   },
+  tableContainer: { overflowX: 'auto' },
+  table: { width: '100%', borderCollapse: 'collapse', fontSize: '14px', marginTop: '10px' },
+  th: { padding: '12px 16px', textAlign: 'left', background: '#f8fafc', fontWeight: '600', color: '#475569', borderBottom: '2px solid #e2e8f0' },
+  td: { padding: '12px 16px', borderBottom: '1px solid #e2e8f0', verticalAlign: 'middle' },
+  tr: { transition: 'background 0.2s' },
+  cellName: { fontWeight: '600', color: '#1a202c' },
+  cellSub: { fontSize: '12px', color: '#94a3b8' },
+  scoreBadge: { padding: '4px 12px', borderRadius: '20px', fontSize: '13px', fontWeight: '600', display: 'inline-block' },
 
-  actionCardsGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "18px", marginBottom: "30px" },
+  actionCardsGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: "18px", marginBottom: "30px" },
   actionCard: { background: "white", padding: "20px", borderRadius: "12px", textDecoration: "none", color: "inherit", display: "flex", alignItems: "center", gap: "15px", boxShadow: "0 2px 8px rgba(0,0,0,0.08)", border: "1px solid #eef2f7", cursor: "pointer" },
   actionCardIcon: { fontSize: "32px" },
   actionCardTitle: { margin: 0, fontSize: "16px", fontWeight: 800, color: "#0a1929" },
@@ -747,14 +833,4 @@ const styles = {
   listTitle: { fontSize: "14px", fontWeight: 800, color: "#0f172a" },
   listMeta: { fontSize: "12px", color: "#64748b", marginTop: "4px" },
   dateBadge: { fontSize: "12px", color: "#334155", background: "#e2e8f0", padding: "5px 10px", borderRadius: "999px", whiteSpace: "nowrap" },
-  
-  // 🟢 TABLE STYLES (For Drill Down)
-  tableContainer: { overflowX: 'auto' },
-  table: { width: '100%', borderCollapse: 'collapse', fontSize: '14px', marginTop: '10px' },
-  th: { padding: '12px 16px', textAlign: 'left', background: '#f8fafc', fontWeight: '600', color: '#475569', borderBottom: '2px solid #e2e8f0' },
-  td: { padding: '12px 16px', borderBottom: '1px solid #e2e8f0', verticalAlign: 'middle' },
-  tr: { transition: 'background 0.2s' },
-  cellName: { fontWeight: '600', color: '#1a202c' },
-  cellSub: { fontSize: '12px', color: '#94a3b8' },
-  scoreBadge: { padding: '4px 12px', borderRadius: '20px', fontSize: '13px', fontWeight: '600', display: 'inline-block' },
-};
+};```
