@@ -1,5 +1,5 @@
-// pages/supervisor/index.js - FULLY CORRECTED (FIXED REFERENCE ERROR)
-// Supports program normalization, multi-select, and score filtering.
+// pages/supervisor/index.js - FULLY CORRECTED (DEFENSIVE SCORE RENDERING)
+// FIXED: Looks for scores in score, overallScore, or percentage_score
 
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/router';
@@ -38,7 +38,7 @@ ChartJS.register(
 import Select from 'react-select';
 
 // ============================================================
-// 🟢 RECOMMENDATION HELPER (Moved outside to be global)
+// 🟢 RECOMMENDATION HELPER (Global)
 // ============================================================
 function calculateNationalServiceRecommendation(workplace, intellectual, overall) {
   if (workplace >= 85 && intellectual >= 85) return 'Highly Recommended';
@@ -139,7 +139,7 @@ export default function SupervisorDashboard() {
     nationalServiceReports: 0
   });
 
-  // 🟢 NEW FILTER STATE
+  // 🟢 FILTER STATE
   const [selectedUniversityOption, setSelectedUniversityOption] = useState(null);
   const [selectedProgramOptions, setSelectedProgramOptions] = useState([]);
   const [minScore, setMinScore] = useState(0);
@@ -607,7 +607,6 @@ function NationalServiceTab({ reports, getScoreColor, getScoreTextColor, getReco
                 const isCompleted = report.status === 'completed' || report.result_id !== null;
                 const hasScores = workplaceScore > 0 || intellectualScore > 0 || overallScore > 0;
 
-                // Uses the globally declared function
                 const displayRecommendation = calculateNationalServiceRecommendation(workplaceScore, intellectualScore, overallScore);
 
                 return (
@@ -677,27 +676,33 @@ function OtherAssessmentsTab({ reports, onViewReport }) {
               </tr>
             </thead>
             <tbody>
-              {reports.map((report) => (
-                <tr key={report.result_id || `${report.candidate_id}-${report.assessment_id}`} style={styles.tr}>
-                  <td style={styles.td}>
-                    <div style={styles.cellName}>{report.candidate_name}</div>
-                    <div style={styles.cellSub}>{report.university || ''} • {report.programme || ''}</div>
-                  </td>
-                  <td style={styles.td}>{report.assessment_title}</td>
-                  <td style={styles.td}>
-                    <span style={styles.scoreBadge}>
-                      {Math.round(Number(report.score || report.overallScore || report.percentage_score || 0))}%
-                    </span>
-                  </td>
-                  <td style={styles.td}>
-                    {report.result_id ? (
-                      <button onClick={() => onViewReport(report.result_id)} style={styles.viewButton}>View Report</button>
-                    ) : (
-                      <span style={styles.pendingText}>No result</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
+              {reports.map((report) => {
+                // 🟢 DEFENSIVE SCORE LOOKUP
+                // Try score, overallScore, then percentage_score
+                const displayScore = Math.round(Number(report.score || report.overallScore || report.percentage_score || 0));
+
+                return (
+                  <tr key={report.result_id || `${report.candidate_id}-${report.assessment_id}`} style={styles.tr}>
+                    <td style={styles.td}>
+                      <div style={styles.cellName}>{report.candidate_name}</div>
+                      <div style={styles.cellSub}>{report.university || ''} • {report.programme || ''}</div>
+                    </td>
+                    <td style={styles.td}>{report.assessment_title}</td>
+                    <td style={styles.td}>
+                      <span style={styles.scoreBadge}>
+                        {displayScore}%
+                      </span>
+                    </td>
+                    <td style={styles.td}>
+                      {report.result_id ? (
+                        <button onClick={() => onViewReport(report.result_id)} style={styles.viewButton}>View Report</button>
+                      ) : (
+                        <span style={styles.pendingText}>No result</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
