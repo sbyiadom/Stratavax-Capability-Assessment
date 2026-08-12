@@ -1,5 +1,5 @@
-// pages/supervisor/index.js - UPGRADED WITH NORMALIZATION ENGINE & ADVANCED FILTERS
-// Matches the Admin Dashboard's multi-select and program merging capabilities.
+// pages/supervisor/index.js - UPGRADED WITH BEAUTIFUL TAG DROPDOWNS
+// Supports program normalization, multi-select, and score filtering.
 
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/router';
@@ -33,115 +33,74 @@ ChartJS.register(
 );
 
 // ============================================================
-// 🟢 THE PROGRAM NORMALIZATION ENGINE (Copied from Admin)
+// REACT-SELECT IMPORTS
 // ============================================================
+import Select from 'react-select';
 
-// 1. Abbreviation Dictionary
+// ============================================================
+// 🟢 THE PROGRAM NORMALIZATION ENGINE
+// ============================================================
 const ABBREVIATIONS = {
-  'bsc': 'BSc',
-  'b.sc': 'BSc',
-  'b. sc': 'BSc',
-  'b.s.c': 'BSc',
-  'bachelor': 'Bachelor',
-  'btech': 'B-Tech',
-  'b.tech': 'B-Tech',
-  'b. tech': 'B-Tech',
-  'eng': 'Engineering',
-  'engr': 'Engineering',
-  'elec': 'Electrical',
-  'electronics': 'Electronics',
-  'mech': 'Mechanical',
-  'mechanical': 'Mechanical',
-  'admin': 'Administration',
-  'adminis': 'Administration',
-  'of': 'of',
-  'and': 'and',
-  'in': 'in',
-  'with': 'with'
+  'bsc': 'BSc', 'b.sc': 'BSc', 'b. sc': 'BSc', 'b.s.c': 'BSc',
+  'bachelor': 'Bachelor', 'btech': 'B-Tech', 'b.tech': 'B-Tech',
+  'eng': 'Engineering', 'engr': 'Engineering',
+  'elec': 'Electrical', 'electronics': 'Electronics',
+  'mech': 'Mechanical', 'mechanical': 'Mechanical',
+  'admin': 'Administration', 'adminis': 'Administration',
+  'of': 'of', 'and': 'and', 'in': 'in', 'with': 'with'
 };
 
-// 2. Normalize a single program string
 function normalizeProgramName(raw) {
   if (!raw || typeof raw !== 'string') return '';
-  
   let cleaned = raw
     .toLowerCase()
-    .replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, ' ') // Replace punctuation with space
-    .replace(/\s+/g, ' ') // Collapse multiple spaces
+    .replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, ' ')
+    .replace(/\s+/g, ' ')
     .trim();
-    
-  // Split into words and replace using the dictionary
   const words = cleaned.split(' ');
   const mappedWords = words.map(word => ABBREVIATIONS[word] || word.charAt(0).toUpperCase() + word.slice(1));
-  
   return mappedWords.join(' ');
 }
 
-// 3. Group similar names using Fuzzy Logic (Levenshtein distance)
-// Returns an array of unique "Master" names.
 function getUniqueMasterNames(rawPrograms) {
-  if (!rawPrograms || rawPrograms.length === 0) return [];
+  if (!rawPrograms || rawPrograms.length === 0) return { groups: [], masterToRawMap: {} };
   
-  // Step A: Normalize all raw programs
   const normalizedMap = {};
-  rawPrograms.forEach(p => {
-    const normalized = normalizeProgramName(p);
-    normalizedMap[p] = normalized; // Store mapping from raw -> clean
-  });
-
-  // Step B: Get unique clean names
+  rawPrograms.forEach(p => { normalizedMap[p] = normalizeProgramName(p); });
   const uniqueCleanNames = [...new Set(Object.values(normalizedMap))];
-  
-  // Step C: Group names that are extremely similar (Fuzzy matching)
   const groups = [];
   const processed = new Set();
 
   uniqueCleanNames.forEach(name1 => {
     if (processed.has(name1)) return;
-    
     const group = [name1];
     processed.add(name1);
-    
     uniqueCleanNames.forEach(name2 => {
       if (processed.has(name2)) return;
-      // Calculate similarity (Jaccard Index / Overlap)
       const words1 = name1.split(' ');
       const words2 = name2.split(' ');
       const intersection = words1.filter(w => words2.includes(w)).length;
       const union = new Set([...words1, ...words2]).size;
       const similarity = union > 0 ? intersection / union : 0;
-      
-      // If they share 60% of their words, they are the same program.
-      if (similarity > 0.6) {
-        group.push(name2);
-        processed.add(name2);
-      }
+      if (similarity > 0.6) { group.push(name2); processed.add(name2); }
     });
-    
-    // Pick the longest name in the group as the "Master" name
     const masterName = group.reduce((a, b) => a.length >= b.length ? a : b);
     groups.push(masterName);
   });
 
-  // 4. Create a mapping from Master Name -> List of Raw Strings
   const masterToRawMap = {};
   groups.forEach(master => {
     masterToRawMap[master] = [];
     rawPrograms.forEach(raw => {
       const clean = normalizeProgramName(raw);
-      // Check if this clean name belongs to this master group
       const words1 = master.split(' ');
       const words2 = clean.split(' ');
       const intersection = words1.filter(w => words2.includes(w)).length;
       const union = new Set([...words1, ...words2]).size;
       const similarity = union > 0 ? intersection / union : 0;
-      
-      if (similarity > 0.6) {
-        masterToRawMap[master].push(raw);
-      }
+      if (similarity > 0.6) { masterToRawMap[master].push(raw); }
     });
   });
-
   return { groups, masterToRawMap };
 }
 
@@ -169,9 +128,9 @@ export default function SupervisorDashboard() {
     nationalServiceReports: 0
   });
 
-  // 🟢 ADVANCED MULTI-SELECT FILTERS
-  const [selectedUniversity, setSelectedUniversity] = useState('all');
-  const [selectedPrograms, setSelectedPrograms] = useState([]);
+  // 🟢 NEW FILTER STATE
+  const [selectedUniversityOption, setSelectedUniversityOption] = useState(null);
+  const [selectedProgramOptions, setSelectedProgramOptions] = useState([]);
   const [minScore, setMinScore] = useState(0);
   const [maxScore, setMaxScore] = useState(100);
 
@@ -187,27 +146,16 @@ export default function SupervisorDashboard() {
       setDebugInfo(null);
 
       const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-
-      if (sessionError) {
-        throw new Error(sessionError.message || 'Unable to read active session.');
-      }
-
+      if (sessionError) throw new Error(sessionError.message);
       const token = sessionData?.session?.access_token || session?.access_token;
-
-      if (!token) {
-        throw new Error('No active access token found. Please log out and log in again.');
-      }
+      if (!token) throw new Error('No active access token found.');
 
       const response = await fetch('/api/supervisor/dashboard', {
         method: 'GET',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
       });
 
       const payload = await response.json();
-
       if (!response.ok || !payload?.success) {
         throw new Error(payload?.error || payload?.message || 'Failed to load supervisor dashboard.');
       }
@@ -216,10 +164,6 @@ export default function SupervisorDashboard() {
       const nsRows = Array.isArray(payload.nationalServiceReports) ? payload.nationalServiceReports : [];
       const otherRows = Array.isArray(payload.otherReports) ? payload.otherReports : [];
       const dashboardStats = payload.stats || {};
-
-      console.log('[Dashboard] Candidates received:', candidateRows.length);
-      console.log('[Dashboard] National Service reports:', nsRows.length);
-      console.log('[Dashboard] Other reports:', otherRows.length);
 
       setCandidates(candidateRows);
       setNationalServiceReports(nsRows);
@@ -234,25 +178,12 @@ export default function SupervisorDashboard() {
 
       const initialSelected = {};
       candidateRows.forEach((candidate) => {
-        const completedAssessments = Array.isArray(candidate.completedAssessments)
-          ? candidate.completedAssessments
-          : [];
-        if (completedAssessments.length > 0) {
-          initialSelected[candidate.id] = completedAssessments[0].assessment_id;
-        }
+        const completed = Array.isArray(candidate.completedAssessments) ? candidate.completedAssessments : [];
+        if (completed.length > 0) initialSelected[candidate.id] = completed[0].assessment_id;
       });
       setSelectedAssessments(initialSelected);
     } catch (error) {
       console.error('[Supervisor Dashboard] Load error:', error);
-      setCandidates([]);
-      setNationalServiceReports([]);
-      setOtherReports([]);
-      setStats({
-        totalCandidates: 0,
-        completedAssessments: 0,
-        pendingReviews: 0,
-        nationalServiceReports: 0
-      });
       setErrorMessage(error?.message || 'Unable to load dashboard data.');
     } finally {
       setLoading(false);
@@ -264,19 +195,14 @@ export default function SupervisorDashboard() {
     try {
       const { data: session } = await supabase.auth.getSession();
       const token = session?.session?.access_token;
-
-      if (!token) {
-        throw new Error('Not authenticated');
-      }
+      if (!token) throw new Error('Not authenticated');
 
       let exportType = 'all';
       if (activeTab === 'national_service') exportType = 'national_service';
       else if (activeTab === 'other') exportType = 'other';
 
       const response = await fetch(`/api/supervisor/export-reports?type=${exportType}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
+        headers: { 'Authorization': `Bearer ${token}` }
       });
 
       if (!response.ok) {
@@ -293,7 +219,6 @@ export default function SupervisorDashboard() {
       a.click();
       document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
-
     } catch (error) {
       console.error('Export error:', error);
       alert('Failed to export: ' + error.message);
@@ -303,71 +228,39 @@ export default function SupervisorDashboard() {
   };
 
   const handleViewReport = (resultId) => {
-    if (!resultId) {
-      alert('No result available for this assessment.');
-      return;
-    }
+    if (!resultId) { alert('No result available.'); return; }
     router.push(`/supervisor/reports/${resultId}`);
   };
 
   const handleAssessmentSelect = (candidateId, assessmentId) => {
-    if (!assessmentId) {
-      alert('Please select an assessment first.');
-      return;
-    }
-
+    if (!assessmentId) { alert('Please select an assessment first.'); return; }
     const candidate = candidates.find((item) => String(item.id) === String(candidateId));
-    if (!candidate) {
-      alert('Candidate not found. Please refresh and try again.');
-      return;
-    }
-
-    const completedAssessments = Array.isArray(candidate.completedAssessments)
-      ? candidate.completedAssessments
-      : [];
-
-    const assessment = completedAssessments.find(
-      (item) => String(item.assessment_id) === String(assessmentId)
-    );
-
-    if (!assessment) {
-      alert('Assessment not found. Please try again.');
-      return;
-    }
-
-    if (assessment.result_id) {
-      handleViewReport(assessment.result_id);
-    } else {
-      alert('This assessment does not have a result available yet.');
-    }
+    if (!candidate) { alert('Candidate not found.'); return; }
+    const completedAssessments = Array.isArray(candidate.completedAssessments) ? candidate.completedAssessments : [];
+    const assessment = completedAssessments.find((item) => String(item.assessment_id) === String(assessmentId));
+    if (!assessment) { alert('Assessment not found.'); return; }
+    if (assessment.result_id) handleViewReport(assessment.result_id);
+    else alert('This assessment does not have a result available yet.');
   };
 
   const handleAssessmentChange = (candidateId, assessmentId) => {
-    setSelectedAssessments((previous) => ({
-      ...previous,
-      [candidateId]: assessmentId
-    }));
+    setSelectedAssessments((prev) => ({ ...prev, [candidateId]: assessmentId }));
   };
 
   const getRecommendationColor = (recommendation) => {
     const colors = {
-      'Highly Recommended': '#2e7d32',
-      Recommended: '#1565c0',
-      Conditional: '#f57c00',
-      'Reserve Pool': '#f57c00',
-      'Not Recommended': '#c62828',
+      'Highly Recommended': '#2e7d32', Recommended: '#1565c0',
+      'Reserve Pool': '#f57c00', 'Not Recommended': '#c62828',
       'Not Available': '#64748b'
     };
     return colors[recommendation] || '#64748b';
   };
-
   const getScoreColor = (score) => {
     const value = Number(score || 0);
     if (value >= 70) return '#dcfce7';
     if (value >= 50) return '#fef3c7';
     return '#fee2e2';
   };
-
   const getScoreTextColor = (score) => {
     const value = Number(score || 0);
     if (value >= 70) return '#166534';
@@ -376,26 +269,23 @@ export default function SupervisorDashboard() {
   };
 
   // ============================================================
-  // DATA PROCESSING FOR CHARTS & FILTERS
+  // DATA PROCESSING FOR FILTERS & CHARTS
   // ============================================================
-  
   const universityStats = useMemo(() => {
     const map = {};
     candidates.forEach(c => {
       const uni = c.university || 'Not Specified';
       map[uni] = (map[uni] || 0) + 1;
     });
-    return Object.entries(map)
-      .sort((a, b) => b[1] - a[1])
-      .map(([name, value]) => ({ name, value }));
+    return Object.entries(map).sort((a, b) => b[1] - a[1]).map(([name, value]) => ({ name, value }));
   }, [candidates]);
 
   const universityFilteredCandidates = useMemo(() => {
-    if (selectedUniversity === 'all') return candidates;
-    return candidates.filter(c => c.university === selectedUniversity);
-  }, [candidates, selectedUniversity]);
+    if (!selectedUniversityOption) return candidates;
+    return candidates.filter(c => c.university === selectedUniversityOption.value);
+  }, [candidates, selectedUniversityOption]);
 
-  // 🟢 GENERATE NORMALIZED PROGRAM LIST
+  // Normalize programs
   const rawPrograms = useMemo(() => {
     return universityFilteredCandidates.map(c => c.programme).filter(Boolean);
   }, [universityFilteredCandidates]);
@@ -404,51 +294,35 @@ export default function SupervisorDashboard() {
     return getUniqueMasterNames(rawPrograms);
   }, [rawPrograms]);
 
-  // 🟢 MULTI-SELECT FILTER USING MASTER NAMES
   const programFilteredCandidates = useMemo(() => {
-    if (selectedPrograms.length === 0) return universityFilteredCandidates;
-    
-    // Map selected master names back to ALL raw names that belong to them
+    if (selectedProgramOptions.length === 0) return universityFilteredCandidates;
     const allowedRawNames = [];
-    selectedPrograms.forEach(master => {
-      const rawList = masterToRawMap[master] || [];
+    selectedProgramOptions.forEach(opt => {
+      const rawList = masterToRawMap[opt.value] || [];
       allowedRawNames.push(...rawList);
     });
-
-    return universityFilteredCandidates.filter(c => 
-      allowedRawNames.includes(c.programme)
-    );
-  }, [universityFilteredCandidates, selectedPrograms, masterToRawMap]);
+    return universityFilteredCandidates.filter(c => allowedRawNames.includes(c.programme));
+  }, [universityFilteredCandidates, selectedProgramOptions, masterToRawMap]);
 
   const filteredCandidates = useMemo(() => {
     return programFilteredCandidates.filter(c => {
-      // Calculate an average score for this candidate
-      const scores = (c.completedAssessments || [])
-        .map(a => Number(a.score || 0))
-        .filter(s => s > 0);
+      const scores = (c.completedAssessments || []).map(a => Number(a.score || 0)).filter(s => s > 0);
       const avgScore = scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
       return avgScore >= Number(minScore) && avgScore <= Number(maxScore);
     });
   }, [programFilteredCandidates, minScore, maxScore]);
 
-  // 🟢 CHART DATA (Uses cleaned Master Names)
   const programmeStats = useMemo(() => {
     const map = {};
     filteredCandidates.forEach(c => {
       const raw = c.programme || 'Not Specified';
-      // Map raw name back to its Master Name
       let master = 'Other';
       for (const [m, rawList] of Object.entries(masterToRawMap)) {
-        if (rawList.includes(raw)) {
-          master = m;
-          break;
-        }
+        if (rawList.includes(raw)) { master = m; break; }
       }
       map[master] = (map[master] || 0) + 1;
     });
-    return Object.entries(map)
-      .sort((a, b) => b[1] - a[1])
-      .map(([name, value]) => ({ name, value }));
+    return Object.entries(map).sort((a, b) => b[1] - a[1]).map(([name, value]) => ({ name, value }));
   }, [filteredCandidates, masterToRawMap]);
 
   const filteredAverageScore = useMemo(() => {
@@ -465,24 +339,30 @@ export default function SupervisorDashboard() {
     const othersCount = programmeStats.slice(8).reduce((sum, item) => sum + item.value, 0);
     const labels = top8.map(item => item.name);
     const data = top8.map(item => item.value);
-    if (othersCount > 0) {
-      labels.push('Others');
-      data.push(othersCount);
-    }
+    if (othersCount > 0) { labels.push('Others'); data.push(othersCount); }
     return { labels, data };
   }, [programmeStats]);
 
   const COLORS = ['#1a237e', '#2e7d32', '#f57c00', '#c62828', '#1565c0', '#4a148c', '#00695c', '#bf360c', '#78909c'];
 
+  // REACT-SELECT OPTIONS
+  const universityOptions = useMemo(() => {
+    return universityStats.map(uni => ({ label: `${uni.name} (${uni.value})`, value: uni.name }));
+  }, [universityStats]);
+
+  const programOptions = useMemo(() => {
+    return uniqueProgramMasterNames.map(p => ({ label: p, value: p }));
+  }, [uniqueProgramMasterNames]);
+
   const resetFilters = () => {
-    setSelectedUniversity('all');
-    setSelectedPrograms([]);
+    setSelectedUniversityOption(null);
+    setSelectedProgramOptions([]);
     setMinScore(0);
     setMaxScore(100);
   };
 
   // ============================================================
-  // RENDER HELPER: CALCULATE RECOMMENDATION
+  // RECOMMENDATION HELPER
   // ============================================================
   const calculateNationalServiceRecommendation = (workplace, intellectual, overall) => {
     if (workplace >= 85 && intellectual >= 85) return 'Highly Recommended';
@@ -513,27 +393,17 @@ export default function SupervisorDashboard() {
           </div>
           <div style={styles.headerActions}>
             <button onClick={fetchDashboardData} style={styles.refreshButton}>Refresh</button>
-            <button 
-              onClick={handleExport} 
-              disabled={exporting}
-              style={{
-                ...styles.exportButton,
-                opacity: exporting ? 0.6 : 1,
-                cursor: exporting ? 'not-allowed' : 'pointer'
-              }}
-            >
+            <button onClick={handleExport} disabled={exporting} style={{ ...styles.exportButton, opacity: exporting ? 0.6 : 1, cursor: exporting ? 'not-allowed' : 'pointer' }}>
               {exporting ? '⏳ Exporting...' : '📊 Export to Excel'}
             </button>
           </div>
         </div>
 
         {errorMessage && (
-          <div style={styles.errorBox}>
-            <strong>Dashboard loading issue:</strong> {errorMessage}
-          </div>
+          <div style={styles.errorBox}><strong>Dashboard loading issue:</strong> {errorMessage}</div>
         )}
 
-        {/* STATS CARDS ROW */}
+        {/* STATS CARDS */}
         <div style={styles.statsRow}>
           <StatCard icon="👥" label="Total Candidates" value={stats.totalCandidates} />
           <StatCard icon="✓" label="Completed" value={stats.completedAssessments} />
@@ -547,138 +417,105 @@ export default function SupervisorDashboard() {
           </div>
         </div>
 
-        {/* 🟢 MAIN ANALYTICS SECTION WITH FILTERS */}
-        <div style={styles.analyticsWrapper}>
-          <div style={styles.analyticsHeader}>
-            <h3 style={styles.analyticsTitle}>Candidate Analytics</h3>
-            
-            <div style={styles.filtersContainer}>
-              <div style={styles.filterGroup}>
-                <label style={styles.filterLabel}>University:</label>
-                <select style={styles.filterSelect} value={selectedUniversity} onChange={(e) => { setSelectedUniversity(e.target.value); setSelectedPrograms([]); }}>
-                  <option value="all">All Universities</option>
-                  {universityStats.map(uni => (
-                    <option key={uni.name} value={uni.name}>{uni.name} ({uni.value})</option>
-                  ))}
-                </select>
-              </div>
+        {/* 🟢 BEAUTIFUL FILTERS BAR */}
+        <div style={styles.filtersBar}>
+          <div style={styles.filtersRow}>
+            <div style={styles.filterGroup}>
+              <label style={styles.filterLabel}>University:</label>
+              <Select
+                className="react-select-container"
+                classNamePrefix="react-select"
+                options={universityOptions}
+                value={selectedUniversityOption}
+                onChange={(option) => { setSelectedUniversityOption(option); setSelectedProgramOptions([]); }}
+                placeholder="Select University..."
+                isClearable
+                styles={customSelectStyles}
+              />
+            </div>
 
-              <div style={styles.filterGroup}>
-                <label style={styles.filterLabel}>Programs ({selectedPrograms.length} selected):</label>
-                <select 
-                  multiple 
-                  style={styles.filterSelectMulti} 
-                  value={selectedPrograms} 
-                  onChange={(e) => {
-                    const options = e.target.options;
-                    const selected = [];
-                    for (let i = 0; i < options.length; i++) {
-                      if (options[i].selected) {
-                        selected.push(options[i].value);
-                      }
-                    }
-                    setSelectedPrograms(selected);
-                  }}
-                >
-                  <option value="" disabled>Select Programs...</option>
-                  {uniqueProgramMasterNames.map(p => (
-                    <option key={p} value={p}>{p}</option>
-                  ))}
-                </select>
-              </div>
+            <div style={styles.filterGroup}>
+              <label style={styles.filterLabel}>Programs:</label>
+              <Select
+                className="react-select-container"
+                classNamePrefix="react-select"
+                options={programOptions}
+                value={selectedProgramOptions}
+                onChange={(options) => setSelectedProgramOptions(options || [])}
+                placeholder="Select Programs..."
+                isMulti
+                isClearable
+                styles={customSelectStyles}
+              />
+            </div>
 
-              <div style={styles.filterGroup}>
-                <label style={styles.filterLabel}>Min Score:</label>
+            <div style={styles.scoreFilterGroup}>
+              <div style={styles.scoreInputWrapper}>
+                <label style={styles.filterLabelSmall}>Min:</label>
                 <input type="number" style={styles.filterInputSmall} min="0" max="100" value={minScore} onChange={(e) => setMinScore(e.target.value)} />
               </div>
-
-              <div style={styles.filterGroup}>
-                <label style={styles.filterLabel}>Max Score:</label>
+              <div style={styles.scoreInputWrapper}>
+                <label style={styles.filterLabelSmall}>Max:</label>
                 <input type="number" style={styles.filterInputSmall} min="0" max="100" value={maxScore} onChange={(e) => setMaxScore(e.target.value)} />
               </div>
+            </div>
 
-              <button onClick={resetFilters} style={styles.resetFilterButton}>Reset Filters</button>
+            <button onClick={resetFilters} style={styles.resetFilterButton}>Reset Filters</button>
+          </div>
+        </div>
+
+        {/* CHARTS GRID */}
+        <div style={styles.chartGrid}>
+          <div style={styles.chartCard}>
+            <h4 style={styles.chartTitle}>
+              {!selectedUniversityOption ? 'Top Programs (Distribution)' : `Programs at ${selectedUniversityOption?.value}`}
+            </h4>
+            <div style={{ height: '280px', position: 'relative' }}>
+              <Pie
+                data={{
+                  labels: pieChartData.labels,
+                  datasets: [{ data: pieChartData.data, backgroundColor: COLORS, borderWidth: 2, borderColor: '#fff' }]
+                }}
+                options={{ maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { boxWidth: 12, padding: 10, font: { size: 11 } } } } }}
+              />
             </div>
           </div>
 
-          <div style={styles.chartGrid}>
-            {/* LEFT: PIE CHART */}
-            <div style={styles.chartCard}>
-              <h4 style={styles.chartTitle}>
-                {selectedUniversity === 'all' ? 'Top Programs (Distribution)' : `Programs at ${selectedUniversity}`}
-              </h4>
-              <div style={{ height: '280px', position: 'relative' }}>
-                <Pie
-                  data={{
-                    labels: pieChartData.labels,
-                    datasets: [{
-                      data: pieChartData.data,
-                      backgroundColor: COLORS,
-                      borderWidth: 2,
-                      borderColor: '#fff'
-                    }]
-                  }}
-                  options={{
-                    maintainAspectRatio: false,
-                    plugins: {
-                      legend: { 
-                        position: 'right', 
-                        labels: { boxWidth: 12, padding: 10, font: { size: 11 } } 
-                      }
-                    }
-                  }}
-                />
-              </div>
+          <div style={styles.chartCard}>
+            <h4 style={styles.chartTitle}>Top 15 Universities (Ranking)</h4>
+            <div style={{ height: '280px' }}>
+              <Bar
+                data={{
+                  labels: universityStats.slice(0, 15).map(item => item.name),
+                  datasets: [{ label: 'Count', data: universityStats.slice(0, 15).map(item => item.value), backgroundColor: '#1a237e', borderRadius: 4 }]
+                }}
+                options={{ indexAxis: 'y', maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true, ticks: { stepSize: 1 } } } }}
+              />
             </div>
+          </div>
 
-            {/* RIGHT: HORIZONTAL BAR CHART */}
-            <div style={styles.chartCard}>
-              <h4 style={styles.chartTitle}>Top 15 Universities (Ranking)</h4>
-              <div style={{ height: '280px' }}>
-                <Bar
-                  data={{
-                    labels: universityStats.slice(0, 15).map(item => item.name),
-                    datasets: [{
-                      label: 'Count',
-                      data: universityStats.slice(0, 15).map(item => item.value),
-                      backgroundColor: '#1a237e',
-                      borderRadius: 4,
-                    }]
-                  }}
-                  options={{
-                    indexAxis: 'y',
-                    maintainAspectRatio: false,
-                    plugins: { legend: { display: false } },
-                    scales: { x: { beginAtZero: true, ticks: { stepSize: 1 } } }
-                  }}
-                />
-              </div>
+          <div style={styles.statsCardLarge}>
+            <h4 style={styles.panelHeader}>
+              {!selectedUniversityOption ? '📊 Platform Overview' : `📍 ${selectedUniversityOption?.value}`}
+            </h4>
+            <div style={styles.statRow}>
+              <span style={styles.statRowLabel}>Total Candidates</span>
+              <span style={styles.statRowValue}>{filteredCandidates.length}</span>
             </div>
-
-            {/* BOTTOM RIGHT: QUICK STATS */}
-            <div style={styles.statsCardLarge}>
-              <h4 style={styles.panelHeader}>
-                {selectedUniversity === 'all' ? '📊 Platform Overview' : `📍 ${selectedUniversity}`}
-              </h4>
-              <div style={styles.statRow}>
-                <span style={styles.statRowLabel}>Total Candidates</span>
-                <span style={styles.statRowValue}>{filteredCandidates.length}</span>
-              </div>
-              <div style={styles.statRow}>
-                <span style={styles.statRowLabel}>Average Score</span>
-                <span style={styles.statRowValue} style={{color: filteredAverageScore >= 70 ? '#2e7d32' : '#c62828'}}>
-                  {filteredAverageScore > 0 ? `${filteredAverageScore}%` : 'N/A'}
-                </span>
-              </div>
-              <div style={styles.statRow}>
-                <span style={styles.statRowLabel}>Number of Programs</span>
-                <span style={styles.statRowValue}>{new Set(filteredCandidates.map(c => c.programme).filter(Boolean)).size}</span>
-              </div>
-              <div style={styles.topProgramContainer}>
-                <div style={styles.topProgramLabel}>Most Popular Program:</div>
-                <div style={styles.topProgramValue}>
-                  {programmeStats.length > 0 ? programmeStats[0].name : 'N/A'}
-                </div>
+            <div style={styles.statRow}>
+              <span style={styles.statRowLabel}>Average Score</span>
+              <span style={styles.statRowValue} style={{color: filteredAverageScore >= 70 ? '#2e7d32' : '#c62828'}}>
+                {filteredAverageScore > 0 ? `${filteredAverageScore}%` : 'N/A'}
+              </span>
+            </div>
+            <div style={styles.statRow}>
+              <span style={styles.statRowLabel}>Number of Programs</span>
+              <span style={styles.statRowValue}>{new Set(filteredCandidates.map(c => c.programme).filter(Boolean)).size}</span>
+            </div>
+            <div style={styles.topProgramContainer}>
+              <div style={styles.topProgramLabel}>Most Popular Program:</div>
+              <div style={styles.topProgramValue}>
+                {programmeStats.length > 0 ? programmeStats[0].name : 'N/A'}
               </div>
             </div>
           </div>
@@ -686,33 +523,20 @@ export default function SupervisorDashboard() {
 
         {/* TABS */}
         <div style={styles.tabsContainer}>
-          <TabButton
-            active={activeTab === 'candidates'}
-            onClick={() => setActiveTab('candidates')}
-            label={`All Candidates (${candidates.length})`}
-          />
-          <TabButton
-            active={activeTab === 'national_service'}
-            onClick={() => setActiveTab('national_service')}
-            label={`National Service (${nationalServiceReports.length})`}
-          />
-          <TabButton
-            active={activeTab === 'other'}
-            onClick={() => setActiveTab('other')}
-            label={`Other Assessments (${otherReports.length})`}
-          />
+          <TabButton active={activeTab === 'candidates'} onClick={() => setActiveTab('candidates')} label={`All Candidates (${candidates.length})`} />
+          <TabButton active={activeTab === 'national_service'} onClick={() => setActiveTab('national_service')} label={`National Service (${nationalServiceReports.length})`} />
+          <TabButton active={activeTab === 'other'} onClick={() => setActiveTab('other')} label={`Other Assessments (${otherReports.length})`} />
         </div>
 
         <div style={styles.tabContent}>
           {activeTab === 'candidates' && (
             <CandidatesTab
-              candidates={filteredCandidates} // Uses the filter logic
+              candidates={filteredCandidates}
               selectedAssessments={selectedAssessments}
               onAssessmentChange={handleAssessmentChange}
               onAssessmentSelect={handleAssessmentSelect}
             />
           )}
-
           {activeTab === 'national_service' && (
             <NationalServiceTab
               reports={nationalServiceReports}
@@ -722,12 +546,8 @@ export default function SupervisorDashboard() {
               onViewReport={handleViewReport}
             />
           )}
-
           {activeTab === 'other' && (
-            <OtherAssessmentsTab
-              reports={otherReports}
-              onViewReport={handleViewReport}
-            />
+            <OtherAssessmentsTab reports={otherReports} onViewReport={handleViewReport} />
           )}
         </div>
       </div>
@@ -736,7 +556,7 @@ export default function SupervisorDashboard() {
 }
 
 // ============================================================
-// COMPONENTS
+// SUB-COMPONENTS & HELPERS
 // ============================================================
 
 function StatCard({ icon, label, value }) {
@@ -753,15 +573,7 @@ function StatCard({ icon, label, value }) {
 
 function TabButton({ active, onClick, label }) {
   return (
-    <button
-      onClick={onClick}
-      style={{
-        ...styles.tabButton,
-        background: active ? '#1a237e' : 'white',
-        color: active ? 'white' : '#1a237e',
-        border: active ? 'none' : '1px solid #e2e8f0'
-      }}
-    >
+    <button onClick={onClick} style={{ ...styles.tabButton, background: active ? '#1a237e' : 'white', color: active ? 'white' : '#1a237e', border: active ? 'none' : '1px solid #e2e8f0' }}>
       {label}
     </button>
   );
@@ -770,13 +582,9 @@ function TabButton({ active, onClick, label }) {
 function NationalServiceTab({ reports, getScoreColor, getScoreTextColor, getRecommendationColor, onViewReport }) {
   return (
     <div style={styles.tabPanel}>
-      <div style={styles.tabDescription}>
-        <p>All National Service assessment reports assigned to this supervisor. ({reports.length} reports)</p>
-      </div>
+      <div style={styles.tabDescription}><p>All National Service assessment reports assigned to this supervisor. ({reports.length} reports)</p></div>
       {reports.length === 0 ? (
-        <div style={styles.emptyState}>
-          <p>No National Service assessments found.</p>
-        </div>
+        <div style={styles.emptyState}><p>No National Service assessments found.</p></div>
       ) : (
         <div style={styles.tableContainer}>
           <table style={styles.table}>
@@ -796,13 +604,10 @@ function NationalServiceTab({ reports, getScoreColor, getScoreTextColor, getReco
                 const overallScore = Number(report.score || report.overallScore || report.percentage_score || 0);
                 const workplaceScore = Number(report.workplace_readiness || 0);
                 const intellectualScore = Number(report.intellectual_capability || 0);
-                const status = report.status || 'unknown';
-                const isCompleted = status === 'completed' || report.result_id !== null;
+                const isCompleted = report.status === 'completed' || report.result_id !== null;
                 const hasScores = workplaceScore > 0 || intellectualScore > 0 || overallScore > 0;
 
-                const displayRecommendation = calculateNationalServiceRecommendation(
-                  workplaceScore, intellectualScore, overallScore
-                );
+                const displayRecommendation = calculateNationalServiceRecommendation(workplaceScore, intellectualScore, overallScore);
 
                 return (
                   <tr key={report.result_id || report.candidate_id} style={styles.tr}>
@@ -811,11 +616,7 @@ function NationalServiceTab({ reports, getScoreColor, getScoreTextColor, getReco
                       <div style={styles.cellSub}>{report.university || ''} • {report.programme || ''}</div>
                     </td>
                     <td style={styles.td}>
-                      <span style={{
-                        ...styles.statusBadge,
-                        background: isCompleted ? '#dcfce7' : '#fef3c7',
-                        color: isCompleted ? '#166534' : '#92400e'
-                      }}>
+                      <span style={{ ...styles.statusBadge, background: isCompleted ? '#dcfce7' : '#fef3c7', color: isCompleted ? '#166534' : '#92400e' }}>
                         {isCompleted ? 'Completed' : 'In Progress'}
                       </span>
                     </td>
@@ -860,13 +661,9 @@ function NationalServiceTab({ reports, getScoreColor, getScoreTextColor, getReco
 function OtherAssessmentsTab({ reports, onViewReport }) {
   return (
     <div style={styles.tabPanel}>
-      <div style={styles.tabDescription}>
-        <p>All other completed assessments for candidates under your supervision. ({reports.length} reports)</p>
-      </div>
+      <div style={styles.tabDescription}><p>All other completed assessments for candidates under your supervision. ({reports.length} reports)</p></div>
       {reports.length === 0 ? (
-        <div style={styles.emptyState}>
-          <p>No other assessments found.</p>
-        </div>
+        <div style={styles.emptyState}><p>No other assessments found.</p></div>
       ) : (
         <div style={styles.tableContainer}>
           <table style={styles.table}>
@@ -885,9 +682,7 @@ function OtherAssessmentsTab({ reports, onViewReport }) {
                     <div style={styles.cellName}>{report.candidate_name}</div>
                     <div style={styles.cellSub}>{report.university || ''} • {report.programme || ''}</div>
                   </td>
-                  <td style={styles.td}>
-                    {report.assessment_title}
-                  </td>
+                  <td style={styles.td}>{report.assessment_title}</td>
                   <td style={styles.td}>
                     <span style={styles.scoreBadge}>
                       {Math.round(Number(report.score || report.overallScore || report.percentage_score || 0))}%
@@ -913,13 +708,9 @@ function OtherAssessmentsTab({ reports, onViewReport }) {
 function CandidatesTab({ candidates, selectedAssessments, onAssessmentChange, onAssessmentSelect }) {
   return (
     <div style={styles.tabPanel}>
-      <div style={styles.tabDescription}>
-        <p>All candidates assigned to you. ({candidates.length} candidates)</p>
-      </div>
+      <div style={styles.tabDescription}><p>All candidates assigned to you. ({candidates.length} candidates)</p></div>
       {candidates.length === 0 ? (
-        <div style={styles.emptyState}>
-          <p>No candidates assigned to you yet.</p>
-        </div>
+        <div style={styles.emptyState}><p>No candidates assigned to you yet.</p></div>
       ) : (
         <div style={styles.tableContainer}>
           <table style={styles.table}>
@@ -934,12 +725,9 @@ function CandidatesTab({ candidates, selectedAssessments, onAssessmentChange, on
             </thead>
             <tbody>
               {candidates.map((candidate) => {
-                const completedAssessments = Array.isArray(candidate.completedAssessments)
-                  ? candidate.completedAssessments
-                  : [];
+                const completedAssessments = Array.isArray(candidate.completedAssessments) ? candidate.completedAssessments : [];
                 const stats = candidate.stats || {};
-                const selectedId = selectedAssessments[candidate.id] ||
-                  (completedAssessments.length > 0 ? completedAssessments[0].assessment_id : '');
+                const selectedId = selectedAssessments[candidate.id] || (completedAssessments.length > 0 ? completedAssessments[0].assessment_id : '');
 
                 return (
                   <tr key={candidate.id} style={styles.tr}>
@@ -955,28 +743,18 @@ function CandidatesTab({ candidates, selectedAssessments, onAssessmentChange, on
                       <span style={styles.statBadgeProgress}>{stats.inProgress || 0}</span>
                     </td>
                     <td style={styles.td}>
-                      <select
-                        onChange={(event) => onAssessmentChange(candidate.id, event.target.value)}
-                        style={styles.assessmentDropdown}
-                        value={selectedId}
-                      >
+                      <select onChange={(event) => onAssessmentChange(candidate.id, event.target.value)} style={styles.assessmentDropdown} value={selectedId}>
                         <option value="">-- Select --</option>
                         {completedAssessments.map((assessment) => (
                           <option key={`${candidate.id}-${assessment.assessment_id}`} value={assessment.assessment_id}>
                             {assessment.title} ({Math.round(Number(assessment.score || assessment.percentage_score || 0))}%)
                           </option>
                         ))}
-                        {completedAssessments.length === 0 && (
-                          <option value="" disabled>No completed assessments</option>
-                        )}
+                        {completedAssessments.length === 0 && <option value="" disabled>No completed assessments</option>}
                       </select>
                     </td>
                     <td style={styles.td}>
-                      <button
-                        onClick={() => onAssessmentSelect(candidate.id, selectedId)}
-                        style={styles.viewReportButtonSmall}
-                        disabled={completedAssessments.length === 0}
-                      >
+                      <button onClick={() => onAssessmentSelect(candidate.id, selectedId)} style={styles.viewReportButtonSmall} disabled={completedAssessments.length === 0}>
                         View Report
                       </button>
                     </td>
@@ -990,6 +768,39 @@ function CandidatesTab({ candidates, selectedAssessments, onAssessmentChange, on
     </div>
   );
 }
+
+// ============================================================
+// CUSTOM STYLES FOR REACT-SELECT
+// ============================================================
+const customSelectStyles = {
+  control: (base, state) => ({
+    ...base,
+    minHeight: '38px',
+    borderColor: state.isFocused ? '#1a237e' : '#e2e8f0',
+    boxShadow: state.isFocused ? '0 0 0 1px #1a237e' : 'none',
+    '&:hover': { borderColor: '#1a237e' },
+  }),
+  option: (base, state) => ({
+    ...base,
+    backgroundColor: state.isSelected ? '#1a237e' : state.isFocused ? '#e3f2fd' : 'white',
+    color: state.isSelected ? 'white' : '#1a202c',
+    '&:active': { backgroundColor: '#1a237e' },
+  }),
+  multiValue: (base) => ({
+    ...base,
+    backgroundColor: '#e3f2fd',
+  }),
+  multiValueLabel: (base) => ({
+    ...base,
+    color: '#1a237e',
+    fontWeight: 600,
+  }),
+  multiValueRemove: (base) => ({
+    ...base,
+    color: '#1a237e',
+    '&:hover': { backgroundColor: '#1a237e', color: 'white' },
+  }),
+};
 
 // ============================================================
 // STYLES
@@ -1096,57 +907,48 @@ const styles = {
   statLabel: { fontSize: '11px', color: '#718096', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' },
   statValue: { fontSize: '22px', fontWeight: 800, color: '#0a1929' },
 
-  // 🟢 ANALYTICS & FILTER STYLES
-  analyticsWrapper: {
-    marginBottom: '24px'
+  // 🟢 FILTERS BAR STYLES
+  filtersBar: {
+    background: 'white',
+    borderRadius: '12px',
+    padding: '16px 20px',
+    marginBottom: '24px',
+    border: '1px solid #eef2f7',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
   },
-  analyticsHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '16px',
-    flexWrap: 'wrap',
-    gap: '12px'
-  },
-  analyticsTitle: {
-    fontSize: '20px',
-    fontWeight: '700',
-    color: '#0a1929',
-    margin: 0
-  },
-  filtersContainer: {
+  filtersRow: {
     display: 'flex',
     flexWrap: 'wrap',
-    gap: '12px',
+    gap: '16px',
     alignItems: 'center'
   },
   filterGroup: {
     display: 'flex',
-    alignItems: 'center',
-    gap: '6px'
+    flexDirection: 'column',
+    minWidth: '200px',
+    flex: 1,
+    maxWidth: '300px'
   },
   filterLabel: {
     fontSize: '12px',
     fontWeight: '600',
-    color: '#475569'
+    color: '#475569',
+    marginBottom: '4px'
   },
-  filterSelect: {
-    padding: '6px 10px',
-    borderRadius: '6px',
-    border: '1px solid #e2e8f0',
+  filterLabelSmall: {
     fontSize: '12px',
-    background: 'white',
-    minWidth: '140px'
+    fontWeight: '600',
+    color: '#475569',
+    marginRight: '6px'
   },
-  filterSelectMulti: {
-    padding: '6px 10px',
-    borderRadius: '6px',
-    border: '1px solid #e2e8f0',
-    fontSize: '12px',
-    background: 'white',
-    minWidth: '180px',
-    height: '80px',
-    overflowY: 'auto'
+  scoreFilterGroup: {
+    display: 'flex',
+    alignItems: 'flex-end',
+    gap: '12px'
+  },
+  scoreInputWrapper: {
+    display: 'flex',
+    alignItems: 'center'
   },
   filterInputSmall: {
     padding: '6px 8px',
@@ -1158,19 +960,25 @@ const styles = {
     textAlign: 'center'
   },
   resetFilterButton: {
-    padding: '6px 16px',
+    padding: '8px 20px',
     background: '#f1f5f9',
     border: '1px solid #e2e8f0',
     borderRadius: '6px',
-    fontSize: '12px',
+    fontSize: '13px',
     fontWeight: '600',
     cursor: 'pointer',
-    color: '#475569'
+    color: '#475569',
+    marginLeft: 'auto',
+    height: '38px',
+    alignSelf: 'flex-end'
   },
+
+  // CHART GRID STYLES
   chartGrid: {
     display: 'grid',
     gridTemplateColumns: '1fr 1fr',
-    gap: '20px'
+    gap: '20px',
+    marginBottom: '24px'
   },
   chartCard: {
     background: 'white',
@@ -1270,98 +1078,21 @@ const styles = {
   },
   tableContainer: { overflowX: 'auto' },
   table: { width: '100%', borderCollapse: 'collapse', fontSize: '14px' },
-  th: {
-    padding: '12px 16px',
-    textAlign: 'left',
-    background: '#f8fafc',
-    fontWeight: '600',
-    color: '#475569',
-    borderBottom: '2px solid #e2e8f0',
-    whiteSpace: 'nowrap'
-  },
+  th: { padding: '12px 16px', textAlign: 'left', background: '#f8fafc', fontWeight: '600', color: '#475569', borderBottom: '2px solid #e2e8f0', whiteSpace: 'nowrap' },
   td: { padding: '12px 16px', borderBottom: '1px solid #e2e8f0', verticalAlign: 'middle' },
   tr: { transition: 'background 0.2s' },
   cellName: { fontWeight: '600', color: '#1a202c' },
   cellSub: { fontSize: '12px', color: '#94a3b8' },
-  statusBadge: {
-    padding: '4px 12px',
-    borderRadius: '20px',
-    fontSize: '12px',
-    fontWeight: '600',
-    display: 'inline-block'
-  },
-  scoreBadge: {
-    padding: '4px 12px',
-    borderRadius: '20px',
-    fontSize: '13px',
-    fontWeight: '600',
-    display: 'inline-block',
-    background: '#f1f5f9'
-  },
-  recommendationBadge: {
-    padding: '4px 12px',
-    borderRadius: '20px',
-    fontSize: '13px',
-    fontWeight: '600',
-    display: 'inline-block',
-    background: 'white',
-    border: '1px solid #e2e8f0'
-  },
-  viewButton: {
-    padding: '6px 12px',
-    background: '#1a237e',
-    color: 'white',
-    border: 'none',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    fontSize: '12px',
-    fontWeight: '500',
-    whiteSpace: 'nowrap'
-  },
-  viewReportButtonSmall: {
-    padding: '4px 12px',
-    background: '#1a237e',
-    color: 'white',
-    border: 'none',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    fontSize: '12px',
-    fontWeight: '500',
-    whiteSpace: 'nowrap'
-  },
+  statusBadge: { padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: '600', display: 'inline-block' },
+  scoreBadge: { padding: '4px 12px', borderRadius: '20px', fontSize: '13px', fontWeight: '600', display: 'inline-block', background: '#f1f5f9' },
+  recommendationBadge: { padding: '4px 12px', borderRadius: '20px', fontSize: '13px', fontWeight: '600', display: 'inline-block', background: 'white', border: '1px solid #e2e8f0' },
+  viewButton: { padding: '6px 12px', background: '#1a237e', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: '500', whiteSpace: 'nowrap' },
+  viewReportButtonSmall: { padding: '4px 12px', background: '#1a237e', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: '500', whiteSpace: 'nowrap' },
   pendingText: { color: '#94a3b8', fontSize: '13px' },
-  assessmentDropdown: {
-    padding: '6px 10px',
-    borderRadius: '6px',
-    border: '1px solid #e2e8f0',
-    fontSize: '12px',
-    background: 'white',
-    minWidth: '140px',
-    maxWidth: '220px'
-  },
-  statBadgeCompleted: {
-    padding: '2px 10px',
-    borderRadius: '12px',
-    fontSize: '12px',
-    fontWeight: '600',
-    background: '#dcfce7',
-    color: '#166534'
-  },
-  statBadgeProgress: {
-    padding: '2px 10px',
-    borderRadius: '12px',
-    fontSize: '12px',
-    fontWeight: '600',
-    background: '#dbeafe',
-    color: '#1e40af'
-  },
-  emptyState: {
-    textAlign: 'center',
-    padding: '30px',
-    color: '#64748b',
-    background: '#f8fafc',
-    borderRadius: '8px'
-  }
+  assessmentDropdown: { padding: '6px 10px', borderRadius: '6px', border: '1px solid #e2e8f0', fontSize: '12px', background: 'white', minWidth: '140px', maxWidth: '220px' },
+  statBadgeCompleted: { padding: '2px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: '600', background: '#dcfce7', color: '#166534' },
+  statBadgeProgress: { padding: '2px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: '600', background: '#dbeafe', color: '#1e40af' },
+  emptyState: { textAlign: 'center', padding: '30px', color: '#64748b', background: '#f8fafc', borderRadius: '8px' }
 };
 
 // Add keyframe animation
