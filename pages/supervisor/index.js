@@ -1,5 +1,5 @@
-// pages/supervisor/index.js - FULLY CORRECTED (DEFENSIVE SCORE RENDERING)
-// FIXED: Looks for scores in score, overallScore, or percentage_score
+// pages/supervisor/index.js - FULLY UPGRADED (GROUPED UNIVERSITIES & PROGRAMS)
+// Handles variations in both University names and Program names.
 
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/router';
@@ -38,7 +38,7 @@ ChartJS.register(
 import Select from 'react-select';
 
 // ============================================================
-// 🟢 RECOMMENDATION HELPER (Global)
+// 🟢 RECOMMENDATION HELPER
 // ============================================================
 function calculateNationalServiceRecommendation(workplace, intellectual, overall) {
   if (workplace >= 85 && intellectual >= 85) return 'Highly Recommended';
@@ -49,9 +49,11 @@ function calculateNationalServiceRecommendation(workplace, intellectual, overall
 }
 
 // ============================================================
-// 🟢 THE PROGRAM NORMALIZATION ENGINE
+// 🟢 NORMALIZATION ENGINES (Programs & Universities)
 // ============================================================
-const ABBREVIATIONS = {
+
+// 1. Abbreviation Dictionaries
+const PROGRAM_ABBREVIATIONS = {
   'bsc': 'BSc', 'b.sc': 'BSc', 'b. sc': 'BSc', 'b.s.c': 'BSc',
   'bachelor': 'Bachelor', 'btech': 'B-Tech', 'b.tech': 'B-Tech',
   'eng': 'Engineering', 'engr': 'Engineering',
@@ -61,7 +63,26 @@ const ABBREVIATIONS = {
   'of': 'of', 'and': 'and', 'in': 'in', 'with': 'with'
 };
 
-function normalizeProgramName(raw) {
+const UNIVERSITY_ABBREVIATIONS = {
+  'univ': 'University', 'uni': 'University', 'of': 'of',
+  'knust': 'Kwame Nkrumah University of Science and Technology',
+  'ug': 'University of Ghana', 'legon': 'University of Ghana',
+  'uog': 'University of Ghana', 'umt': 'University of Mines and Technology',
+  'umat': 'University of Mines and Technology',
+  'knust': 'Kwame Nkrumah University of Science and Technology',
+  'kstu': 'Kumasi Technical University',
+  'ttu': 'Takoradi Technical University',
+  'gtuc': 'Ghana Technology University College',
+  'ucc': 'University of Cape Coast',
+  'upsa': 'University of Professional Studies, Accra',
+  'uoc': 'University of Cape Coast',
+  'cctu': 'Cape Coast Technical University',
+  'stu': 'Sunyani Technical University',
+  'uad': 'University for Development Studies',
+  'uds': 'University for Development Studies'
+};
+
+function normalizeText(raw, abbreviations) {
   if (!raw || typeof raw !== 'string') return '';
   let cleaned = raw
     .toLowerCase()
@@ -69,15 +90,15 @@ function normalizeProgramName(raw) {
     .replace(/\s+/g, ' ')
     .trim();
   const words = cleaned.split(' ');
-  const mappedWords = words.map(word => ABBREVIATIONS[word] || word.charAt(0).toUpperCase() + word.slice(1));
+  const mappedWords = words.map(word => abbreviations[word] || word.charAt(0).toUpperCase() + word.slice(1));
   return mappedWords.join(' ');
 }
 
-function getUniqueMasterNames(rawPrograms) {
-  if (!rawPrograms || rawPrograms.length === 0) return { groups: [], masterToRawMap: {} };
+function groupSimilarItems(rawItems, abbreviations) {
+  if (!rawItems || rawItems.length === 0) return { groups: [], masterToRawMap: {} };
   
   const normalizedMap = {};
-  rawPrograms.forEach(p => { normalizedMap[p] = normalizeProgramName(p); });
+  rawItems.forEach(item => { normalizedMap[item] = normalizeText(item, abbreviations); });
   const uniqueCleanNames = [...new Set(Object.values(normalizedMap))];
   const groups = [];
   const processed = new Set();
@@ -102,8 +123,8 @@ function getUniqueMasterNames(rawPrograms) {
   const masterToRawMap = {};
   groups.forEach(master => {
     masterToRawMap[master] = [];
-    rawPrograms.forEach(raw => {
-      const clean = normalizeProgramName(raw);
+    rawItems.forEach(raw => {
+      const clean = normalizeText(raw, abbreviations);
       const words1 = master.split(' ');
       const words2 = clean.split(' ');
       const intersection = words1.filter(w => words2.includes(w)).length;
@@ -280,41 +301,46 @@ export default function SupervisorDashboard() {
   };
 
   // ============================================================
-  // DATA PROCESSING FOR FILTERS & CHARTS
+  // DATA PROCESSING FOR FILTERS & CHARTS (With Grouping)
   // ============================================================
-  const universityStats = useMemo(() => {
-    const map = {};
-    candidates.forEach(c => {
-      const uni = c.university || 'Not Specified';
-      map[uni] = (map[uni] || 0) + 1;
-    });
-    return Object.entries(map).sort((a, b) => b[1] - a[1]).map(([name, value]) => ({ name, value }));
+
+  // 1. Group Universities
+  const rawUniversities = useMemo(() => {
+    return candidates.map(c => c.university).filter(Boolean);
   }, [candidates]);
 
+  const { groups: uniqueUniversityMasterNames, masterToRawMap: uniMasterToRawMap } = useMemo(() => {
+    return groupSimilarItems(rawUniversities, UNIVERSITY_ABBREVIATIONS);
+  }, [rawUniversities]);
+
+  // 2. Filter Candidates based on University (uses Master names)
   const universityFilteredCandidates = useMemo(() => {
     if (!selectedUniversityOption) return candidates;
-    return candidates.filter(c => c.university === selectedUniversityOption.value);
-  }, [candidates, selectedUniversityOption]);
+    const allowedRawUniversities = uniMasterToRawMap[selectedUniversityOption.value] || [selectedUniversityOption.value];
+    return candidates.filter(c => allowedRawUniversities.includes(c.university));
+  }, [candidates, selectedUniversityOption, uniMasterToRawMap]);
 
-  // Normalize programs
+  // 3. Group Programs (Based on current university filter)
   const rawPrograms = useMemo(() => {
     return universityFilteredCandidates.map(c => c.programme).filter(Boolean);
   }, [universityFilteredCandidates]);
 
-  const { groups: uniqueProgramMasterNames, masterToRawMap } = useMemo(() => {
-    return getUniqueMasterNames(rawPrograms);
+  const { groups: uniqueProgramMasterNames, masterToRawMap: progMasterToRawMap } = useMemo(() => {
+    return groupSimilarItems(rawPrograms, PROGRAM_ABBREVIATIONS);
   }, [rawPrograms]);
 
+  // 4. Filter Candidates based on Program (uses Master names)
   const programFilteredCandidates = useMemo(() => {
     if (selectedProgramOptions.length === 0) return universityFilteredCandidates;
     const allowedRawNames = [];
     selectedProgramOptions.forEach(opt => {
-      const rawList = masterToRawMap[opt.value] || [];
+      const rawList = progMasterToRawMap[opt.value] || [];
       allowedRawNames.push(...rawList);
     });
     return universityFilteredCandidates.filter(c => allowedRawNames.includes(c.programme));
-  }, [universityFilteredCandidates, selectedProgramOptions, masterToRawMap]);
+  }, [universityFilteredCandidates, selectedProgramOptions, progMasterToRawMap]);
 
+  // 5. Final Score Filter
   const filteredCandidates = useMemo(() => {
     return programFilteredCandidates.filter(c => {
       const scores = (c.completedAssessments || []).map(a => Number(a.score || 0)).filter(s => s > 0);
@@ -323,18 +349,32 @@ export default function SupervisorDashboard() {
     });
   }, [programFilteredCandidates, minScore, maxScore]);
 
+  // 6. Charts (Using grouped master names)
+  const universityStats = useMemo(() => {
+    const map = {};
+    candidates.forEach(c => {
+      // Map raw university to master
+      let master = 'Other';
+      for (const [m, rawList] of Object.entries(uniMasterToRawMap)) {
+        if (rawList.includes(c.university)) { master = m; break; }
+      }
+      map[master] = (map[master] || 0) + 1;
+    });
+    return Object.entries(map).sort((a, b) => b[1] - a[1]).map(([name, value]) => ({ name, value }));
+  }, [candidates, uniMasterToRawMap]);
+
   const programmeStats = useMemo(() => {
     const map = {};
     filteredCandidates.forEach(c => {
       const raw = c.programme || 'Not Specified';
       let master = 'Other';
-      for (const [m, rawList] of Object.entries(masterToRawMap)) {
+      for (const [m, rawList] of Object.entries(progMasterToRawMap)) {
         if (rawList.includes(raw)) { master = m; break; }
       }
       map[master] = (map[master] || 0) + 1;
     });
     return Object.entries(map).sort((a, b) => b[1] - a[1]).map(([name, value]) => ({ name, value }));
-  }, [filteredCandidates, masterToRawMap]);
+  }, [filteredCandidates, progMasterToRawMap]);
 
   const filteredAverageScore = useMemo(() => {
     const scores = filteredCandidates
@@ -356,13 +396,17 @@ export default function SupervisorDashboard() {
 
   const COLORS = ['#1a237e', '#2e7d32', '#f57c00', '#c62828', '#1565c0', '#4a148c', '#00695c', '#bf360c', '#78909c'];
 
-  // REACT-SELECT OPTIONS
+  // REACT-SELECT OPTIONS (Using grouped master names)
   const universityOptions = useMemo(() => {
-    return universityStats.map(uni => ({ label: `${uni.name} (${uni.value})`, value: uni.name }));
-  }, [universityStats]);
+    return uniqueUniversityMasterNames
+      .sort((a, b) => a.localeCompare(b))
+      .map(uni => ({ label: uni, value: uni }));
+  }, [uniqueUniversityMasterNames]);
 
   const programOptions = useMemo(() => {
-    return uniqueProgramMasterNames.map(p => ({ label: p, value: p }));
+    return uniqueProgramMasterNames
+      .sort((a, b) => a.localeCompare(b))
+      .map(p => ({ label: p, value: p }));
   }, [uniqueProgramMasterNames]);
 
   const resetFilters = () => {
@@ -677,8 +721,6 @@ function OtherAssessmentsTab({ reports, onViewReport }) {
             </thead>
             <tbody>
               {reports.map((report) => {
-                // 🟢 DEFENSIVE SCORE LOOKUP
-                // Try score, overallScore, then percentage_score
                 const displayScore = Math.round(Number(report.score || report.overallScore || report.percentage_score || 0));
 
                 return (
