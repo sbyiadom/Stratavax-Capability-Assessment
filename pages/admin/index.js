@@ -1,5 +1,5 @@
-// pages/admin/index.js - FINAL STABLE FIX
-// FIXED: Removed the Supabase Relationship Error blocking the dashboard.
+// pages/admin/index.js - ADVANCED FILTERS (PROGRAM + SCORE RANGE)
+// Added: Program dropdown filter and Min/Max Score sliders.
 
 import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/router";
@@ -75,7 +75,13 @@ export default function AdminDashboard() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [authError, setAuthError] = useState(null);
   
+  // 🟢 Primary Filter: University
   const [selectedUniversity, setSelectedUniversity] = useState('all');
+
+  // 🟢 NEW: Advanced Filters
+  const [selectedProgram, setSelectedProgram] = useState('all');
+  const [minScore, setMinScore] = useState(0);
+  const [maxScore, setMaxScore] = useState(100);
 
   const [stats, setStats] = useState({
     totalSupervisors: 0,
@@ -93,7 +99,7 @@ export default function AdminDashboard() {
   const [recentResults, setRecentResults] = useState([]);
 
   // ============================================================
-  // DATA PROCESSING FOR CHARTS
+  // DATA PROCESSING
   // ============================================================
   
   const universityStats = useMemo(() => {
@@ -107,10 +113,34 @@ export default function AdminDashboard() {
       .map(([name, value]) => ({ name, value }));
   }, [allCandidates]);
 
-  const filteredCandidates = useMemo(() => {
+  // 🟢 Step 1: Filter by University first
+  const universityFilteredCandidates = useMemo(() => {
     if (selectedUniversity === 'all') return allCandidates;
     return allCandidates.filter(c => c.university === selectedUniversity);
   }, [allCandidates, selectedUniversity]);
+
+  // 🟢 Step 2: Filter by Program
+  const programFilteredCandidates = useMemo(() => {
+    if (selectedProgram === 'all') return universityFilteredCandidates;
+    return universityFilteredCandidates.filter(c => c.programme === selectedProgram);
+  }, [universityFilteredCandidates, selectedProgram]);
+
+  // 🟢 Step 3: Filter by Score Range
+  const filteredCandidates = useMemo(() => {
+    return programFilteredCandidates.filter(c => {
+      const score = Number(c.latestScore || 0);
+      return score >= Number(minScore) && score <= Number(maxScore);
+    });
+  }, [programFilteredCandidates, minScore, maxScore]);
+
+  // 🟢 Generate Program Options for the Dropdown (Based on current University selection)
+  const programOptions = useMemo(() => {
+    const map = {};
+    universityFilteredCandidates.forEach(c => {
+      if (c.programme) map[c.programme] = true;
+    });
+    return Object.keys(map).sort();
+  }, [universityFilteredCandidates]);
 
   const programmeStats = useMemo(() => {
     const map = {};
@@ -145,6 +175,14 @@ export default function AdminDashboard() {
   }, [programmeStats]);
 
   const COLORS = ['#1a237e', '#2e7d32', '#f57c00', '#c62828', '#1565c0', '#4a148c', '#00695c', '#bf360c', '#78909c'];
+
+  // 🟢 Reset Filters
+  const resetFilters = () => {
+    setSelectedUniversity('all');
+    setSelectedProgram('all');
+    setMinScore(0);
+    setMaxScore(100);
+  };
 
   useEffect(() => {
     checkAdminAuth();
@@ -222,7 +260,6 @@ export default function AdminDashboard() {
     try {
       console.log("Fetching dashboard data...");
 
-      // 1. Basic Counts
       const [
         supervisorCount,
         candidateCount,
@@ -241,7 +278,6 @@ export default function AdminDashboard() {
         supabase.from("candidate_assessments").select("status")
       ]);
 
-      // 2. Fetch ALL Candidates (Without scores first)
       const { data: allCandidatesData, error: candidatesError } = await supabase
         .from("candidate_profiles")
         .select("id, full_name, email, university, programme, created_at")
@@ -252,7 +288,6 @@ export default function AdminDashboard() {
         throw candidatesError;
       }
 
-      // 3. Fetch ALL Results (Directly)
       const { data: allResultsData, error: resultsError } = await supabase
         .from("assessment_results")
         .select("user_id, percentage_score, completed_at")
@@ -263,12 +298,9 @@ export default function AdminDashboard() {
         throw resultsError;
       }
 
-      // 4. MERGE DATA IN JAVASCRIPT (The safe, bulletproof way)
       const candidatesWithScores = (allCandidatesData || []).map(c => {
-        // Find the latest result for this candidate
         const userResults = (allResultsData || []).filter(r => r.user_id === c.id);
         const latestResult = userResults.length > 0 ? userResults[0] : null;
-        
         return {
           ...c,
           latestScore: latestResult ? Math.round(Number(latestResult.percentage_score || 0)) : 0,
@@ -276,22 +308,14 @@ export default function AdminDashboard() {
         };
       });
 
-      // 5. Fetch Recent Candidates (Using the already computed data)
       const recentCandidatesData = candidatesWithScores.slice(0, 6);
 
-      // ✅ FIX: Fetch recent results safely, ignoring the schema cache error
-      // We first get the result IDs, then fetch the profiles separately
       const { data: recentResultIds, error: recentError } = await supabase
         .from("assessment_results")
         .select("id, user_id, assessment_id, percentage_score, completed_at")
         .order("completed_at", { ascending: false })
         .limit(6);
 
-      if (recentError) {
-        console.warn("Warning: Could not fetch full recent results details, dashboard will remain stable.");
-      }
-
-      // Try to fetch details for these results
       let recentResultsProcessed = [];
       if (recentResultIds && recentResultIds.length > 0) {
         const userIds = recentResultIds.map(r => r.user_id).filter(Boolean);
@@ -315,8 +339,6 @@ export default function AdminDashboard() {
           assessments: assMap[r.assessment_id] || { title: 'Assessment' }
         }));
       }
-
-      console.log("Counts:", { supervisorCount, candidateCount, assessmentCount, completedCount, resultCount, inProgressCount });
 
       const accessRows = safeArray(accessResponse?.data || []);
       const unblockedCount = accessRows.filter((item) => item.status === "unblocked").length;
@@ -389,7 +411,6 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* STATS CARDS ROW */}
         <div style={styles.statsRow}>
           <StatCard icon="👑" label="Supervisors" value={stats.totalSupervisors} />
           <StatCard icon="👥" label="Candidates" value={stats.totalCandidates} />
@@ -399,27 +420,47 @@ export default function AdminDashboard() {
           <StatCard icon="📊" label="Result Records" value={stats.totalResults} />
         </div>
 
-        {/* MAIN ANALYTICS SECTION */}
         <div style={styles.analyticsWrapper}>
           <div style={styles.analyticsHeader}>
             <h3 style={styles.analyticsTitle}>Candidate Analytics</h3>
-            <div style={styles.analyticsControls}>
-              <label style={styles.filterLabel}>Filter by University:</label>
-              <select 
-                style={styles.universitySelect} 
-                value={selectedUniversity} 
-                onChange={(e) => setSelectedUniversity(e.target.value)}
-              >
-                <option value="all">All Universities</option>
-                {universityStats.map(uni => (
-                  <option key={uni.name} value={uni.name}>{uni.name} ({uni.value})</option>
-                ))}
-              </select>
+            
+            {/* 🟢 ADVANCED FILTERS BAR */}
+            <div style={styles.filtersContainer}>
+              <div style={styles.filterGroup}>
+                <label style={styles.filterLabel}>University:</label>
+                <select style={styles.filterSelect} value={selectedUniversity} onChange={(e) => { setSelectedUniversity(e.target.value); setSelectedProgram('all'); }}>
+                  <option value="all">All Universities</option>
+                  {universityStats.map(uni => (
+                    <option key={uni.name} value={uni.name}>{uni.name} ({uni.value})</option>
+                  ))}
+                </select>
+              </div>
+
+              <div style={styles.filterGroup}>
+                <label style={styles.filterLabel}>Program:</label>
+                <select style={styles.filterSelect} value={selectedProgram} onChange={(e) => setSelectedProgram(e.target.value)}>
+                  <option value="all">All Programs</option>
+                  {programOptions.map(p => (
+                    <option key={p} value={p}>{p}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div style={styles.filterGroup}>
+                <label style={styles.filterLabel}>Min Score:</label>
+                <input type="number" style={styles.filterInputSmall} min="0" max="100" value={minScore} onChange={(e) => setMinScore(e.target.value)} />
+              </div>
+
+              <div style={styles.filterGroup}>
+                <label style={styles.filterLabel}>Max Score:</label>
+                <input type="number" style={styles.filterInputSmall} min="0" max="100" value={maxScore} onChange={(e) => setMaxScore(e.target.value)} />
+              </div>
+
+              <button onClick={resetFilters} style={styles.resetFilterButton}>Reset Filters</button>
             </div>
           </div>
 
           <div style={styles.chartGrid}>
-            {/* LEFT: PIE CHART */}
             <div style={styles.chartCard}>
               <h4 style={styles.chartTitle}>
                 {selectedUniversity === 'all' ? 'Top Programs (Distribution)' : `Programs at ${selectedUniversity}`}
@@ -448,7 +489,6 @@ export default function AdminDashboard() {
               </div>
             </div>
 
-            {/* RIGHT: HORIZONTAL BAR CHART */}
             <div style={styles.chartCard}>
               <h4 style={styles.chartTitle}>Top 15 Universities (Ranking)</h4>
               <div style={{ height: '280px' }}>
@@ -472,7 +512,6 @@ export default function AdminDashboard() {
               </div>
             </div>
 
-            {/* BOTTOM RIGHT: QUICK STATS */}
             <div style={styles.statsCardLarge}>
               <h4 style={styles.panelHeader}>
                 {selectedUniversity === 'all' ? '📊 Platform Overview' : `📍 ${selectedUniversity}`}
@@ -501,12 +540,13 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* DETAIL TABLE (If University Selected) */}
         {selectedUniversity !== 'all' && (
           <div style={styles.detailTableContainer}>
             <div style={styles.detailHeader}>
-              <h4 style={styles.detailTableTitle}>All Candidates from {selectedUniversity}</h4>
-              <span style={styles.detailCount}>{filteredCandidates.length} candidates found</span>
+              <h4 style={styles.detailTableTitle}>
+                {filteredCandidates.length} Candidates from {selectedUniversity}
+                {selectedProgram !== 'all' && ` (${selectedProgram})`}
+              </h4>
             </div>
             <div style={styles.tableContainer}>
               <table style={styles.table}>
@@ -519,7 +559,7 @@ export default function AdminDashboard() {
                 </thead>
                 <tbody>
                   {filteredCandidates.length === 0 ? (
-                    <tr><td colSpan="3" style={styles.emptyState}>No candidates found for this university.</td></tr>
+                    <tr><td colSpan="3" style={styles.emptyState}>No candidates match your filters.</td></tr>
                   ) : (
                     filteredCandidates.map((c) => {
                       const latestScore = Number(c.latestScore || 0);
@@ -547,7 +587,6 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* ACTION CARDS & EXTENSIONS */}
         <div style={styles.actionCardsGrid}>
           <ActionCard href="/admin/add-supervisor" icon="+" title="Add Supervisor" description="Create new supervisor accounts with dashboard access." />
           <ActionCard href="/admin/manage-supervisors" icon="👥" title="Manage Supervisors" description="View, activate, deactivate, or update supervisor accounts." />
@@ -682,7 +721,6 @@ const styles = {
   refreshButton: { background: "#0a1929", color: "white", border: "none", padding: "10px 20px", borderRadius: "8px", cursor: "pointer", fontSize: "14px", fontWeight: 700 },
   logoutButton: { background: "#f44336", color: "white", border: "none", padding: "10px 20px", borderRadius: "8px", cursor: "pointer", fontSize: "14px", fontWeight: 700 },
   
-  // LAYOUT STYLES
   statsRow: {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
@@ -720,24 +758,48 @@ const styles = {
     color: '#0a1929',
     margin: 0
   },
-  analyticsControls: {
+  filtersContainer: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '12px',
+    alignItems: 'center'
+  },
+  filterGroup: {
     display: 'flex',
     alignItems: 'center',
-    gap: '12px',
-    flexWrap: 'wrap'
+    gap: '6px'
   },
   filterLabel: {
-    fontSize: '13px',
+    fontSize: '12px',
     fontWeight: '600',
     color: '#475569'
   },
-  universitySelect: {
-    padding: '8px 12px',
-    borderRadius: '8px',
+  filterSelect: {
+    padding: '6px 10px',
+    borderRadius: '6px',
     border: '1px solid #e2e8f0',
-    fontSize: '13px',
+    fontSize: '12px',
     background: 'white',
-    minWidth: '220px'
+    minWidth: '140px'
+  },
+  filterInputSmall: {
+    padding: '6px 8px',
+    borderRadius: '6px',
+    border: '1px solid #e2e8f0',
+    fontSize: '12px',
+    background: 'white',
+    width: '60px',
+    textAlign: 'center'
+  },
+  resetFilterButton: {
+    padding: '6px 16px',
+    background: '#f1f5f9',
+    border: '1px solid #e2e8f0',
+    borderRadius: '6px',
+    fontSize: '12px',
+    fontWeight: '600',
+    cursor: 'pointer',
+    color: '#475569'
   },
   chartGrid: {
     display: 'grid',
@@ -805,7 +867,6 @@ const styles = {
     marginTop: '2px'
   },
 
-  // Table & Detail styles
   detailTableContainer: {
     background: 'white',
     borderRadius: '12px',
@@ -825,11 +886,6 @@ const styles = {
     fontWeight: '600',
     color: '#0a1929',
     margin: 0
-  },
-  detailCount: {
-    fontSize: '14px',
-    fontWeight: '500',
-    color: '#64748b'
   },
   tableContainer: { overflowX: 'auto' },
   table: { width: '100%', borderCollapse: 'collapse', fontSize: '14px', marginTop: '10px' },
