@@ -1,4 +1,4 @@
-// pages/supervisor/index.js - UPGRADED WITH BEAUTIFUL TAG DROPDOWNS
+// pages/supervisor/index.js - FULLY CORRECTED (FIXED REFERENCE ERROR)
 // Supports program normalization, multi-select, and score filtering.
 
 import { useState, useEffect, useMemo } from 'react';
@@ -36,6 +36,17 @@ ChartJS.register(
 // REACT-SELECT IMPORTS
 // ============================================================
 import Select from 'react-select';
+
+// ============================================================
+// 🟢 RECOMMENDATION HELPER (Moved outside to be global)
+// ============================================================
+function calculateNationalServiceRecommendation(workplace, intellectual, overall) {
+  if (workplace >= 85 && intellectual >= 85) return 'Highly Recommended';
+  if (workplace >= 75 && intellectual >= 75) return 'Recommended';
+  if (workplace >= 65 && intellectual >= 65) return 'Reserve Pool';
+  if (workplace >= 50 || intellectual >= 50 || overall >= 50) return 'Consider for Development';
+  return 'Not Recommended';
+}
 
 // ============================================================
 // 🟢 THE PROGRAM NORMALIZATION ENGINE
@@ -361,17 +372,6 @@ export default function SupervisorDashboard() {
     setMaxScore(100);
   };
 
-  // ============================================================
-  // RECOMMENDATION HELPER
-  // ============================================================
-  const calculateNationalServiceRecommendation = (workplace, intellectual, overall) => {
-    if (workplace >= 85 && intellectual >= 85) return 'Highly Recommended';
-    if (workplace >= 75 && intellectual >= 75) return 'Recommended';
-    if (workplace >= 65 && intellectual >= 65) return 'Reserve Pool';
-    if (workplace >= 50 || intellectual >= 50 || overall >= 50) return 'Consider for Development';
-    return 'Not Recommended';
-  };
-
   if (authLoading || loading) {
     return (
       <AppLayout background="/images/supervisor-bg.jpg">
@@ -607,6 +607,7 @@ function NationalServiceTab({ reports, getScoreColor, getScoreTextColor, getReco
                 const isCompleted = report.status === 'completed' || report.result_id !== null;
                 const hasScores = workplaceScore > 0 || intellectualScore > 0 || overallScore > 0;
 
+                // Uses the globally declared function
                 const displayRecommendation = calculateNationalServiceRecommendation(workplaceScore, intellectualScore, overallScore);
 
                 return (
