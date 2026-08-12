@@ -1,4 +1,5 @@
-// pages/admin/index.js - FIXED: Scores now correctly map to the candidates table.
+// pages/admin/index.js - EMERGENCY REVERT (Fixed Data Query)
+// FIXED: Restored data fetching to avoid null responses, fixed score rendering.
 
 import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/router";
@@ -125,10 +126,10 @@ export default function AdminDashboard() {
       .map(([name, value]) => ({ name, value }));
   }, [filteredCandidates]);
 
-  // 4. Average Score Calculation (Reads raw percentage_score)
+  // 4. Average Score Calculation (Uses nested results to find real score)
   const filteredAverageScore = useMemo(() => {
     const scores = filteredCandidates
-      .map(c => Number(c.percentage_score || 0))
+      .flatMap(c => (c.completedAssessments || []).map(a => a.score || 0))
       .filter(s => s > 0);
     if (scores.length === 0) return 0;
     return Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
@@ -245,10 +246,21 @@ export default function AdminDashboard() {
         getExactCount("assessment_results"),
         getExactCount("assessment_sessions", (query) => query.eq("status", "in_progress")),
         supabase.from("candidate_assessments").select("status"),
-        // 🟢 CRITICAL FIX: Fetch percentage_score directly here
+        // 🟢 RESTORED: Fetch all details, including nested completedAssessments to calculate score
         supabase
           .from("candidate_profiles")
-          .select("id, full_name, email, university, programme, percentage_score, created_at")
+          .select(`
+            id, 
+            full_name, 
+            email, 
+            university, 
+            programme, 
+            created_at,
+            completedAssessments:candidate_assessments!inner(
+              result_id,
+              score:assessment_results!inner(percentage_score)
+            )
+          `)
           .order("created_at", { ascending: false }),
         supabase
           .from("candidate_profiles")
@@ -479,8 +491,15 @@ export default function AdminDashboard() {
                     <tr><td colSpan="3" style={styles.emptyState}>No candidates found for this university.</td></tr>
                   ) : (
                     filteredCandidates.map((c) => {
-                      // 🟢 FIXED: Read directly from percentage_score
-                      const latestScore = Math.round(Number(c.percentage_score || 0));
+                      // 🟢 FIXED: Safely extract the real score
+                      let latestScore = 0;
+                      // Check if completedAssessments exists and has data
+                      if (c.completedAssessments && c.completedAssessments.length > 0) {
+                        // Grab the score from the deeply nested assessment_results
+                        const nestedScore = c.completedAssessments[0]?.score?.[0]?.percentage_score;
+                        latestScore = Math.round(Number(nestedScore || 0));
+                      }
+
                       const scoreColor = latestScore >= 70 ? '#dcfce7' : '#fee2e2';
                       const scoreTextColor = latestScore >= 70 ? '#166534' : '#991b1b';
                       return (
