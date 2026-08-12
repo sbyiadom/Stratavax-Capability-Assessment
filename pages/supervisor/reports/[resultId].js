@@ -1,4 +1,5 @@
-// pages/supervisor/reports/[resultId].js - COMPLETE UPDATED WITH BEHAVIORAL MATRIX
+// pages/supervisor/reports/[resultId].js - ULTIMATE SCORE CORRECTION
+// FIXED: Injects the averaged score directly into the result object so StratavaxReport reads it.
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -109,10 +110,32 @@ export default function SupervisorReportView() {
           }
         }
 
+        // 🟢 FIX: Force the true average onto the result object
+        let stratavaxResultObject = data.result;
+        let trueAverageScore = Number(data.result?.percentage_score || 0);
+
+        if (!isNS && report && report.categoryScores && Array.isArray(report.categoryScores) && report.categoryScores.length > 0) {
+          const sum = report.categoryScores.reduce((acc, cat) => acc + Number(cat.percentage || 0), 0);
+          const validCount = report.categoryScores.filter(cat => Number(cat.percentage || 0) > 0).length;
+          
+          if (validCount > 0) {
+            trueAverageScore = Math.round(sum / validCount);
+            console.log(`[Supervisor Report] Correct Stratavax Overall Score: ${trueAverageScore}%`);
+            
+            // INJECT THE TRUE SCORE INTO THE RESULT OBJECT
+            if (stratavaxResultObject) {
+              stratavaxResultObject.percentage_score = trueAverageScore;
+              stratavaxResultObject.overallScore = trueAverageScore;
+              stratavaxResultObject.score = trueAverageScore;
+            }
+          }
+        }
+
         setReportData({
           ...data,
           report: report,
-          isNationalService: isNS
+          isNationalService: isNS,
+          result: stratavaxResultObject // Pass the corrected object
         });
         setIsNationalService(isNS);
 
@@ -247,7 +270,6 @@ export default function SupervisorReportView() {
           </button>
         </div>
         
-        {/* Pass behavioralMatrix as props to NationalServiceReport */}
         <NationalServiceReport 
           report={reportData.report} 
           onBack={handleBack} 
@@ -668,11 +690,9 @@ export default function SupervisorReportView() {
   console.log('[Supervisor Report] Passing behavioralMatrix:', behavioralMatrix);
   
   // Prepare data for Stratavax report
-  const stratavaxData = {
-    result: reportData?.result || null,
-    candidate: reportData?.result?.candidate_profiles || null,
-    assessment: reportData?.result?.assessments || null
-  };
+  const stratavaxResult = reportData?.result || null;
+  const stratavaxCandidate = reportData?.result?.candidate_profiles || null;
+  const stratavaxAssessment = reportData?.result?.assessments || null;
 
   return (
     <AppLayout background="/images/supervisor-bg.jpg">
@@ -687,11 +707,10 @@ export default function SupervisorReportView() {
         </button>
       </div>
       
-      {/* Pass behavioralMatrix as props to StratavaxReport */}
       <StratavaxReport 
-        result={stratavaxData.result}
-        candidate={stratavaxData.candidate}
-        assessment={stratavaxData.assessment}
+        result={stratavaxResult}
+        candidate={stratavaxCandidate}
+        assessment={stratavaxAssessment}
         onBack={handleBack}
         behavioralMatrix={behavioralMatrix}
         loadingBehavioral={loadingBehavioral}
