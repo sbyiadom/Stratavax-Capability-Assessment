@@ -1,4 +1,5 @@
-// pages/admin/index.js - FIXED: Scores now correctly map to the candidates table.
+// pages/admin/index.js - ADVANCED ANALYTICS (PROGRAMS + UNIVERSITIES)
+// Charts now display independent datasets with dynamic filtering.
 
 import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/router";
@@ -125,28 +126,42 @@ export default function AdminDashboard() {
       .map(([name, value]) => ({ name, value }));
   }, [filteredCandidates]);
 
-  // 4. Average Score Calculation (Reads raw percentage_score)
+  // 4. Average Score Calculation (Extracts from nested results)
   const filteredAverageScore = useMemo(() => {
     const scores = filteredCandidates
-      .map(c => Number(c.percentage_score || 0))
+      .flatMap(c => (c.completedAssessments || []).map(a => a.score || 0))
       .filter(s => s > 0);
     if (scores.length === 0) return 0;
     return Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
   }, [filteredCandidates]);
 
-  // 5. PIE CHART DATA
+  // 5. PIE CHART DATA (Group everything outside Top 8 into "Others")
   const pieChartData = useMemo(() => {
     if (programmeStats.length === 0) return { labels: [], data: [] };
+    
+    // Take the top 8 programs
     const top8 = programmeStats.slice(0, 8);
     const othersCount = programmeStats.slice(8).reduce((sum, item) => sum + item.value, 0);
+    
     const labels = top8.map(item => item.name);
     const data = top8.map(item => item.value);
+    
     if (othersCount > 0) {
       labels.push('Others');
       data.push(othersCount);
     }
+    
     return { labels, data };
   }, [programmeStats]);
+
+  // 6. BAR CHART DATA (Top 15 Universities)
+  const barChartData = useMemo(() => {
+    if (universityStats.length === 0) return { labels: [], data: [] };
+    return {
+      labels: universityStats.slice(0, 15).map(item => item.name),
+      data: universityStats.slice(0, 15).map(item => item.value)
+    };
+  }, [universityStats]);
 
   const COLORS = ['#1a237e', '#2e7d32', '#f57c00', '#c62828', '#1565c0', '#4a148c', '#00695c', '#bf360c', '#78909c'];
 
@@ -245,10 +260,9 @@ export default function AdminDashboard() {
         getExactCount("assessment_results"),
         getExactCount("assessment_sessions", (query) => query.eq("status", "in_progress")),
         supabase.from("candidate_assessments").select("status"),
-        // 🟢 CRITICAL FIX: Fetch percentage_score directly here
         supabase
           .from("candidate_profiles")
-          .select("id, full_name, email, university, programme, percentage_score, created_at")
+          .select("id, full_name, email, university, programme, created_at")
           .order("created_at", { ascending: false }),
         supabase
           .from("candidate_profiles")
@@ -376,7 +390,7 @@ export default function AdminDashboard() {
           </div>
 
           <div style={styles.chartGrid}>
-            {/* LEFT: PIE CHART */}
+            {/* LEFT: PIE CHART (Program Distribution) */}
             <div style={styles.chartCard}>
               <h4 style={styles.chartTitle}>
                 {selectedUniversity === 'all' ? 'Top Programs (Distribution)' : `Programs at ${selectedUniversity}`}
@@ -405,16 +419,16 @@ export default function AdminDashboard() {
               </div>
             </div>
 
-            {/* RIGHT: HORIZONTAL BAR CHART */}
+            {/* RIGHT: HORIZONTAL BAR CHART (University Ranking) */}
             <div style={styles.chartCard}>
               <h4 style={styles.chartTitle}>Top 15 Universities (Ranking)</h4>
               <div style={{ height: '280px' }}>
                 <Bar
                   data={{
-                    labels: universityStats.slice(0, 15).map(item => item.name),
+                    labels: barChartData.labels,
                     datasets: [{
                       label: 'Count',
-                      data: universityStats.slice(0, 15).map(item => item.value),
+                      data: barChartData.data,
                       backgroundColor: '#1a237e',
                       borderRadius: 4,
                     }]
@@ -429,7 +443,7 @@ export default function AdminDashboard() {
               </div>
             </div>
 
-            {/* BOTTOM RIGHT: QUICK STATS */}
+            {/* BOTTOM RIGHT: QUICK STATS INFOGRAPHIC */}
             <div style={styles.statsCardLarge}>
               <h4 style={styles.panelHeader}>
                 {selectedUniversity === 'all' ? '📊 Platform Overview' : `📍 ${selectedUniversity}`}
@@ -479,8 +493,9 @@ export default function AdminDashboard() {
                     <tr><td colSpan="3" style={styles.emptyState}>No candidates found for this university.</td></tr>
                   ) : (
                     filteredCandidates.map((c) => {
-                      // 🟢 FIXED: Read directly from percentage_score
-                      const latestScore = Math.round(Number(c.percentage_score || 0));
+                      const latestScore = c.completedAssessments?.length > 0 
+                        ? Math.round(c.completedAssessments.reduce((sum, a) => sum + (a.score || 0), 0) / c.completedAssessments.length)
+                        : 0;
                       const scoreColor = latestScore >= 70 ? '#dcfce7' : '#fee2e2';
                       const scoreTextColor = latestScore >= 70 ? '#166534' : '#991b1b';
                       return (
