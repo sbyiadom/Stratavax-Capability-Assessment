@@ -1,5 +1,4 @@
-// pages/admin/index.js - EMERGENCY REVERT (Fixed Data Query)
-// FIXED: Restored data fetching to avoid null responses, fixed score rendering.
+// pages/admin/index.js - FINAL FIX (Reads percentage_score directly from nested result)
 
 import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/router";
@@ -96,7 +95,6 @@ export default function AdminDashboard() {
   // DATA PROCESSING FOR CHARTS
   // ============================================================
   
-  // 1. Compute University Stats (Global)
   const universityStats = useMemo(() => {
     const map = {};
     allCandidates.forEach(c => {
@@ -108,13 +106,11 @@ export default function AdminDashboard() {
       .map(([name, value]) => ({ name, value }));
   }, [allCandidates]);
 
-  // 2. Filter Candidates based on dropdown
   const filteredCandidates = useMemo(() => {
     if (selectedUniversity === 'all') return allCandidates;
     return allCandidates.filter(c => c.university === selectedUniversity);
   }, [allCandidates, selectedUniversity]);
 
-  // 3. Compute Programme Stats (Dynamic based on filter)
   const programmeStats = useMemo(() => {
     const map = {};
     filteredCandidates.forEach(c => {
@@ -126,16 +122,17 @@ export default function AdminDashboard() {
       .map(([name, value]) => ({ name, value }));
   }, [filteredCandidates]);
 
-  // 4. Average Score Calculation (Uses nested results to find real score)
   const filteredAverageScore = useMemo(() => {
     const scores = filteredCandidates
-      .flatMap(c => (c.completedAssessments || []).map(a => a.score || 0))
+      .map(c => {
+        const latest = c.completedAssessments?.[0];
+        return Number(latest?.score?.[0]?.percentage_score || 0);
+      })
       .filter(s => s > 0);
     if (scores.length === 0) return 0;
     return Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
   }, [filteredCandidates]);
 
-  // 5. PIE CHART DATA
   const pieChartData = useMemo(() => {
     if (programmeStats.length === 0) return { labels: [], data: [] };
     const top8 = programmeStats.slice(0, 8);
@@ -246,7 +243,7 @@ export default function AdminDashboard() {
         getExactCount("assessment_results"),
         getExactCount("assessment_sessions", (query) => query.eq("status", "in_progress")),
         supabase.from("candidate_assessments").select("status"),
-        // 🟢 RESTORED: Fetch all details, including nested completedAssessments to calculate score
+        // 🟢 RESTORED & FIXED: Fetches percentage_score nested inside assessment_results
         supabase
           .from("candidate_profiles")
           .select(`
@@ -256,9 +253,13 @@ export default function AdminDashboard() {
             university, 
             programme, 
             created_at,
-            completedAssessments:candidate_assessments!inner(
+            completedAssessments:candidate_assessments(
               result_id,
-              score:assessment_results!inner(percentage_score)
+              score:assessment_results(
+                percentage_score,
+                total_score,
+                max_score
+              )
             )
           `)
           .order("created_at", { ascending: false }),
@@ -491,13 +492,11 @@ export default function AdminDashboard() {
                     <tr><td colSpan="3" style={styles.emptyState}>No candidates found for this university.</td></tr>
                   ) : (
                     filteredCandidates.map((c) => {
-                      // 🟢 FIXED: Safely extract the real score
+                      // 🟢 CORRECTED: Navigates the exact Supabase nested path to grab the score
                       let latestScore = 0;
-                      // Check if completedAssessments exists and has data
                       if (c.completedAssessments && c.completedAssessments.length > 0) {
-                        // Grab the score from the deeply nested assessment_results
-                        const nestedScore = c.completedAssessments[0]?.score?.[0]?.percentage_score;
-                        latestScore = Math.round(Number(nestedScore || 0));
+                        const rawScore = c.completedAssessments[0]?.score?.[0]?.percentage_score;
+                        latestScore = Math.round(Number(rawScore || 0));
                       }
 
                       const scoreColor = latestScore >= 70 ? '#dcfce7' : '#fee2e2';
