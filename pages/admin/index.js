@@ -1,12 +1,37 @@
-// pages/admin/index.js - COMPLETE FIXED VERSION WITH EXPIRATION SETTING
-// FIX: Explicitly fetching 'recommendation' and sub-scores from the database.
+// pages/admin/index.js - UPGRADED WITH CHARTS & SYSTEM INSIGHTS
+// Built using chart.js & react-chartjs-2
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import AppLayout from "../../components/AppLayout";
 import { supabase } from "../../supabase/client";
 import AssessmentExpiration from "../../components/admin/AssessmentExpiration";
+
+// ============================================================
+// CHART.JS IMPORTS
+// ============================================================
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  Title,
+  Tooltip,
+  Legend,
+  ArcElement,
+} from 'chart.js';
+import { Pie, Bar } from 'react-chartjs-2';
+
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  Title,
+  Tooltip,
+  Legend,
+  ArcElement
+);
 
 function toNumber(value, fallback = 0) {
   const numberValue = Number(value);
@@ -49,6 +74,7 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   const [authError, setAuthError] = useState(null);
+  
   const [stats, setStats] = useState({
     totalSupervisors: 0,
     totalCandidates: 0,
@@ -59,8 +85,30 @@ export default function AdminDashboard() {
     inProgressSessions: 0,
     totalResults: 0
   });
+
+  // 🟢 NEW: Data Arrays for Charts
+  const [allCandidates, setAllCandidates] = useState([]);
   const [recentCandidates, setRecentCandidates] = useState([]);
   const [recentResults, setRecentResults] = useState([]);
+
+  // 🟢 NEW: DERIVED STATS FOR CHARTS
+  const universityStats = useMemo(() => {
+    const map = {};
+    allCandidates.forEach(c => {
+      const uni = c.university || 'Not Specified';
+      map[uni] = (map[uni] || 0) + 1;
+    });
+    return Object.entries(map).map(([name, value]) => ({ name, value }));
+  }, [allCandidates]);
+
+  const programmeStats = useMemo(() => {
+    const map = {};
+    allCandidates.forEach(c => {
+      const prog = c.programme || 'Not Specified';
+      map[prog] = (map[prog] || 0) + 1;
+    });
+    return Object.entries(map).map(([name, value]) => ({ name, value }));
+  }, [allCandidates]);
 
   useEffect(() => {
     checkAdminAuth();
@@ -146,7 +194,8 @@ export default function AdminDashboard() {
         resultCount,
         inProgressCount,
         accessResponse,
-        candidatesResponse,
+        allCandidatesResponse,
+        recentCandidatesResponse,
         resultsResponse
       ] = await Promise.all([
         getExactCount("supervisor_profiles"),
@@ -156,6 +205,10 @@ export default function AdminDashboard() {
         getExactCount("assessment_results"),
         getExactCount("assessment_sessions", (query) => query.eq("status", "in_progress")),
         supabase.from("candidate_assessments").select("status"),
+        supabase
+          .from("candidate_profiles")
+          .select("id, full_name, email, university, programme, created_at")
+          .order("created_at", { ascending: false }),
         supabase
           .from("candidate_profiles")
           .select("id, full_name, email, created_at")
@@ -171,7 +224,7 @@ export default function AdminDashboard() {
             max_score, 
             percentage_score, 
             completed_at,
-            recommendation,  -- 🟢 ADDED: Explicitly fetch recommendation from DB
+            recommendation,
             candidate_profiles:user_id(full_name, email),
             assessments:assessment_id(title)
           `)
@@ -186,11 +239,7 @@ export default function AdminDashboard() {
       const blockedCount = accessRows.filter((item) => item.status === "blocked").length;
 
       if (accessResponse?.error) console.error("Access status warning:", accessResponse.error);
-      if (candidatesResponse?.error) console.error("Recent candidates warning:", candidatesResponse.error);
-      if (resultsResponse?.error) console.error("Recent results warning:", resultsResponse.error);
-
-      console.log("Candidates data:", candidatesResponse?.data);
-      console.log("Results data:", resultsResponse?.data);
+      if (allCandidatesResponse?.error) console.error("All candidates warning:", allCandidatesResponse.error);
 
       setStats({
         totalSupervisors: supervisorCount || 0,
@@ -203,7 +252,8 @@ export default function AdminDashboard() {
         totalResults: resultCount || 0
       });
 
-      setRecentCandidates(candidatesResponse?.data || []);
+      setAllCandidates(allCandidatesResponse?.data || []);
+      setRecentCandidates(recentCandidatesResponse?.data || []);
       setRecentResults(resultsResponse?.data || []);
     } catch (error) {
       console.error("Error fetching admin dashboard data:", error);
@@ -268,6 +318,50 @@ export default function AdminDashboard() {
           <StatCard icon="◉" label="In Progress" value={stats.inProgressSessions} />
           <StatCard icon="▤" label="Result Records" value={stats.totalResults} />
         </div>
+
+        {/* 🟢 CHARTS SECTION */}
+        {allCandidates.length > 0 && (
+          <div style={styles.chartGrid}>
+            <div style={styles.chartCard}>
+              <h4 style={styles.chartTitle}>Candidates by University (Total)</h4>
+              <div style={{ height: '250px' }}>
+                <Pie
+                  data={{
+                    labels: universityStats.map(item => item.name),
+                    datasets: [{
+                      data: universityStats.map(item => item.value),
+                      backgroundColor: ['#1a237e', '#2e7d32', '#f57c00', '#c62828', '#1565c0', '#4a148c', '#00695c', '#bf360c', '#880e4f'],
+                      borderWidth: 1,
+                    }]
+                  }}
+                  options={{ maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12 } } } }}
+                />
+              </div>
+            </div>
+
+            <div style={styles.chartCard}>
+              <h4 style={styles.chartTitle}>Candidates by Programme (Total)</h4>
+              <div style={{ height: '250px' }}>
+                <Bar
+                  data={{
+                    labels: programmeStats.map(item => item.name),
+                    datasets: [{
+                      label: 'Number of Candidates',
+                      data: programmeStats.map(item => item.value),
+                      backgroundColor: '#1a237e',
+                      borderRadius: 4,
+                    }]
+                  }}
+                  options={{
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        )}
 
         <div style={styles.actionCardsGrid}>
           <ActionCard href="/admin/add-supervisor" icon="+" title="Add Supervisor" description="Create new supervisor accounts with dashboard access." />
@@ -407,6 +501,25 @@ const styles = {
   statIcon: { fontSize: "30px" },
   statLabel: { fontSize: "12px", color: "#718096", marginBottom: "4px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em" },
   statValue: { fontSize: "24px", fontWeight: 800, color: "#0a1929" },
+  chartGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))',
+    gap: '20px',
+    marginBottom: '30px'
+  },
+  chartCard: {
+    background: 'white',
+    padding: '20px',
+    borderRadius: '12px',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+    border: '1px solid #eef2f7'
+  },
+  chartTitle: {
+    fontSize: '16px',
+    fontWeight: '600',
+    color: '#0a1929',
+    margin: '0 0 12px 0'
+  },
   actionCardsGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "18px", marginBottom: "30px" },
   actionCard: { background: "white", padding: "20px", borderRadius: "12px", textDecoration: "none", color: "inherit", display: "flex", alignItems: "center", gap: "15px", boxShadow: "0 2px 8px rgba(0,0,0,0.08)", border: "1px solid #eef2f7", cursor: "pointer" },
   actionCardIcon: { fontSize: "32px" },
