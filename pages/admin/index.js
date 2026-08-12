@@ -1,5 +1,5 @@
-// pages/admin/index.js - PROFESSIONAL INFOGRAPHIC DASHBOARD (PIE + BAR)
-// FIXED: Syntax error resolved.
+// pages/admin/index.js - ADVANCED ANALYTICS (PROGRAMS + UNIVERSITIES)
+// Charts now display independent datasets with dynamic filtering.
 
 import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/router";
@@ -96,7 +96,7 @@ export default function AdminDashboard() {
   // DATA PROCESSING FOR CHARTS
   // ============================================================
   
-  // 1. Compute University Stats
+  // 1. Compute University Stats (Global)
   const universityStats = useMemo(() => {
     const map = {};
     allCandidates.forEach(c => {
@@ -114,7 +114,7 @@ export default function AdminDashboard() {
     return allCandidates.filter(c => c.university === selectedUniversity);
   }, [allCandidates, selectedUniversity]);
 
-  // 3. Compute Programme Stats for the Filtered View
+  // 3. Compute Programme Stats (Dynamic based on filter)
   const programmeStats = useMemo(() => {
     const map = {};
     filteredCandidates.forEach(c => {
@@ -123,28 +123,25 @@ export default function AdminDashboard() {
     });
     return Object.entries(map)
       .sort((a, b) => b[1] - a[1])
-      .slice(0, 15)
       .map(([name, value]) => ({ name, value }));
   }, [filteredCandidates]);
 
-  // 4. 🟢 FIXED: Average Score Calculation (Extracts from nested results)
+  // 4. Average Score Calculation (Extracts from nested results)
   const filteredAverageScore = useMemo(() => {
-    // Safely pull scores from the candidate's completed assessments (nested in the API response)
     const scores = filteredCandidates
       .flatMap(c => (c.completedAssessments || []).map(a => a.score || 0))
       .filter(s => s > 0);
-      
     if (scores.length === 0) return 0;
     return Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
   }, [filteredCandidates]);
 
-  // 5. 🟢 PIE CHART DATA (Group everything outside Top 8 into "Others")
+  // 5. PIE CHART DATA (Group everything outside Top 8 into "Others")
   const pieChartData = useMemo(() => {
-    if (universityStats.length === 0) return { labels: [], data: [] };
+    if (programmeStats.length === 0) return { labels: [], data: [] };
     
-    // Take the top 8 universities
-    const top8 = universityStats.slice(0, 8);
-    const othersCount = universityStats.slice(8).reduce((sum, item) => sum + item.value, 0);
+    // Take the top 8 programs
+    const top8 = programmeStats.slice(0, 8);
+    const othersCount = programmeStats.slice(8).reduce((sum, item) => sum + item.value, 0);
     
     const labels = top8.map(item => item.name);
     const data = top8.map(item => item.value);
@@ -155,6 +152,15 @@ export default function AdminDashboard() {
     }
     
     return { labels, data };
+  }, [programmeStats]);
+
+  // 6. BAR CHART DATA (Top 15 Universities)
+  const barChartData = useMemo(() => {
+    if (universityStats.length === 0) return { labels: [], data: [] };
+    return {
+      labels: universityStats.slice(0, 15).map(item => item.name),
+      data: universityStats.slice(0, 15).map(item => item.value)
+    };
   }, [universityStats]);
 
   const COLORS = ['#1a237e', '#2e7d32', '#f57c00', '#c62828', '#1565c0', '#4a148c', '#00695c', '#bf360c', '#78909c'];
@@ -369,13 +375,13 @@ export default function AdminDashboard() {
           <div style={styles.analyticsHeader}>
             <h3 style={styles.analyticsTitle}>Candidate Analytics</h3>
             <div style={styles.analyticsControls}>
-              <label style={styles.filterLabel}>Drill Down by University:</label>
+              <label style={styles.filterLabel}>Filter by University:</label>
               <select 
                 style={styles.universitySelect} 
                 value={selectedUniversity} 
                 onChange={(e) => setSelectedUniversity(e.target.value)}
               >
-                <option value="all">View All Universities</option>
+                <option value="all">All Universities</option>
                 {universityStats.map(uni => (
                   <option key={uni.name} value={uni.name}>{uni.name} ({uni.value})</option>
                 ))}
@@ -384,21 +390,17 @@ export default function AdminDashboard() {
           </div>
 
           <div style={styles.chartGrid}>
-            {/* LEFT: PIE CHART (Beautiful Snapshot) */}
+            {/* LEFT: PIE CHART (Program Distribution) */}
             <div style={styles.chartCard}>
               <h4 style={styles.chartTitle}>
-                {selectedUniversity === 'all' ? 'Top Universities (Distribution)' : `Program Distribution: ${selectedUniversity}`}
+                {selectedUniversity === 'all' ? 'Top Programs (Distribution)' : `Programs at ${selectedUniversity}`}
               </h4>
               <div style={{ height: '280px', position: 'relative' }}>
                 <Pie
                   data={{
-                    labels: selectedUniversity === 'all' 
-                      ? pieChartData.labels
-                      : programmeStats.map(item => item.name),
+                    labels: pieChartData.labels,
                     datasets: [{
-                      data: selectedUniversity === 'all' 
-                        ? pieChartData.data
-                        : programmeStats.map(item => item.value),
+                      data: pieChartData.data,
                       backgroundColor: COLORS,
                       borderWidth: 2,
                       borderColor: '#fff'
@@ -417,28 +419,22 @@ export default function AdminDashboard() {
               </div>
             </div>
 
-            {/* RIGHT: HORIZONTAL BAR CHART (Detailed Ranking) */}
+            {/* RIGHT: HORIZONTAL BAR CHART (University Ranking) */}
             <div style={styles.chartCard}>
-              <h4 style={styles.chartTitle}>
-                {selectedUniversity === 'all' ? 'Top 15 Universities (Ranking)' : `Program Breakdown: ${selectedUniversity}`}
-              </h4>
+              <h4 style={styles.chartTitle}>Top 15 Universities (Ranking)</h4>
               <div style={{ height: '280px' }}>
                 <Bar
                   data={{
-                    labels: selectedUniversity === 'all' 
-                      ? universityStats.slice(0, 15).map(item => item.name)
-                      : programmeStats.map(item => item.name),
+                    labels: barChartData.labels,
                     datasets: [{
                       label: 'Count',
-                      data: selectedUniversity === 'all' 
-                        ? universityStats.slice(0, 15).map(item => item.value)
-                        : programmeStats.map(item => item.value),
+                      data: barChartData.data,
                       backgroundColor: '#1a237e',
                       borderRadius: 4,
                     }]
                   }}
                   options={{
-                    indexAxis: 'y', // Horizontal Bar Chart
+                    indexAxis: 'y',
                     maintainAspectRatio: false,
                     plugins: { legend: { display: false } },
                     scales: { x: { beginAtZero: true, ticks: { stepSize: 1 } } }
@@ -497,7 +493,6 @@ export default function AdminDashboard() {
                     <tr><td colSpan="3" style={styles.emptyState}>No candidates found for this university.</td></tr>
                   ) : (
                     filteredCandidates.map((c) => {
-                      // Correctly map the average score from the nested assessments
                       const latestScore = c.completedAssessments?.length > 0 
                         ? Math.round(c.completedAssessments.reduce((sum, a) => sum + (a.score || 0), 0) / c.completedAssessments.length)
                         : 0;
@@ -660,7 +655,7 @@ const styles = {
   refreshButton: { background: "#0a1929", color: "white", border: "none", padding: "10px 20px", borderRadius: "8px", cursor: "pointer", fontSize: "14px", fontWeight: 700 },
   logoutButton: { background: "#f44336", color: "white", border: "none", padding: "10px 20px", borderRadius: "8px", cursor: "pointer", fontSize: "14px", fontWeight: 700 },
   
-  // 🟢 NEW: LAYOUT STYLES
+  // LAYOUT STYLES
   statsRow: {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
