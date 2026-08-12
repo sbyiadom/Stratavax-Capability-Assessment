@@ -1,5 +1,5 @@
-// pages/admin/index.js - UPGRADED WITH DRILL-DOWN FILTERS & CLEAN CHARTS
-// Built using chart.js & react-chartjs-2
+// pages/admin/index.js - FULLY CORRECTED VERSION
+// FIXED: Average Score calculation now bypasses stale "score" prop. UI tightened.
 
 import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/router";
@@ -75,7 +75,6 @@ export default function AdminDashboard() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [authError, setAuthError] = useState(null);
   
-  // 🟢 NEW: State for Drill-Down Filter
   const [selectedUniversity, setSelectedUniversity] = useState('all');
 
   const [stats, setStats] = useState({
@@ -93,7 +92,7 @@ export default function AdminDashboard() {
   const [recentCandidates, setRecentCandidates] = useState([]);
   const [recentResults, setRecentResults] = useState([]);
 
-  // 🟢 DERIVED STATS & CHARTS
+  // University Stats (Sorted highest to lowest)
   const universityStats = useMemo(() => {
     const map = {};
     allCandidates.forEach(c => {
@@ -101,17 +100,17 @@ export default function AdminDashboard() {
       map[uni] = (map[uni] || 0) + 1;
     });
     return Object.entries(map)
-      .sort((a, b) => b[1] - a[1]) // Sort by highest count
+      .sort((a, b) => b[1] - a[1])
       .map(([name, value]) => ({ name, value }));
   }, [allCandidates]);
 
-  // 🟢 FILTERED CANDIDATES (Based on University Selection)
+  // Filtered Candidates based on dropdown
   const filteredCandidates = useMemo(() => {
     if (selectedUniversity === 'all') return allCandidates;
     return allCandidates.filter(c => c.university === selectedUniversity);
   }, [allCandidates, selectedUniversity]);
 
-  // 🟢 PROGRAMME STATS (Based on Filtered Candidates)
+  // Programme Stats (Based on Filtered Candidates)
   const programmeStats = useMemo(() => {
     const map = {};
     filteredCandidates.forEach(c => {
@@ -119,16 +118,18 @@ export default function AdminDashboard() {
       map[prog] = (map[prog] || 0) + 1;
     });
     return Object.entries(map)
-      .sort((a, b) => b[1] - a[1]) // Sort by highest count
-      .slice(0, 15) // Only show top 15 programs to keep it clean
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 15)
       .map(([name, value]) => ({ name, value }));
   }, [filteredCandidates]);
 
-  // 🟢 CALCULATE AVERAGE SCORE FOR FILTERED GROUP
+  // 🟢 FIXED: AVERAGE SCORE CALCULATION (Reads raw percentage_score)
   const filteredAverageScore = useMemo(() => {
+    // Grab the raw percentage_score from the candidate directly, or fallback to 0
     const scores = filteredCandidates
-      .flatMap(c => c.completedAssessments || [])
-      .map(a => a.score || 0);
+      .map(c => Number(c.percentage_score || 0))
+      .filter(s => s > 0); // Filter out incomplete exams (0)
+      
     if (scores.length === 0) return 0;
     return Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
   }, [filteredCandidates]);
@@ -230,7 +231,7 @@ export default function AdminDashboard() {
         supabase.from("candidate_assessments").select("status"),
         supabase
           .from("candidate_profiles")
-          .select("id, full_name, email, university, programme, created_at")
+          .select("id, full_name, email, university, programme, percentage_score, created_at")
           .order("created_at", { ascending: false }),
         supabase
           .from("candidate_profiles")
@@ -331,6 +332,7 @@ export default function AdminDashboard() {
           </div>
         </div>
 
+        {/* Stats Cards */}
         <div style={styles.statsGrid}>
           <StatCard icon="👑" label="Supervisors" value={stats.totalSupervisors} />
           <StatCard icon="👥" label="Candidates" value={stats.totalCandidates} />
@@ -342,7 +344,7 @@ export default function AdminDashboard() {
           <StatCard icon="▤" label="Result Records" value={stats.totalResults} />
         </div>
 
-        {/* 🟢 INTERACTIVE DATA SECTION */}
+        {/* Analytics Header */}
         <div style={styles.analyticsHeader}>
           <h3 style={styles.analyticsTitle}>Candidate Analytics</h3>
           <div style={styles.analyticsControls}>
@@ -361,7 +363,6 @@ export default function AdminDashboard() {
         </div>
 
         <div style={styles.chartGrid}>
-          {/* Left Chart: Horizontal Bar Chart (Readable) */}
           <div style={styles.chartCardLarge}>
             <h4 style={styles.chartTitle}>
               {selectedUniversity === 'all' ? 'Top 15 Universities (Total Candidates)' : `Program Breakdown: ${selectedUniversity}`}
@@ -370,7 +371,7 @@ export default function AdminDashboard() {
               <Bar
                 data={{
                   labels: selectedUniversity === 'all' 
-                    ? universityStats.slice(0, 15).map(item => item.name) // Show top 15 only
+                    ? universityStats.slice(0, 15).map(item => item.name)
                     : programmeStats.map(item => item.name),
                   datasets: [{
                     label: 'Number of Candidates',
@@ -382,7 +383,7 @@ export default function AdminDashboard() {
                   }]
                 }}
                 options={{
-                  indexAxis: 'y', // 🟢 THIS MAKES IT HORIZONTAL (Highly readable)
+                  indexAxis: 'y',
                   maintainAspectRatio: false,
                   plugins: { legend: { display: false } },
                   scales: { x: { beginAtZero: true, ticks: { stepSize: 1 } } }
@@ -391,7 +392,6 @@ export default function AdminDashboard() {
             </div>
           </div>
 
-          {/* Right Panel: Quick Stats Panel */}
           <div style={styles.statsPanel}>
             <h4 style={styles.panelHeader}>
               {selectedUniversity === 'all' ? '📊 Platform Overview' : `📍 ${selectedUniversity}`}
@@ -419,7 +419,7 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* 🟢 DETAILED CANDIDATE TABLE (Drill Down) */}
+        {/* Detail Table (Only appears when a specific university is selected) */}
         {selectedUniversity !== 'all' && (
           <div style={styles.detailTableContainer}>
             <div style={styles.detailHeader}>
@@ -440,9 +440,7 @@ export default function AdminDashboard() {
                     <tr><td colSpan="3" style={styles.emptyState}>No candidates found for this university.</td></tr>
                   ) : (
                     filteredCandidates.map((c) => {
-                      const latestScore = c.completedAssessments?.length > 0 
-                        ? Math.round(c.completedAssessments[0].score || 0) 
-                        : 'N/A';
+                      const latestScore = Math.round(c.percentage_score || 0);
                       const scoreColor = latestScore >= 70 ? '#dcfce7' : '#fee2e2';
                       const scoreTextColor = latestScore >= 70 ? '#166534' : '#991b1b';
                       return (
@@ -467,7 +465,7 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* ACTION CARDS */}
+        {/* Action Cards */}
         <div style={styles.actionCardsGrid}>
           <ActionCard href="/admin/add-supervisor" icon="+" title="Add Supervisor" description="Create new supervisor accounts with dashboard access." />
           <ActionCard href="/admin/manage-supervisors" icon="👥" title="Manage Supervisors" description="View, activate, deactivate, or update supervisor accounts." />
@@ -607,7 +605,6 @@ const styles = {
   statLabel: { fontSize: "12px", color: "#718096", marginBottom: "4px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em" },
   statValue: { fontSize: "24px", fontWeight: 800, color: "#0a1929" },
   
-  // 🟢 NEW ANALYTICS STYLES
   analyticsHeader: {
     display: 'flex',
     justifyContent: 'space-between',
@@ -625,7 +622,8 @@ const styles = {
   analyticsControls: {
     display: 'flex',
     alignItems: 'center',
-    gap: '8px'
+    gap: '12px',
+    flexWrap: 'wrap'
   },
   filterLabel: {
     fontSize: '13px',
@@ -638,7 +636,7 @@ const styles = {
     border: '1px solid #e2e8f0',
     fontSize: '13px',
     background: 'white',
-    minWidth: '200px'
+    minWidth: '220px'
   },
   chartGrid: {
     display: 'grid',
@@ -748,7 +746,6 @@ const styles = {
   listMeta: { fontSize: "12px", color: "#64748b", marginTop: "4px" },
   dateBadge: { fontSize: "12px", color: "#334155", background: "#e2e8f0", padding: "5px 10px", borderRadius: "999px", whiteSpace: "nowrap" },
   
-  // 🟢 TABLE STYLES (For Drill Down)
   tableContainer: { overflowX: 'auto' },
   table: { width: '100%', borderCollapse: 'collapse', fontSize: '14px', marginTop: '10px' },
   th: { padding: '12px 16px', textAlign: 'left', background: '#f8fafc', fontWeight: '600', color: '#475569', borderBottom: '2px solid #e2e8f0' },
