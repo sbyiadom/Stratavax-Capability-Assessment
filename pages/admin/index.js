@@ -1,5 +1,5 @@
-// pages/admin/index.js - ADVANCED FILTERS (PROGRAM + SCORE RANGE)
-// Added: Program dropdown filter and Min/Max Score sliders.
+// pages/admin/index.js - MULTI-SELECT FILTERS
+// FIXED: Replaced single-select program dropdown with multi-select.
 
 import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/router";
@@ -75,11 +75,10 @@ export default function AdminDashboard() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [authError, setAuthError] = useState(null);
   
-  // 🟢 Primary Filter: University
   const [selectedUniversity, setSelectedUniversity] = useState('all');
 
-  // 🟢 NEW: Advanced Filters
-  const [selectedProgram, setSelectedProgram] = useState('all');
+  // 🟢 ADVANCED MULTI-SELECT FILTERS
+  const [selectedPrograms, setSelectedPrograms] = useState([]);
   const [minScore, setMinScore] = useState(0);
   const [maxScore, setMaxScore] = useState(100);
 
@@ -113,19 +112,21 @@ export default function AdminDashboard() {
       .map(([name, value]) => ({ name, value }));
   }, [allCandidates]);
 
-  // 🟢 Step 1: Filter by University first
   const universityFilteredCandidates = useMemo(() => {
     if (selectedUniversity === 'all') return allCandidates;
     return allCandidates.filter(c => c.university === selectedUniversity);
   }, [allCandidates, selectedUniversity]);
 
-  // 🟢 Step 2: Filter by Program
+  // 🟢 MULTI-SELECT PROGRAM FILTER
   const programFilteredCandidates = useMemo(() => {
-    if (selectedProgram === 'all') return universityFilteredCandidates;
-    return universityFilteredCandidates.filter(c => c.programme === selectedProgram);
-  }, [universityFilteredCandidates, selectedProgram]);
+    if (selectedPrograms.length === 0) return universityFilteredCandidates;
+    return universityFilteredCandidates.filter(c => 
+      selectedPrograms.some(selected => 
+        c.programme?.toLowerCase().trim() === selected.toLowerCase().trim()
+      )
+    );
+  }, [universityFilteredCandidates, selectedPrograms]);
 
-  // 🟢 Step 3: Filter by Score Range
   const filteredCandidates = useMemo(() => {
     return programFilteredCandidates.filter(c => {
       const score = Number(c.latestScore || 0);
@@ -133,13 +134,13 @@ export default function AdminDashboard() {
     });
   }, [programFilteredCandidates, minScore, maxScore]);
 
-  // 🟢 Generate Program Options for the Dropdown (Based on current University selection)
+  // Generate Program Options (Unique, normalizing case for display)
   const programOptions = useMemo(() => {
-    const map = {};
-    universityFilteredCandidates.forEach(c => {
-      if (c.programme) map[c.programme] = true;
-    });
-    return Object.keys(map).sort();
+    const rawPrograms = universityFilteredCandidates
+      .map(c => c.programme)
+      .filter(Boolean);
+    // Use a Set to remove duplicates
+    return [...new Set(rawPrograms)].sort();
   }, [universityFilteredCandidates]);
 
   const programmeStats = useMemo(() => {
@@ -176,10 +177,9 @@ export default function AdminDashboard() {
 
   const COLORS = ['#1a237e', '#2e7d32', '#f57c00', '#c62828', '#1565c0', '#4a148c', '#00695c', '#bf360c', '#78909c'];
 
-  // 🟢 Reset Filters
   const resetFilters = () => {
     setSelectedUniversity('all');
-    setSelectedProgram('all');
+    setSelectedPrograms([]);
     setMinScore(0);
     setMaxScore(100);
   };
@@ -424,11 +424,10 @@ export default function AdminDashboard() {
           <div style={styles.analyticsHeader}>
             <h3 style={styles.analyticsTitle}>Candidate Analytics</h3>
             
-            {/* 🟢 ADVANCED FILTERS BAR */}
             <div style={styles.filtersContainer}>
               <div style={styles.filterGroup}>
                 <label style={styles.filterLabel}>University:</label>
-                <select style={styles.filterSelect} value={selectedUniversity} onChange={(e) => { setSelectedUniversity(e.target.value); setSelectedProgram('all'); }}>
+                <select style={styles.filterSelect} value={selectedUniversity} onChange={(e) => { setSelectedUniversity(e.target.value); setSelectedPrograms([]); }}>
                   <option value="all">All Universities</option>
                   {universityStats.map(uni => (
                     <option key={uni.name} value={uni.name}>{uni.name} ({uni.value})</option>
@@ -436,10 +435,25 @@ export default function AdminDashboard() {
                 </select>
               </div>
 
+              {/* 🟢 MULTI-SELECT DROPDOWN (Hold Ctrl/Cmd to select multiple) */}
               <div style={styles.filterGroup}>
-                <label style={styles.filterLabel}>Program:</label>
-                <select style={styles.filterSelect} value={selectedProgram} onChange={(e) => setSelectedProgram(e.target.value)}>
-                  <option value="all">All Programs</option>
+                <label style={styles.filterLabel}>Programs ({selectedPrograms.length} selected):</label>
+                <select 
+                  multiple 
+                  style={styles.filterSelectMulti} 
+                  value={selectedPrograms} 
+                  onChange={(e) => {
+                    const options = e.target.options;
+                    const selected = [];
+                    for (let i = 0; i < options.length; i++) {
+                      if (options[i].selected) {
+                        selected.push(options[i].value);
+                      }
+                    }
+                    setSelectedPrograms(selected);
+                  }}
+                >
+                  <option value="" disabled>Select Programs...</option>
                   {programOptions.map(p => (
                     <option key={p} value={p}>{p}</option>
                   ))}
@@ -545,7 +559,7 @@ export default function AdminDashboard() {
             <div style={styles.detailHeader}>
               <h4 style={styles.detailTableTitle}>
                 {filteredCandidates.length} Candidates from {selectedUniversity}
-                {selectedProgram !== 'all' && ` (${selectedProgram})`}
+                {selectedPrograms.length > 0 && ` (${selectedPrograms.length} programs selected)`}
               </h4>
             </div>
             <div style={styles.tableContainer}>
@@ -781,6 +795,16 @@ const styles = {
     fontSize: '12px',
     background: 'white',
     minWidth: '140px'
+  },
+  filterSelectMulti: {
+    padding: '6px 10px',
+    borderRadius: '6px',
+    border: '1px solid #e2e8f0',
+    fontSize: '12px',
+    background: 'white',
+    minWidth: '180px',
+    height: '80px',
+    overflowY: 'auto'
   },
   filterInputSmall: {
     padding: '6px 8px',
