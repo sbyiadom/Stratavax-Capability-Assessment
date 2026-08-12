@@ -346,7 +346,7 @@ export default function AdminDashboard() {
         <div style={styles.analyticsHeader}>
           <h3 style={styles.analyticsTitle}>Candidate Analytics</h3>
           <div style={styles.analyticsControls}>
-            <label style={styles.filterLabel}>Filter by University:</label>
+            <label style={styles.filterLabel}>Drill Down by University:</label>
             <select 
               style={styles.universitySelect} 
               value={selectedUniversity} 
@@ -364,9 +364,9 @@ export default function AdminDashboard() {
           {/* Left Chart: Horizontal Bar Chart (Readable) */}
           <div style={styles.chartCardLarge}>
             <h4 style={styles.chartTitle}>
-              {selectedUniversity === 'all' ? 'Top Universities (Total)' : `Top Programs at ${selectedUniversity}`}
+              {selectedUniversity === 'all' ? 'Top 15 Universities (Total Candidates)' : `Program Breakdown: ${selectedUniversity}`}
             </h4>
-            <div style={{ height: '300px' }}>
+            <div style={{ height: '280px' }}>
               <Bar
                 data={{
                   labels: selectedUniversity === 'all' 
@@ -382,7 +382,7 @@ export default function AdminDashboard() {
                   }]
                 }}
                 options={{
-                  indexAxis: 'y', // 🟢 THIS MAKES IT HORIZONTAL (Readable)
+                  indexAxis: 'y', // 🟢 THIS MAKES IT HORIZONTAL (Highly readable)
                   maintainAspectRatio: false,
                   plugins: { legend: { display: false } },
                   scales: { x: { beginAtZero: true, ticks: { stepSize: 1 } } }
@@ -391,25 +391,27 @@ export default function AdminDashboard() {
             </div>
           </div>
 
-          {/* Right Panel: Quick Stats */}
+          {/* Right Panel: Quick Stats Panel */}
           <div style={styles.statsPanel}>
             <h4 style={styles.panelHeader}>
-              {selectedUniversity === 'all' ? 'System Overview' : selectedUniversity}
+              {selectedUniversity === 'all' ? '📊 Platform Overview' : `📍 ${selectedUniversity}`}
             </h4>
             <div style={styles.statRow}>
               <span style={styles.statRowLabel}>Total Candidates</span>
               <span style={styles.statRowValue}>{filteredCandidates.length}</span>
             </div>
             <div style={styles.statRow}>
-              <span style={styles.statRowLabel}>Average Score</span>
-              <span style={styles.statRowValue}>{filteredAverageScore}%</span>
+              <span style={styles.statRowLabel}>Average Assessment Score</span>
+              <span style={styles.statRowValue} style={{color: filteredAverageScore >= 70 ? '#2e7d32' : '#c62828'}}>
+                {filteredAverageScore}%
+              </span>
             </div>
             <div style={styles.statRow}>
-              <span style={styles.statRowLabel}>Programs Offered</span>
+              <span style={styles.statRowLabel}>Number of Programs</span>
               <span style={styles.statRowValue}>{new Set(filteredCandidates.map(c => c.programme).filter(Boolean)).size}</span>
             </div>
             <div style={styles.topProgramContainer}>
-              <div style={styles.topProgramLabel}>Top Program:</div>
+              <div style={styles.topProgramLabel}>Most Popular Program:</div>
               <div style={styles.topProgramValue}>
                 {programmeStats.length > 0 ? programmeStats[0].name : 'N/A'}
               </div>
@@ -420,14 +422,17 @@ export default function AdminDashboard() {
         {/* 🟢 DETAILED CANDIDATE TABLE (Drill Down) */}
         {selectedUniversity !== 'all' && (
           <div style={styles.detailTableContainer}>
-            <h4 style={styles.detailTableTitle}>Candidates from {selectedUniversity}</h4>
+            <div style={styles.detailHeader}>
+              <h4 style={styles.detailTableTitle}>All Candidates from {selectedUniversity}</h4>
+              <span style={styles.detailCount}>{filteredCandidates.length} candidates found</span>
+            </div>
             <div style={styles.tableContainer}>
               <table style={styles.table}>
                 <thead>
                   <tr>
-                    <th style={styles.th}>Name</th>
+                    <th style={styles.th}>Candidate Name</th>
                     <th style={styles.th}>Programme</th>
-                    <th style={styles.th}>Latest Score</th>
+                    <th style={styles.th}>Latest Assessment Score</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -438,6 +443,8 @@ export default function AdminDashboard() {
                       const latestScore = c.completedAssessments?.length > 0 
                         ? Math.round(c.completedAssessments[0].score || 0) 
                         : 'N/A';
+                      const scoreColor = latestScore >= 70 ? '#dcfce7' : '#fee2e2';
+                      const scoreTextColor = latestScore >= 70 ? '#166534' : '#991b1b';
                       return (
                         <tr key={c.id} style={styles.tr}>
                           <td style={styles.td}>
@@ -446,7 +453,7 @@ export default function AdminDashboard() {
                           </td>
                           <td style={styles.td}>{c.programme || 'N/A'}</td>
                           <td style={styles.td}>
-                            <span style={{...styles.scoreBadge, background: latestScore >= 70 ? '#dcfce7' : '#fee2e2', color: latestScore >= 70 ? '#166534' : '#991b1b'}}>
+                            <span style={{...styles.scoreBadge, background: scoreColor, color: scoreTextColor}}>
                               {latestScore}%
                             </span>
                           </td>
@@ -707,11 +714,22 @@ const styles = {
     border: '1px solid #eef2f7',
     marginBottom: '30px'
   },
+  detailHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '12px'
+  },
   detailTableTitle: {
     fontSize: '16px',
     fontWeight: '600',
     color: '#0a1929',
-    margin: '0 0 12px 0'
+    margin: 0
+  },
+  detailCount: {
+    fontSize: '14px',
+    fontWeight: '500',
+    color: '#64748b'
   },
 
   actionCardsGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "18px", marginBottom: "30px" },
