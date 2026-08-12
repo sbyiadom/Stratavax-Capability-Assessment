@@ -1,5 +1,5 @@
 // pages/admin/index.js - PROFESSIONAL INFOGRAPHIC DASHBOARD (PIE + BAR)
-// FIXED: Score extraction logic now correctly maps assessment results.
+// FIXED: Syntax error resolved.
 
 import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/router";
@@ -833,4 +833,5 @@ const styles = {
   listTitle: { fontSize: "14px", fontWeight: 800, color: "#0f172a" },
   listMeta: { fontSize: "12px", color: "#64748b", marginTop: "4px" },
   dateBadge: { fontSize: "12px", color: "#334155", background: "#e2e8f0", padding: "5px 10px", borderRadius: "999px", whiteSpace: "nowrap" },
-};```
+  scoreBadge: { fontSize: "13px", color: "#166534", background: "#dcfce7", border: "1px solid #86efac", padding: "6px 12px", borderRadius: "999px", fontWeight: 800 }
+};
