@@ -1,4 +1,5 @@
-// pages/admin/index.js - FINAL FIX (Reads percentage_score directly from nested result)
+// pages/admin/index.js - ULTIMATE FIX (Direct Data Fetching)
+// FIXED: Bypassed nested relationship error. Fetches scores directly and merges in JavaScript.
 
 import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/router";
@@ -124,10 +125,7 @@ export default function AdminDashboard() {
 
   const filteredAverageScore = useMemo(() => {
     const scores = filteredCandidates
-      .map(c => {
-        const latest = c.completedAssessments?.[0];
-        return Number(latest?.score?.[0]?.percentage_score || 0);
-      })
+      .map(c => Number(c.latestScore || 0))
       .filter(s => s > 0);
     if (scores.length === 0) return 0;
     return Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
@@ -224,6 +222,7 @@ export default function AdminDashboard() {
     try {
       console.log("Fetching dashboard data...");
 
+      // 1. Basic Counts
       const [
         supervisorCount,
         candidateCount,
@@ -231,10 +230,7 @@ export default function AdminDashboard() {
         completedCount,
         resultCount,
         inProgressCount,
-        accessResponse,
-        allCandidatesResponse,
-        recentCandidatesResponse,
-        resultsResponse
+        accessResponse
       ] = await Promise.all([
         getExactCount("supervisor_profiles"),
         getExactCount("candidate_profiles"),
@@ -242,49 +238,67 @@ export default function AdminDashboard() {
         getExactCount("candidate_assessments", (query) => query.eq("status", "completed")),
         getExactCount("assessment_results"),
         getExactCount("assessment_sessions", (query) => query.eq("status", "in_progress")),
-        supabase.from("candidate_assessments").select("status"),
-        // 🟢 RESTORED & FIXED: Fetches percentage_score nested inside assessment_results
-        supabase
-          .from("candidate_profiles")
-          .select(`
-            id, 
-            full_name, 
-            email, 
-            university, 
-            programme, 
-            created_at,
-            completedAssessments:candidate_assessments(
-              result_id,
-              score:assessment_results(
-                percentage_score,
-                total_score,
-                max_score
-              )
-            )
-          `)
-          .order("created_at", { ascending: false }),
-        supabase
-          .from("candidate_profiles")
-          .select("id, full_name, email, created_at")
-          .order("created_at", { ascending: false })
-          .limit(6),
-        supabase
-          .from("assessment_results")
-          .select(`
-            id, 
-            user_id, 
-            assessment_id, 
-            total_score, 
-            max_score, 
-            percentage_score, 
-            completed_at,
-            recommendation,
-            candidate_profiles:user_id(full_name, email),
-            assessments:assessment_id(title)
-          `)
-          .order("completed_at", { ascending: false })
-          .limit(6)
+        supabase.from("candidate_assessments").select("status")
       ]);
+
+      // 2. Fetch ALL Candidates (Without scores first)
+      const { data: allCandidatesData, error: candidatesError } = await supabase
+        .from("candidate_profiles")
+        .select("id, full_name, email, university, programme, created_at")
+        .order("created_at", { ascending: false });
+
+      if (candidatesError) {
+        console.error("Error fetching candidates:", candidatesError);
+        throw candidatesError;
+      }
+
+      // 3. Fetch ALL Results (Directly, without nested errors)
+      const { data: allResultsData, error: resultsError } = await supabase
+        .from("assessment_results")
+        .select("user_id, percentage_score, completed_at")
+        .order("completed_at", { ascending: false });
+
+      if (resultsError) {
+        console.error("Error fetching results:", resultsError);
+        throw resultsError;
+      }
+
+      // 4. MERGE DATA IN JAVASCRIPT (The safe, bulletproof way)
+      const candidatesWithScores = (allCandidatesData || []).map(c => {
+        // Find the latest result for this candidate
+        const userResults = (allResultsData || []).filter(r => r.user_id === c.id);
+        const latestResult = userResults.length > 0 ? userResults[0] : null;
+        
+        return {
+          ...c,
+          latestScore: latestResult ? Math.round(Number(latestResult.percentage_score || 0)) : 0,
+          hasResult: !!latestResult
+        };
+      });
+
+      // 5. Fetch Recent Candidates and Results
+      const recentCandidatesData = candidatesWithScores.slice(0, 6);
+
+      const { data: recentResultsResponse, error: recentResultsError } = await supabase
+        .from("assessment_results")
+        .select(`
+          id, 
+          user_id, 
+          assessment_id, 
+          total_score, 
+          max_score, 
+          percentage_score, 
+          completed_at,
+          recommendation,
+          candidate_profiles:user_id(full_name, email),
+          assessments:assessment_id(title)
+        `)
+        .order("completed_at", { ascending: false })
+        .limit(6);
+
+      if (recentResultsError) {
+        console.error("Error fetching recent results:", recentResultsError);
+      }
 
       console.log("Counts:", { supervisorCount, candidateCount, assessmentCount, completedCount, resultCount, inProgressCount });
 
@@ -303,9 +317,9 @@ export default function AdminDashboard() {
         totalResults: resultCount || 0
       });
 
-      setAllCandidates(allCandidatesResponse?.data || []);
-      setRecentCandidates(recentCandidatesResponse?.data || []);
-      setRecentResults(resultsResponse?.data || []);
+      setAllCandidates(candidatesWithScores);
+      setRecentCandidates(recentCandidatesData);
+      setRecentResults(recentResultsResponse?.data || []);
     } catch (error) {
       console.error("Error fetching admin dashboard data:", error);
     }
@@ -492,13 +506,7 @@ export default function AdminDashboard() {
                     <tr><td colSpan="3" style={styles.emptyState}>No candidates found for this university.</td></tr>
                   ) : (
                     filteredCandidates.map((c) => {
-                      // 🟢 CORRECTED: Navigates the exact Supabase nested path to grab the score
-                      let latestScore = 0;
-                      if (c.completedAssessments && c.completedAssessments.length > 0) {
-                        const rawScore = c.completedAssessments[0]?.score?.[0]?.percentage_score;
-                        latestScore = Math.round(Number(rawScore || 0));
-                      }
-
+                      const latestScore = Number(c.latestScore || 0);
                       const scoreColor = latestScore >= 70 ? '#dcfce7' : '#fee2e2';
                       const scoreTextColor = latestScore >= 70 ? '#166534' : '#991b1b';
                       return (
