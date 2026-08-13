@@ -1,5 +1,5 @@
-// pages/supervisor/index.js - FINAL SYNCHRONIZED SCORING ENGINE
-// The Dashboard List now mirrors the exact scoring logic of the Detailed Report.
+// pages/supervisor/index.js - FRONTEND CLEAN UP
+// FIXED: Dropdown now uses calculateTrueScore() to match the dashboard.
 
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/router';
@@ -49,7 +49,7 @@ function calculateNationalServiceRecommendation(workplace, intellectual, overall
 }
 
 // ============================================================
-// 🟢 SHARED SCORE CALCULATION ENGINE (Used by Dashboard & Report)
+// 🟢 SHARED SCORE CALCULATION ENGINE
 // ============================================================
 function calculateTrueScore(report) {
   // 1. If it's National Service, use its specific dimension logic
@@ -64,7 +64,6 @@ function calculateTrueScore(report) {
   // 2. Attempt to find category_scores inside the object
   const rawCategories = report.category_scores || report.report_data?.category_scores || report.report_data?.categoryBreakdown;
   
-  // Convert database Object into an Array and calculate average
   if (rawCategories && typeof rawCategories === 'object' && !Array.isArray(rawCategories)) {
     const categories = Object.entries(rawCategories).map(([category, data]) => ({
       category,
@@ -78,7 +77,6 @@ function calculateTrueScore(report) {
     }
   }
 
-  // 3. If it's already an array (standard format), calculate the average
   if (Array.isArray(rawCategories) && rawCategories.length > 0) {
     const validScores = rawCategories
       .map(c => Number(c.percentage || c.score || 0))
@@ -89,7 +87,6 @@ function calculateTrueScore(report) {
     }
   }
 
-  // 4. Fallback: Return the raw database score if we can't find categories
   return Math.round(Number(report.score || report.percentage_score || report.overallScore || 0));
 }
 
@@ -359,7 +356,6 @@ export default function SupervisorDashboard() {
 
   const filteredCandidates = useMemo(() => {
     return programFilteredCandidates.filter(c => {
-      // 🟢 Use the shared calculateTrueScore for filtering
       const trueScore = calculateTrueScore(c);
       return trueScore >= Number(minScore) && trueScore <= Number(maxScore);
     });
@@ -719,7 +715,6 @@ function OtherAssessmentsTab({ reports, onViewReport }) {
             </thead>
             <tbody>
               {reports.map((report) => {
-                // 🟢 Use the shared calculateTrueScore function
                 const trueScore = calculateTrueScore(report);
 
                 return (
@@ -793,8 +788,9 @@ function CandidatesTab({ candidates, selectedAssessments, onAssessmentChange, on
                       <select onChange={(event) => onAssessmentChange(candidate.id, event.target.value)} style={styles.assessmentDropdown} value={selectedId}>
                         <option value="">-- Select --</option>
                         {completedAssessments.map((assessment) => (
+                          // 🟢 SECTION 6.1: USE calculateTrueScore FOR DROPDOWN
                           <option key={`${candidate.id}-${assessment.assessment_id}`} value={assessment.assessment_id}>
-                            {assessment.title} ({Math.round(Number(assessment.score || assessment.percentage_score || 0))}%)
+                            {assessment.title} ({calculateTrueScore(assessment)}%)
                           </option>
                         ))}
                         {completedAssessments.length === 0 && <option value="" disabled>No completed assessments</option>}
