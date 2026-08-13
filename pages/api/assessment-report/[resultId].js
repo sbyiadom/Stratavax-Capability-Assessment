@@ -1,5 +1,5 @@
-// pages/api/assessment-report/[resultId].js - FIXED AUTH ERROR
-// FIXED: Correctly extracts token and verifies user for API access.
+// pages/api/assessment-report/[resultId].js - CORRECT PATH
+// FIXED: Properly handles token, ID lookup, and candidate retrieval.
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -15,7 +15,7 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // AUTHENTICATION FIX
+    // Authentication
     // ============================================================
     const authHeader = req.headers.authorization || '';
     const token = authHeader.startsWith('Bearer ') ? authHeader.replace('Bearer ', '').trim() : null;
@@ -32,7 +32,6 @@ export default async function handler(req, res) {
       return res.status(500).json({ success: false, error: 'Server configuration error' });
     }
 
-    // Create the client
     const serviceClient = createClient(supabaseUrl, supabaseKey, {
       auth: { persistSession: false, autoRefreshToken: false }
     });
