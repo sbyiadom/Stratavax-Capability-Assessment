@@ -1,5 +1,5 @@
-// pages/supervisor/index.js - FULLY UPGRADED (GROUPED UNIVERSITIES & PROGRAMS)
-// Handles variations in both University names and Program names.
+// pages/supervisor/index.js - FINAL DASHBOARD SYNC
+// Forces the Dashboard List to recalculate true scores the same way the Report does.
 
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/router';
@@ -49,11 +49,44 @@ function calculateNationalServiceRecommendation(workplace, intellectual, overall
 }
 
 // ============================================================
-// 🟢 NORMALIZATION ENGINES (Programs & Universities)
+// 🟢 SCORE CALCULATION ENGINE (Shared between Dashboard & Report)
 // ============================================================
+function calculateTrueScore(result) {
+  // 1. If it's National Service, use its specific dimension logic
+  if (result.is_national_service) {
+    const workplace = Number(result.workplace_readiness || 0);
+    const intellectual = Number(result.intellectual_capability || 0);
+    if (workplace > 0 || intellectual > 0) {
+      return Math.round((workplace + intellectual) / 2);
+    }
+  }
 
-// 1. Abbreviation Dictionaries
-const PROGRAM_ABBREVIATIONS = {
+  // 2. Check for Stratavax category_scores object
+  const rawCategories = result.category_scores || result.report_data?.category_scores || result.report_data?.categoryBreakdown;
+  
+  if (rawCategories && typeof rawCategories === 'object' && !Array.isArray(rawCategories)) {
+    // Convert the object to an array
+    const categories = Object.entries(rawCategories).map(([category, data]) => ({
+      category,
+      percentage: Math.round(data.percentage || 0)
+    }));
+
+    // Calculate the average percentage
+    const validScores = categories.filter(cat => cat.percentage > 0);
+    if (validScores.length > 0) {
+      const sum = validScores.reduce((acc, cat) => acc + cat.percentage, 0);
+      return Math.round(sum / validScores.length);
+    }
+  }
+
+  // 3. Fallback: Return the raw database score
+  return Math.round(Number(result.score || result.percentage_score || result.overallScore || 0));
+}
+
+// ============================================================
+// 🟢 THE PROGRAM NORMALIZATION ENGINE
+// ============================================================
+const ABBREVIATIONS = {
   'bsc': 'BSc', 'b.sc': 'BSc', 'b. sc': 'BSc', 'b.s.c': 'BSc',
   'bachelor': 'Bachelor', 'btech': 'B-Tech', 'b.tech': 'B-Tech',
   'eng': 'Engineering', 'engr': 'Engineering',
@@ -63,26 +96,7 @@ const PROGRAM_ABBREVIATIONS = {
   'of': 'of', 'and': 'and', 'in': 'in', 'with': 'with'
 };
 
-const UNIVERSITY_ABBREVIATIONS = {
-  'univ': 'University', 'uni': 'University', 'of': 'of',
-  'knust': 'Kwame Nkrumah University of Science and Technology',
-  'ug': 'University of Ghana', 'legon': 'University of Ghana',
-  'uog': 'University of Ghana', 'umt': 'University of Mines and Technology',
-  'umat': 'University of Mines and Technology',
-  'knust': 'Kwame Nkrumah University of Science and Technology',
-  'kstu': 'Kumasi Technical University',
-  'ttu': 'Takoradi Technical University',
-  'gtuc': 'Ghana Technology University College',
-  'ucc': 'University of Cape Coast',
-  'upsa': 'University of Professional Studies, Accra',
-  'uoc': 'University of Cape Coast',
-  'cctu': 'Cape Coast Technical University',
-  'stu': 'Sunyani Technical University',
-  'uad': 'University for Development Studies',
-  'uds': 'University for Development Studies'
-};
-
-function normalizeText(raw, abbreviations) {
+function normalizeProgramName(raw) {
   if (!raw || typeof raw !== 'string') return '';
   let cleaned = raw
     .toLowerCase()
@@ -90,19 +104,17 @@ function normalizeText(raw, abbreviations) {
     .replace(/\s+/g, ' ')
     .trim();
   const words = cleaned.split(' ');
-  const mappedWords = words.map(word => abbreviations[word] || word.charAt(0).toUpperCase() + word.slice(1));
+  const mappedWords = words.map(word => ABBREVIATIONS[word] || word.charAt(0).toUpperCase() + word.slice(1));
   return mappedWords.join(' ');
 }
 
-function groupSimilarItems(rawItems, abbreviations) {
-  if (!rawItems || rawItems.length === 0) return { groups: [], masterToRawMap: {} };
-  
+function getUniqueMasterNames(rawPrograms) {
+  if (!rawPrograms || rawPrograms.length === 0) return { groups: [], masterToRawMap: {} };
   const normalizedMap = {};
-  rawItems.forEach(item => { normalizedMap[item] = normalizeText(item, abbreviations); });
+  rawPrograms.forEach(p => { normalizedMap[p] = normalizeProgramName(p); });
   const uniqueCleanNames = [...new Set(Object.values(normalizedMap))];
   const groups = [];
   const processed = new Set();
-
   uniqueCleanNames.forEach(name1 => {
     if (processed.has(name1)) return;
     const group = [name1];
@@ -119,12 +131,11 @@ function groupSimilarItems(rawItems, abbreviations) {
     const masterName = group.reduce((a, b) => a.length >= b.length ? a : b);
     groups.push(masterName);
   });
-
   const masterToRawMap = {};
   groups.forEach(master => {
     masterToRawMap[master] = [];
-    rawItems.forEach(raw => {
-      const clean = normalizeText(raw, abbreviations);
+    rawPrograms.forEach(raw => {
+      const clean = normalizeProgramName(raw);
       const words1 = master.split(' ');
       const words2 = clean.split(' ');
       const intersection = words1.filter(w => words2.includes(w)).length;
@@ -301,84 +312,65 @@ export default function SupervisorDashboard() {
   };
 
   // ============================================================
-  // DATA PROCESSING FOR FILTERS & CHARTS (With Grouping)
+  // DATA PROCESSING FOR FILTERS & CHARTS
   // ============================================================
-
-  // 1. Group Universities
-  const rawUniversities = useMemo(() => {
-    return candidates.map(c => c.university).filter(Boolean);
+  const universityStats = useMemo(() => {
+    const map = {};
+    candidates.forEach(c => {
+      const uni = c.university || 'Not Specified';
+      map[uni] = (map[uni] || 0) + 1;
+    });
+    return Object.entries(map).sort((a, b) => b[1] - a[1]).map(([name, value]) => ({ name, value }));
   }, [candidates]);
 
-  const { groups: uniqueUniversityMasterNames, masterToRawMap: uniMasterToRawMap } = useMemo(() => {
-    return groupSimilarItems(rawUniversities, UNIVERSITY_ABBREVIATIONS);
-  }, [rawUniversities]);
-
-  // 2. Filter Candidates based on University (uses Master names)
   const universityFilteredCandidates = useMemo(() => {
     if (!selectedUniversityOption) return candidates;
-    const allowedRawUniversities = uniMasterToRawMap[selectedUniversityOption.value] || [selectedUniversityOption.value];
-    return candidates.filter(c => allowedRawUniversities.includes(c.university));
-  }, [candidates, selectedUniversityOption, uniMasterToRawMap]);
+    return candidates.filter(c => c.university === selectedUniversityOption.value);
+  }, [candidates, selectedUniversityOption]);
 
-  // 3. Group Programs (Based on current university filter)
+  // Normalize programs
   const rawPrograms = useMemo(() => {
     return universityFilteredCandidates.map(c => c.programme).filter(Boolean);
   }, [universityFilteredCandidates]);
 
-  const { groups: uniqueProgramMasterNames, masterToRawMap: progMasterToRawMap } = useMemo(() => {
-    return groupSimilarItems(rawPrograms, PROGRAM_ABBREVIATIONS);
+  const { groups: uniqueProgramMasterNames, masterToRawMap } = useMemo(() => {
+    return getUniqueMasterNames(rawPrograms);
   }, [rawPrograms]);
 
-  // 4. Filter Candidates based on Program (uses Master names)
   const programFilteredCandidates = useMemo(() => {
     if (selectedProgramOptions.length === 0) return universityFilteredCandidates;
     const allowedRawNames = [];
     selectedProgramOptions.forEach(opt => {
-      const rawList = progMasterToRawMap[opt.value] || [];
+      const rawList = masterToRawMap[opt.value] || [];
       allowedRawNames.push(...rawList);
     });
     return universityFilteredCandidates.filter(c => allowedRawNames.includes(c.programme));
-  }, [universityFilteredCandidates, selectedProgramOptions, progMasterToRawMap]);
+  }, [universityFilteredCandidates, selectedProgramOptions, masterToRawMap]);
 
-  // 5. Final Score Filter
   const filteredCandidates = useMemo(() => {
     return programFilteredCandidates.filter(c => {
-      const scores = (c.completedAssessments || []).map(a => Number(a.score || 0)).filter(s => s > 0);
-      const avgScore = scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
-      return avgScore >= Number(minScore) && avgScore <= Number(maxScore);
+      // 🟢 Calculate the score using the same engine as the report
+      const trueScore = calculateTrueScore(c);
+      return trueScore >= Number(minScore) && trueScore <= Number(maxScore);
     });
   }, [programFilteredCandidates, minScore, maxScore]);
-
-  // 6. Charts (Using grouped master names)
-  const universityStats = useMemo(() => {
-    const map = {};
-    candidates.forEach(c => {
-      // Map raw university to master
-      let master = 'Other';
-      for (const [m, rawList] of Object.entries(uniMasterToRawMap)) {
-        if (rawList.includes(c.university)) { master = m; break; }
-      }
-      map[master] = (map[master] || 0) + 1;
-    });
-    return Object.entries(map).sort((a, b) => b[1] - a[1]).map(([name, value]) => ({ name, value }));
-  }, [candidates, uniMasterToRawMap]);
 
   const programmeStats = useMemo(() => {
     const map = {};
     filteredCandidates.forEach(c => {
       const raw = c.programme || 'Not Specified';
       let master = 'Other';
-      for (const [m, rawList] of Object.entries(progMasterToRawMap)) {
+      for (const [m, rawList] of Object.entries(masterToRawMap)) {
         if (rawList.includes(raw)) { master = m; break; }
       }
       map[master] = (map[master] || 0) + 1;
     });
     return Object.entries(map).sort((a, b) => b[1] - a[1]).map(([name, value]) => ({ name, value }));
-  }, [filteredCandidates, progMasterToRawMap]);
+  }, [filteredCandidates, masterToRawMap]);
 
   const filteredAverageScore = useMemo(() => {
     const scores = filteredCandidates
-      .flatMap(c => (c.completedAssessments || []).map(a => a.score || 0))
+      .map(c => calculateTrueScore(c))
       .filter(s => s > 0);
     if (scores.length === 0) return 0;
     return Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
@@ -396,17 +388,13 @@ export default function SupervisorDashboard() {
 
   const COLORS = ['#1a237e', '#2e7d32', '#f57c00', '#c62828', '#1565c0', '#4a148c', '#00695c', '#bf360c', '#78909c'];
 
-  // REACT-SELECT OPTIONS (Using grouped master names)
+  // REACT-SELECT OPTIONS
   const universityOptions = useMemo(() => {
-    return uniqueUniversityMasterNames
-      .sort((a, b) => a.localeCompare(b))
-      .map(uni => ({ label: uni, value: uni }));
-  }, [uniqueUniversityMasterNames]);
+    return universityStats.map(uni => ({ label: `${uni.name} (${uni.value})`, value: uni.name }));
+  }, [universityStats]);
 
   const programOptions = useMemo(() => {
-    return uniqueProgramMasterNames
-      .sort((a, b) => a.localeCompare(b))
-      .map(p => ({ label: p, value: p }));
+    return uniqueProgramMasterNames.map(p => ({ label: p, value: p }));
   }, [uniqueProgramMasterNames]);
 
   const resetFilters = () => {
@@ -721,7 +709,8 @@ function OtherAssessmentsTab({ reports, onViewReport }) {
             </thead>
             <tbody>
               {reports.map((report) => {
-                const displayScore = Math.round(Number(report.score || report.overallScore || report.percentage_score || 0));
+                // 🟢 Calculate true score using the shared engine
+                const trueScore = calculateTrueScore(report);
 
                 return (
                   <tr key={report.result_id || `${report.candidate_id}-${report.assessment_id}`} style={styles.tr}>
@@ -732,7 +721,7 @@ function OtherAssessmentsTab({ reports, onViewReport }) {
                     <td style={styles.td}>{report.assessment_title}</td>
                     <td style={styles.td}>
                       <span style={styles.scoreBadge}>
-                        {displayScore}%
+                        {trueScore}%
                       </span>
                     </td>
                     <td style={styles.td}>
