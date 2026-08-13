@@ -1,5 +1,5 @@
 // pages/api/assessment-report/[resultId].js - FINAL PRODUCTION VERSION
-// Fully implemented per Section 4 of the solution document.
+// FIXED: Removed all references to non-existent 'user_id' column in candidate_profiles.
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -135,36 +135,27 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // CANDIDATE PROFILE LOOKUP
+    // 🟢 SECTION 3.1 & 3.2: SIMPLIFIED CANDIDATE PROFILE LOOKUP
+    // REMOVED: 'user_id' from select and fallback lookup.
     // ============================================================
     let candidateProfile = null;
-    const candidateSelect = 'id, user_id, full_name, email, university, programme, graduation_year, preferred_department';
+    const candidateSelect = 'id, full_name, email, university, programme, graduation_year, preferred_department';
 
     if (result.user_id) {
-      // Attempt 1: assessment_results.user_id matches candidate_profiles.id
-      const { data: profileById } = await serviceClient
+      const { data: profileById, error: profileByIdError } = await serviceClient
         .from('candidate_profiles')
         .select(candidateSelect)
         .eq('id', result.user_id)
         .maybeSingle();
 
-      if (profileById) {
-        candidateProfile = profileById;
-        console.log('[Assessment Report] Found candidate via id match.');
+      if (profileByIdError) {
+        console.error('[Assessment Report] Candidate lookup error:', profileByIdError);
       }
 
-      // Attempt 2: assessment_results.user_id matches candidate_profiles.user_id
-      if (!candidateProfile) {
-        const { data: profileByUserId } = await serviceClient
-          .from('candidate_profiles')
-          .select(candidateSelect)
-          .eq('user_id', result.user_id)
-          .maybeSingle();
-
-        if (profileByUserId) {
-          candidateProfile = profileByUserId;
-          console.log('[Assessment Report] Found candidate via user_id match.');
-        }
+      if (profileById) {
+        candidateProfile = profileById;
+        console.log('[Assessment Report] Found candidate via candidate_profiles.id match.');
+        console.log('[Assessment Report] Returning candidate:', JSON.stringify(candidateProfile, null, 2));
       }
     }
 
