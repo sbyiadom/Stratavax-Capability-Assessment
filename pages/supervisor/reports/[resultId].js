@@ -1,5 +1,5 @@
-// pages/supervisor/reports/[resultId].js - FIXED CANDIDATE DATA EXTRACTION
-// Fetches University and Programme from the correct nested candidate_profiles object.
+// pages/supervisor/reports/[resultId].js - ULTIMATE DATA EXTRACTION FIX
+// FIXED: Retrieves Candidate Info safely from data.result.candidate_profiles.
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -141,8 +141,20 @@ export default function SupervisorReportView() {
         // ============================================================
         // 🟢 FIX: Extract Candidate Info from the correct nested object
         // ============================================================
-        // We look inside the deeply nested result.candidate_profiles
-        const candidateProfiles = rawResult.candidate_profiles || rawResult.candidateInfo || {};
+        // Log the data to the browser console so we can see exactly what is returned
+        console.log('[Supervisor Report] Raw Result:', rawResult);
+
+        // Safely navigate the nested structure
+        const candidateProfile = rawResult.candidate_profiles || rawResult.candidateInfo || data.candidate || {};
+
+        console.log('[Supervisor Report] Extracted Candidate Profile:', candidateProfile);
+
+        const candidateName = candidateProfile.full_name || candidateProfile.fullName || candidateProfile.name || 'Candidate';
+        const candidateEmail = candidateProfile.email || '';
+        const candidateUniversity = candidateProfile.university || '';
+        const candidateProgramme = candidateProfile.programme || candidateProfile.program || '';
+        const candidateGradYear = candidateProfile.graduation_year || candidateProfile.graduationYear || '';
+        const candidateDept = candidateProfile.preferred_department || candidateProfile.preferredDepartment || '';
 
         // ============================================================
         // STEP 5: BUILD THE FINAL RESULT OBJECT
@@ -172,12 +184,12 @@ export default function SupervisorReportView() {
           
           // CANDIDATE & ASSESSMENT INFO (Mapped from the fix above)
           candidate_profiles: {
-            full_name: candidateProfiles.full_name || candidateProfiles.fullName || 'Candidate',
-            email: candidateProfiles.email || '',
-            university: candidateProfiles.university || '',
-            programme: candidateProfiles.programme || candidateProfiles.program || '',
-            graduation_year: candidateProfiles.graduation_year || candidateProfiles.graduationYear || '',
-            preferred_department: candidateProfiles.preferred_department || candidateProfiles.preferredDepartment || ''
+            full_name: candidateName,
+            email: candidateEmail,
+            university: candidateUniversity,
+            programme: candidateProgramme,
+            graduation_year: candidateGradYear,
+            preferred_department: candidateDept
           },
           assessments: {
             title: assessmentTitle,
@@ -186,7 +198,7 @@ export default function SupervisorReportView() {
               code: assessmentTypeCode
             }
           },
-          candidateName: candidateProfiles.full_name || candidateProfiles.fullName || 'Candidate',
+          candidateName: candidateName,
           classification: rawResult.classification || 'Standard Profile'
         };
 
