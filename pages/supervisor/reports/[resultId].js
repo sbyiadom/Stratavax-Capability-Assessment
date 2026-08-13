@@ -1,5 +1,5 @@
-// pages/supervisor/reports/[resultId].js - FINAL HARDENED VERSION
-// Forces the existence of categoryScores, locks the true average score, and deeply merges report_data.
+// pages/supervisor/reports/[resultId].js - ROBUST, MULTI-ASSESSMENT SCORING ENGINE
+// Dynamically adapts to 11+ different assessment types without breaking.
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -58,7 +58,7 @@ export default function SupervisorReportView() {
         let isNS = false;
 
         // ============================================================
-        // STEP 1: Determine Assessment Type
+        // STEP 1: Determine Assessment Type (National Service vs Stratavax)
         // ============================================================
         isNS = 
           data.isNationalService === true ||
@@ -70,10 +70,9 @@ export default function SupervisorReportView() {
         console.log('[Supervisor Report] Is National Service:', isNS);
 
         // ============================================================
-        // STEP 2: Deep Merge (Make sure report_data injects into the result)
+        // STEP 2: Deep Merge (Safely combine report_data and result)
         // ============================================================
         if (rawResult.report_data && typeof rawResult.report_data === 'object') {
-          // Deep merge report_data into the rawResult so UI doesn't miss it
           rawResult = {
             ...rawResult,
             ...rawResult.report_data,
@@ -84,7 +83,16 @@ export default function SupervisorReportView() {
         }
 
         // ============================================================
-        // STEP 3: FORCE CATEGORY SCORES TO EXIST (Stop the 0 Categories bug)
+        // STEP 3: ISOLATE THE ASSESSMENT TYPE
+        // ============================================================
+        const assessmentTitle = rawResult.assessments?.title || rawResult.assessment_title || '';
+        const assessmentTypeName = rawResult.assessments?.assessment_type?.name || 'General';
+        const assessmentTypeCode = data.assessmentTypeCode || rawResult.assessments?.assessment_type?.code || 'general';
+
+        console.log(`[Supervisor Report] Processing Assessment: ${assessmentTitle} (Type: ${assessmentTypeName})`);
+
+        // ============================================================
+        // STEP 4: SCORING ENGINE (Based on Assessment Type)
         // ============================================================
         let safeCategoryScores = rawResult.categoryScores || [];
         let trueAverageScore = 0;
@@ -94,17 +102,46 @@ export default function SupervisorReportView() {
           safeCategoryScores = rawResult.report_data.categoryBreakdown;
         }
 
-        // ============================================================
-        // STEP 4: LOCK THE TRUE OVERALL SCORE (Stop the 100% bug)
-        // ============================================================
-        if (safeCategoryScores && Array.isArray(safeCategoryScores) && safeCategoryScores.length > 0) {
+        // SCENARIO A: National Service (Uses dimensions)
+        if (isNS) {
+          const workplace = Number(rawResult.dimensions?.workplaceReadiness || 0);
+          const intellectual = Number(rawResult.dimensions?.intellectualCapability || 0);
+          if (workplace > 0 || intellectual > 0) {
+            trueAverageScore = Math.round((workplace + intellectual) / 2);
+          } else {
+            trueAverageScore = Number(rawResult.percentage_score || 0);
+          }
+        } 
+        // SCENARIO B: Stratavax with valid categories (Average of categories)
+        else if (safeCategoryScores.length > 0) {
           const validScores = safeCategoryScores.filter(cat => Number(cat.percentage || 0) > 0);
           if (validScores.length > 0) {
             const sum = validScores.reduce((acc, cat) => acc + Number(cat.percentage || 0), 0);
             trueAverageScore = Math.round(sum / validScores.length);
-            console.log(`[Supervisor Report] Final Locked Score: ${trueAverageScore}% (Avg of ${validScores.length} categories)`);
+          } else {
+            trueAverageScore = Number(rawResult.percentage_score || 0);
+          }
+        } 
+        // SCENARIO C: Fallback (Safe math: earned / max * 100)
+        else {
+          const earned = Number(rawResult.total_score || 0);
+          const max = Number(rawResult.max_score || 0);
+          if (max > 0) {
+            trueAverageScore = Math.round((earned / max) * 100);
+            console.log(`[Supervisor Report] Using Fallback Math for ${assessmentTitle}: ${earned}/${max} = ${trueAverageScore}%`);
+          } else {
+            trueAverageScore = Number(rawResult.percentage_score || 0);
           }
         }
+
+        // Ensure the score doesn't stay at 0 if we know they actually completed it
+        if (trueAverageScore === 0 && rawResult.completed_at && rawResult.max_score > 0) {
+          const earned = Number(rawResult.total_score || 0);
+          const max = Number(rawResult.max_score || 0);
+          trueAverageScore = Math.round((earned / max) * 100);
+        }
+
+        console.log(`[Supervisor Report] Final Locked Score for ${assessmentTitle}: ${trueAverageScore}%`);
 
         // ============================================================
         // STEP 5: BUILD THE FINAL RESULT OBJECT
@@ -139,9 +176,10 @@ export default function SupervisorReportView() {
             preferred_department: rawResult.candidate_profiles?.preferred_department || ''
           },
           assessments: {
-            title: rawResult.assessments?.title || 'Assessment',
+            title: assessmentTitle,
             assessment_type: {
-              name: rawResult.assessments?.assessment_type?.name || 'General'
+              name: assessmentTypeName,
+              code: assessmentTypeCode
             }
           },
           candidateName: rawResult.candidate_profiles?.full_name || 'Candidate',
