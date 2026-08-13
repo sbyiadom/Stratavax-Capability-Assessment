@@ -1,5 +1,5 @@
-// pages/supervisor/index.js - FRONTEND CLEAN UP
-// FIXED: Dropdown now uses calculateTrueScore() to match the dashboard.
+// pages/supervisor/index.js - FINAL FILTER SYNC
+// Filters now perfectly apply to the National Service and Other Assessments tabs.
 
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/router';
@@ -52,7 +52,6 @@ function calculateNationalServiceRecommendation(workplace, intellectual, overall
 // 🟢 SHARED SCORE CALCULATION ENGINE
 // ============================================================
 function calculateTrueScore(report) {
-  // 1. If it's National Service, use its specific dimension logic
   if (report.is_national_service || report.isNationalService) {
     const workplace = Number(report.workplace_readiness || 0);
     const intellectual = Number(report.intellectual_capability || 0);
@@ -61,7 +60,6 @@ function calculateTrueScore(report) {
     }
   }
 
-  // 2. Attempt to find category_scores inside the object
   const rawCategories = report.category_scores || report.report_data?.category_scores || report.report_data?.categoryBreakdown;
   
   if (rawCategories && typeof rawCategories === 'object' && !Array.isArray(rawCategories)) {
@@ -69,7 +67,6 @@ function calculateTrueScore(report) {
       category,
       percentage: Math.round(data.percentage || 0)
     }));
-
     const validScores = categories.filter(cat => cat.percentage > 0);
     if (validScores.length > 0) {
       const sum = validScores.reduce((acc, cat) => acc + cat.percentage, 0);
@@ -163,10 +160,11 @@ export default function SupervisorDashboard() {
   const { session, loading: authLoading } = useRequireAuth();
 
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('candidates');
+  const [activeTab, setActiveTab] = useState('assessments');
   const [candidates, setCandidates] = useState([]);
   const [nationalServiceReports, setNationalServiceReports] = useState([]);
   const [otherReports, setOtherReports] = useState([]);
+  const [allReports, setAllReports] = useState([]);
   const [selectedAssessments, setSelectedAssessments] = useState({});
   const [errorMessage, setErrorMessage] = useState('');
   const [debugInfo, setDebugInfo] = useState(null);
@@ -213,11 +211,13 @@ export default function SupervisorDashboard() {
       const candidateRows = Array.isArray(payload.candidates) ? payload.candidates : [];
       const nsRows = Array.isArray(payload.nationalServiceReports) ? payload.nationalServiceReports : [];
       const otherRows = Array.isArray(payload.otherReports) ? payload.otherReports : [];
+      const flatReports = [...nsRows, ...otherRows];
       const dashboardStats = payload.stats || {};
 
       setCandidates(candidateRows);
       setNationalServiceReports(nsRows);
       setOtherReports(otherRows);
+      setAllReports(flatReports);
       setStats({
         totalCandidates: Number(dashboardStats.totalCandidates || 0),
         completedAssessments: Number(dashboardStats.completedAssessments || 0),
@@ -323,48 +323,54 @@ export default function SupervisorDashboard() {
   // ============================================================
   const universityStats = useMemo(() => {
     const map = {};
-    candidates.forEach(c => {
-      const uni = c.university || 'Not Specified';
+    allReports.forEach(r => {
+      const uni = r.university || 'Not Specified';
       map[uni] = (map[uni] || 0) + 1;
     });
     return Object.entries(map).sort((a, b) => b[1] - a[1]).map(([name, value]) => ({ name, value }));
-  }, [candidates]);
+  }, [allReports]);
 
-  const universityFilteredCandidates = useMemo(() => {
-    if (!selectedUniversityOption) return candidates;
-    return candidates.filter(c => c.university === selectedUniversityOption.value);
-  }, [candidates, selectedUniversityOption]);
-
-  // Normalize programs
   const rawPrograms = useMemo(() => {
-    return universityFilteredCandidates.map(c => c.programme).filter(Boolean);
-  }, [universityFilteredCandidates]);
+    return allReports.map(r => r.programme).filter(Boolean);
+  }, [allReports]);
 
   const { groups: uniqueProgramMasterNames, masterToRawMap } = useMemo(() => {
     return getUniqueMasterNames(rawPrograms);
   }, [rawPrograms]);
 
-  const programFilteredCandidates = useMemo(() => {
-    if (selectedProgramOptions.length === 0) return universityFilteredCandidates;
-    const allowedRawNames = [];
-    selectedProgramOptions.forEach(opt => {
-      const rawList = masterToRawMap[opt.value] || [];
-      allowedRawNames.push(...rawList);
-    });
-    return universityFilteredCandidates.filter(c => allowedRawNames.includes(c.programme));
-  }, [universityFilteredCandidates, selectedProgramOptions, masterToRawMap]);
+  // 🟢 UNIVERSAL FILTER LOGIC (Applies to All Tabs)
+  const filterReports = (reportsToFilter) => {
+    let filtered = reportsToFilter;
 
-  const filteredCandidates = useMemo(() => {
-    return programFilteredCandidates.filter(c => {
-      const trueScore = calculateTrueScore(c);
-      return trueScore >= Number(minScore) && trueScore <= Number(maxScore);
+    if (selectedUniversityOption) {
+      filtered = filtered.filter(r => r.university === selectedUniversityOption.value);
+    }
+
+    if (selectedProgramOptions.length > 0) {
+      const allowedRawNames = [];
+      selectedProgramOptions.forEach(opt => {
+        const rawList = masterToRawMap[opt.value] || [];
+        allowedRawNames.push(...rawList);
+      });
+      filtered = filtered.filter(r => allowedRawNames.includes(r.programme));
+    }
+
+    filtered = filtered.filter(r => {
+      const score = calculateTrueScore(r);
+      return score >= Number(minScore) && score <= Number(maxScore);
     });
-  }, [programFilteredCandidates, minScore, maxScore]);
+
+    return filtered;
+  };
+
+  const filteredReports = useMemo(() => filterReports(allReports), [allReports, selectedUniversityOption, selectedProgramOptions, minScore, maxScore, masterToRawMap]);
+  const filteredNationalService = useMemo(() => filterReports(nationalServiceReports), [nationalServiceReports, selectedUniversityOption, selectedProgramOptions, minScore, maxScore, masterToRawMap]);
+  const filteredOther = useMemo(() => filterReports(otherReports), [otherReports, selectedUniversityOption, selectedProgramOptions, minScore, maxScore, masterToRawMap]);
 
   const programmeStats = useMemo(() => {
     const map = {};
-    filteredCandidates.forEach(c => {
-      const raw = c.programme || 'Not Specified';
+    filteredReports.forEach(r => {
+      const raw = r.programme || 'Not Specified';
       let master = 'Other';
       for (const [m, rawList] of Object.entries(masterToRawMap)) {
         if (rawList.includes(raw)) { master = m; break; }
@@ -372,15 +378,15 @@ export default function SupervisorDashboard() {
       map[master] = (map[master] || 0) + 1;
     });
     return Object.entries(map).sort((a, b) => b[1] - a[1]).map(([name, value]) => ({ name, value }));
-  }, [filteredCandidates, masterToRawMap]);
+  }, [filteredReports, masterToRawMap]);
 
   const filteredAverageScore = useMemo(() => {
-    const scores = filteredCandidates
-      .map(c => calculateTrueScore(c))
+    const scores = filteredReports
+      .map(r => calculateTrueScore(r))
       .filter(s => s > 0);
     if (scores.length === 0) return 0;
     return Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
-  }, [filteredCandidates]);
+  }, [filteredReports]);
 
   const pieChartData = useMemo(() => {
     if (programmeStats.length === 0) return { labels: [], data: [] };
@@ -394,7 +400,6 @@ export default function SupervisorDashboard() {
 
   const COLORS = ['#1a237e', '#2e7d32', '#f57c00', '#c62828', '#1565c0', '#4a148c', '#00695c', '#bf360c', '#78909c'];
 
-  // REACT-SELECT OPTIONS
   const universityOptions = useMemo(() => {
     return universityStats.map(uni => ({ label: `${uni.name} (${uni.value})`, value: uni.name }));
   }, [universityStats]);
@@ -537,8 +542,8 @@ export default function SupervisorDashboard() {
               {!selectedUniversityOption ? '📊 Platform Overview' : `📍 ${selectedUniversityOption?.value}`}
             </h4>
             <div style={styles.statRow}>
-              <span style={styles.statRowLabel}>Total Candidates</span>
-              <span style={styles.statRowValue}>{filteredCandidates.length}</span>
+              <span style={styles.statRowLabel}>Total Assessments</span>
+              <span style={styles.statRowValue}>{filteredReports.length}</span>
             </div>
             <div style={styles.statRow}>
               <span style={styles.statRowLabel}>Average Score</span>
@@ -548,7 +553,7 @@ export default function SupervisorDashboard() {
             </div>
             <div style={styles.statRow}>
               <span style={styles.statRowLabel}>Number of Programs</span>
-              <span style={styles.statRowValue}>{new Set(filteredCandidates.map(c => c.programme).filter(Boolean)).size}</span>
+              <span style={styles.statRowValue}>{new Set(filteredReports.map(r => r.programme).filter(Boolean)).size}</span>
             </div>
             <div style={styles.topProgramContainer}>
               <div style={styles.topProgramLabel}>Most Popular Program:</div>
@@ -561,23 +566,23 @@ export default function SupervisorDashboard() {
 
         {/* TABS */}
         <div style={styles.tabsContainer}>
-          <TabButton active={activeTab === 'candidates'} onClick={() => setActiveTab('candidates')} label={`All Candidates (${candidates.length})`} />
+          <TabButton active={activeTab === 'assessments'} onClick={() => setActiveTab('assessments')} label={`Assessment View (${allReports.length})`} />
           <TabButton active={activeTab === 'national_service'} onClick={() => setActiveTab('national_service')} label={`National Service (${nationalServiceReports.length})`} />
           <TabButton active={activeTab === 'other'} onClick={() => setActiveTab('other')} label={`Other Assessments (${otherReports.length})`} />
         </div>
 
         <div style={styles.tabContent}>
-          {activeTab === 'candidates' && (
-            <CandidatesTab
-              candidates={filteredCandidates}
-              selectedAssessments={selectedAssessments}
-              onAssessmentChange={handleAssessmentChange}
-              onAssessmentSelect={handleAssessmentSelect}
+          {activeTab === 'assessments' && (
+            <AssessmentTab
+              reports={filteredReports}
+              getScoreColor={getScoreColor}
+              getScoreTextColor={getScoreTextColor}
+              onViewReport={handleViewReport}
             />
           )}
           {activeTab === 'national_service' && (
             <NationalServiceTab
-              reports={nationalServiceReports}
+              reports={filteredNationalService}
               getScoreColor={getScoreColor}
               getScoreTextColor={getScoreTextColor}
               getRecommendationColor={getRecommendationColor}
@@ -585,7 +590,7 @@ export default function SupervisorDashboard() {
             />
           )}
           {activeTab === 'other' && (
-            <OtherAssessmentsTab reports={otherReports} onViewReport={handleViewReport} />
+            <OtherAssessmentsTab reports={filteredOther} onViewReport={handleViewReport} />
           )}
         </div>
       </div>
@@ -614,6 +619,58 @@ function TabButton({ active, onClick, label }) {
     <button onClick={onClick} style={{ ...styles.tabButton, background: active ? '#1a237e' : 'white', color: active ? 'white' : '#1a237e', border: active ? 'none' : '1px solid #e2e8f0' }}>
       {label}
     </button>
+  );
+}
+
+// 🟢 Assessment Tab
+function AssessmentTab({ reports, getScoreColor, getScoreTextColor, onViewReport }) {
+  return (
+    <div style={styles.tabPanel}>
+      <div style={styles.tabDescription}><p>Filtered view of all completed assessments based on selected criteria. ({reports.length} results)</p></div>
+      {reports.length === 0 ? (
+        <div style={styles.emptyState}><p>No assessments match your current filter selections.</p></div>
+      ) : (
+        <div style={styles.tableContainer}>
+          <table style={styles.table}>
+            <thead>
+              <tr>
+                <th style={styles.th}>Candidate</th>
+                <th style={styles.th}>Assessment</th>
+                <th style={styles.th}>Score</th>
+                <th style={styles.th}>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {reports.map((report) => {
+                const trueScore = calculateTrueScore(report);
+
+                return (
+                  <tr key={report.result_id || `${report.candidate_id}-${report.assessment_id}`} style={styles.tr}>
+                    <td style={styles.td}>
+                      <div style={styles.cellName}>{report.candidate_name}</div>
+                      <div style={styles.cellSub}>{report.university || ''} • {report.programme || ''}</div>
+                    </td>
+                    <td style={styles.td}>{report.assessment_title}</td>
+                    <td style={styles.td}>
+                      <span style={{ ...styles.scoreBadge, background: getScoreColor(trueScore), color: getScoreTextColor(trueScore) }}>
+                        {trueScore}%
+                      </span>
+                    </td>
+                    <td style={styles.td}>
+                      {report.result_id ? (
+                        <button onClick={() => onViewReport(report.result_id)} style={styles.viewButton}>View Report</button>
+                      ) : (
+                        <span style={styles.pendingText}>No result</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -735,71 +792,6 @@ function OtherAssessmentsTab({ reports, onViewReport }) {
                       ) : (
                         <span style={styles.pendingText}>No result</span>
                       )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function CandidatesTab({ candidates, selectedAssessments, onAssessmentChange, onAssessmentSelect }) {
-  return (
-    <div style={styles.tabPanel}>
-      <div style={styles.tabDescription}><p>All candidates assigned to you. ({candidates.length} candidates)</p></div>
-      {candidates.length === 0 ? (
-        <div style={styles.emptyState}><p>No candidates assigned to you yet.</p></div>
-      ) : (
-        <div style={styles.tableContainer}>
-          <table style={styles.table}>
-            <thead>
-              <tr>
-                <th style={styles.th}>Candidate</th>
-                <th style={styles.th}>Completed</th>
-                <th style={styles.th}>In Progress</th>
-                <th style={styles.th}>Select Assessment</th>
-                <th style={styles.th}>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {candidates.map((candidate) => {
-                const completedAssessments = Array.isArray(candidate.completedAssessments) ? candidate.completedAssessments : [];
-                const stats = candidate.stats || {};
-                const selectedId = selectedAssessments[candidate.id] || (completedAssessments.length > 0 ? completedAssessments[0].assessment_id : '');
-
-                return (
-                  <tr key={candidate.id} style={styles.tr}>
-                    <td style={styles.td}>
-                      <div style={styles.cellName}>{candidate.full_name || candidate.name || 'Unnamed Candidate'}</div>
-                      <div style={styles.cellSub}>{candidate.email || ''}</div>
-                      <div style={styles.cellSub}>{candidate.university || ''} • {candidate.programme || ''}</div>
-                    </td>
-                    <td style={styles.td}>
-                      <span style={styles.statBadgeCompleted}>{stats.completed || 0}</span>
-                    </td>
-                    <td style={styles.td}>
-                      <span style={styles.statBadgeProgress}>{stats.inProgress || 0}</span>
-                    </td>
-                    <td style={styles.td}>
-                      <select onChange={(event) => onAssessmentChange(candidate.id, event.target.value)} style={styles.assessmentDropdown} value={selectedId}>
-                        <option value="">-- Select --</option>
-                        {completedAssessments.map((assessment) => (
-                          // 🟢 SECTION 6.1: USE calculateTrueScore FOR DROPDOWN
-                          <option key={`${candidate.id}-${assessment.assessment_id}`} value={assessment.assessment_id}>
-                            {assessment.title} ({calculateTrueScore(assessment)}%)
-                          </option>
-                        ))}
-                        {completedAssessments.length === 0 && <option value="" disabled>No completed assessments</option>}
-                      </select>
-                    </td>
-                    <td style={styles.td}>
-                      <button onClick={() => onAssessmentSelect(candidate.id, selectedId)} style={styles.viewReportButtonSmall} disabled={completedAssessments.length === 0}>
-                        View Report
-                      </button>
                     </td>
                   </tr>
                 );
