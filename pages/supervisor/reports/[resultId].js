@@ -1,5 +1,5 @@
-// pages/supervisor/reports/[resultId].js - ULTIMATE SCORE CORRECTION
-// FIXED: Injects the averaged score directly into the result object so StratavaxReport reads it.
+// pages/supervisor/reports/[resultId].js - FINAL HARDENED VERSION
+// Forces the existence of categoryScores, locks the true average score, and deeply merges report_data.
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -52,90 +52,108 @@ export default function SupervisorReportView() {
 
         console.log('[Supervisor Report] Data received:', data);
         
-        // Store the full data
-        setReportData(data);
-        
+        // Start with the raw API result
+        let rawResult = data.result || {};
+        let rawReport = data.report || {};
+        let isNS = false;
+
         // ============================================================
-        // Determine if this is a National Service assessment
+        // STEP 1: Determine Assessment Type
         // ============================================================
-        const isNS = 
+        isNS = 
           data.isNationalService === true ||
           data.assessmentTypeCode === 'national_service' ||
-          (data.result?.report_data && data.result.report_data.dimensions && 
-           data.result.report_data.dimensions.workplaceReadiness !== undefined) ||
-          (data.report && data.report.dimensions && 
-           data.report.dimensions.workplaceReadiness !== undefined) ||
-          (data.result?.workplace_readiness !== undefined && data.result?.workplace_readiness !== null);
+          (rawResult?.report_data?.dimensions?.workplaceReadiness !== undefined) ||
+          (rawReport?.dimensions?.workplaceReadiness !== undefined) ||
+          (rawResult?.workplace_readiness !== undefined && rawResult?.workplace_readiness !== null);
 
         console.log('[Supervisor Report] Is National Service:', isNS);
-        console.log('[Supervisor Report] Assessment type code:', data.assessmentTypeCode);
 
-        // If we have report_data in the result, use it directly
-        let report = data.report;
-        if (!report && data.result?.report_data) {
-          report = data.result.report_data;
-          console.log('[Supervisor Report] Using report_data from result');
+        // ============================================================
+        // STEP 2: Deep Merge (Make sure report_data injects into the result)
+        // ============================================================
+        if (rawResult.report_data && typeof rawResult.report_data === 'object') {
+          // Deep merge report_data into the rawResult so UI doesn't miss it
+          rawResult = {
+            ...rawResult,
+            ...rawResult.report_data,
+            candidateInfo: rawResult.report_data.candidateInfo || rawResult.candidateInfo || {},
+            dimensions: rawResult.report_data.dimensions || rawResult.dimensions || {},
+            categoryScores: rawResult.report_data.categoryScores || rawResult.report_data.categoryBreakdown || rawResult.categoryScores || [],
+          };
         }
 
-        // If report is still null, try to build it from the result
-        if (!report && data.result) {
-          // For National Service, build the report structure
-          if (isNS) {
-            report = {
-              dimensions: {
-                workplaceReadiness: data.result.workplace_readiness || 0,
-                intellectualCapability: data.result.intellectual_capability || 0,
-                overallScore: data.result.percentage_score || 0
-              },
-              recommendation: {
-                level: data.result.recommendation || 'Not Recommended'
-              },
-              statistics: {
-                totalQuestions: data.result.total_questions || 0,
-                totalAnswered: data.result.answered_questions || 0
-              },
-              categoryBreakdown: data.result.report_data?.categoryBreakdown || [],
-              candidateInfo: {
-                fullName: data.result.candidate_profiles?.full_name || 'Candidate',
-                university: data.result.candidate_profiles?.university || '',
-                programme: data.result.candidate_profiles?.programme || '',
-                graduationYear: data.result.candidate_profiles?.graduation_year || '',
-                preferredDepartment: data.result.candidate_profiles?.preferred_department || '',
-                assessmentDate: new Date(data.result.completed_at).toLocaleDateString()
-              }
-            };
-          } else {
-            // For Stratavax, use the result directly
-            report = data.result;
+        // ============================================================
+        // STEP 3: FORCE CATEGORY SCORES TO EXIST (Stop the 0 Categories bug)
+        // ============================================================
+        let safeCategoryScores = rawResult.categoryScores || [];
+        let trueAverageScore = 0;
+
+        // If categories are empty, check the raw report_data one last time
+        if (safeCategoryScores.length === 0 && rawResult.report_data?.categoryBreakdown) {
+          safeCategoryScores = rawResult.report_data.categoryBreakdown;
+        }
+
+        // ============================================================
+        // STEP 4: LOCK THE TRUE OVERALL SCORE (Stop the 100% bug)
+        // ============================================================
+        if (safeCategoryScores && Array.isArray(safeCategoryScores) && safeCategoryScores.length > 0) {
+          const validScores = safeCategoryScores.filter(cat => Number(cat.percentage || 0) > 0);
+          if (validScores.length > 0) {
+            const sum = validScores.reduce((acc, cat) => acc + Number(cat.percentage || 0), 0);
+            trueAverageScore = Math.round(sum / validScores.length);
+            console.log(`[Supervisor Report] Final Locked Score: ${trueAverageScore}% (Avg of ${validScores.length} categories)`);
           }
         }
 
-        // 🟢 FIX: Force the true average onto the result object
-        let stratavaxResultObject = data.result;
-        let trueAverageScore = Number(data.result?.percentage_score || 0);
-
-        if (!isNS && report && report.categoryScores && Array.isArray(report.categoryScores) && report.categoryScores.length > 0) {
-          const sum = report.categoryScores.reduce((acc, cat) => acc + Number(cat.percentage || 0), 0);
-          const validCount = report.categoryScores.filter(cat => Number(cat.percentage || 0) > 0).length;
-          
-          if (validCount > 0) {
-            trueAverageScore = Math.round(sum / validCount);
-            console.log(`[Supervisor Report] Correct Stratavax Overall Score: ${trueAverageScore}%`);
-            
-            // INJECT THE TRUE SCORE INTO THE RESULT OBJECT
-            if (stratavaxResultObject) {
-              stratavaxResultObject.percentage_score = trueAverageScore;
-              stratavaxResultObject.overallScore = trueAverageScore;
-              stratavaxResultObject.score = trueAverageScore;
+        // ============================================================
+        // STEP 5: BUILD THE FINAL RESULT OBJECT
+        // ============================================================
+        const finalResult = {
+          id: rawResult.id,
+          user_id: rawResult.user_id,
+          assessment_id: rawResult.assessment_id,
+          total_score: rawResult.total_score || 0,
+          max_score: rawResult.max_score || 0,
+          completed_at: rawResult.completed_at,
+          risk_level: rawResult.risk_level || 'Low',
+          // OVERRIDE THE SCORES
+          percentage_score: trueAverageScore,
+          overallScore: trueAverageScore,
+          score: trueAverageScore,
+          // INJECT THE CATEGORIES
+          categoryScores: safeCategoryScores,
+          category_scores: safeCategoryScores,
+          strengths: rawResult.strengths || [],
+          weaknesses: rawResult.weaknesses || [],
+          recommendations: rawResult.recommendations || [],
+          executiveSummary: rawResult.executiveSummary || '',
+          supervisorImplication: rawResult.supervisorImplication || '',
+          // CANDIDATE & ASSESSMENT INFO
+          candidate_profiles: {
+            full_name: rawResult.candidate_profiles?.full_name || rawResult.full_name || 'Candidate',
+            email: rawResult.candidate_profiles?.email || '',
+            university: rawResult.candidate_profiles?.university || '',
+            programme: rawResult.candidate_profiles?.programme || '',
+            graduation_year: rawResult.candidate_profiles?.graduation_year || '',
+            preferred_department: rawResult.candidate_profiles?.preferred_department || ''
+          },
+          assessments: {
+            title: rawResult.assessments?.title || 'Assessment',
+            assessment_type: {
+              name: rawResult.assessments?.assessment_type?.name || 'General'
             }
-          }
-        }
+          },
+          candidateName: rawResult.candidate_profiles?.full_name || 'Candidate',
+          classification: rawResult.classification || 'Standard Profile'
+        };
 
+        // Store all data
         setReportData({
           ...data,
-          report: report,
-          isNationalService: isNS,
-          result: stratavaxResultObject // Pass the corrected object
+          result: finalResult,
+          report: isNS ? rawResult : finalResult,
+          isNationalService: isNS
         });
         setIsNationalService(isNS);
 
@@ -253,10 +271,7 @@ export default function SupervisorReportView() {
   // ============================================================
   
   // If it's a National Service assessment, use the National Service Report
-  if (isNationalService && reportData?.report && isAuthorized) {
-    console.log('[Supervisor Report] Rendering National Service Report');
-    console.log('[Supervisor Report] Passing behavioralMatrix:', behavioralMatrix);
-    
+  if (isNationalService && reportData?.report) {
     return (
       <AppLayout background="/images/supervisor-bg.jpg">
         <div style={styles.breadcrumb}>
@@ -466,223 +481,6 @@ export default function SupervisorReportView() {
     );
   }
 
-  // If we have report_data but it's not being detected, try to render it anyway
-  if (reportData?.result?.report_data) {
-    // Check if the report_data has National Service structure
-    const hasNSStructure = reportData.result.report_data.dimensions && 
-                          reportData.result.report_data.dimensions.workplaceReadiness !== undefined;
-    
-    if (hasNSStructure) {
-      console.log('[Supervisor Report] Rendering National Service Report from report_data');
-      return (
-        <AppLayout background="/images/supervisor-bg.jpg">
-          <div style={styles.breadcrumb}>
-            <button onClick={handleBack} style={styles.breadcrumbButton}>
-              ← Back to Supervisor Dashboard
-            </button>
-            <span style={styles.breadcrumbSeparator}>|</span>
-            <span style={styles.breadcrumbText}>National Service Report</span>
-            <button onClick={toggleBehavioral} style={styles.behavioralToggle}>
-              {showBehavioral ? 'Hide Behavioral Matrix' : 'Show Behavioral Matrix'}
-            </button>
-          </div>
-          <NationalServiceReport 
-            report={reportData.result.report_data} 
-            onBack={handleBack}
-            showAssignment={false}
-            userRole="supervisor"
-            behavioralMatrix={behavioralMatrix}
-            loadingBehavioral={loadingBehavioral}
-          />
-          
-          {showBehavioral && (
-            <div style={styles.behavioralSection}>
-              <h3 style={styles.behavioralTitle}>Behavioral Matrix</h3>
-              
-              {loadingBehavioral ? (
-                <div style={styles.loadingBehavioral}>
-                  <p>Loading behavioral data...</p>
-                </div>
-              ) : behavioralMatrix && hasBehavioralData ? (
-                <>
-                  <div style={styles.behavioralStats}>
-                    <div style={styles.behavioralStat}>
-                      <span style={styles.behavioralLabel}>Total Time</span>
-                      <span style={styles.behavioralValue}>
-                        {formatTime(behavioralMatrix.timing?.totalTimeSeconds)}
-                      </span>
-                    </div>
-                    <div style={styles.behavioralStat}>
-                      <span style={styles.behavioralLabel}>Avg Time per Question</span>
-                      <span style={styles.behavioralValue}>
-                        {behavioralMatrix.timing?.averageTimePerQuestion || 0}s
-                      </span>
-                    </div>
-                    <div style={styles.behavioralStat}>
-                      <span style={styles.behavioralLabel}>Answer Changes</span>
-                      <span style={styles.behavioralValue}>
-                        {behavioralMatrix.behavior?.answerChanges || 0}
-                      </span>
-                    </div>
-                    <div style={styles.behavioralStat}>
-                      <span style={styles.behavioralLabel}>Tab Switches</span>
-                      <span style={styles.behavioralValue}>
-                        {behavioralMatrix.behavior?.tabSwitches || 0}
-                      </span>
-                    </div>
-                    <div style={styles.behavioralStat}>
-                      <span style={styles.behavioralLabel}>Violations</span>
-                      <span style={styles.behavioralValue}>
-                        {behavioralMatrix.behavior?.violations || 0}
-                      </span>
-                    </div>
-                    <div style={styles.behavioralStat}>
-                      <span style={styles.behavioralLabel}>Copy/Paste Attempts</span>
-                      <span style={styles.behavioralValue}>
-                        {(behavioralMatrix.behavior?.copyAttempts || 0) + (behavioralMatrix.behavior?.pasteAttempts || 0)}
-                      </span>
-                    </div>
-                    <div style={styles.behavioralStat}>
-                      <span style={styles.behavioralLabel}>Right-Click Attempts</span>
-                      <span style={styles.behavioralValue}>
-                        {behavioralMatrix.behavior?.rightClickAttempts || 0}
-                      </span>
-                    </div>
-                    <div style={styles.behavioralStat}>
-                      <span style={styles.behavioralLabel}>Risk Level</span>
-                      <span style={{
-                        ...styles.riskBadge,
-                        background: behavioralMatrix.riskAssessment?.level === 'High Risk' ? '#fee2e2' :
-                                   behavioralMatrix.riskAssessment?.level === 'Medium Risk' ? '#fef3c7' : '#dcfce7',
-                        color: behavioralMatrix.riskAssessment?.level === 'High Risk' ? '#991b1b' :
-                               behavioralMatrix.riskAssessment?.level === 'Medium Risk' ? '#92400e' : '#166534'
-                      }}>
-                        {behavioralMatrix.riskAssessment?.level || 'Low Risk'}
-                      </span>
-                    </div>
-                  </div>
-                  
-                  <div style={styles.riskSummary}>
-                    <p>
-                      Behavioral flags: {behavioralMatrix.behavior?.violations || 0} violation(s), {behavioralMatrix.behavior?.tabSwitches || 0} tab switches.
-                    </p>
-                    {behavioralMatrix.riskAssessment?.detail && (
-                      <p style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
-                        {behavioralMatrix.riskAssessment.detail}
-                      </p>
-                    )}
-                  </div>
-                  
-                  {/* Behavioral Commentary */}
-                  {behavioralMatrix?.behavior && (
-                    <div style={styles.behavioralCommentary}>
-                      <h4 style={styles.commentaryTitle}>Behavioral Analysis</h4>
-                      <div style={styles.commentaryMetrics}>
-                        <div style={styles.commentaryItem}>
-                          <span style={styles.commentaryLabel}>Tab Switches:</span>
-                          <span style={styles.commentaryText}>
-                            {behavioralMatrix.behavior.tabSwitches === 0
-                              ? 'No tab switching detected. Candidate maintained focus.'
-                              : behavioralMatrix.behavior.tabSwitches <= 5
-                                ? `Minimal tab switching (${behavioralMatrix.behavior.tabSwitches} switches). Occasional distraction.`
-                                : behavioralMatrix.behavior.tabSwitches <= 20
-                                  ? `Moderate tab switching (${behavioralMatrix.behavior.tabSwitches} switches). Potential external reference use.`
-                                  : `High tab switching (${behavioralMatrix.behavior.tabSwitches} switches). Significant distraction detected.`
-                            }
-                          </span>
-                        </div>
-                        <div style={styles.commentaryItem}>
-                          <span style={styles.commentaryLabel}>Violations:</span>
-                          <span style={styles.commentaryText}>
-                            {behavioralMatrix.behavior.violations === 0
-                              ? 'No rule violations detected. Candidate followed all guidelines.'
-                              : behavioralMatrix.behavior.violations <= 3
-                                ? `Minor violations (${behavioralMatrix.behavior.violations}). May be accidental.`
-                                : behavioralMatrix.behavior.violations <= 10
-                                  ? `Moderate violations (${behavioralMatrix.behavior.violations}). Review recommended.`
-                                  : `High violations (${behavioralMatrix.behavior.violations}). Immediate review required.`
-                            }
-                          </span>
-                        </div>
-                        <div style={styles.commentaryItem}>
-                          <span style={styles.commentaryLabel}>Answer Changes:</span>
-                          <span style={styles.commentaryText}>
-                            {behavioralMatrix.behavior.answerChanges === 0
-                              ? 'No answer changes. Candidate showed confidence.'
-                              : behavioralMatrix.behavior.answerChanges <= 3
-                                ? `Minimal changes (${behavioralMatrix.behavior.answerChanges}). Some hesitation.`
-                                : behavioralMatrix.behavior.answerChanges <= 10
-                                  ? `Moderate changes (${behavioralMatrix.behavior.answerChanges}). Uncertainty detected.`
-                                  : `High changes (${behavioralMatrix.behavior.answerChanges}). Significant uncertainty.`
-                            }
-                          </span>
-                        </div>
-                      </div>
-                      
-                      {(behavioralMatrix.behavior.violations > 0 || behavioralMatrix.behavior.tabSwitches > 5) ? (
-                        <div style={styles.recommendationBox}>
-                          <h5 style={styles.recommendationTitle}>Recommendations</h5>
-                          <ul style={styles.recommendationList}>
-                            {behavioralMatrix.behavior.tabSwitches > 20 && (
-                              <li>Consider invalidating the assessment due to excessive tab switching.</li>
-                            )}
-                            {behavioralMatrix.behavior.violations > 10 && (
-                              <li>Immediate review required. Assessment validity is compromised.</li>
-                            )}
-                            {behavioralMatrix.behavior.tabSwitches > 5 && behavioralMatrix.behavior.tabSwitches <= 20 && (
-                              <li>Conduct a follow-up interview to discuss potential external reference use.</li>
-                            )}
-                            {behavioralMatrix.behavior.violations > 3 && behavioralMatrix.behavior.violations <= 10 && (
-                              <li>Review specific flagged questions and discuss with candidate.</li>
-                            )}
-                            {behavioralMatrix.behavior.answerChanges > 5 && (
-                              <li>Review questions where answers were changed for potential ambiguity.</li>
-                            )}
-                          </ul>
-                        </div>
-                      ) : (
-                        <div style={styles.cleanCommentary}>
-                          No concerning behavioral patterns detected. The candidate completed the assessment with integrity.
-                        </div>
-                      )}
-                    </div>
-                  )}
-                  
-                  {behavioralMatrix.flaggedQuestions && behavioralMatrix.flaggedQuestions.length > 0 && (
-                    <div style={styles.flaggedQuestions}>
-                      <h4 style={styles.flaggedTitle}>Flagged Questions</h4>
-                      <ul style={styles.flaggedList}>
-                        {behavioralMatrix.flaggedQuestions.slice(0, 10).map((q, index) => (
-                          <li key={index} style={styles.flaggedItem}>
-                            Question {q.question_id}: {q.time_seconds}s
-                            {q.changed ? ' - Changed' : ''}
-                            {q.violation ? ' - Violation' : ''}
-                            {q.comment ? ` - ${q.comment}` : ''}
-                          </li>
-                        ))}
-                        {behavioralMatrix.flaggedQuestions.length > 10 && (
-                          <li style={styles.flaggedItem}>... and {behavioralMatrix.flaggedQuestions.length - 10} more</li>
-                        )}
-                      </ul>
-                    </div>
-                  )}
-                </>
-              ) : (
-                <div style={styles.noBehavioralData}>
-                  <p>No behavioral data is available for this assessment.</p>
-                  <p style={styles.noBehavioralSubtext}>
-                    Behavioral data (tab switches, violations, answer changes, etc.) 
-                    is only tracked for assessments completed after the behavioral tracking feature was implemented.
-                  </p>
-                </div>
-              )}
-            </div>
-          )}
-        </AppLayout>
-      );
-    }
-  }
-
   // ============================================================
   // DEFAULT: Use Stratavax Report for all non-National Service assessments
   // ============================================================
@@ -691,8 +489,8 @@ export default function SupervisorReportView() {
   
   // Prepare data for Stratavax report
   const stratavaxResult = reportData?.result || null;
-  const stratavaxCandidate = reportData?.result?.candidate_profiles || null;
-  const stratavaxAssessment = reportData?.result?.assessments || null;
+  const stratavaxCandidate = stratavaxResult?.candidate_profiles || null;
+  const stratavaxAssessment = stratavaxResult?.assessments || null;
 
   return (
     <AppLayout background="/images/supervisor-bg.jpg">
