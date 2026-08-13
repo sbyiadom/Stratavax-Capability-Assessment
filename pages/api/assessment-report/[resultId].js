@@ -1,5 +1,5 @@
-// pages/api/assessment-report/[resultId].js - BACKEND CANDIDATE LOOKUP FIX
-// FIXED: Attempts to find candidate by both id and user_id.
+// pages/api/assessment-report/[resultId].js - FIXED AUTH ERROR
+// FIXED: Correctly extracts token and verifies user for API access.
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -9,32 +9,40 @@ export default async function handler(req, res) {
   }
 
   try {
-    const token = req.headers.authorization?.replace('Bearer ', '');
-    if (!token) {
-      return res.status(401).json({ success: false, error: 'Unauthorized' });
-    }
-
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-    if (!supabaseUrl || !supabaseKey) {
-      return res.status(500).json({ success: false, error: 'Server configuration error' });
-    }
-
-    const serviceClient = createClient(supabaseUrl, supabaseKey, {
-      auth: { persistSession: false, autoRefreshToken: false }
-    });
-
-    // Get the resultId from the query
     const { resultId } = req.query;
     if (!resultId) {
       return res.status(400).json({ success: false, error: 'Missing resultId' });
     }
 
-    // Verify user
+    // ============================================================
+    // AUTHENTICATION FIX
+    // ============================================================
+    const authHeader = req.headers.authorization || '';
+    const token = authHeader.startsWith('Bearer ') ? authHeader.replace('Bearer ', '').trim() : null;
+    
+    if (!token) {
+      return res.status(401).json({ success: false, error: 'Unauthorized: No token provided' });
+    }
+
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+    if (!supabaseUrl || !supabaseKey) {
+      console.error('[Assessment Report] Missing environment variables');
+      return res.status(500).json({ success: false, error: 'Server configuration error' });
+    }
+
+    // Create the client
+    const serviceClient = createClient(supabaseUrl, supabaseKey, {
+      auth: { persistSession: false, autoRefreshToken: false }
+    });
+
+    // Verify the user making the request is authenticated
     const { data: userData, error: authError } = await serviceClient.auth.getUser(token);
+    
     if (authError || !userData?.user) {
-      return res.status(401).json({ success: false, error: 'Invalid token' });
+      console.error('[Assessment Report] Auth error:', authError);
+      return res.status(401).json({ success: false, error: 'Unauthorized: Invalid token' });
     }
 
     // ============================================================
