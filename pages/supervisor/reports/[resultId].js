@@ -1,5 +1,5 @@
-// pages/supervisor/reports/[resultId].js - ROBUST, MULTI-ASSESSMENT SCORING ENGINE
-// Dynamically adapts to 11+ different assessment types without breaking.
+// pages/supervisor/reports/[resultId].js - FINAL DATA TRANSFORMER
+// Converts the database Object structure into an Array the UI expects.
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -54,97 +54,58 @@ export default function SupervisorReportView() {
         
         // Start with the raw API result
         let rawResult = data.result || {};
-        let rawReport = data.report || {};
-        let isNS = false;
 
         // ============================================================
-        // STEP 1: Determine Assessment Type (National Service vs Stratavax)
+        // STEP 1: Determine Assessment Type
         // ============================================================
-        isNS = 
+        const isNS = 
           data.isNationalService === true ||
           data.assessmentTypeCode === 'national_service' ||
           (rawResult?.report_data?.dimensions?.workplaceReadiness !== undefined) ||
-          (rawReport?.dimensions?.workplaceReadiness !== undefined) ||
           (rawResult?.workplace_readiness !== undefined && rawResult?.workplace_readiness !== null);
 
         console.log('[Supervisor Report] Is National Service:', isNS);
 
         // ============================================================
-        // STEP 2: Deep Merge (Safely combine report_data and result)
+        // STEP 2: TRANSFORM DATABASE OBJECT INTO UI ARRAY
         // ============================================================
-        if (rawResult.report_data && typeof rawResult.report_data === 'object') {
-          rawResult = {
-            ...rawResult,
-            ...rawResult.report_data,
-            candidateInfo: rawResult.report_data.candidateInfo || rawResult.candidateInfo || {},
-            dimensions: rawResult.report_data.dimensions || rawResult.dimensions || {},
-            categoryScores: rawResult.report_data.categoryScores || rawResult.report_data.categoryBreakdown || rawResult.categoryScores || [],
-          };
+        let finalCategoryScores = [];
+
+        // Check if category_scores exists and is an Object (like your database)
+        if (rawResult.category_scores && typeof rawResult.category_scores === 'object' && !Array.isArray(rawResult.category_scores)) {
+          console.log('[Supervisor Report] Detected Object format. Converting to Array...');
+          finalCategoryScores = Object.entries(rawResult.category_scores).map(([category, data]) => ({
+            category: category,
+            percentage: Math.round(data.percentage || 0),
+            maxScore: data.maxPossible || data.total || 0,
+            score: data.score || 0
+          }));
+        } 
+        // If it's already an array, just use it
+        else if (Array.isArray(rawResult.category_scores)) {
+          finalCategoryScores = rawResult.category_scores;
         }
 
         // ============================================================
-        // STEP 3: ISOLATE THE ASSESSMENT TYPE
+        // STEP 3: CALCULATE THE TRUE SCORE (Math guaranteed to work)
         // ============================================================
-        const assessmentTitle = rawResult.assessments?.title || rawResult.assessment_title || '';
-        const assessmentTypeName = rawResult.assessments?.assessment_type?.name || 'General';
-        const assessmentTypeCode = data.assessmentTypeCode || rawResult.assessments?.assessment_type?.code || 'general';
-
-        console.log(`[Supervisor Report] Processing Assessment: ${assessmentTitle} (Type: ${assessmentTypeName})`);
-
-        // ============================================================
-        // STEP 4: SCORING ENGINE (Based on Assessment Type)
-        // ============================================================
-        let safeCategoryScores = rawResult.categoryScores || [];
         let trueAverageScore = 0;
 
-        // If categories are empty, check the raw report_data one last time
-        if (safeCategoryScores.length === 0 && rawResult.report_data?.categoryBreakdown) {
-          safeCategoryScores = rawResult.report_data.categoryBreakdown;
-        }
-
-        // SCENARIO A: National Service (Uses dimensions)
-        if (isNS) {
-          const workplace = Number(rawResult.dimensions?.workplaceReadiness || 0);
-          const intellectual = Number(rawResult.dimensions?.intellectualCapability || 0);
-          if (workplace > 0 || intellectual > 0) {
-            trueAverageScore = Math.round((workplace + intellectual) / 2);
-          } else {
-            trueAverageScore = Number(rawResult.percentage_score || 0);
-          }
-        } 
-        // SCENARIO B: Stratavax with valid categories (Average of categories)
-        else if (safeCategoryScores.length > 0) {
-          const validScores = safeCategoryScores.filter(cat => Number(cat.percentage || 0) > 0);
+        if (finalCategoryScores.length > 0) {
+          const validScores = finalCategoryScores.filter(cat => Number(cat.percentage || 0) > 0);
           if (validScores.length > 0) {
             const sum = validScores.reduce((acc, cat) => acc + Number(cat.percentage || 0), 0);
             trueAverageScore = Math.round(sum / validScores.length);
-          } else {
-            trueAverageScore = Number(rawResult.percentage_score || 0);
           }
-        } 
-        // SCENARIO C: Fallback (Safe math: earned / max * 100)
-        else {
-          const earned = Number(rawResult.total_score || 0);
-          const max = Number(rawResult.max_score || 0);
-          if (max > 0) {
-            trueAverageScore = Math.round((earned / max) * 100);
-            console.log(`[Supervisor Report] Using Fallback Math for ${assessmentTitle}: ${earned}/${max} = ${trueAverageScore}%`);
-          } else {
-            trueAverageScore = Number(rawResult.percentage_score || 0);
-          }
+        } else {
+          // Fallback to raw percentage_score if categories are empty
+          trueAverageScore = Math.round(Number(rawResult.percentage_score || 0));
         }
 
-        // Ensure the score doesn't stay at 0 if we know they actually completed it
-        if (trueAverageScore === 0 && rawResult.completed_at && rawResult.max_score > 0) {
-          const earned = Number(rawResult.total_score || 0);
-          const max = Number(rawResult.max_score || 0);
-          trueAverageScore = Math.round((earned / max) * 100);
-        }
-
-        console.log(`[Supervisor Report] Final Locked Score for ${assessmentTitle}: ${trueAverageScore}%`);
+        console.log(`[Supervisor Report] Final Locked Score: ${trueAverageScore}%`);
 
         // ============================================================
-        // STEP 5: BUILD THE FINAL RESULT OBJECT
+        // STEP 4: BUILD THE FINAL RESULT OBJECT
         // ============================================================
         const finalResult = {
           id: rawResult.id,
@@ -154,18 +115,23 @@ export default function SupervisorReportView() {
           max_score: rawResult.max_score || 0,
           completed_at: rawResult.completed_at,
           risk_level: rawResult.risk_level || 'Low',
-          // OVERRIDE THE SCORES
+          
+          // OVERRIDE THE SCORES WITH TRUE AVERAGE
           percentage_score: trueAverageScore,
           overallScore: trueAverageScore,
           score: trueAverageScore,
-          // INJECT THE CATEGORIES
-          categoryScores: safeCategoryScores,
-          category_scores: safeCategoryScores,
+          
+          // INJECT THE TRANSFORMED CATEGORY SCORES
+          categoryScores: finalCategoryScores,
+          category_scores: finalCategoryScores,
+          
+          // STRENGTHS & WEAKNESSES
           strengths: rawResult.strengths || [],
           weaknesses: rawResult.weaknesses || [],
           recommendations: rawResult.recommendations || [],
           executiveSummary: rawResult.executiveSummary || '',
           supervisorImplication: rawResult.supervisorImplication || '',
+          
           // CANDIDATE & ASSESSMENT INFO
           candidate_profiles: {
             full_name: rawResult.candidate_profiles?.full_name || rawResult.full_name || 'Candidate',
@@ -176,10 +142,9 @@ export default function SupervisorReportView() {
             preferred_department: rawResult.candidate_profiles?.preferred_department || ''
           },
           assessments: {
-            title: assessmentTitle,
+            title: rawResult.assessments?.title || rawResult.assessment_title || 'Assessment',
             assessment_type: {
-              name: assessmentTypeName,
-              code: assessmentTypeCode
+              name: rawResult.assessments?.assessment_type?.name || 'General'
             }
           },
           candidateName: rawResult.candidate_profiles?.full_name || 'Candidate',
@@ -190,7 +155,6 @@ export default function SupervisorReportView() {
         setReportData({
           ...data,
           result: finalResult,
-          report: isNS ? rawResult : finalResult,
           isNationalService: isNS
         });
         setIsNationalService(isNS);
@@ -309,7 +273,7 @@ export default function SupervisorReportView() {
   // ============================================================
   
   // If it's a National Service assessment, use the National Service Report
-  if (isNationalService && reportData?.report) {
+  if (isNationalService && reportData?.result) {
     return (
       <AppLayout background="/images/supervisor-bg.jpg">
         <div style={styles.breadcrumb}>
@@ -324,7 +288,7 @@ export default function SupervisorReportView() {
         </div>
         
         <NationalServiceReport 
-          report={reportData.report} 
+          report={reportData.result} 
           onBack={handleBack} 
           showAssignment={false}
           userRole="supervisor"
