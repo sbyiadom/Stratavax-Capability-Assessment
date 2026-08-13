@@ -1,5 +1,5 @@
-// pages/api/supervisor/dashboard.js - PERMANENT SCORE SYNCHRONIZATION
-// FIXED: Calculates true score from category_scores instead of raw percentage_score.
+// pages/api/supervisor/dashboard.js - FULLY ACCURATE SCORES AND COUNTS
+// FIXED: Broadened NS detection to prevent report drops.
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -30,7 +30,6 @@ function getReportData(result) {
   return {};
 }
 
-// 🟢 SECTION 5.1: NORMALIZE CATEGORY SCORES
 function normalizeCategoryScores(result) {
   const reportData = getReportData(result);
 
@@ -65,7 +64,6 @@ function normalizeCategoryScores(result) {
   return [];
 }
 
-// 🟢 SECTION 5.2: CALCULATE TRUE ASSESSMENT SCORE
 function calculateTrueAssessmentScore(result) {
   const finalCategoryScores = normalizeCategoryScores(result);
 
@@ -77,7 +75,7 @@ function calculateTrueAssessmentScore(result) {
     }
   }
 
-  // Fallback: Use raw percentage_score only if categories are missing
+  // Strict Fallback: Use raw percentage_score
   return Math.round(safeNumber(result?.percentage_score || result?.score || result?.overallScore || 0));
 }
 
@@ -143,7 +141,6 @@ function calculateSubScores(categoryScores) {
   };
 }
 
-// 🟢 RECOMMENDATION HELPER
 function calculateNationalServiceRecommendation(workplaceReadiness, intellectualCapability, overallScore) {
   const workplace = safeNumber(workplaceReadiness);
   const intellectual = safeNumber(intellectualCapability);
@@ -312,6 +309,7 @@ export default async function handler(req, res) {
         const assessment = assessmentMap[ca.assessment_id];
         const type = assessment ? typeMap[assessment.assessment_type_id] : null;
 
+        // 🟢 BROADENED NATIONAL SERVICE DETECTION
         const assessmentTitle = String(assessment?.title || '').toLowerCase().trim();
         const assessmentCode = String(type?.code || '').toLowerCase().trim();
         const assessmentTypeName = String(type?.name || '').toLowerCase().trim();
@@ -339,7 +337,7 @@ export default async function handler(req, res) {
         } else {
           workplace = safeNumber(r?.workplace_readiness || 0);
           intellectual = safeNumber(r?.intellectual_capability || 0);
-          // 🟢 SECTION 5.3: USE THE TRUE SCORE ENGINE
+          // 🟢 USE THE TRUE SCORE ENGINE
           overallScore = calculateTrueAssessmentScore(r);
           finalCategoryScores = normalizeCategoryScores(r);
         }
@@ -365,20 +363,9 @@ export default async function handler(req, res) {
           else recommendation = 'Not Recommended';
         }
 
-        console.log('[NS RECOMMENDATION CHECK]', {
-          candidate: c.full_name,
-          resultId: r?.id,
-          workplace,
-          intellectual,
-          overallScore,
-          storedRecommendation: r?.recommendation,
-          calculatedRecommendation: recommendation,
-          reportRecommendation: getReportData(r)?.recommendation
-        });
-
         if (isNationalService) nationalServiceReports++;
 
-        // 🟢 SECTION 5.4: RETURN COMPLETE SCORE ALIASES AND SOURCE DATA
+        // 🟢 RETURN COMPLETE SCORE ALIASES AND SOURCE DATA
         return {
           assessment_id: ca.assessment_id,
           result_id: ca.result_id,
@@ -406,7 +393,7 @@ export default async function handler(req, res) {
         notStarted: userAssessments.filter(a => a.status === 'not_started').length
       };
 
-      // 🟢 SECTION 5.5: UPDATE ALL REPORTS PUSH
+      // 🟢 UPDATE ALL REPORTS PUSH
       completedAssessments.forEach(a => {
         allReports.push({
           result_id: a.result_id,
