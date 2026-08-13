@@ -1,5 +1,5 @@
-// pages/api/assessment-report/[resultId].js - FINAL PRODUCTION VERSION
-// FIXED: Removed all references to non-existent 'user_id' column in candidate_profiles.
+// pages/api/assessment-report/[resultId].js - FINAL PRODUCTION CLEAN VERSION
+// FIXED: Removed verbose logging, kept essential debugging.
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -70,7 +70,7 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // 🟢 SECTION 4.1: FORCE SERVICE ROLE KEY
+    // ENFORCE SERVICE ROLE KEY
     // ============================================================
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -104,7 +104,7 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // DIRECT RESULT LOOKUP
+    // DIRECT RESULT LOOKUP (NO EMBEDDED JOINS)
     // ============================================================
     const { data: result, error: resultError } = await serviceClient
       .from('assessment_results')
@@ -135,8 +135,7 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // 🟢 SECTION 3.1 & 3.2: SIMPLIFIED CANDIDATE PROFILE LOOKUP
-    // REMOVED: 'user_id' from select and fallback lookup.
+    // SIMPLIFIED CANDIDATE PROFILE LOOKUP (ID ONLY)
     // ============================================================
     let candidateProfile = null;
     const candidateSelect = 'id, full_name, email, university, programme, graduation_year, preferred_department';
@@ -155,7 +154,6 @@ export default async function handler(req, res) {
       if (profileById) {
         candidateProfile = profileById;
         console.log('[Assessment Report] Found candidate via candidate_profiles.id match.');
-        console.log('[Assessment Report] Returning candidate:', JSON.stringify(candidateProfile, null, 2));
       }
     }
 
@@ -190,7 +188,7 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // 🟢 SECTION 4.2: BROADEN NATIONAL SERVICE DETECTION
+    // BROADEN NATIONAL SERVICE DETECTION
     // ============================================================
     const assessmentTitle = String(assessment?.title || '').toLowerCase().trim();
     const assessmentCode = String(assessmentType?.code || '').toLowerCase().trim();
@@ -205,7 +203,7 @@ export default async function handler(req, res) {
       assessmentTitle.includes('service recruitment');
 
     // ============================================================
-    // 🟢 SECTION 4.3 & 4.4: NORMALIZE CATEGORIES & BUILD COMPLETE REPORT
+    // NORMALIZE CATEGORIES & BUILD COMPLETE REPORT
     // ============================================================
     const reportData = getReportData(result);
     const categoryScores = normalizeCategoryScores(result);
@@ -281,7 +279,7 @@ export default async function handler(req, res) {
       assessmentDate: result.completed_at ? new Date(result.completed_at).toLocaleDateString() : 'N/A'
     };
 
-    // 🟢 SECTION 4.4: BUILD THE FINAL REPORT OBJECT
+    // BUILD THE FINAL REPORT OBJECT
     const finalReport = isNationalService 
       ? {
           ...reportData,
@@ -332,7 +330,7 @@ export default async function handler(req, res) {
         };
 
     // ============================================================
-    // 🟢 SECTION 4.5: RETURN COMPLETE RESPONSE
+    // RETURN COMPLETE RESPONSE
     // ============================================================
     return res.status(200).json({
       success: true,
