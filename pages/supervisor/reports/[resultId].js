@@ -1,5 +1,5 @@
-// pages/supervisor/reports/[resultId].js - FRONTEND NATIONAL SERVICE FIX
-// FIXED: Constructs a complete report object with candidateInfo for NationalServiceReport.
+// pages/supervisor/reports/[resultId].js - FINAL FRONTEND AUTH FIX
+// FIXED: Now sends the Supabase access token in the Authorization header.
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -42,8 +42,24 @@ export default function SupervisorReportView() {
 
         setIsAuthorized(true);
 
-        // Fetch the report from the API (Now returns candidate at top level)
-        const response = await fetch(`/api/assessment-report/${resultId}`);
+        // ============================================================
+        // 🟢 CRITICAL FIX: Inject the Authorization Bearer Token
+        // ============================================================
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData?.session?.access_token;
+
+        if (!token) {
+          throw new Error('No active session token found. Please sign in again.');
+        }
+
+        const response = await fetch(`/api/assessment-report/${resultId}`, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+
         const data = await response.json();
 
         if (!data.success) {
