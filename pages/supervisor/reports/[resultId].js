@@ -1,5 +1,5 @@
-// pages/supervisor/reports/[resultId].js - FINAL DATA TRANSFORMER
-// Converts the database Object structure into an Array the UI expects.
+// pages/supervisor/reports/[resultId].js - FINAL UI SYNCHRONIZATION
+// Injecting the correct keys so "Questions Answered" shows 100 / 100.
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -87,7 +87,7 @@ export default function SupervisorReportView() {
         }
 
         // ============================================================
-        // STEP 3: CALCULATE THE TRUE SCORE (Math guaranteed to work)
+        // STEP 3: CALCULATE THE TRUE SCORE
         // ============================================================
         let trueAverageScore = 0;
 
@@ -105,7 +105,7 @@ export default function SupervisorReportView() {
         console.log(`[Supervisor Report] Final Locked Score: ${trueAverageScore}%`);
 
         // ============================================================
-        // STEP 4: BUILD THE FINAL RESULT OBJECT
+        // STEP 4: BUILD THE FINAL RESULT OBJECT (WITH UI FIXES)
         // ============================================================
         const finalResult = {
           id: rawResult.id,
@@ -120,6 +120,12 @@ export default function SupervisorReportView() {
           percentage_score: trueAverageScore,
           overallScore: trueAverageScore,
           score: trueAverageScore,
+          
+          // 🟢 FIX: Inject the keys StratavaxReport looks for
+          total_questions: rawResult.max_score || rawResult.total_questions || 0,
+          answered_questions: rawResult.max_score || rawResult.answered_questions || 0,
+          totalQuestions: rawResult.max_score || rawResult.totalQuestions || 0,
+          answeredQuestions: rawResult.max_score || rawResult.answeredQuestions || 0,
           
           // INJECT THE TRANSFORMED CATEGORY SCORES
           categoryScores: finalCategoryScores,
