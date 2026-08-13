@@ -1,5 +1,5 @@
-// pages/api/supervisor/dashboard.js - FULLY CORRECTED VERSION
-// FIXED: Uses isReportableResult to include valid results even if completed_at is null.
+// pages/api/supervisor/dashboard.js - PERMANENT SCORE SYNCHRONIZATION
+// FIXED: Calculates true score from category_scores instead of raw percentage_score.
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -30,23 +30,55 @@ function getReportData(result) {
   return {};
 }
 
-// 🟢 SECTION 5.1: ADD HELPER FUNCTIONS
-function hasReportData(result) {
+// 🟢 SECTION 5.1: NORMALIZE CATEGORY SCORES
+function normalizeCategoryScores(result) {
   const reportData = getReportData(result);
-  return reportData && Object.keys(reportData).length > 0;
+
+  // Try to find category_scores in various places
+  const rawCategories = 
+    result?.category_scores ||
+    reportData?.category_scores ||
+    reportData?.categoryBreakdown ||
+    reportData?.categoryScores ||
+    result?.categoryScores;
+
+  // If it's an Object (like Leadership Assessment), convert to Array
+  if (rawCategories && typeof rawCategories === 'object' && !Array.isArray(rawCategories)) {
+    return Object.entries(rawCategories).map(([category, data]) => ({
+      category: category,
+      percentage: Math.round(Number(data?.percentage || 0)),
+      maxScore: data?.maxPossible || data?.total || data?.maxScore || 0,
+      score: data?.score || 0
+    }));
+  }
+
+  // If it's already an Array, map it safely
+  if (Array.isArray(rawCategories)) {
+    return rawCategories.map((cat) => ({
+      category: cat.category || cat.name || '',
+      percentage: Math.round(Number(cat.percentage || cat.score || 0)),
+      maxScore: cat.maxScore || cat.maxPossible || cat.total || 0,
+      score: cat.score || 0
+    }));
+  }
+
+  return [];
 }
 
-function isReportableResult(result) {
-  if (!result || result.is_valid === false) return false;
+// 🟢 SECTION 5.2: CALCULATE TRUE ASSESSMENT SCORE
+function calculateTrueAssessmentScore(result) {
+  const finalCategoryScores = normalizeCategoryScores(result);
 
-  return (
-    result.completed_at !== null ||
-    result.completed_at !== undefined ||
-    safeNumber(result.percentage_score) > 0 ||
-    hasReportData(result) ||
-    String(result.status || '').toLowerCase() === 'completed' ||
-    result.result_id
-  );
+  if (finalCategoryScores.length > 0) {
+    const validScores = finalCategoryScores.filter((cat) => Number(cat.percentage || 0) > 0);
+    if (validScores.length > 0) {
+      const sum = validScores.reduce((acc, cat) => acc + Number(cat.percentage || 0), 0);
+      return Math.round(sum / validScores.length);
+    }
+  }
+
+  // Fallback: Use raw percentage_score only if categories are missing
+  return Math.round(safeNumber(result?.percentage_score || result?.score || result?.overallScore || 0));
 }
 
 function getNationalServiceScores(result) {
@@ -111,6 +143,7 @@ function calculateSubScores(categoryScores) {
   };
 }
 
+// 🟢 RECOMMENDATION HELPER
 function calculateNationalServiceRecommendation(workplaceReadiness, intellectualCapability, overallScore) {
   const workplace = safeNumber(workplaceReadiness);
   const intellectual = safeNumber(intellectualCapability);
@@ -157,7 +190,6 @@ export default async function handler(req, res) {
     let allCandidates = [];
     const candidateIdsSet = new Set();
 
-    // 1. Fetch via the new Junction Table (candidate_supervisors)
     const { data: junctionAssignments, error: junctionError } = await supabase
       .from('candidate_supervisors')
       .select('candidate_id')
@@ -170,7 +202,6 @@ export default async function handler(req, res) {
           .from('candidate_profiles')
           .select('id, full_name, email, university, programme, graduation_year, preferred_department')
           .in('id', junctionIds);
-        
         if (!junctionCandError && junctionCandidates) {
           junctionCandidates.forEach(c => {
             if (!candidateIdsSet.has(c.id)) {
@@ -182,7 +213,6 @@ export default async function handler(req, res) {
       }
     }
 
-    // 2. Fetch via the Legacy supervisor_id field (for backward compatibility)
     const { data: legacyCandidates, error: legacyError } = await supabase
       .from('candidate_profiles')
       .select('id, full_name, email, university, programme, graduation_year, preferred_department')
@@ -215,7 +245,6 @@ export default async function handler(req, res) {
       return res.status(500).json({ success: false, error: caError.message });
     }
 
-    // Handle potential ID mismatches
     const candidateResultIds = [...new Set(
       candidates.flatMap(c => [c.id, c.user_id]).filter(Boolean)
     )];
@@ -272,45 +301,23 @@ export default async function handler(req, res) {
     // ============================================================
     candidates.forEach(c => {
       const userAssessments = caMap[c.id] || [];
+      const completed = userAssessments.filter(a => a.status === 'completed');
       const inProgress = userAssessments.filter(a => a.status === 'in_progress');
+      
+      totalCompleted += completed.length;
       totalInProgress += inProgress.length;
 
-      // 🟢 SECTION 5.2: REPLACE STRICT completed_at FILTER
-      // First, get all results for this candidate
-      const candidateResults = results.filter(r => r.user_id === c.id);
-      
-      // Filter using the new isReportableResult() helper
-      const completedResults = candidateResults.filter(r => isReportableResult(r));
-
-      // 🟢 SECTION 6: DEBUG LOGGING FOR EXCLUDED RESULTS
-      candidateResults.forEach(r => {
-        if (!isReportableResult(r)) {
-          console.log('[EXCLUDED RESULT]', {
-            candidate: c.full_name,
-            resultId: r.id,
-            assessmentId: r.assessment_id,
-            completed_at: r.completed_at,
-            status: r.status,
-            percentage_score: r.percentage_score,
-            hasReportData: hasReportData(r),
-            is_valid: r.is_valid
-          });
-        }
-      });
-
-      totalCompleted += completedResults.length;
-
-      const completedAssessments = completedResults.map(r => {
-        const assessment = assessmentMap[r.assessment_id];
+      const completedAssessments = completed.map(ca => {
+        const r = results.find(res => res.id === ca.result_id);
+        const assessment = assessmentMap[ca.assessment_id];
         const type = assessment ? typeMap[assessment.assessment_type_id] : null;
 
-        // 🟢 SECTION 5.3: ROBUST NATIONAL SERVICE DETECTION
         const assessmentTitle = String(assessment?.title || '').toLowerCase().trim();
         const assessmentCode = String(type?.code || '').toLowerCase().trim();
         const assessmentTypeName = String(type?.name || '').toLowerCase().trim();
 
         const isNationalService = 
-          r.assessment_id === NATIONAL_SERVICE_ASSESSMENT_ID ||
+          ca.assessment_id === NATIONAL_SERVICE_ASSESSMENT_ID ||
           assessmentCode.includes('national') ||
           assessmentTypeName.includes('national service') ||
           assessmentTitle === 'national service recruitment assessment' ||
@@ -318,10 +325,11 @@ export default async function handler(req, res) {
           assessmentTitle.includes('nationalservice') ||
           assessmentTitle.includes('service recruitment');
 
-        // 🟢 SECTION 5.4: NORMALIZE SCORES AND RECOMMENDATION
+        // Normalize Scores
         let workplace = 0;
         let intellectual = 0;
         let overallScore = 0;
+        let finalCategoryScores = [];
 
         if (isNationalService) {
           const nsScores = getNationalServiceScores(r);
@@ -331,22 +339,21 @@ export default async function handler(req, res) {
         } else {
           workplace = safeNumber(r?.workplace_readiness || 0);
           intellectual = safeNumber(r?.intellectual_capability || 0);
-          overallScore = safeNumber(r?.percentage_score || 0);
+          // 🟢 SECTION 5.3: USE THE TRUE SCORE ENGINE
+          overallScore = calculateTrueAssessmentScore(r);
+          finalCategoryScores = normalizeCategoryScores(r);
         }
 
-        // Fallback to category_scores if dimensions are missing
         if (workplace === 0 && intellectual === 0 && r?.category_scores) {
           const calculated = calculateSubScores(r.category_scores);
           workplace = calculated.workplaceReadiness;
           intellectual = calculated.intellectualCapability;
         }
 
-        // Ensure overallScore is never 0 if sub-scores exist
         if (overallScore === 0 && (workplace > 0 || intellectual > 0)) {
           overallScore = Math.round((workplace + intellectual) / 2);
         }
 
-        // CALCULATE RECOMMENDATION FROM CORRECTED SCORES
         let recommendation = 'Not Available';
         if (isNationalService) {
           recommendation = calculateNationalServiceRecommendation(workplace, intellectual, overallScore);
@@ -358,34 +365,48 @@ export default async function handler(req, res) {
           else recommendation = 'Not Recommended';
         }
 
+        console.log('[NS RECOMMENDATION CHECK]', {
+          candidate: c.full_name,
+          resultId: r?.id,
+          workplace,
+          intellectual,
+          overallScore,
+          storedRecommendation: r?.recommendation,
+          calculatedRecommendation: recommendation,
+          reportRecommendation: getReportData(r)?.recommendation
+        });
+
         if (isNationalService) nationalServiceReports++;
 
-        // 🟢 SECTION 5.5: RETURN COMPLETE SCORE ALIASES
+        // 🟢 SECTION 5.4: RETURN COMPLETE SCORE ALIASES AND SOURCE DATA
         return {
-          assessment_id: r.assessment_id,
-          result_id: r.id,
+          assessment_id: ca.assessment_id,
+          result_id: ca.result_id,
           title: assessment?.title || 'Assessment',
           assessment_code: type?.code || 'general',
           score: overallScore,
           percentage_score: overallScore,
           overallScore: overallScore,
+          category_scores: finalCategoryScores,
+          categoryScores: finalCategoryScores,
+          report_data: getReportData(r),
           isNationalService: isNationalService,
           workplace_readiness: workplace,
           intellectual_capability: intellectual,
-          completed_at: r.completed_at,
+          completed_at: ca.completed_at,
           recommendation: recommendation
         };
       });
 
       const stats = {
-        completed: completedResults.length,
+        completed: completed.length,
         inProgress: inProgress.length,
         unblocked: userAssessments.filter(a => a.status === 'unblocked').length,
         blocked: userAssessments.filter(a => a.status === 'blocked').length,
         notStarted: userAssessments.filter(a => a.status === 'not_started').length
       };
 
-      // 🟢 SECTION 5.6: PUSH COMPLETE ROWS TO ALL REPORTS
+      // 🟢 SECTION 5.5: UPDATE ALL REPORTS PUSH
       completedAssessments.forEach(a => {
         allReports.push({
           result_id: a.result_id,
@@ -400,6 +421,9 @@ export default async function handler(req, res) {
           score: a.score || 0,
           percentage_score: a.percentage_score || 0,
           overallScore: a.overallScore || 0,
+          category_scores: a.category_scores || [],
+          categoryScores: a.categoryScores || [],
+          report_data: a.report_data || {},
           is_national_service: a.isNationalService || false,
           workplace_readiness: a.workplace_readiness || 0,
           intellectual_capability: a.intellectual_capability || 0,
@@ -425,15 +449,6 @@ export default async function handler(req, res) {
 
     const nationalServiceReportsList = allReports.filter(r => r.is_national_service === true);
     const otherReportsList = allReports.filter(r => r.is_national_service === false);
-
-    // 🟢 SECTION 6: REPORT SUMMARY LOG
-    console.log('[REPORT SUMMARY]', {
-      candidates: candidates.length,
-      resultRows: results ? results.length : 0,
-      allReports: allReports.length,
-      nsReports: nationalServiceReportsList.length,
-      otherReports: otherReportsList.length
-    });
 
     return res.status(200).json({
       success: true,
