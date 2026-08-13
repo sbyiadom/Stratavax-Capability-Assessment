@@ -1,5 +1,5 @@
-// pages/supervisor/index.js - FINAL DASHBOARD SYNC
-// Forces the Dashboard List to recalculate true scores the same way the Report does.
+// pages/supervisor/index.js - FINAL SYNCHRONIZED SCORING ENGINE
+// The Dashboard List now mirrors the exact scoring logic of the Detailed Report.
 
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/router';
@@ -49,29 +49,28 @@ function calculateNationalServiceRecommendation(workplace, intellectual, overall
 }
 
 // ============================================================
-// 🟢 SCORE CALCULATION ENGINE (Shared between Dashboard & Report)
+// 🟢 SHARED SCORE CALCULATION ENGINE (Used by Dashboard & Report)
 // ============================================================
-function calculateTrueScore(result) {
+function calculateTrueScore(report) {
   // 1. If it's National Service, use its specific dimension logic
-  if (result.is_national_service) {
-    const workplace = Number(result.workplace_readiness || 0);
-    const intellectual = Number(result.intellectual_capability || 0);
+  if (report.is_national_service || report.isNationalService) {
+    const workplace = Number(report.workplace_readiness || 0);
+    const intellectual = Number(report.intellectual_capability || 0);
     if (workplace > 0 || intellectual > 0) {
       return Math.round((workplace + intellectual) / 2);
     }
   }
 
-  // 2. Check for Stratavax category_scores object
-  const rawCategories = result.category_scores || result.report_data?.category_scores || result.report_data?.categoryBreakdown;
+  // 2. Attempt to find category_scores inside the object
+  const rawCategories = report.category_scores || report.report_data?.category_scores || report.report_data?.categoryBreakdown;
   
+  // Convert database Object into an Array and calculate average
   if (rawCategories && typeof rawCategories === 'object' && !Array.isArray(rawCategories)) {
-    // Convert the object to an array
     const categories = Object.entries(rawCategories).map(([category, data]) => ({
       category,
       percentage: Math.round(data.percentage || 0)
     }));
 
-    // Calculate the average percentage
     const validScores = categories.filter(cat => cat.percentage > 0);
     if (validScores.length > 0) {
       const sum = validScores.reduce((acc, cat) => acc + cat.percentage, 0);
@@ -79,8 +78,19 @@ function calculateTrueScore(result) {
     }
   }
 
-  // 3. Fallback: Return the raw database score
-  return Math.round(Number(result.score || result.percentage_score || result.overallScore || 0));
+  // 3. If it's already an array (standard format), calculate the average
+  if (Array.isArray(rawCategories) && rawCategories.length > 0) {
+    const validScores = rawCategories
+      .map(c => Number(c.percentage || c.score || 0))
+      .filter(s => s > 0);
+    if (validScores.length > 0) {
+      const sum = validScores.reduce((a, b) => a + b, 0);
+      return Math.round(sum / validScores.length);
+    }
+  }
+
+  // 4. Fallback: Return the raw database score if we can't find categories
+  return Math.round(Number(report.score || report.percentage_score || report.overallScore || 0));
 }
 
 // ============================================================
@@ -349,7 +359,7 @@ export default function SupervisorDashboard() {
 
   const filteredCandidates = useMemo(() => {
     return programFilteredCandidates.filter(c => {
-      // 🟢 Calculate the score using the same engine as the report
+      // 🟢 Use the shared calculateTrueScore for filtering
       const trueScore = calculateTrueScore(c);
       return trueScore >= Number(minScore) && trueScore <= Number(maxScore);
     });
@@ -709,7 +719,7 @@ function OtherAssessmentsTab({ reports, onViewReport }) {
             </thead>
             <tbody>
               {reports.map((report) => {
-                // 🟢 Calculate true score using the shared engine
+                // 🟢 Use the shared calculateTrueScore function
                 const trueScore = calculateTrueScore(report);
 
                 return (
