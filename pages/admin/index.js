@@ -1,5 +1,5 @@
-// pages/admin/index.js - TRUE INFOGRAPHIC DASHBOARD
-// Uses 641 candidates, shows university & program analytics, and diverse charts.
+// pages/admin/index.js - TRUE INFOGRAPHIC DASHBOARD (FIXED SCORES & BAR CHARTS)
+// FIXED: Joins candidates with real scores from assessment_results. Added Bar Charts for University/Program Performance.
 
 import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/router";
@@ -39,46 +39,7 @@ ChartJS.register(
 import Select from 'react-select';
 
 // ============================================================
-// 🟢 SCORE CALCULATION ENGINE
-// ============================================================
-function calculateTrueScore(report) {
-  if (report.is_national_service || report.isNationalService) {
-    const workplace = Number(report.workplace_readiness || 0);
-    const intellectual = Number(report.intellectual_capability || 0);
-    if (workplace > 0 || intellectual > 0) {
-      return Math.round((workplace + intellectual) / 2);
-    }
-  }
-
-  const rawCategories = report.category_scores || report.report_data?.category_scores || report.report_data?.categoryBreakdown;
-  
-  if (rawCategories && typeof rawCategories === 'object' && !Array.isArray(rawCategories)) {
-    const categories = Object.entries(rawCategories).map(([category, data]) => ({
-      category,
-      percentage: Math.round(data.percentage || 0)
-    }));
-    const validScores = categories.filter(cat => cat.percentage > 0);
-    if (validScores.length > 0) {
-      const sum = validScores.reduce((acc, cat) => acc + cat.percentage, 0);
-      return Math.round(sum / validScores.length);
-    }
-  }
-
-  if (Array.isArray(rawCategories) && rawCategories.length > 0) {
-    const validScores = rawCategories
-      .map(c => Number(c.percentage || c.score || 0))
-      .filter(s => s > 0);
-    if (validScores.length > 0) {
-      const sum = validScores.reduce((a, b) => a + b, 0);
-      return Math.round(sum / validScores.length);
-    }
-  }
-
-  return Math.round(Number(report.score || report.percentage_score || report.overallScore || 0));
-}
-
-// ============================================================
-// 🟢 THE PROGRAM NORMALIZATION ENGINE
+// 🟢 SCORE CALCULATION ENGINE & GROUPING HELPERS
 // ============================================================
 const ABBREVIATIONS = {
   'bsc': 'BSc', 'b.sc': 'BSc', 'b. sc': 'BSc', 'b.s.c': 'BSc',
@@ -87,10 +48,14 @@ const ABBREVIATIONS = {
   'elec': 'Electrical', 'electronics': 'Electronics',
   'mech': 'Mechanical', 'mechanical': 'Mechanical',
   'admin': 'Administration', 'adminis': 'Administration',
+  'knust': 'Kwame Nkrumah University of Science and Technology',
+  'ug': 'University of Ghana',
+  'umat': 'University of Mines and Technology',
+  'ucc': 'University of Cape Coast',
   'of': 'of', 'and': 'and', 'in': 'in', 'with': 'with'
 };
 
-function normalizeProgramName(raw) {
+function normalizeText(raw, abbreviations = ABBREVIATIONS) {
   if (!raw || typeof raw !== 'string') return '';
   let cleaned = raw
     .toLowerCase()
@@ -98,14 +63,14 @@ function normalizeProgramName(raw) {
     .replace(/\s+/g, ' ')
     .trim();
   const words = cleaned.split(' ');
-  const mappedWords = words.map(word => ABBREVIATIONS[word] || word.charAt(0).toUpperCase() + word.slice(1));
+  const mappedWords = words.map(word => abbreviations[word] || word.charAt(0).toUpperCase() + word.slice(1));
   return mappedWords.join(' ');
 }
 
-function getUniqueMasterNames(rawPrograms) {
-  if (!rawPrograms || rawPrograms.length === 0) return { groups: [], masterToRawMap: {} };
+function getUniqueMasterNames(rawItems, abbreviations) {
+  if (!rawItems || rawItems.length === 0) return { groups: [], masterToRawMap: {} };
   const normalizedMap = {};
-  rawPrograms.forEach(p => { normalizedMap[p] = normalizeProgramName(p); });
+  rawItems.forEach(p => { normalizedMap[p] = normalizeText(p, abbreviations); });
   const uniqueCleanNames = [...new Set(Object.values(normalizedMap))];
   const groups = [];
   const processed = new Set();
@@ -128,8 +93,8 @@ function getUniqueMasterNames(rawPrograms) {
   const masterToRawMap = {};
   groups.forEach(master => {
     masterToRawMap[master] = [];
-    rawPrograms.forEach(raw => {
-      const clean = normalizeProgramName(raw);
+    rawItems.forEach(raw => {
+      const clean = normalizeText(raw, abbreviations);
       const words1 = master.split(' ');
       const words2 = clean.split(' ');
       const intersection = words1.filter(w => words2.includes(w)).length;
@@ -204,68 +169,93 @@ export default function AdminDashboard() {
   const [recentResults, setRecentResults] = useState([]);
 
   // ============================================================
-  // 🟢 INFOGRAPHIC ANALYTICS CALCULATIONS (WHOLE DATASET)
+  // 🟢 INFOGRAPHIC ANALYTICS CALCULATIONS
   // ============================================================
   
-  // 1. Overall Stats (Based on ALL candidates)
+  // 1. Join Scores to Candidates (Fixes the 0% bug)
+  const candidatesWithScores = useMemo(() => {
+    // Create a map of userId -> score from recentResults
+    const scoreMap = {};
+    recentResults.forEach(r => {
+      // Only store the score if we don't have one yet (keep the latest one)
+      if (!scoreMap[r.user_id]) {
+        scoreMap[r.user_id] = toNumber(r.percentage_score);
+      }
+    });
+
+    return allCandidates.map(c => ({
+      ...c,
+      // If we don't have a result, default score is 0
+      score: scoreMap[c.id] || 0,
+      hasResult: !!scoreMap[c.id]
+    }));
+  }, [allCandidates, recentResults]);
+
+  // 2. Group Normalization (University & Program)
+  const rawUniversities = useMemo(() => candidatesWithScores.map(c => c.university).filter(Boolean), [candidatesWithScores]);
+  const rawPrograms = useMemo(() => candidatesWithScores.map(c => c.programme).filter(Boolean), [candidatesWithScores]);
+
+  const uniGroup = useMemo(() => getUniqueMasterNames(rawUniversities, ABBREVIATIONS), [rawUniversities]);
+  const progGroup = useMemo(() => getUniqueMasterNames(rawPrograms, ABBREVIATIONS), [rawPrograms]);
+
+  // 3. University Analytics (Grouped & Scored)
+  const universityAnalytics = useMemo(() => {
+    const map = {};
+    candidatesWithScores.forEach(c => {
+      if (!c.university) return;
+      // Map raw university to Master name
+      let master = c.university;
+      for (const [m, rawList] of Object.entries(uniGroup.masterToRawMap)) {
+        if (rawList.includes(c.university)) { master = m; break; }
+      }
+      if (!map[master]) map[master] = { candidates: 0, scoreTotal: 0, programs: new Set() };
+      map[master].candidates += 1;
+      map[master].scoreTotal += c.score;
+      if (c.programme) map[master].programs.add(c.programme);
+    });
+    return Object.entries(map).map(([name, data]) => ({
+      name,
+      candidates: data.candidates,
+      avgScore: data.candidates > 0 ? Math.round(data.scoreTotal / data.candidates) : 0,
+      programs: data.programs.size
+    })).sort((a, b) => b.candidates - a.candidates);
+  }, [candidatesWithScores, uniGroup.masterToRawMap]);
+
+  // 4. Program Analytics (Grouped & Scored)
+  const programAnalytics = useMemo(() => {
+    const map = {};
+    candidatesWithScores.forEach(c => {
+      if (!c.programme) return;
+      let master = c.programme;
+      for (const [m, rawList] of Object.entries(progGroup.masterToRawMap)) {
+        if (rawList.includes(c.programme)) { master = m; break; }
+      }
+      if (!map[master]) map[master] = { candidates: 0, scoreTotal: 0 };
+      map[master].candidates += 1;
+      map[master].scoreTotal += c.score;
+    });
+    return Object.entries(map).map(([name, data]) => ({
+      name,
+      candidates: data.candidates,
+      avgScore: data.candidates > 0 ? Math.round(data.scoreTotal / data.candidates) : 0
+    })).sort((a, b) => b.candidates - a.candidates);
+  }, [candidatesWithScores, progGroup.masterToRawMap]);
+
+  // 5. Global Stats (Now accurate)
   const globalAverageScore = useMemo(() => {
-    const scores = allCandidates.map(c => calculateTrueScore(c)).filter(s => s > 0);
+    const scores = candidatesWithScores.map(c => c.score).filter(s => s > 0);
     if (scores.length === 0) return 0;
     return Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
-  }, [allCandidates]);
+  }, [candidatesWithScores]);
 
   const globalPassRate = useMemo(() => {
-    const scores = allCandidates.map(c => calculateTrueScore(c));
+    const scores = candidatesWithScores.map(c => c.score);
     if (scores.length === 0) return 0;
     const passed = scores.filter(s => s >= 70).length;
     return Math.round((passed / scores.length) * 100);
-  }, [allCandidates]);
+  }, [candidatesWithScores]);
 
-  // 2. University Analytics (Count, Avg Score, Program Count)
-  const universityAnalytics = useMemo(() => {
-    const map = {};
-    allCandidates.forEach(c => {
-      if (!c.university) return;
-      if (!map[c.university]) {
-        map[c.university] = { candidates: 0, scoreTotal: 0, programs: new Set() };
-      }
-      map[c.university].candidates += 1;
-      map[c.university].scoreTotal += calculateTrueScore(c);
-      if (c.programme) map[c.university].programs.add(c.programme);
-    });
-    
-    return Object.entries(map)
-      .map(([name, data]) => ({
-        name,
-        candidates: data.candidates,
-        avgScore: Math.round(data.scoreTotal / data.candidates),
-        programs: data.programs.size
-      }))
-      .sort((a, b) => b.candidates - a.candidates);
-  }, [allCandidates]);
-
-  // 3. Program Analytics (Avg Score)
-  const programAnalytics = useMemo(() => {
-    const map = {};
-    allCandidates.forEach(c => {
-      if (!c.programme) return;
-      if (!map[c.programme]) {
-        map[c.programme] = { candidates: 0, scoreTotal: 0 };
-      }
-      map[c.programme].candidates += 1;
-      map[c.programme].scoreTotal += calculateTrueScore(c);
-    });
-    
-    return Object.entries(map)
-      .map(([name, data]) => ({
-        name,
-        candidates: data.candidates,
-        avgScore: Math.round(data.scoreTotal / data.candidates)
-      }))
-      .sort((a, b) => b.candidates - a.candidates);
-  }, [allCandidates]);
-
-  // 4. Pie Chart Data (University Distribution)
+  // 6. Pie Charts
   const universityPieData = useMemo(() => {
     const top8 = universityAnalytics.slice(0, 8);
     const othersCount = universityAnalytics.slice(8).reduce((sum, u) => sum + u.candidates, 0);
@@ -275,7 +265,6 @@ export default function AdminDashboard() {
     return { labels, data };
   }, [universityAnalytics]);
 
-  // 5. Pie Chart Data (Program Distribution)
   const programPieData = useMemo(() => {
     const top8 = programAnalytics.slice(0, 8);
     const othersCount = programAnalytics.slice(8).reduce((sum, p) => sum + p.candidates, 0);
@@ -287,26 +276,16 @@ export default function AdminDashboard() {
 
   const COLORS = ['#1a237e', '#2e7d32', '#f57c00', '#c62828', '#1565c0', '#4a148c', '#00695c', '#bf360c', '#78909c'];
 
-  // 6. Program Normalization for Filters
-  const rawPrograms = useMemo(() => {
-    return allCandidates.map(c => c.programme).filter(Boolean);
-  }, [allCandidates]);
-
-  const { groups: uniqueProgramMasterNames, masterToRawMap } = useMemo(() => {
-    return getUniqueMasterNames(rawPrograms);
-  }, [rawPrograms]);
-
+  // 7. Filters
   const universityOptions = useMemo(() => {
     const map = {};
-    allCandidates.forEach(c => {
-      if (c.university) map[c.university] = true;
-    });
+    candidatesWithScores.forEach(c => { if (c.university) map[c.university] = true; });
     return Object.keys(map).sort().map(uni => ({ label: uni, value: uni }));
-  }, [allCandidates]);
+  }, [candidatesWithScores]);
 
   const programOptions = useMemo(() => {
-    return uniqueProgramMasterNames.map(p => ({ label: p, value: p }));
-  }, [uniqueProgramMasterNames]);
+    return progGroup.groups.map(p => ({ label: p, value: p }));
+  }, [progGroup]);
 
   const resetFilters = () => {
     setSelectedUniversityOption(null);
@@ -468,12 +447,12 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* 🟢 NEW INFOGRAPHIC STATS CARDS (Global) */}
+        {/* 🟢 INFOGRAPHIC STATS CARDS */}
         <div style={styles.statsRow}>
           <StatCard icon="👥" label="Total Candidates" value={stats.totalCandidates} />
           <StatCard icon="📊" label="Average Score" value={`${globalAverageScore}%`} />
           <StatCard icon="✅" label="Pass Rate (≥70%)" value={`${globalPassRate}%`} />
-          <StatCard icon="📚" label="Total Programs" value={uniqueProgramMasterNames.length} />
+          <StatCard icon="📚" label="Total Programs" value={progGroup.groups.length} />
           <StatCard icon="📋" label="Active Assessments" value={stats.totalAssessments} />
           <StatCard icon="✓" label="Completed" value={stats.completedAssessments} />
           <StatCard icon="◉" label="In Progress" value={stats.inProgressSessions} />
@@ -527,8 +506,8 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* 🟢 INFOGRAPHIC CHARTS GRID (University & Program Pie Charts) */}
-        <div style={styles.chartGrid}>
+        {/* 🟢 PIE CHARTS GRID */}
+        <div style={styles.pieChartGrid}>
           <div style={styles.chartCard}>
             <h4 style={styles.chartTitle}>University Distribution (By Candidates)</h4>
             <div style={{ height: '250px', position: 'relative' }}>
@@ -556,55 +535,51 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* 🟢 DETAILED ANALYTICS TABLES */}
-        <div style={styles.analyticsTablesGrid}>
-          <div style={styles.analyticsCard}>
-            <h4 style={styles.analyticsTitle}>University Performance Overview</h4>
-            <div style={styles.scrollTable}>
-              <table style={styles.table}>
-                <thead>
-                  <tr>
-                    <th style={styles.th}>University</th>
-                    <th style={styles.th}>Candidates</th>
-                    <th style={styles.th}>Avg Score</th>
-                    <th style={styles.th}>Programs</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {universityAnalytics.slice(0, 15).map((uni, idx) => (
-                    <tr key={idx} style={styles.tr}>
-                      <td style={styles.td}>{uni.name}</td>
-                      <td style={styles.td}>{uni.candidates}</td>
-                      <td style={styles.td}>{uni.avgScore}%</td>
-                      <td style={styles.td}>{uni.programs}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+        {/* 🟢 PERFORMANCE BAR CHARTS (Replaces Tables) */}
+        <div style={styles.barChartGrid}>
+          <div style={styles.chartCard}>
+            <h4 style={styles.chartTitle}>Top 15 Universities (By Average Score)</h4>
+            <div style={{ height: '400px' }}>
+              <Bar
+                data={{
+                  labels: universityAnalytics.slice(0, 15).map(u => u.name),
+                  datasets: [{
+                    label: 'Avg Score %',
+                    data: universityAnalytics.slice(0, 15).map(u => u.avgScore),
+                    backgroundColor: '#1a237e',
+                    borderRadius: 4,
+                  }]
+                }}
+                options={{
+                  indexAxis: 'y',
+                  maintainAspectRatio: false,
+                  plugins: { legend: { display: false } },
+                  scales: { x: { beginAtZero: true, max: 100 } }
+                }}
+              />
             </div>
           </div>
 
-          <div style={styles.analyticsCard}>
-            <h4 style={styles.analyticsTitle}>Program Performance Overview</h4>
-            <div style={styles.scrollTable}>
-              <table style={styles.table}>
-                <thead>
-                  <tr>
-                    <th style={styles.th}>Programme</th>
-                    <th style={styles.th}>Candidates</th>
-                    <th style={styles.th}>Avg Score</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {programAnalytics.slice(0, 15).map((prog, idx) => (
-                    <tr key={idx} style={styles.tr}>
-                      <td style={styles.td}>{prog.name}</td>
-                      <td style={styles.td}>{prog.candidates}</td>
-                      <td style={styles.td}>{prog.avgScore}%</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          <div style={styles.chartCard}>
+            <h4 style={styles.chartTitle}>Top 15 Programs (By Average Score)</h4>
+            <div style={{ height: '400px' }}>
+              <Bar
+                data={{
+                  labels: programAnalytics.slice(0, 15).map(p => p.name),
+                  datasets: [{
+                    label: 'Avg Score %',
+                    data: programAnalytics.slice(0, 15).map(p => p.avgScore),
+                    backgroundColor: '#2e7d32',
+                    borderRadius: 4,
+                  }]
+                }}
+                options={{
+                  indexAxis: 'y',
+                  maintainAspectRatio: false,
+                  plugins: { legend: { display: false } },
+                  scales: { x: { beginAtZero: true, max: 100 } }
+                }}
+              />
             </div>
           </div>
         </div>
@@ -775,7 +750,7 @@ const styles = {
   refreshButton: { background: "#0a1929", color: "white", border: "none", padding: "10px 20px", borderRadius: "8px", cursor: "pointer", fontSize: "14px", fontWeight: 700 },
   logoutButton: { background: "#f44336", color: "white", border: "none", padding: "10px 20px", borderRadius: "8px", cursor: "pointer", fontSize: "14px", fontWeight: 700 },
   
-  // 🟢 UPDATED STATS GRID
+  // 🟢 STATS GRID
   statsRow: {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
@@ -796,7 +771,7 @@ const styles = {
   statLabel: { fontSize: '11px', color: '#718096', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' },
   statValue: { fontSize: '22px', fontWeight: 800, color: '#0a1929' },
 
-  // 🟢 FILTERS BAR STYLES
+  // 🟢 FILTERS BAR
   filtersBar: {
     background: 'white',
     borderRadius: '12px',
@@ -826,107 +801,3 @@ const styles = {
   },
   filterLabelSmall: {
     fontSize: '12px',
-    fontWeight: '600',
-    color: '#475569',
-    marginRight: '6px'
-  },
-  scoreFilterGroup: {
-    display: 'flex',
-    alignItems: 'flex-end',
-    gap: '12px'
-  },
-  scoreInputWrapper: {
-    display: 'flex',
-    alignItems: 'center'
-  },
-  filterInputSmall: {
-    padding: '6px 8px',
-    borderRadius: '6px',
-    border: '1px solid #e2e8f0',
-    fontSize: '12px',
-    background: 'white',
-    width: '60px',
-    textAlign: 'center'
-  },
-  resetFilterButton: {
-    padding: '8px 20px',
-    background: '#f1f5f9',
-    border: '1px solid #e2e8f0',
-    borderRadius: '6px',
-    fontSize: '13px',
-    fontWeight: '600',
-    cursor: 'pointer',
-    color: '#475569',
-    marginLeft: 'auto',
-    height: '38px',
-    alignSelf: 'flex-end'
-  },
-
-  // 🟢 CHART GRID STYLES
-  chartGrid: {
-    display: 'grid',
-    gridTemplateColumns: '1fr 1fr',
-    gap: '20px',
-    marginBottom: '24px'
-  },
-  chartCard: {
-    background: 'white',
-    padding: '20px',
-    borderRadius: '12px',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
-    border: '1px solid #eef2f7'
-  },
-  chartTitle: {
-    fontSize: '16px',
-    fontWeight: '600',
-    color: '#0a1929',
-    margin: '0 0 12px 0'
-  },
-
-  // 🟢 ANALYTICS TABLES STYLES
-  analyticsTablesGrid: {
-    display: 'grid',
-    gridTemplateColumns: '1fr 1fr',
-    gap: '20px',
-    marginBottom: '30px'
-  },
-  analyticsCard: {
-    background: 'white',
-    padding: '16px',
-    borderRadius: '12px',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
-    border: '1px solid #eef2f7'
-  },
-  analyticsTitle: {
-    fontSize: '16px',
-    fontWeight: '600',
-    color: '#0a1929',
-    margin: '0 0 12px 0'
-  },
-  scrollTable: {
-    maxHeight: '300px',
-    overflowY: 'auto'
-  },
-  table: { width: '100%', borderCollapse: 'collapse', fontSize: '14px' },
-  th: { padding: '10px 12px', textAlign: 'left', background: '#f8fafc', fontWeight: '600', color: '#475569', position: 'sticky', top: 0, borderBottom: '2px solid #e2e8f0' },
-  td: { padding: '10px 12px', borderBottom: '1px solid #eef2f7' },
-  tr: { transition: 'background 0.2s' },
-
-  // ACTION CARDS
-  actionCardsGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "18px", marginBottom: "30px" },
-  actionCard: { background: "white", padding: "20px", borderRadius: "12px", textDecoration: "none", color: "inherit", display: "flex", alignItems: "center", gap: "15px", boxShadow: "0 2px 8px rgba(0,0,0,0.08)", border: "1px solid #eef2f7", cursor: "pointer" },
-  actionCardIcon: { fontSize: "32px" },
-  actionCardTitle: { margin: 0, fontSize: "16px", fontWeight: 800, color: "#0a1929" },
-  actionCardDesc: { margin: "5px 0 0", fontSize: "12px", color: "#718096", lineHeight: 1.45 },
-  sectionContainer: { marginBottom: "30px" },
-  lowerGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "20px", marginBottom: "30px" },
-  panel: { background: "white", borderRadius: "16px", padding: "22px", boxShadow: "0 4px 12px rgba(0,0,0,0.08)", border: "1px solid #eef2f7" },
-  panelTitle: { margin: "0 0 16px", fontSize: "18px", color: "#0a1929", fontWeight: 800 },
-  emptyState: { background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "10px", padding: "16px", color: "#64748b", textAlign: "center" },
-  list: { display: "flex", flexDirection: "column", gap: "10px" },
-  listItem: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", padding: "12px", border: "1px solid #e2e8f0", borderRadius: "10px", background: "#f8fafc" },
-  listTitle: { fontSize: "14px", fontWeight: 800, color: "#0f172a" },
-  listMeta: { fontSize: "12px", color: "#64748b", marginTop: "4px" },
-  dateBadge: { fontSize: "12px", color: "#334155", background: "#e2e8f0", padding: "5px 10px", borderRadius: "999px", whiteSpace: "nowrap" },
-  scoreBadge: { fontSize: "13px", color: "#166534", background: "#dcfce7", border: "1px solid #86efac", padding: "6px 12px", borderRadius: "999px", fontWeight: 800 }
-};
