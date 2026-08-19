@@ -47,7 +47,6 @@ const ABBREVIATIONS = {
   'eng': 'Engineering', 'engr': 'Engineering',
   'elec': 'Electrical', 'electronics': 'Electronics',
   'mech': 'Mechanical', 'mechanical': 'Mechanical',
-  'admin': 'Administration', 'adminis': 'Administration',
   'knust': 'Kwame Nkrumah University of Science and Technology',
   'ug': 'University of Ghana',
   'umat': 'University of Mines and Technology',
@@ -801,3 +800,28 @@ const styles = {
   },
   filterLabelSmall: {
     fontSize: '12px',
+    fontWeight: '600',
+    color: '#475569',
+    marginRight: '6px'
+  },
+  scoreFilterGroup: {
+    display: 'flex',
+    alignItems: 'flex-end',
+    gap: '12px'
+  },
+  scoreInputWrapper: {
+    display: 'flex',
+    alignItems: 'center'
+  },
+  filterInputSmall: {
+    padding: '6px 8px',
+    borderRadius: '6px',
+    border: '1px solid #e2e8f0',
+    fontSize: '12px',
+    background: 'white',
+    width: '60px',
+    textAlign: 'center'
+  },
+  resetFilterButton: {
+    padding: '8px 20px',
+    background: '#f1f5f9',
