@@ -1,5 +1,5 @@
-// pages/admin/index.js - UPGRADED WITH BEAUTIFUL TAG DROPDOWNS
-// Replaced multi-select with react-select tags.
+// pages/admin/index.js - UPGRADED WITH INFOGRAPHIC ANALYTICS & INSIGHTS
+// FIXED: Added Average Score, Passing Rate, and Score Distribution Charts.
 
 import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/router";
@@ -7,11 +7,6 @@ import Link from "next/link";
 import AppLayout from "../../components/AppLayout";
 import { supabase } from "../../supabase/client";
 import AssessmentExpiration from "../../components/admin/AssessmentExpiration";
-
-// ============================================================
-// REACT-SELECT IMPORTS (NEW)
-// ============================================================
-import Select from 'react-select';
 
 // ============================================================
 // CHART.JS IMPORTS
@@ -37,6 +32,114 @@ ChartJS.register(
   Legend,
   ArcElement
 );
+
+// ============================================================
+// REACT-SELECT IMPORTS
+// ============================================================
+import Select from 'react-select';
+
+// ============================================================
+// 🟢 SCORE CALCULATION ENGINE
+// ============================================================
+function calculateTrueScore(report) {
+  if (report.is_national_service || report.isNationalService) {
+    const workplace = Number(report.workplace_readiness || 0);
+    const intellectual = Number(report.intellectual_capability || 0);
+    if (workplace > 0 || intellectual > 0) {
+      return Math.round((workplace + intellectual) / 2);
+    }
+  }
+
+  const rawCategories = report.category_scores || report.report_data?.category_scores || report.report_data?.categoryBreakdown;
+  
+  if (rawCategories && typeof rawCategories === 'object' && !Array.isArray(rawCategories)) {
+    const categories = Object.entries(rawCategories).map(([category, data]) => ({
+      category,
+      percentage: Math.round(data.percentage || 0)
+    }));
+    const validScores = categories.filter(cat => cat.percentage > 0);
+    if (validScores.length > 0) {
+      const sum = validScores.reduce((acc, cat) => acc + cat.percentage, 0);
+      return Math.round(sum / validScores.length);
+    }
+  }
+
+  if (Array.isArray(rawCategories) && rawCategories.length > 0) {
+    const validScores = rawCategories
+      .map(c => Number(c.percentage || c.score || 0))
+      .filter(s => s > 0);
+    if (validScores.length > 0) {
+      const sum = validScores.reduce((a, b) => a + b, 0);
+      return Math.round(sum / validScores.length);
+    }
+  }
+
+  return Math.round(Number(report.score || report.percentage_score || report.overallScore || 0));
+}
+
+// ============================================================
+// 🟢 THE PROGRAM NORMALIZATION ENGINE
+// ============================================================
+const ABBREVIATIONS = {
+  'bsc': 'BSc', 'b.sc': 'BSc', 'b. sc': 'BSc', 'b.s.c': 'BSc',
+  'bachelor': 'Bachelor', 'btech': 'B-Tech', 'b.tech': 'B-Tech',
+  'eng': 'Engineering', 'engr': 'Engineering',
+  'elec': 'Electrical', 'electronics': 'Electronics',
+  'mech': 'Mechanical', 'mechanical': 'Mechanical',
+  'admin': 'Administration', 'adminis': 'Administration',
+  'of': 'of', 'and': 'and', 'in': 'in', 'with': 'with'
+};
+
+function normalizeProgramName(raw) {
+  if (!raw || typeof raw !== 'string') return '';
+  let cleaned = raw
+    .toLowerCase()
+    .replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const words = cleaned.split(' ');
+  const mappedWords = words.map(word => ABBREVIATIONS[word] || word.charAt(0).toUpperCase() + word.slice(1));
+  return mappedWords.join(' ');
+}
+
+function getUniqueMasterNames(rawPrograms) {
+  if (!rawPrograms || rawPrograms.length === 0) return { groups: [], masterToRawMap: {} };
+  const normalizedMap = {};
+  rawPrograms.forEach(p => { normalizedMap[p] = normalizeProgramName(p); });
+  const uniqueCleanNames = [...new Set(Object.values(normalizedMap))];
+  const groups = [];
+  const processed = new Set();
+  uniqueCleanNames.forEach(name1 => {
+    if (processed.has(name1)) return;
+    const group = [name1];
+    processed.add(name1);
+    uniqueCleanNames.forEach(name2 => {
+      if (processed.has(name2)) return;
+      const words1 = name1.split(' ');
+      const words2 = name2.split(' ');
+      const intersection = words1.filter(w => words2.includes(w)).length;
+      const union = new Set([...words1, ...words2]).size;
+      const similarity = union > 0 ? intersection / union : 0;
+      if (similarity > 0.6) { group.push(name2); processed.add(name2); }
+    });
+    const masterName = group.reduce((a, b) => a.length >= b.length ? a : b);
+    groups.push(masterName);
+  });
+  const masterToRawMap = {};
+  groups.forEach(master => {
+    masterToRawMap[master] = [];
+    rawPrograms.forEach(raw => {
+      const clean = normalizeProgramName(raw);
+      const words1 = master.split(' ');
+      const words2 = clean.split(' ');
+      const intersection = words1.filter(w => words2.includes(w)).length;
+      const union = new Set([...words1, ...words2]).size;
+      const similarity = union > 0 ? intersection / union : 0;
+      if (similarity > 0.6) { masterToRawMap[master].push(raw); }
+    });
+  });
+  return { groups, masterToRawMap };
+}
 
 function toNumber(value, fallback = 0) {
   const numberValue = Number(value);
@@ -74,85 +177,12 @@ async function getExactCount(tableName, configureQuery) {
   }
 }
 
-// ============================================================
-// 🟢 THE PROGRAM NORMALIZATION ENGINE
-// ============================================================
-
-const ABBREVIATIONS = {
-  'bsc': 'BSc', 'b.sc': 'BSc', 'b. sc': 'BSc', 'b.s.c': 'BSc',
-  'bachelor': 'Bachelor', 'btech': 'B-Tech', 'b.tech': 'B-Tech',
-  'eng': 'Engineering', 'engr': 'Engineering',
-  'elec': 'Electrical', 'electronics': 'Electronics',
-  'mech': 'Mechanical', 'mechanical': 'Mechanical',
-  'admin': 'Administration', 'adminis': 'Administration',
-  'of': 'of', 'and': 'and', 'in': 'in', 'with': 'with'
-};
-
-function normalizeProgramName(raw) {
-  if (!raw || typeof raw !== 'string') return '';
-  let cleaned = raw
-    .toLowerCase()
-    .replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-  const words = cleaned.split(' ');
-  const mappedWords = words.map(word => ABBREVIATIONS[word] || word.charAt(0).toUpperCase() + word.slice(1));
-  return mappedWords.join(' ');
-}
-
-function getUniqueMasterNames(rawPrograms) {
-  if (!rawPrograms || rawPrograms.length === 0) return { groups: [], masterToRawMap: {} };
-  
-  const normalizedMap = {};
-  rawPrograms.forEach(p => { normalizedMap[p] = normalizeProgramName(p); });
-  const uniqueCleanNames = [...new Set(Object.values(normalizedMap))];
-  const groups = [];
-  const processed = new Set();
-
-  uniqueCleanNames.forEach(name1 => {
-    if (processed.has(name1)) return;
-    const group = [name1];
-    processed.add(name1);
-    uniqueCleanNames.forEach(name2 => {
-      if (processed.has(name2)) return;
-      const words1 = name1.split(' ');
-      const words2 = name2.split(' ');
-      const intersection = words1.filter(w => words2.includes(w)).length;
-      const union = new Set([...words1, ...words2]).size;
-      const similarity = union > 0 ? intersection / union : 0;
-      if (similarity > 0.6) { group.push(name2); processed.add(name2); }
-    });
-    const masterName = group.reduce((a, b) => a.length >= b.length ? a : b);
-    groups.push(masterName);
-  });
-
-  const masterToRawMap = {};
-  groups.forEach(master => {
-    masterToRawMap[master] = [];
-    rawPrograms.forEach(raw => {
-      const clean = normalizeProgramName(raw);
-      const words1 = master.split(' ');
-      const words2 = clean.split(' ');
-      const intersection = words1.filter(w => words2.includes(w)).length;
-      const union = new Set([...words1, ...words2]).size;
-      const similarity = union > 0 ? intersection / union : 0;
-      if (similarity > 0.6) { masterToRawMap[master].push(raw); }
-    });
-  });
-  return { groups, masterToRawMap };
-}
-
-// ============================================================
-// MAIN COMPONENT
-// ============================================================
-
 export default function AdminDashboard() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   const [authError, setAuthError] = useState(null);
   
-  // 🟢 New state for React-Select
   const [selectedUniversityOption, setSelectedUniversityOption] = useState(null);
   const [selectedProgramOptions, setSelectedProgramOptions] = useState([]);
   const [minScore, setMinScore] = useState(0);
@@ -174,88 +204,123 @@ export default function AdminDashboard() {
   const [recentResults, setRecentResults] = useState([]);
 
   // ============================================================
-  // DATA PROCESSING
+  // 🟢 ADVANCED ANALYTICS CALCULATIONS
   // ============================================================
   
-  const universityStats = useMemo(() => {
-    const map = {};
-    allCandidates.forEach(c => {
-      const uni = c.university || 'Not Specified';
-      map[uni] = (map[uni] || 0) + 1;
-    });
-    return Object.entries(map)
-      .sort((a, b) => b[1] - a[1])
-      .map(([name, value]) => ({ name, value }));
-  }, [allCandidates]);
-
-  const universityFilteredCandidates = useMemo(() => {
-    if (!selectedUniversityOption) return allCandidates;
-    return allCandidates.filter(c => c.university === selectedUniversityOption.value);
-  }, [allCandidates, selectedUniversityOption]);
-
-  const rawPrograms = useMemo(() => {
-    return universityFilteredCandidates.map(c => c.programme).filter(Boolean);
-  }, [universityFilteredCandidates]);
-
-  const { groups: uniqueProgramMasterNames, masterToRawMap } = useMemo(() => {
-    return getUniqueMasterNames(rawPrograms);
-  }, [rawPrograms]);
-
-  // 🟢 Multi-select filter using selectedProgramOptions
-  const programFilteredCandidates = useMemo(() => {
-    if (selectedProgramOptions.length === 0) return universityFilteredCandidates;
-    
-    const allowedRawNames = [];
-    selectedProgramOptions.forEach(opt => {
-      const rawList = masterToRawMap[opt.value] || [];
-      allowedRawNames.push(...rawList);
-    });
-
-    return universityFilteredCandidates.filter(c => allowedRawNames.includes(c.programme));
-  }, [universityFilteredCandidates, selectedProgramOptions, masterToRawMap]);
-
+  // 1. Filter all candidates based on University/Program/Score
   const filteredCandidates = useMemo(() => {
-    return programFilteredCandidates.filter(c => {
-      const score = Number(c.latestScore || 0);
-      return score >= Number(minScore) && score <= Number(maxScore);
-    });
-  }, [programFilteredCandidates, minScore, maxScore]);
+    let filtered = allCandidates;
 
-  // 🟢 Chart Data
-  const programmeStats = useMemo(() => {
-    const map = {};
-    filteredCandidates.forEach(c => {
-      const raw = c.programme || 'Not Specified';
-      let master = 'Other';
-      for (const [m, rawList] of Object.entries(masterToRawMap)) {
-        if (rawList.includes(raw)) { master = m; break; }
-      }
-      map[master] = (map[master] || 0) + 1;
-    });
-    return Object.entries(map)
-      .sort((a, b) => b[1] - a[1])
-      .map(([name, value]) => ({ name, value }));
-  }, [filteredCandidates, masterToRawMap]);
+    if (selectedUniversityOption) {
+      filtered = filtered.filter(c => c.university === selectedUniversityOption.value);
+    }
 
-  const filteredAverageScore = useMemo(() => {
+    if (selectedProgramOptions.length > 0) {
+      const allowedRawNames = [];
+      selectedProgramOptions.forEach(opt => {
+        // Use normalization grouping if available
+        const rawList = masterToRawMap[opt.value] || [];
+        allowedRawNames.push(...rawList);
+      });
+      filtered = filtered.filter(c => allowedRawNames.includes(c.programme));
+    }
+
+    filtered = filtered.filter(c => {
+      const trueScore = calculateTrueScore(c);
+      return trueScore >= Number(minScore) && trueScore <= Number(maxScore);
+    });
+
+    return filtered;
+  }, [allCandidates, selectedUniversityOption, selectedProgramOptions, minScore, maxScore]);
+
+  // 2. Calculate True Average Score
+  const trueAverageScore = useMemo(() => {
     const scores = filteredCandidates
-      .map(c => Number(c.latestScore || 0))
+      .map(c => calculateTrueScore(c))
       .filter(s => s > 0);
     if (scores.length === 0) return 0;
     return Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
   }, [filteredCandidates]);
 
-  const pieChartData = useMemo(() => {
-    if (programmeStats.length === 0) return { labels: [], data: [] };
-    const top8 = programmeStats.slice(0, 8);
-    const othersCount = programmeStats.slice(8).reduce((sum, item) => sum + item.value, 0);
-    const labels = top8.map(item => item.name);
-    const data = top8.map(item => item.value);
-    if (othersCount > 0) { labels.push('Others'); data.push(othersCount); }
-    return { labels, data };
-  }, [programmeStats]);
+  // 3. Calculate Pass Rate (% of candidates with score >= 70%)
+  const passRate = useMemo(() => {
+    const scores = filteredCandidates.map(c => calculateTrueScore(c));
+    if (scores.length === 0) return 0;
+    const passed = scores.filter(s => s >= 70).length;
+    return Math.round((passed / scores.length) * 100);
+  }, [filteredCandidates]);
 
-  const COLORS = ['#1a237e', '#2e7d32', '#f57c00', '#c62828', '#1565c0', '#4a148c', '#00695c', '#bf360c', '#78909c'];
+  // 4. Calculate Top Performing University
+  const topUniversity = useMemo(() => {
+    const uniMap = {};
+    filteredCandidates.forEach(c => {
+      if (!c.university) return;
+      if (!uniMap[c.university]) uniMap[c.university] = { total: 0, count: 0 };
+      uniMap[c.university].total += calculateTrueScore(c);
+      uniMap[c.university].count += 1;
+    });
+    
+    let top = { name: 'N/A', avg: 0 };
+    Object.keys(uniMap).forEach(uni => {
+      const avg = Math.round(uniMap[uni].total / uniMap[uni].count);
+      if (avg > top.avg) top = { name: uni, avg };
+    });
+    return top;
+  }, [filteredCandidates]);
+
+  // 5. Score Distribution (For the Histogram)
+  const scoreDistribution = useMemo(() => {
+    const bins = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
+    const counts = new Array(bins.length - 1).fill(0);
+    
+    filteredCandidates.forEach(c => {
+      const score = calculateTrueScore(c);
+      for (let i = 0; i < bins.length - 1; i++) {
+        if (score >= bins[i] && score < bins[i + 1]) {
+          counts[i]++;
+          break;
+        }
+      }
+    });
+    return { bins, counts };
+  }, [filteredCandidates]);
+
+  // 6. Top 5 Universities by Average Score (For Chart)
+  const topUniByScore = useMemo(() => {
+    const uniMap = {};
+    filteredCandidates.forEach(c => {
+      if (!c.university) return;
+      if (!uniMap[c.university]) uniMap[c.university] = { total: 0, count: 0 };
+      uniMap[c.university].total += calculateTrueScore(c);
+      uniMap[c.university].count += 1;
+    });
+    
+    return Object.entries(uniMap)
+      .map(([name, data]) => ({ name, avg: Math.round(data.total / data.count) }))
+      .sort((a, b) => b.avg - a.avg)
+      .slice(0, 5);
+  }, [filteredCandidates]);
+
+  // 7. Normalization for Program Filters
+  const rawPrograms = useMemo(() => {
+    return allCandidates.map(c => c.programme).filter(Boolean);
+  }, [allCandidates]);
+
+  const { groups: uniqueProgramMasterNames, masterToRawMap } = useMemo(() => {
+    return getUniqueMasterNames(rawPrograms);
+  }, [rawPrograms]);
+
+  const universityOptions = useMemo(() => {
+    const map = {};
+    allCandidates.forEach(c => {
+      if (c.university) map[c.university] = true;
+    });
+    return Object.keys(map).sort().map(uni => ({ label: uni, value: uni }));
+  }, [allCandidates]);
+
+  const programOptions = useMemo(() => {
+    return uniqueProgramMasterNames.map(p => ({ label: p, value: p }));
+  }, [uniqueProgramMasterNames]);
 
   const resetFilters = () => {
     setSelectedUniversityOption(null);
@@ -264,16 +329,7 @@ export default function AdminDashboard() {
     setMaxScore(100);
   };
 
-  // ============================================================
-  // REACT-SELECT OPTIONS BUILDER
-  // ============================================================
-  const universityOptions = useMemo(() => {
-    return universityStats.map(uni => ({ label: `${uni.name} (${uni.value})`, value: uni.name }));
-  }, [universityStats]);
-
-  const programOptions = useMemo(() => {
-    return uniqueProgramMasterNames.map(p => ({ label: p, value: p }));
-  }, [uniqueProgramMasterNames]);
+  const COLORS = ['#1a237e', '#2e7d32', '#f57c00', '#c62828', '#1565c0', '#4a148c', '#00695c', '#bf360c', '#78909c'];
 
   // ============================================================
   // AUTH & FETCH
@@ -322,68 +378,59 @@ export default function AdminDashboard() {
     try {
       console.log("Fetching dashboard data...");
 
-      const [ supervisorCount, candidateCount, assessmentCount, completedCount, resultCount, inProgressCount, accessResponse ] = await Promise.all([
+      const [ supervisorCount, candidateCount, assessmentCount, completedCount, resultCount, inProgressCount, accessResponse, allCandidatesResponse, recentCandidatesResponse, resultsResponse ] = await Promise.all([
         getExactCount("supervisor_profiles"),
         getExactCount("candidate_profiles"),
         getExactCount("assessments", (query) => query.eq("is_active", true)),
         getExactCount("candidate_assessments", (query) => query.eq("status", "completed")),
         getExactCount("assessment_results"),
         getExactCount("assessment_sessions", (query) => query.eq("status", "in_progress")),
-        supabase.from("candidate_assessments").select("status")
+        supabase.from("candidate_assessments").select("status"),
+        supabase
+          .from("candidate_profiles")
+          .select("id, full_name, email, university, programme, created_at")
+          .order("created_at", { ascending: false }),
+        supabase
+          .from("candidate_profiles")
+          .select("id, full_name, email, created_at")
+          .order("created_at", { ascending: false })
+          .limit(6),
+        supabase
+          .from("assessment_results")
+          .select(`
+            id, 
+            user_id, 
+            assessment_id, 
+            total_score, 
+            max_score, 
+            percentage_score, 
+            completed_at,
+            recommendation,
+            candidate_profiles:user_id(full_name, email),
+            assessments:assessment_id(title)
+          `)
+          .order("completed_at", { ascending: false })
+          .limit(6)
       ]);
-
-      const { data: allCandidatesData, error: candidatesError } = await supabase
-        .from("candidate_profiles")
-        .select("id, full_name, email, university, programme, created_at")
-        .order("created_at", { ascending: false });
-
-      if (candidatesError) throw candidatesError;
-
-      const { data: allResultsData, error: resultsError } = await supabase
-        .from("assessment_results")
-        .select("user_id, percentage_score, completed_at")
-        .order("completed_at", { ascending: false });
-
-      if (resultsError) throw resultsError;
-
-      const candidatesWithScores = (allCandidatesData || []).map(c => {
-        const userResults = (allResultsData || []).filter(r => r.user_id === c.id);
-        const latestResult = userResults.length > 0 ? userResults[0] : null;
-        return { ...c, latestScore: latestResult ? Math.round(Number(latestResult.percentage_score || 0)) : 0, hasResult: !!latestResult };
-      });
-
-      const recentCandidatesData = candidatesWithScores.slice(0, 6);
-
-      const { data: recentResultIds, error: recentError } = await supabase
-        .from("assessment_results")
-        .select("id, user_id, assessment_id, percentage_score, completed_at")
-        .order("completed_at", { ascending: false })
-        .limit(6);
-
-      let recentResultsProcessed = [];
-      if (recentResultIds && recentResultIds.length > 0) {
-        const userIds = recentResultIds.map(r => r.user_id).filter(Boolean);
-        const assessmentIds = recentResultIds.map(r => r.assessment_id).filter(Boolean);
-
-        const [userProfileMap, assessmentMap] = await Promise.all([
-          userIds.length > 0 ? supabase.from("candidate_profiles").select("id, full_name, email").in("id", userIds) : { data: [] },
-          assessmentIds.length > 0 ? supabase.from("assessments").select("id, title").in("id", assessmentIds) : { data: [] }
-        ]);
-
-        const userMap = (userProfileMap.data || []).reduce((acc, u) => ({ ...acc, [u.id]: u }), {});
-        const assMap = (assessmentMap.data || []).reduce((acc, a) => ({ ...acc, [a.id]: a }), {});
-
-        recentResultsProcessed = recentResultIds.map(r => ({ ...r, candidate_profiles: userMap[r.user_id] || { full_name: 'Unknown', email: '' }, assessments: assMap[r.assessment_id] || { title: 'Assessment' } }));
-      }
 
       const accessRows = safeArray(accessResponse?.data || []);
       const unblockedCount = accessRows.filter((item) => item.status === "unblocked").length;
       const blockedCount = accessRows.filter((item) => item.status === "blocked").length;
 
-      setStats({ totalSupervisors: supervisorCount || 0, totalCandidates: candidateCount || 0, totalAssessments: assessmentCount || 0, completedAssessments: completedCount || 0, unblockedAssessments: unblockedCount || 0, blockedAssessments: blockedCount || 0, inProgressSessions: inProgressCount || 0, totalResults: resultCount || 0 });
-      setAllCandidates(candidatesWithScores);
-      setRecentCandidates(recentCandidatesData);
-      setRecentResults(recentResultsProcessed);
+      setStats({
+        totalSupervisors: supervisorCount || 0,
+        totalCandidates: candidateCount || 0,
+        totalAssessments: assessmentCount || 0,
+        completedAssessments: completedCount || 0,
+        unblockedAssessments: unblockedCount || 0,
+        blockedAssessments: blockedCount || 0,
+        inProgressSessions: inProgressCount || 0,
+        totalResults: resultCount || 0
+      });
+
+      setAllCandidates(allCandidatesResponse?.data || []);
+      setRecentCandidates(recentCandidatesResponse?.data || []);
+      setRecentResults(resultsResponse?.data || []);
     } catch (error) {
       console.error("Error fetching admin dashboard data:", error);
     }
@@ -437,16 +484,19 @@ export default function AdminDashboard() {
           </div>
         </div>
 
+        {/* 🟢 NEW INFOGRAPHIC STATS CARDS */}
         <div style={styles.statsRow}>
-          <StatCard icon="👑" label="Supervisors" value={stats.totalSupervisors} />
-          <StatCard icon="👥" label="Candidates" value={stats.totalCandidates} />
+          <StatCard icon="👥" label="Total Candidates" value={stats.totalCandidates} />
+          <StatCard icon="📊" label="Average Score" value={`${trueAverageScore}%`} />
+          <StatCard icon="✅" label="Pass Rate (≥70%)" value={`${passRate}%`} />
+          <StatCard icon="🏆" label="Top University" value={topUniversity.name} subValue={`${topUniversity.avg}%`} />
           <StatCard icon="📋" label="Active Assessments" value={stats.totalAssessments} />
           <StatCard icon="✓" label="Completed" value={stats.completedAssessments} />
           <StatCard icon="◉" label="In Progress" value={stats.inProgressSessions} />
-          <StatCard icon="📊" label="Result Records" value={stats.totalResults} />
+          <StatCard icon="📈" label="Result Records" value={stats.totalResults} />
         </div>
 
-        {/* 🟢 NEW BEAUTIFUL FILTERS BAR */}
+        {/* 🟢 ADVANCED FILTERS BAR */}
         <div style={styles.filtersBar}>
           <div style={styles.filtersRow}>
             <div style={styles.filterGroup}>
@@ -493,110 +543,53 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* CHARTS ROW */}
+        {/* CHARTS GRID */}
         <div style={styles.chartGrid}>
           <div style={styles.chartCard}>
-            <h4 style={styles.chartTitle}>
-              {!selectedUniversityOption ? 'Top Programs (Distribution)' : `Programs at ${selectedUniversityOption?.value}`}
-            </h4>
-            <div style={{ height: '280px', position: 'relative' }}>
-              <Pie
+            <h4 style={styles.chartTitle}>Score Distribution</h4>
+            <div style={{ height: '250px' }}>
+              <Bar
                 data={{
-                  labels: pieChartData.labels,
-                  datasets: [{ data: pieChartData.data, backgroundColor: COLORS, borderWidth: 2, borderColor: '#fff' }]
+                  labels: scoreDistribution.bins.slice(0, -1).map((b, i) => `${b}-${scoreDistribution.bins[i+1]}%`),
+                  datasets: [{
+                    label: 'Number of Candidates',
+                    data: scoreDistribution.counts,
+                    backgroundColor: '#1a237e',
+                    borderRadius: 4,
+                  }]
                 }}
-                options={{ maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { boxWidth: 12, padding: 10, font: { size: 11 } } } } }}
+                options={{
+                  maintainAspectRatio: false,
+                  plugins: { legend: { display: false } },
+                  scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
+                }}
               />
             </div>
           </div>
 
           <div style={styles.chartCard}>
-            <h4 style={styles.chartTitle}>Top 15 Universities (Ranking)</h4>
-            <div style={{ height: '280px' }}>
+            <h4 style={styles.chartTitle}>Top 5 Universities (By Average Score)</h4>
+            <div style={{ height: '250px' }}>
               <Bar
                 data={{
-                  labels: universityStats.slice(0, 15).map(item => item.name),
-                  datasets: [{ label: 'Count', data: universityStats.slice(0, 15).map(item => item.value), backgroundColor: '#1a237e', borderRadius: 4 }]
+                  labels: topUniByScore.map(item => item.name),
+                  datasets: [{
+                    label: 'Average Score',
+                    data: topUniByScore.map(item => item.avg),
+                    backgroundColor: '#2e7d32',
+                    borderRadius: 4,
+                  }]
                 }}
-                options={{ indexAxis: 'y', maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true, ticks: { stepSize: 1 } } } }}
+                options={{
+                  indexAxis: 'y',
+                  maintainAspectRatio: false,
+                  plugins: { legend: { display: false } },
+                  scales: { x: { beginAtZero: true, max: 100 } }
+                }}
               />
-            </div>
-          </div>
-
-          <div style={styles.statsCardLarge}>
-            <h4 style={styles.panelHeader}>
-              {!selectedUniversityOption ? '📊 Platform Overview' : `📍 ${selectedUniversityOption?.value}`}
-            </h4>
-            <div style={styles.statRow}>
-              <span style={styles.statRowLabel}>Total Candidates</span>
-              <span style={styles.statRowValue}>{filteredCandidates.length}</span>
-            </div>
-            <div style={styles.statRow}>
-              <span style={styles.statRowLabel}>Average Score</span>
-              <span style={styles.statRowValue} style={{color: filteredAverageScore >= 70 ? '#2e7d32' : '#c62828'}}>
-                {filteredAverageScore > 0 ? `${filteredAverageScore}%` : 'N/A'}
-              </span>
-            </div>
-            <div style={styles.statRow}>
-              <span style={styles.statRowLabel}>Number of Programs</span>
-              <span style={styles.statRowValue}>{new Set(filteredCandidates.map(c => c.programme).filter(Boolean)).size}</span>
-            </div>
-            <div style={styles.topProgramContainer}>
-              <div style={styles.topProgramLabel}>Most Popular Program:</div>
-              <div style={styles.topProgramValue}>
-                {programmeStats.length > 0 ? programmeStats[0].name : 'N/A'}
-              </div>
             </div>
           </div>
         </div>
-
-        {/* DETAIL TABLE (If University Selected) */}
-        {selectedUniversityOption && (
-          <div style={styles.detailTableContainer}>
-            <div style={styles.detailHeader}>
-              <h4 style={styles.detailTableTitle}>
-                {filteredCandidates.length} Candidates from {selectedUniversityOption?.value}
-                {selectedProgramOptions.length > 0 && ` (${selectedProgramOptions.length} programs selected)`}
-              </h4>
-            </div>
-            <div style={styles.tableContainer}>
-              <table style={styles.table}>
-                <thead>
-                  <tr>
-                    <th style={styles.th}>Candidate Name</th>
-                    <th style={styles.th}>Programme</th>
-                    <th style={styles.th}>Latest Assessment Score</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredCandidates.length === 0 ? (
-                    <tr><td colSpan="3" style={styles.emptyState}>No candidates match your filters.</td></tr>
-                  ) : (
-                    filteredCandidates.map((c) => {
-                      const latestScore = Number(c.latestScore || 0);
-                      const scoreColor = latestScore >= 70 ? '#dcfce7' : '#fee2e2';
-                      const scoreTextColor = latestScore >= 70 ? '#166534' : '#991b1b';
-                      return (
-                        <tr key={c.id} style={styles.tr}>
-                          <td style={styles.td}>
-                            <div style={styles.cellName}>{c.full_name || 'Unknown'}</div>
-                            <div style={styles.cellSub}>{c.email || ''}</div>
-                          </td>
-                          <td style={styles.td}>{c.programme || 'N/A'}</td>
-                          <td style={styles.td}>
-                            <span style={{...styles.scoreBadge, background: scoreColor, color: scoreTextColor}}>
-                              {latestScore}%
-                            </span>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
 
         {/* ACTION CARDS & EXTENSIONS */}
         <div style={styles.actionCardsGrid}>
@@ -674,17 +667,14 @@ export default function AdminDashboard() {
   );
 }
 
-// ============================================================
-// SUB-COMPONENTS
-// ============================================================
-
-function StatCard({ icon, label, value }) {
+function StatCard({ icon, label, value, subValue }) {
   return (
     <div style={styles.statCard}>
       <div style={styles.statIcon}>{icon}</div>
       <div>
         <div style={styles.statLabel}>{label}</div>
         <div style={styles.statValue}>{value}</div>
+        {subValue && <div style={{ fontSize: '12px', color: '#64748b' }}>{subValue}</div>}
       </div>
     </div>
   );
@@ -704,9 +694,6 @@ function ActionCard({ href, icon, title, description }) {
   );
 }
 
-// ============================================================
-// CUSTOM STYLES FOR REACT-SELECT
-// ============================================================
 const customSelectStyles = {
   control: (base, state) => ({
     ...base,
@@ -736,10 +723,6 @@ const customSelectStyles = {
     '&:hover': { backgroundColor: '#1a237e', color: 'white' },
   }),
 };
-
-// ============================================================
-// STYLES
-// ============================================================
 
 const styles = {
   checkingContainer: {
@@ -774,15 +757,16 @@ const styles = {
   refreshButton: { background: "#0a1929", color: "white", border: "none", padding: "10px 20px", borderRadius: "8px", cursor: "pointer", fontSize: "14px", fontWeight: 700 },
   logoutButton: { background: "#f44336", color: "white", border: "none", padding: "10px 20px", borderRadius: "8px", cursor: "pointer", fontSize: "14px", fontWeight: 700 },
   
+  // 🟢 UPDATED STATS GRID
   statsRow: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
     gap: '16px',
-    marginBottom: '30px'
+    marginBottom: '24px'
   },
   statCard: {
     background: 'white',
-    padding: '16px 20px',
+    padding: '16px 18px',
     borderRadius: '12px',
     display: 'flex',
     alignItems: 'center',
@@ -794,7 +778,7 @@ const styles = {
   statLabel: { fontSize: '11px', color: '#718096', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' },
   statValue: { fontSize: '22px', fontWeight: 800, color: '#0a1929' },
 
-  // 🟢 NEW FILTERS BAR STYLES
+  // 🟢 FILTERS BAR STYLES
   filtersBar: {
     background: 'white',
     borderRadius: '12px',
@@ -812,9 +796,9 @@ const styles = {
   filterGroup: {
     display: 'flex',
     flexDirection: 'column',
-    minWidth: '200px',
+    minWidth: '180px',
     flex: 1,
-    maxWidth: '300px'
+    maxWidth: '280px'
   },
   filterLabel: {
     fontSize: '12px',
@@ -860,6 +844,7 @@ const styles = {
     alignSelf: 'flex-end'
   },
 
+  // CHART GRID STYLES
   chartGrid: {
     display: 'grid',
     gridTemplateColumns: '1fr 1fr',
@@ -879,85 +864,9 @@ const styles = {
     color: '#0a1929',
     margin: '0 0 12px 0'
   },
-  statsCardLarge: {
-    background: 'white',
-    padding: '20px',
-    borderRadius: '12px',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
-    border: '1px solid #eef2f7',
-    display: 'flex',
-    flexDirection: 'column',
-    justifyContent: 'space-between'
-  },
-  panelHeader: {
-    fontSize: '16px',
-    fontWeight: '600',
-    color: '#0a1929',
-    margin: '0 0 12px 0'
-  },
-  statRow: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    padding: '8px 0',
-    borderBottom: '1px solid #f1f5f9'
-  },
-  statRowLabel: {
-    fontSize: '14px',
-    color: '#475569'
-  },
-  statRowValue: {
-    fontSize: '14px',
-    fontWeight: '700',
-    color: '#0a1929'
-  },
-  topProgramContainer: {
-    background: '#f8fafc',
-    padding: '12px',
-    borderRadius: '8px',
-    marginTop: '12px'
-  },
-  topProgramLabel: {
-    fontSize: '12px',
-    color: '#64748b'
-  },
-  topProgramValue: {
-    fontSize: '14px',
-    fontWeight: '600',
-    color: '#0a1929',
-    marginTop: '2px'
-  },
 
-  // Table & Detail styles
-  detailTableContainer: {
-    background: 'white',
-    borderRadius: '12px',
-    padding: '20px',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
-    border: '1px solid #eef2f7',
-    marginBottom: '30px'
-  },
-  detailHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '12px'
-  },
-  detailTableTitle: {
-    fontSize: '16px',
-    fontWeight: '600',
-    color: '#0a1929',
-    margin: 0
-  },
-  tableContainer: { overflowX: 'auto' },
-  table: { width: '100%', borderCollapse: 'collapse', fontSize: '14px', marginTop: '10px' },
-  th: { padding: '12px 16px', textAlign: 'left', background: '#f8fafc', fontWeight: '600', color: '#475569', borderBottom: '2px solid #e2e8f0' },
-  td: { padding: '12px 16px', borderBottom: '1px solid #e2e8f0', verticalAlign: 'middle' },
-  tr: { transition: 'background 0.2s' },
-  cellName: { fontWeight: '600', color: '#1a202c' },
-  cellSub: { fontSize: '12px', color: '#94a3b8' },
-  scoreBadge: { padding: '4px 12px', borderRadius: '20px', fontSize: '13px', fontWeight: '600', display: 'inline-block' },
-
-  actionCardsGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: "18px", marginBottom: "30px" },
+  // ACTION CARDS
+  actionCardsGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "18px", marginBottom: "30px" },
   actionCard: { background: "white", padding: "20px", borderRadius: "12px", textDecoration: "none", color: "inherit", display: "flex", alignItems: "center", gap: "15px", boxShadow: "0 2px 8px rgba(0,0,0,0.08)", border: "1px solid #eef2f7", cursor: "pointer" },
   actionCardIcon: { fontSize: "32px" },
   actionCardTitle: { margin: 0, fontSize: "16px", fontWeight: 800, color: "#0a1929" },
