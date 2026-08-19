@@ -1,11 +1,11 @@
 // pages/admin/index.js - TRUE INFOGRAPHIC DASHBOARD (FIXED SCORES & BAR CHARTS)
-// FIXED: Proper score joining - ALL results fetched, consolidated dropdowns, fixed auth
+// FIXED: Correct auth import, proper session handling, all results fetched
 
 import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import AppLayout from "../../components/AppLayout";
-import { supabase } from "../../supabase/client";
+import { supabase } from "../../lib/supabaseClient"; // FIXED: Correct import path
 import AssessmentExpiration from "../../components/admin/AssessmentExpiration";
 
 // ============================================================
@@ -370,13 +370,27 @@ function formatDate(value) {
 // 🟢 AUTH HELPER FUNCTIONS
 // ============================================================
 
+async function getSession() {
+  try {
+    const { data, error } = await supabase.auth.getSession();
+    if (error) {
+      console.error("Session error:", error);
+      return null;
+    }
+    return data?.session || null;
+  } catch (error) {
+    console.error("Error getting session:", error);
+    return null;
+  }
+}
+
 async function ensureValidSession() {
-  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-  if (sessionError || !sessionData?.session) {
+  const session = await getSession();
+  if (!session) {
     console.error("No valid session");
     return null;
   }
-  return sessionData.session;
+  return session;
 }
 
 async function getExactCount(tableName, configureQuery) {
@@ -753,6 +767,7 @@ export default function AdminDashboard() {
           .select("id, full_name, email, created_at")
           .order("created_at", { ascending: false })
           .limit(6),
+        // Get ALL results - no limit
         supabase
           .from("assessment_results")
           .select(`
@@ -767,6 +782,17 @@ export default function AdminDashboard() {
           `)
           .order("completed_at", { ascending: false })
       ]);
+
+      // Check for auth errors in any response
+      if (accessResponse?.error?.message?.includes("JWT") || 
+          accessResponse?.error?.message?.includes("token") ||
+          allCandidatesResponse?.error?.message?.includes("JWT") ||
+          resultsResponse?.error?.message?.includes("JWT")) {
+        console.error("Auth error in data fetch");
+        await supabase.auth.signOut();
+        router.push("/login");
+        return;
+      }
 
       const accessRows = safeArray(accessResponse?.data || []);
       const unblockedCount = accessRows.filter((item) => item.status === "unblocked").length;
@@ -800,7 +826,10 @@ export default function AdminDashboard() {
 
   async function handleLogout() {
     await supabase.auth.signOut();
-    if (typeof window !== "undefined") localStorage.removeItem("userSession");
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("userSession");
+      sessionStorage.removeItem("supabase.auth.token");
+    }
     router.push("/login");
   }
 
