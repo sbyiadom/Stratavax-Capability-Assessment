@@ -1,5 +1,5 @@
 // pages/admin/index.js - TRUE INFOGRAPHIC DASHBOARD (FIXED SCORES & BAR CHARTS)
-// FIXED: Default all data view, consolidated dropdowns, select all functionality
+// FIXED: Aggressive consolidation for both programs AND universities
 
 import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/router";
@@ -39,144 +39,288 @@ ChartJS.register(
 import Select from 'react-select';
 
 // ============================================================
-// 🟢 NORMALIZATION ENGINE - AGGRESSIVE CONSOLIDATION
+// 🟢 AGGRESSIVE CONSOLIDATION FUNCTIONS
 // ============================================================
-const ABBREVIATIONS = {
-  'bsc': 'BSc', 'b.sc': 'BSc', 'b. sc': 'BSc', 'b.s.c': 'BSc',
-  'bachelor': 'Bachelor', 'btech': 'B-Tech', 'b.tech': 'B-Tech',
-  'eng': 'Engineering', 'engr': 'Engineering',
-  'elec': 'Electrical', 'electronics': 'Electronics',
-  'mech': 'Mechanical', 'mechanical': 'Mechanical',
-  'knust': 'Kwame Nkrumah University of Science and Technology',
-  'ug': 'University of Ghana',
-  'umat': 'University of Mines and Technology',
-  'ucc': 'University of Cape Coast',
-  'of': 'of', 'and': 'and', 'in': 'in', 'with': 'with',
-  'admin': 'Administration', 'adminis': 'Administration',
-  'procurement': 'Procurement', 'logistics': 'Logistics',
-  'supply': 'Supply', 'chain': 'Chain', 'management': 'Management',
-  'information': 'Information', 'technology': 'Technology',
-  'communication': 'Communication', 'business': 'Business',
-  'agricultural': 'Agricultural', 'chemical': 'Chemical',
-  'civil': 'Civil', 'computer': 'Computer', 'industrial': 'Industrial',
-  'petroleum': 'Petroleum', 'geological': 'Geological', 'geomatic': 'Geomatic',
-  'materials': 'Materials', 'material': 'Materials', 'psychology': 'Psychology',
-  'statistics': 'Statistics', 'mathematics': 'Mathematics', 'math': 'Mathematics',
-  'secretariat': 'Secretariatship', 'mechatronics': 'Mechatronics',
-  'mechatron': 'Mechatronics', 'psych': 'Psychology',
-  'kpoly': 'Kumasi Technical University', 'poly': 'Technical University', 
-  'tech': 'Technical', 'umat': 'University of Mines and Technology',
-  'telecom': 'Telecommunications', 'renewable': 'Renewable',
-  'laboratory': 'Laboratory', 'lab': 'Laboratory',
-  'politics': 'Political Science', 'political': 'Political Science',
-  'food': 'Food Science', 'science': 'Science'
-};
 
-const IGNORE_WORDS = new Set(['of', 'and', 'in', 'with', 'for', 'the', 'at', 'to', 'on', 'by', 'from', 'university']);
-
-function normalizeText(raw, abbreviations = ABBREVIATIONS) {
-  if (!raw || typeof raw !== 'string') return '';
+// Function to consolidate university names
+function consolidateUniversityName(raw) {
+  if (!raw || typeof raw !== 'string') return raw;
+  
+  const lower = raw.toLowerCase();
+  
+  // University of Mines and Technology - all variations
+  if (lower.includes('mines') && lower.includes('technology')) {
+    return 'University of Mines and Technology (UMaT)';
+  }
+  
+  // Kwame Nkrumah University of Science and Technology
+  if (lower.includes('kwame nkrumah') || lower.includes('knust')) {
+    return 'Kwame Nkrumah University of Science and Technology (KNUST)';
+  }
+  
+  // University of Ghana
+  if (lower.includes('university of ghana') || lower.includes('ug') || lower.includes('legon')) {
+    return 'University of Ghana';
+  }
+  
+  // University of Cape Coast
+  if (lower.includes('cape coast') || lower.includes('ucc')) {
+    return 'University of Cape Coast';
+  }
+  
+  // Takoradi Technical University
+  if (lower.includes('takoradi')) {
+    return 'Takoradi Technical University';
+  }
+  
+  // Kumasi Technical University
+  if (lower.includes('kumasi') && lower.includes('technical')) {
+    return 'Kumasi Technical University';
+  }
+  
+  // Accra Technical University
+  if (lower.includes('accra') && lower.includes('technical')) {
+    return 'Accra Technical University';
+  }
+  
+  // Koforidua Technical University
+  if (lower.includes('koforidua') && lower.includes('technical')) {
+    return 'Koforidua Technical University';
+  }
+  
+  // Sunyani Technical University
+  if (lower.includes('sunyani') && lower.includes('technical')) {
+    return 'Sunyani Technical University';
+  }
+  
+  // Cape Coast Technical University
+  if (lower.includes('cape coast') && lower.includes('technical')) {
+    return 'Cape Coast Technical University';
+  }
+  
+  // Ho Technical University
+  if (lower.includes('ho') && lower.includes('technical')) {
+    return 'Ho Technical University';
+  }
+  
+  // University of Energy and Natural Resources
+  if (lower.includes('energy') && lower.includes('natural resources')) {
+    return 'University of Energy and Natural Resources';
+  }
+  
+  // University for Development Studies
+  if (lower.includes('development studies') || lower.includes('uds')) {
+    return 'University for Development Studies';
+  }
+  
+  // Pentecost University
+  if (lower.includes('pentecost')) {
+    return 'Pentecost University';
+  }
+  
+  // University of Professional Studies
+  if (lower.includes('professional studies') || lower.includes('upsa')) {
+    return 'University of Professional Studies';
+  }
+  
+  // Regional Maritime University
+  if (lower.includes('maritime')) {
+    return 'Regional Maritime University';
+  }
+  
+  // Ghana Communication Technology University
+  if (lower.includes('communication technology') || lower.includes('gctu')) {
+    return 'Ghana Communication Technology University';
+  }
+  
+  // Skills Training - multiple variations
+  if (lower.includes('skills training') || lower.includes('entrepreneurial')) {
+    return 'University of Skills Training and Entrepreneurial Development';
+  }
+  
+  // Default - clean up common issues
   let cleaned = raw
-    .toLowerCase()
-    .replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, ' ')
+    .replace(/\([^)]*\)/g, '') // Remove parentheses content
     .replace(/\s+/g, ' ')
     .trim();
-  const words = cleaned.split(' ');
-  const mappedWords = words.map(word => abbreviations[word] || word.charAt(0).toUpperCase() + word.slice(1));
-  return mappedWords.join(' ');
+  
+  // If it contains "University" but not "of", add "of" if missing
+  if (cleaned.includes('University') && !cleaned.includes('of') && !cleaned.includes('Of')) {
+    // Try to fix common patterns
+    if (cleaned.startsWith('University')) {
+      // Already fine
+    }
+  }
+  
+  return cleaned || raw;
 }
 
-// AGGRESSIVE PROGRAM CONSOLIDATION
+// Function to consolidate program names
 function consolidateProgramName(raw) {
   if (!raw || typeof raw !== 'string') return raw;
   
   const lower = raw.toLowerCase();
   
-  // Electrical/Electronic Engineering
-  if (lower.includes('electrical') || lower.includes('electronic') || lower.includes('elect/electron')) {
+  // Remove common prefixes/suffixes for better matching
+  const cleanForMatch = (str) => {
+    return str
+      .toLowerCase()
+      .replace(/bsc|b\.sc|b sc|bachelor|ba|b\.a|b a|b-tech|btech|b\.tech/g, '')
+      .replace(/[^a-z\s]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  };
+  
+  const cleanLower = cleanForMatch(raw);
+  
+  // Electrical/Electronic Engineering - all variations
+  if (cleanLower.includes('electrical') || cleanLower.includes('electronic') || 
+      cleanLower.includes('elect/electron') || cleanLower.includes('electrical/electronic') ||
+      cleanLower.includes('electrical electronic') || cleanLower.includes('electrical and electronic')) {
     return 'BSc Electrical/Electronic Engineering';
   }
+  
   // Mechanical Engineering
-  if (lower.includes('mechanical') || lower.includes('mech')) {
+  if (cleanLower.includes('mechanical') || cleanLower.includes('mech')) {
     return 'BSc Mechanical Engineering';
   }
+  
   // Chemical Engineering
-  if (lower.includes('chemical') || lower.includes('chem')) {
+  if (cleanLower.includes('chemical') || cleanLower.includes('chem')) {
     return 'BSc Chemical Engineering';
   }
+  
   // Civil Engineering
-  if (lower.includes('civil')) {
+  if (cleanLower.includes('civil')) {
     return 'BSc Civil Engineering';
   }
+  
   // Computer Engineering
-  if (lower.includes('computer')) {
+  if (cleanLower.includes('computer')) {
     return 'BSc Computer Engineering';
   }
+  
   // Industrial Engineering
-  if (lower.includes('industrial')) {
+  if (cleanLower.includes('industrial')) {
     return 'BSc Industrial Engineering';
   }
+  
   // Agricultural Engineering
-  if (lower.includes('agricultural') || lower.includes('agric')) {
+  if (cleanLower.includes('agricultural') || cleanLower.includes('agric')) {
     return 'BSc Agricultural Engineering';
   }
+  
   // Petroleum Engineering
-  if (lower.includes('petroleum') || lower.includes('petrol')) {
+  if (cleanLower.includes('petroleum') || cleanLower.includes('petrol')) {
     return 'BSc Petroleum Engineering';
   }
+  
   // Geological Engineering
-  if (lower.includes('geological') || lower.includes('geo')) {
+  if (cleanLower.includes('geological') || cleanLower.includes('geo')) {
     return 'BSc Geological Engineering';
   }
+  
   // Geomatic Engineering
-  if (lower.includes('geomatic')) {
+  if (cleanLower.includes('geomatic')) {
     return 'BSc Geomatic Engineering';
   }
+  
   // Materials Engineering
-  if (lower.includes('materials') || lower.includes('material')) {
+  if (cleanLower.includes('materials') || cleanLower.includes('material')) {
     return 'BSc Materials Engineering';
   }
+  
   // Telecommunications Engineering
-  if (lower.includes('telecommunications') || lower.includes('telecom')) {
+  if (cleanLower.includes('telecommunications') || cleanLower.includes('telecom')) {
     return 'BSc Telecommunications Engineering';
   }
+  
   // Renewable Energy Engineering
-  if (lower.includes('renewable') || lower.includes('energy')) {
+  if (cleanLower.includes('renewable') || cleanLower.includes('energy')) {
     return 'BSc Renewable Energy Engineering';
   }
+  
+  // Automobile Engineering
+  if (cleanLower.includes('automobile') || cleanLower.includes('auto')) {
+    return 'BSc Automobile Engineering';
+  }
+  
   // Psychology
-  if (lower.includes('psychology') || lower.includes('psych')) {
+  if (cleanLower.includes('psychology') || cleanLower.includes('psych')) {
     return 'BA Psychology';
   }
+  
   // Political Science
-  if (lower.includes('political science') || lower.includes('politics')) {
+  if (cleanLower.includes('political science') || cleanLower.includes('politics')) {
     return 'BA Political Science';
   }
+  
   // Laboratory Technology
-  if (lower.includes('laboratory') || lower.includes('lab')) {
+  if (cleanLower.includes('laboratory') || cleanLower.includes('lab')) {
     return 'BSc Laboratory Technology';
   }
+  
   // Food Science
-  if (lower.includes('food science') || lower.includes('food')) {
+  if (cleanLower.includes('food science') || cleanLower.includes('food')) {
     return 'BSc Food Science and Postharvest Technology';
   }
-  // Statistics/Mathematics
-  if (lower.includes('statistics') || lower.includes('mathematics') || lower.includes('math')) {
+  
+  // Statistics and Mathematics
+  if (cleanLower.includes('statistics') || cleanLower.includes('mathematics') || 
+      cleanLower.includes('math') || (cleanLower.includes('stats') && cleanLower.includes('math'))) {
     return 'BSc Statistics and Mathematics';
   }
-  // Management/Business
-  if (lower.includes('management') || lower.includes('business') || lower.includes('admin')) {
+  
+  // Accounting and Economics
+  if (cleanLower.includes('accounting') && cleanLower.includes('economics')) {
+    return 'BSc Accounting and Economics';
+  }
+  
+  // Management/Business/Administration
+  if (cleanLower.includes('management') || cleanLower.includes('business') || 
+      cleanLower.includes('admin') || cleanLower.includes('secretariat')) {
     return 'Business Administration';
   }
+  
   // Arts
-  if (lower.includes('arts') || lower.includes('ba ')) {
+  if (cleanLower.includes('arts') || cleanLower.includes('ba ')) {
     return 'BA Arts';
   }
-  // Default - return as is
-  return raw;
+  
+  // If we have "BSc" or "BA" in the original, try to clean it up
+  if (raw.includes('BSc') || raw.includes('B.Sc') || raw.includes('B sc')) {
+    // Remove the degree prefix and try to format
+    let cleaned = raw.replace(/BSc|B\.Sc|B Sc|Bachelor/g, '').trim();
+    // Capitalize first letter of each word
+    cleaned = cleaned.split(' ').map(word => 
+      word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+    ).join(' ');
+    if (cleaned) return `BSc ${cleaned}`;
+  }
+  
+  if (raw.includes('BA') || raw.includes('B.A') || raw.includes('B A')) {
+    let cleaned = raw.replace(/BA|B\.A|B A/g, '').trim();
+    cleaned = cleaned.split(' ').map(word => 
+      word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+    ).join(' ');
+    if (cleaned) return `BA ${cleaned}`;
+  }
+  
+  // Default - clean up and return
+  let cleaned = raw
+    .replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  
+  // Capitalize first letter of each word
+  cleaned = cleaned.split(' ').map(word => 
+    word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+  ).join(' ');
+  
+  return cleaned || raw;
 }
 
-function getUniqueMasterNames(rawItems) {
+function getUniqueMasterNames(rawItems, consolidateFn) {
   if (!rawItems || rawItems.length === 0) return { groups: [], masterToRawMap: {} };
   
   const groups = [];
@@ -186,7 +330,7 @@ function getUniqueMasterNames(rawItems) {
   // First, consolidate all raw names
   const consolidatedMap = {};
   rawItems.forEach(raw => {
-    const consolidated = consolidateProgramName(raw);
+    const consolidated = consolidateFn(raw);
     if (!consolidatedMap[consolidated]) {
       consolidatedMap[consolidated] = [];
     }
@@ -295,29 +439,26 @@ export default function AdminDashboard() {
       score: scoreMap[c.id] || 0,
       hasResult: !!scoreMap[c.id],
       resultDetails: resultMap[c.id] || null,
-      // Add consolidated program name
       consolidatedProgram: consolidateProgramName(c.programme),
-      // Add consolidated university name (normalize for better grouping)
-      consolidatedUniversity: normalizeText(c.university)
+      consolidatedUniversity: consolidateUniversityName(c.university)
     }));
   }, [allCandidates, recentResults]);
 
   // ============================================================
-  // 🟢 GROUP NORMALIZATION - Using aggressive consolidation
+  // 🟢 GROUP NORMALIZATION
   // ============================================================
   const rawUniversities = useMemo(() => candidatesWithScores.map(c => c.university).filter(Boolean), [candidatesWithScores]);
   const rawPrograms = useMemo(() => candidatesWithScores.map(c => c.programme).filter(Boolean), [candidatesWithScores]);
 
-  const uniGroup = useMemo(() => getUniqueMasterNames(rawUniversities), [rawUniversities]);
-  const progGroup = useMemo(() => getUniqueMasterNames(rawPrograms), [rawPrograms]);
+  const uniGroup = useMemo(() => getUniqueMasterNames(rawUniversities, consolidateUniversityName), [rawUniversities]);
+  const progGroup = useMemo(() => getUniqueMasterNames(rawPrograms, consolidateProgramName), [rawPrograms]);
 
   // ============================================================
-  // 🟢 FILTER LOGIC - Default shows ALL data
+  // 🟢 FILTER LOGIC
   // ============================================================
   const filteredCandidates = useMemo(() => {
     let filtered = candidatesWithScores;
 
-    // Filter by University (using consolidated name)
     if (selectedUniversityOption) {
       const rawVariants = selectedUniversityOption.rawVariants || [];
       filtered = filtered.filter(c => {
@@ -325,7 +466,6 @@ export default function AdminDashboard() {
       });
     }
 
-    // Filter by Program (using consolidated name)
     if (selectedProgramOptions.length > 0) {
       const allowedRawNames = [];
       selectedProgramOptions.forEach(opt => {
@@ -338,7 +478,6 @@ export default function AdminDashboard() {
       });
     }
 
-    // Filter by Score Range
     filtered = filtered.filter(c => {
       return c.score >= Number(minScore) && c.score <= Number(maxScore);
     });
@@ -350,30 +489,24 @@ export default function AdminDashboard() {
   // 🟢 FILTERED ANALYTICS
   // ============================================================
   
-  // 1. Filtered University Analytics
   const filteredUniversityAnalytics = useMemo(() => {
     const map = {};
     filteredCandidates.forEach(c => {
       if (!c.university) return;
       
-      let master = c.university;
-      for (const [m, rawList] of Object.entries(uniGroup.masterToRawMap)) {
-        if (rawList.includes(c.university)) { 
-          master = m; 
-          break; 
-        }
-      }
+      // Use consolidated name
+      const name = c.consolidatedUniversity || c.university;
       
-      if (!map[master]) {
-        map[master] = { 
+      if (!map[name]) {
+        map[name] = { 
           candidates: 0, 
           scoreTotal: 0,
           rawNames: new Set()
         };
       }
-      map[master].candidates += 1;
-      map[master].scoreTotal += c.score;
-      map[master].rawNames.add(c.university);
+      map[name].candidates += 1;
+      map[name].scoreTotal += c.score;
+      map[name].rawNames.add(c.university);
     });
     
     return Object.entries(map).map(([name, data]) => ({
@@ -382,28 +515,26 @@ export default function AdminDashboard() {
       avgScore: data.candidates > 0 ? Math.round(data.scoreTotal / data.candidates) : 0,
       rawVariants: Array.from(data.rawNames)
     })).sort((a, b) => b.avgScore - a.avgScore);
-  }, [filteredCandidates, uniGroup.masterToRawMap]);
+  }, [filteredCandidates]);
 
-  // 2. Filtered Program Analytics - Using consolidated names
   const filteredProgramAnalytics = useMemo(() => {
     const map = {};
     
     filteredCandidates.forEach(c => {
       if (!c.programme) return;
       
-      // Use the consolidated program name
-      const consolidatedName = c.consolidatedProgram || c.programme;
+      const name = c.consolidatedProgram || c.programme;
       
-      if (!map[consolidatedName]) {
-        map[consolidatedName] = { 
+      if (!map[name]) {
+        map[name] = { 
           candidates: 0, 
           scoreTotal: 0,
           rawVariants: new Set()
         };
       }
-      map[consolidatedName].candidates += 1;
-      map[consolidatedName].scoreTotal += c.score;
-      map[consolidatedName].rawVariants.add(c.programme);
+      map[name].candidates += 1;
+      map[name].scoreTotal += c.score;
+      map[name].rawVariants.add(c.programme);
     });
     
     return Object.entries(map).map(([name, data]) => ({
@@ -414,12 +545,10 @@ export default function AdminDashboard() {
     })).sort((a, b) => b.avgScore - a.avgScore);
   }, [filteredCandidates]);
 
-  // 3. Filtered Global Stats
   const filteredGlobalAverageScore = useMemo(() => {
     const scores = filteredCandidates
       .map(c => c.score)
       .filter(s => s > 0);
-    
     if (scores.length === 0) return 0;
     return Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
   }, [filteredCandidates]);
@@ -433,7 +562,6 @@ export default function AdminDashboard() {
 
   const filteredTotalCandidates = filteredCandidates.length;
 
-  // 4. Filtered Pie Charts
   const filteredUniversityPieData = useMemo(() => {
     const top8 = filteredUniversityAnalytics.slice(0, 8);
     const othersCount = filteredUniversityAnalytics.slice(8).reduce((sum, u) => sum + u.candidates, 0);
@@ -452,7 +580,6 @@ export default function AdminDashboard() {
     return { labels, data };
   }, [filteredProgramAnalytics]);
 
-  // 5. Score Distribution for Filtered Data
   const filteredScoreDistribution = useMemo(() => {
     const bins = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
     const counts = new Array(bins.length - 1).fill(0);
@@ -472,7 +599,7 @@ export default function AdminDashboard() {
   const COLORS = ['#1a237e', '#2e7d32', '#f57c00', '#c62828', '#1565c0', '#4a148c', '#00695c', '#bf360c', '#78909c'];
 
   // ============================================================
-  // 🟢 FILTER DROPDOWN OPTIONS - NO REPETITIONS
+  // 🟢 FILTER DROPDOWN OPTIONS
   // ============================================================
   const universityOptions = useMemo(() => {
     return uniGroup.groups
@@ -494,7 +621,6 @@ export default function AdminDashboard() {
       }));
   }, [progGroup]);
 
-  // "Select All" functionality for programs
   const handleSelectAllPrograms = () => {
     setSelectedProgramOptions(programOptions);
   };
@@ -683,7 +809,7 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* 🟢 STATS CARDS - Shows FILTERED data or ALL data if no filters */}
+        {/* STATS CARDS */}
         <div style={styles.statsRow}>
           <StatCard icon="👥" label="Filtered Candidates" value={filteredTotalCandidates} subValue={`of ${stats.totalCandidates} total`} />
           <StatCard icon="📊" label="Avg Score" value={`${filteredGlobalAverageScore}%`} />
@@ -695,7 +821,7 @@ export default function AdminDashboard() {
           <StatCard icon="📈" label="Result Records" value={stats.totalResults} />
         </div>
 
-        {/* 🟢 FILTERS BAR */}
+        {/* FILTERS BAR */}
         <div style={styles.filtersBar}>
           <div style={styles.filtersRow}>
             <div style={styles.filterGroup}>
@@ -763,7 +889,7 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* 🟢 PIE CHARTS - FILTERED DATA */}
+        {/* PIE CHARTS */}
         <div style={styles.pieChartGrid}>
           <div style={styles.chartCard}>
             <h4 style={styles.chartTitle}>University Distribution {selectedUniversityOption ? `(${selectedUniversityOption.label})` : '(All)'}</h4>
@@ -826,7 +952,7 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* 🟢 PERFORMANCE BAR CHARTS - FILTERED DATA */}
+        {/* BAR CHARTS */}
         <div style={styles.barChartGrid}>
           <div style={styles.chartCard}>
             <h4 style={styles.chartTitle}>Top Universities (By Avg Score)</h4>
@@ -875,7 +1001,7 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* 🟢 SCORE DISTRIBUTION - FILTERED DATA */}
+        {/* SCORE DISTRIBUTION */}
         <div style={{ ...styles.chartCard, marginBottom: '24px' }}>
           <h4 style={styles.chartTitle}>Score Distribution {selectedProgramOptions.length > 0 || selectedUniversityOption ? '(Filtered)' : '(All)'}</h4>
           <div style={{ height: '250px' }}>
