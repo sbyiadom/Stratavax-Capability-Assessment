@@ -1,5 +1,5 @@
 // pages/admin/index.js - TRUE INFOGRAPHIC DASHBOARD (FIXED SCORES & BAR CHARTS)
-// FIXED: Properly consolidates duplicate programs using normalization
+// FIXED: Enhanced program consolidation to eliminate duplicates
 
 import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/router";
@@ -58,11 +58,16 @@ const ABBREVIATIONS = {
   'information': 'Information', 'technology': 'Technology',
   'communication': 'Communication', 'business': 'Business',
   'agricultural': 'Agricultural', 'chemical': 'Chemical',
-  'civil': 'Civil', 'computer': 'Computer', 'industrial': 'Industrial'
+  'civil': 'Civil', 'computer': 'Computer', 'industrial': 'Industrial',
+  'petroleum': 'Petroleum', 'geological': 'Geological', 'geomatic': 'Geomatic',
+  'materials': 'Materials', 'material': 'Materials', 'psychology': 'Psychology',
+  'statistics': 'Statistics', 'mathematics': 'Mathematics', 'math': 'Mathematics',
+  'secretariat': 'Secretariatship', 'mechatronics': 'Mechatronics',
+  'mechatron': 'Mechatronics', 'psych': 'Psychology'
 };
 
 // Common words to ignore in program names for better matching
-const IGNORE_WORDS = new Set(['of', 'and', 'in', 'with', 'for', 'the', 'at', 'to']);
+const IGNORE_WORDS = new Set(['of', 'and', 'in', 'with', 'for', 'the', 'at', 'to', 'on', 'by', 'from']);
 
 function normalizeText(raw, abbreviations = ABBREVIATIONS) {
   if (!raw || typeof raw !== 'string') return '';
@@ -95,6 +100,7 @@ function getUniqueMasterNames(rawItems, abbreviations) {
     
     uniqueCleanNames.forEach(name2 => {
       if (processed.has(name2)) return;
+      
       const words1 = name1.split(' ');
       const words2 = name2.split(' ');
       
@@ -102,23 +108,88 @@ function getUniqueMasterNames(rawItems, abbreviations) {
       const significant1 = words1.filter(w => !IGNORE_WORDS.has(w.toLowerCase()));
       const significant2 = words2.filter(w => !IGNORE_WORDS.has(w.toLowerCase()));
       
+      // Check if one contains the other's significant words
+      const contains = significant1.every(w => significant2.includes(w)) || 
+                       significant2.every(w => significant1.includes(w));
+      
       // Calculate similarity based on significant words
       const intersection = significant1.filter(w => significant2.includes(w)).length;
       const union = new Set([...significant1, ...significant2]).size;
       const similarity = union > 0 ? intersection / union : 0;
       
-      // Also check if one contains the other's significant words
-      const contains = significant1.every(w => significant2.includes(w)) || 
-                       significant2.every(w => significant1.includes(w));
+      // Special handling for Engineering types
+      const getEngineeringType = (s) => {
+        const lower = s.toLowerCase();
+        if (lower.includes('electrical') || lower.includes('electronic') || lower.includes('elect/electron') || lower.includes('electrical/electronic')) 
+          return 'electrical';
+        if (lower.includes('mechanical') || lower.includes('mech')) 
+          return 'mechanical';
+        if (lower.includes('chemical') || lower.includes('chem')) 
+          return 'chemical';
+        if (lower.includes('civil')) 
+          return 'civil';
+        if (lower.includes('computer')) 
+          return 'computer';
+        if (lower.includes('industrial')) 
+          return 'industrial';
+        if (lower.includes('agricultural') || lower.includes('agric')) 
+          return 'agricultural';
+        if (lower.includes('petroleum') || lower.includes('petrol')) 
+          return 'petroleum';
+        if (lower.includes('geological') || lower.includes('geo')) 
+          return 'geological';
+        if (lower.includes('geomatic')) 
+          return 'geomatic';
+        if (lower.includes('materials') || lower.includes('material')) 
+          return 'materials';
+        return null;
+      };
       
-      if (similarity > 0.5 || contains) { 
+      const type1 = getEngineeringType(name1);
+      const type2 = getEngineeringType(name2);
+      const sameType = type1 && type2 && type1 === type2;
+      
+      // Special handling for Management/Business
+      const isManagement = (s) => {
+        const lower = s.toLowerCase();
+        return lower.includes('management') || lower.includes('business') || lower.includes('admin');
+      };
+      const bothManagement = isManagement(name1) && isManagement(name2);
+      
+      // Special handling for Psychology
+      const isPsychology = (s) => {
+        const lower = s.toLowerCase();
+        return lower.includes('psychology') || lower.includes('psych');
+      };
+      const bothPsychology = isPsychology(name1) && isPsychology(name2);
+      
+      // Special handling for Statistics/Mathematics
+      const isStatsMath = (s) => {
+        const lower = s.toLowerCase();
+        return lower.includes('statistics') || lower.includes('mathematics') || lower.includes('math');
+      };
+      const bothStatsMath = isStatsMath(name1) && isStatsMath(name2);
+      
+      if (similarity > 0.35 || contains || sameType || bothManagement || bothPsychology || bothStatsMath) { 
         group.push(name2); 
         processed.add(name2); 
       }
     });
     
-    // Choose the longest/most descriptive name as master
-    const masterName = group.reduce((a, b) => a.length >= b.length ? a : b);
+    // Choose the most descriptive name as master
+    const masterName = group.reduce((a, b) => {
+      // Prefer names with "BSc" or "Bachelor"
+      const hasBSc = (s) => s.includes('BSc') || s.includes('Bachelor') || s.includes('B-Tech');
+      if (hasBSc(a) && !hasBSc(b)) return a;
+      if (!hasBSc(a) && hasBSc(b)) return b;
+      // Prefer names with "Engineering"
+      const hasEng = (s) => s.includes('Engineering');
+      if (hasEng(a) && !hasEng(b)) return a;
+      if (!hasEng(a) && hasEng(b)) return b;
+      // Otherwise choose the longer one
+      return a.length >= b.length ? a : b;
+    });
+    
     groups.push(masterName);
   });
   
@@ -137,7 +208,57 @@ function getUniqueMasterNames(rawItems, abbreviations) {
       const contains = significant1.every(w => significant2.includes(w)) || 
                        significant2.every(w => significant1.includes(w));
       
-      if (similarity > 0.5 || contains) { 
+      // Same type checking
+      const getEngineeringType = (s) => {
+        const lower = s.toLowerCase();
+        if (lower.includes('electrical') || lower.includes('electronic') || lower.includes('elect/electron')) 
+          return 'electrical';
+        if (lower.includes('mechanical') || lower.includes('mech')) 
+          return 'mechanical';
+        if (lower.includes('chemical') || lower.includes('chem')) 
+          return 'chemical';
+        if (lower.includes('civil')) 
+          return 'civil';
+        if (lower.includes('computer')) 
+          return 'computer';
+        if (lower.includes('industrial')) 
+          return 'industrial';
+        if (lower.includes('agricultural') || lower.includes('agric')) 
+          return 'agricultural';
+        if (lower.includes('petroleum') || lower.includes('petrol')) 
+          return 'petroleum';
+        if (lower.includes('geological') || lower.includes('geo')) 
+          return 'geological';
+        if (lower.includes('geomatic')) 
+          return 'geomatic';
+        if (lower.includes('materials') || lower.includes('material')) 
+          return 'materials';
+        return null;
+      };
+      
+      const type1 = getEngineeringType(master);
+      const type2 = getEngineeringType(clean);
+      const sameType = type1 && type2 && type1 === type2;
+      
+      const isManagement = (s) => {
+        const lower = s.toLowerCase();
+        return lower.includes('management') || lower.includes('business') || lower.includes('admin');
+      };
+      const bothManagement = isManagement(master) && isManagement(clean);
+      
+      const isPsychology = (s) => {
+        const lower = s.toLowerCase();
+        return lower.includes('psychology') || lower.includes('psych');
+      };
+      const bothPsychology = isPsychology(master) && isPsychology(clean);
+      
+      const isStatsMath = (s) => {
+        const lower = s.toLowerCase();
+        return lower.includes('statistics') || lower.includes('mathematics') || lower.includes('math');
+      };
+      const bothStatsMath = isStatsMath(master) && isStatsMath(clean);
+      
+      if (similarity > 0.35 || contains || sameType || bothManagement || bothPsychology || bothStatsMath) { 
         masterToRawMap[master].push(raw); 
       }
     });
@@ -252,7 +373,6 @@ export default function AdminDashboard() {
     candidatesWithScores.forEach(c => {
       if (!c.university) return;
       
-      // Find the master name for this university
       let master = c.university;
       for (const [m, rawList] of Object.entries(uniGroup.masterToRawMap)) {
         if (rawList.includes(c.university)) { 
@@ -284,14 +404,13 @@ export default function AdminDashboard() {
     })).sort((a, b) => b.avgScore - a.avgScore);
   }, [candidatesWithScores, uniGroup.masterToRawMap]);
 
-  // 4. Program Analytics (Grouped & Scored) - FIXED CONSOLIDATION
+  // 4. Program Analytics (Grouped & Scored) - CONSOLIDATED
   const programAnalytics = useMemo(() => {
     const map = {};
     
     candidatesWithScores.forEach(c => {
       if (!c.programme) return;
       
-      // Find the master name for this program
       let master = c.programme;
       for (const [m, rawList] of Object.entries(progGroup.masterToRawMap)) {
         if (rawList.includes(c.programme)) { 
@@ -312,7 +431,6 @@ export default function AdminDashboard() {
       map[master].rawVariants.add(c.programme);
     });
     
-    // Convert to array and sort by average score
     return Object.entries(map).map(([name, data]) => ({
       name,
       candidates: data.candidates,
@@ -808,7 +926,6 @@ export default function AdminDashboard() {
             ) : (
               <div style={styles.list}>
                 {recentResults.slice(0, 6).map((result) => {
-                  // Find candidate name from allCandidates
                   const candidate = allCandidates.find(c => c.id === result.user_id);
                   return (
                     <div key={result.id} style={styles.listItem}>
@@ -837,6 +954,11 @@ export default function AdminDashboard() {
           0% { transform: rotate(0deg); }
           100% { transform: rotate(360deg); }
         }
+        
+        .action-card:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+        }
       `}</style>
     </AppLayout>
   );
@@ -858,7 +980,7 @@ function StatCard({ icon, label, value, subValue }) {
 function ActionCard({ href, icon, title, description }) {
   return (
     <Link href={href} legacyBehavior>
-      <a style={styles.actionCard}>
+      <a style={styles.actionCard} className="action-card">
         <span style={styles.actionCardIcon}>{icon}</span>
         <div>
           <h3 style={styles.actionCardTitle}>{title}</h3>
