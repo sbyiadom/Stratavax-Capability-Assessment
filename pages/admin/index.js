@@ -1,5 +1,5 @@
-// pages/admin/index.js - UPGRADED WITH INFOGRAPHIC ANALYTICS & INSIGHTS
-// FIXED: Added Average Score, Passing Rate, and Score Distribution Charts.
+// pages/admin/index.js - TRUE INFOGRAPHIC DASHBOARD
+// Uses 641 candidates, shows university & program analytics, and diverse charts.
 
 import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/router";
@@ -204,104 +204,90 @@ export default function AdminDashboard() {
   const [recentResults, setRecentResults] = useState([]);
 
   // ============================================================
-  // 🟢 ADVANCED ANALYTICS CALCULATIONS
+  // 🟢 INFOGRAPHIC ANALYTICS CALCULATIONS (WHOLE DATASET)
   // ============================================================
   
-  // 1. Filter all candidates based on University/Program/Score
-  const filteredCandidates = useMemo(() => {
-    let filtered = allCandidates;
-
-    if (selectedUniversityOption) {
-      filtered = filtered.filter(c => c.university === selectedUniversityOption.value);
-    }
-
-    if (selectedProgramOptions.length > 0) {
-      const allowedRawNames = [];
-      selectedProgramOptions.forEach(opt => {
-        // Use normalization grouping if available
-        const rawList = masterToRawMap[opt.value] || [];
-        allowedRawNames.push(...rawList);
-      });
-      filtered = filtered.filter(c => allowedRawNames.includes(c.programme));
-    }
-
-    filtered = filtered.filter(c => {
-      const trueScore = calculateTrueScore(c);
-      return trueScore >= Number(minScore) && trueScore <= Number(maxScore);
-    });
-
-    return filtered;
-  }, [allCandidates, selectedUniversityOption, selectedProgramOptions, minScore, maxScore]);
-
-  // 2. Calculate True Average Score
-  const trueAverageScore = useMemo(() => {
-    const scores = filteredCandidates
-      .map(c => calculateTrueScore(c))
-      .filter(s => s > 0);
+  // 1. Overall Stats (Based on ALL candidates)
+  const globalAverageScore = useMemo(() => {
+    const scores = allCandidates.map(c => calculateTrueScore(c)).filter(s => s > 0);
     if (scores.length === 0) return 0;
     return Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
-  }, [filteredCandidates]);
+  }, [allCandidates]);
 
-  // 3. Calculate Pass Rate (% of candidates with score >= 70%)
-  const passRate = useMemo(() => {
-    const scores = filteredCandidates.map(c => calculateTrueScore(c));
+  const globalPassRate = useMemo(() => {
+    const scores = allCandidates.map(c => calculateTrueScore(c));
     if (scores.length === 0) return 0;
     const passed = scores.filter(s => s >= 70).length;
     return Math.round((passed / scores.length) * 100);
-  }, [filteredCandidates]);
+  }, [allCandidates]);
 
-  // 4. Calculate Top Performing University
-  const topUniversity = useMemo(() => {
-    const uniMap = {};
-    filteredCandidates.forEach(c => {
+  // 2. University Analytics (Count, Avg Score, Program Count)
+  const universityAnalytics = useMemo(() => {
+    const map = {};
+    allCandidates.forEach(c => {
       if (!c.university) return;
-      if (!uniMap[c.university]) uniMap[c.university] = { total: 0, count: 0 };
-      uniMap[c.university].total += calculateTrueScore(c);
-      uniMap[c.university].count += 1;
-    });
-    
-    let top = { name: 'N/A', avg: 0 };
-    Object.keys(uniMap).forEach(uni => {
-      const avg = Math.round(uniMap[uni].total / uniMap[uni].count);
-      if (avg > top.avg) top = { name: uni, avg };
-    });
-    return top;
-  }, [filteredCandidates]);
-
-  // 5. Score Distribution (For the Histogram)
-  const scoreDistribution = useMemo(() => {
-    const bins = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
-    const counts = new Array(bins.length - 1).fill(0);
-    
-    filteredCandidates.forEach(c => {
-      const score = calculateTrueScore(c);
-      for (let i = 0; i < bins.length - 1; i++) {
-        if (score >= bins[i] && score < bins[i + 1]) {
-          counts[i]++;
-          break;
-        }
+      if (!map[c.university]) {
+        map[c.university] = { candidates: 0, scoreTotal: 0, programs: new Set() };
       }
-    });
-    return { bins, counts };
-  }, [filteredCandidates]);
-
-  // 6. Top 5 Universities by Average Score (For Chart)
-  const topUniByScore = useMemo(() => {
-    const uniMap = {};
-    filteredCandidates.forEach(c => {
-      if (!c.university) return;
-      if (!uniMap[c.university]) uniMap[c.university] = { total: 0, count: 0 };
-      uniMap[c.university].total += calculateTrueScore(c);
-      uniMap[c.university].count += 1;
+      map[c.university].candidates += 1;
+      map[c.university].scoreTotal += calculateTrueScore(c);
+      if (c.programme) map[c.university].programs.add(c.programme);
     });
     
-    return Object.entries(uniMap)
-      .map(([name, data]) => ({ name, avg: Math.round(data.total / data.count) }))
-      .sort((a, b) => b.avg - a.avg)
-      .slice(0, 5);
-  }, [filteredCandidates]);
+    return Object.entries(map)
+      .map(([name, data]) => ({
+        name,
+        candidates: data.candidates,
+        avgScore: Math.round(data.scoreTotal / data.candidates),
+        programs: data.programs.size
+      }))
+      .sort((a, b) => b.candidates - a.candidates);
+  }, [allCandidates]);
 
-  // 7. Normalization for Program Filters
+  // 3. Program Analytics (Avg Score)
+  const programAnalytics = useMemo(() => {
+    const map = {};
+    allCandidates.forEach(c => {
+      if (!c.programme) return;
+      if (!map[c.programme]) {
+        map[c.programme] = { candidates: 0, scoreTotal: 0 };
+      }
+      map[c.programme].candidates += 1;
+      map[c.programme].scoreTotal += calculateTrueScore(c);
+    });
+    
+    return Object.entries(map)
+      .map(([name, data]) => ({
+        name,
+        candidates: data.candidates,
+        avgScore: Math.round(data.scoreTotal / data.candidates)
+      }))
+      .sort((a, b) => b.candidates - a.candidates);
+  }, [allCandidates]);
+
+  // 4. Pie Chart Data (University Distribution)
+  const universityPieData = useMemo(() => {
+    const top8 = universityAnalytics.slice(0, 8);
+    const othersCount = universityAnalytics.slice(8).reduce((sum, u) => sum + u.candidates, 0);
+    const labels = top8.map(u => u.name);
+    const data = top8.map(u => u.candidates);
+    if (othersCount > 0) { labels.push('Others'); data.push(othersCount); }
+    return { labels, data };
+  }, [universityAnalytics]);
+
+  // 5. Pie Chart Data (Program Distribution)
+  const programPieData = useMemo(() => {
+    const top8 = programAnalytics.slice(0, 8);
+    const othersCount = programAnalytics.slice(8).reduce((sum, p) => sum + p.candidates, 0);
+    const labels = top8.map(p => p.name);
+    const data = top8.map(p => p.candidates);
+    if (othersCount > 0) { labels.push('Others'); data.push(othersCount); }
+    return { labels, data };
+  }, [programAnalytics]);
+
+  const COLORS = ['#1a237e', '#2e7d32', '#f57c00', '#c62828', '#1565c0', '#4a148c', '#00695c', '#bf360c', '#78909c'];
+
+  // 6. Program Normalization for Filters
   const rawPrograms = useMemo(() => {
     return allCandidates.map(c => c.programme).filter(Boolean);
   }, [allCandidates]);
@@ -328,8 +314,6 @@ export default function AdminDashboard() {
     setMinScore(0);
     setMaxScore(100);
   };
-
-  const COLORS = ['#1a237e', '#2e7d32', '#f57c00', '#c62828', '#1565c0', '#4a148c', '#00695c', '#bf360c', '#78909c'];
 
   // ============================================================
   // AUTH & FETCH
@@ -484,12 +468,12 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* 🟢 NEW INFOGRAPHIC STATS CARDS */}
+        {/* 🟢 NEW INFOGRAPHIC STATS CARDS (Global) */}
         <div style={styles.statsRow}>
           <StatCard icon="👥" label="Total Candidates" value={stats.totalCandidates} />
-          <StatCard icon="📊" label="Average Score" value={`${trueAverageScore}%`} />
-          <StatCard icon="✅" label="Pass Rate (≥70%)" value={`${passRate}%`} />
-          <StatCard icon="🏆" label="Top University" value={topUniversity.name} subValue={`${topUniversity.avg}%`} />
+          <StatCard icon="📊" label="Average Score" value={`${globalAverageScore}%`} />
+          <StatCard icon="✅" label="Pass Rate (≥70%)" value={`${globalPassRate}%`} />
+          <StatCard icon="📚" label="Total Programs" value={uniqueProgramMasterNames.length} />
           <StatCard icon="📋" label="Active Assessments" value={stats.totalAssessments} />
           <StatCard icon="✓" label="Completed" value={stats.completedAssessments} />
           <StatCard icon="◉" label="In Progress" value={stats.inProgressSessions} />
@@ -543,50 +527,84 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* CHARTS GRID */}
+        {/* 🟢 INFOGRAPHIC CHARTS GRID (University & Program Pie Charts) */}
         <div style={styles.chartGrid}>
           <div style={styles.chartCard}>
-            <h4 style={styles.chartTitle}>Score Distribution</h4>
-            <div style={{ height: '250px' }}>
-              <Bar
+            <h4 style={styles.chartTitle}>University Distribution (By Candidates)</h4>
+            <div style={{ height: '250px', position: 'relative' }}>
+              <Pie
                 data={{
-                  labels: scoreDistribution.bins.slice(0, -1).map((b, i) => `${b}-${scoreDistribution.bins[i+1]}%`),
-                  datasets: [{
-                    label: 'Number of Candidates',
-                    data: scoreDistribution.counts,
-                    backgroundColor: '#1a237e',
-                    borderRadius: 4,
-                  }]
+                  labels: universityPieData.labels,
+                  datasets: [{ data: universityPieData.data, backgroundColor: COLORS, borderWidth: 2, borderColor: '#fff' }]
                 }}
-                options={{
-                  maintainAspectRatio: false,
-                  plugins: { legend: { display: false } },
-                  scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
-                }}
+                options={{ maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { boxWidth: 12, padding: 10, font: { size: 11 } } } } }}
               />
             </div>
           </div>
 
           <div style={styles.chartCard}>
-            <h4 style={styles.chartTitle}>Top 5 Universities (By Average Score)</h4>
-            <div style={{ height: '250px' }}>
-              <Bar
+            <h4 style={styles.chartTitle}>Program Distribution (By Candidates)</h4>
+            <div style={{ height: '250px', position: 'relative' }}>
+              <Pie
                 data={{
-                  labels: topUniByScore.map(item => item.name),
-                  datasets: [{
-                    label: 'Average Score',
-                    data: topUniByScore.map(item => item.avg),
-                    backgroundColor: '#2e7d32',
-                    borderRadius: 4,
-                  }]
+                  labels: programPieData.labels,
+                  datasets: [{ data: programPieData.data, backgroundColor: COLORS, borderWidth: 2, borderColor: '#fff' }]
                 }}
-                options={{
-                  indexAxis: 'y',
-                  maintainAspectRatio: false,
-                  plugins: { legend: { display: false } },
-                  scales: { x: { beginAtZero: true, max: 100 } }
-                }}
+                options={{ maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { boxWidth: 12, padding: 10, font: { size: 11 } } } } }}
               />
+            </div>
+          </div>
+        </div>
+
+        {/* 🟢 DETAILED ANALYTICS TABLES */}
+        <div style={styles.analyticsTablesGrid}>
+          <div style={styles.analyticsCard}>
+            <h4 style={styles.analyticsTitle}>University Performance Overview</h4>
+            <div style={styles.scrollTable}>
+              <table style={styles.table}>
+                <thead>
+                  <tr>
+                    <th style={styles.th}>University</th>
+                    <th style={styles.th}>Candidates</th>
+                    <th style={styles.th}>Avg Score</th>
+                    <th style={styles.th}>Programs</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {universityAnalytics.slice(0, 15).map((uni, idx) => (
+                    <tr key={idx} style={styles.tr}>
+                      <td style={styles.td}>{uni.name}</td>
+                      <td style={styles.td}>{uni.candidates}</td>
+                      <td style={styles.td}>{uni.avgScore}%</td>
+                      <td style={styles.td}>{uni.programs}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div style={styles.analyticsCard}>
+            <h4 style={styles.analyticsTitle}>Program Performance Overview</h4>
+            <div style={styles.scrollTable}>
+              <table style={styles.table}>
+                <thead>
+                  <tr>
+                    <th style={styles.th}>Programme</th>
+                    <th style={styles.th}>Candidates</th>
+                    <th style={styles.th}>Avg Score</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {programAnalytics.slice(0, 15).map((prog, idx) => (
+                    <tr key={idx} style={styles.tr}>
+                      <td style={styles.td}>{prog.name}</td>
+                      <td style={styles.td}>{prog.candidates}</td>
+                      <td style={styles.td}>{prog.avgScore}%</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
@@ -844,7 +862,7 @@ const styles = {
     alignSelf: 'flex-end'
   },
 
-  // CHART GRID STYLES
+  // 🟢 CHART GRID STYLES
   chartGrid: {
     display: 'grid',
     gridTemplateColumns: '1fr 1fr',
@@ -864,6 +882,35 @@ const styles = {
     color: '#0a1929',
     margin: '0 0 12px 0'
   },
+
+  // 🟢 ANALYTICS TABLES STYLES
+  analyticsTablesGrid: {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: '20px',
+    marginBottom: '30px'
+  },
+  analyticsCard: {
+    background: 'white',
+    padding: '16px',
+    borderRadius: '12px',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+    border: '1px solid #eef2f7'
+  },
+  analyticsTitle: {
+    fontSize: '16px',
+    fontWeight: '600',
+    color: '#0a1929',
+    margin: '0 0 12px 0'
+  },
+  scrollTable: {
+    maxHeight: '300px',
+    overflowY: 'auto'
+  },
+  table: { width: '100%', borderCollapse: 'collapse', fontSize: '14px' },
+  th: { padding: '10px 12px', textAlign: 'left', background: '#f8fafc', fontWeight: '600', color: '#475569', position: 'sticky', top: 0, borderBottom: '2px solid #e2e8f0' },
+  td: { padding: '10px 12px', borderBottom: '1px solid #eef2f7' },
+  tr: { transition: 'background 0.2s' },
 
   // ACTION CARDS
   actionCardsGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "18px", marginBottom: "30px" },
