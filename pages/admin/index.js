@@ -1,5 +1,5 @@
 // pages/admin/index.js - TRUE INFOGRAPHIC DASHBOARD (FIXED SCORES & BAR CHARTS)
-// FIXED: Proper score joining - ALL results fetched, not just 6
+// FIXED: Proper score joining - ALL results fetched, consolidated dropdowns, fixed auth
 
 import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/router";
@@ -366,15 +366,43 @@ function formatDate(value) {
   }
 }
 
+// ============================================================
+// 🟢 AUTH HELPER FUNCTIONS
+// ============================================================
+
+async function ensureValidSession() {
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+  if (sessionError || !sessionData?.session) {
+    console.error("No valid session");
+    return null;
+  }
+  return sessionData.session;
+}
+
 async function getExactCount(tableName, configureQuery) {
   try {
+    const session = await ensureValidSession();
+    if (!session) {
+      console.error("No valid session for count query");
+      return 0;
+    }
+
     let query = supabase.from(tableName).select("*", { count: "exact", head: true });
     if (typeof configureQuery === "function") query = configureQuery(query);
     const { count, error } = await query;
-    if (error) throw error;
+    if (error) {
+      if (error.message?.includes("JWT") || error.message?.includes("token")) {
+        throw error;
+      }
+      console.error("Count error for " + tableName + ":", error);
+      return 0;
+    }
     return count || 0;
   } catch (error) {
     console.error("Count error for " + tableName + ":", error);
+    if (error.message?.includes("JWT") || error.message?.includes("token")) {
+      throw error;
+    }
     return 0;
   }
 }
@@ -409,7 +437,6 @@ export default function AdminDashboard() {
   // 🟢 DATA PREPARATION - Join ALL Scores to Candidates
   // ============================================================
   const candidatesWithScores = useMemo(() => {
-    // Create a map of userId -> highest score from ALL results
     const scoreMap = {};
     const resultMap = {};
     
@@ -417,7 +444,6 @@ export default function AdminDashboard() {
       const userId = r.user_id;
       const score = toNumber(r.percentage_score);
       
-      // Keep the highest score for each candidate
       if (!scoreMap[userId] || score > scoreMap[userId]) {
         scoreMap[userId] = score;
         resultMap[userId] = {
@@ -632,7 +658,7 @@ export default function AdminDashboard() {
   };
 
   // ============================================================
-  // 🟢 AUTH & FETCH
+  // 🟢 AUTH & FETCH - FIXED
   // ============================================================
   useEffect(() => {
     checkAdminAuth();
@@ -643,14 +669,14 @@ export default function AdminDashboard() {
       setLoading(true);
       setAuthError(null);
 
-      const { data, error } = await supabase.auth.getSession();
-      if (error) throw error;
+      const session = await ensureValidSession();
+      if (!session) {
+        router.push("/login");
+        return;
+      }
 
-      const activeSession = data?.session || null;
-      if (!activeSession?.user) { router.push("/login"); return; }
-
-      const userId = activeSession.user.id;
-      const metadataRole = activeSession.user.user_metadata?.role || null;
+      const userId = session.user.id;
+      const metadataRole = session.user.user_metadata?.role || null;
 
       const { data: profile, error: profileError } = await supabase
         .from("supervisor_profiles")
@@ -658,25 +684,32 @@ export default function AdminDashboard() {
         .eq("id", userId)
         .maybeSingle();
 
-      if (profileError && profileError.code !== "PGRST116") throw profileError;
+      if (profileError && profileError.code !== "PGRST116") {
+        throw profileError;
+      }
+      
       const resolvedRole = profile?.role || metadataRole;
 
-      if (resolvedRole !== "admin") { 
-        setAuthError("Admin access is required."); 
-        router.push("/supervisor"); 
-        return; 
+      if (resolvedRole !== "admin") {
+        setAuthError("Admin access is required.");
+        router.push("/supervisor");
+        return;
       }
-      if (profile?.is_active === false) { 
-        await supabase.auth.signOut(); 
-        router.push("/login"); 
-        return; 
+      
+      if (profile?.is_active === false) {
+        await supabase.auth.signOut();
+        router.push("/login");
+        return;
       }
 
       setIsAdmin(true);
       await fetchDashboardData();
     } catch (error) {
       console.error("Admin auth error:", error);
-      router.push("/login");
+      if (error.message?.includes("JWT") || error.message?.includes("token")) {
+        await supabase.auth.signOut();
+        router.push("/login");
+      }
     } finally {
       setLoading(false);
     }
@@ -684,6 +717,12 @@ export default function AdminDashboard() {
 
   async function fetchDashboardData() {
     try {
+      const session = await ensureValidSession();
+      if (!session) {
+        router.push("/login");
+        return;
+      }
+
       console.log("Fetching dashboard data...");
 
       const [
@@ -714,7 +753,6 @@ export default function AdminDashboard() {
           .select("id, full_name, email, created_at")
           .order("created_at", { ascending: false })
           .limit(6),
-        // FIX: Get ALL results, not just 6
         supabase
           .from("assessment_results")
           .select(`
@@ -728,8 +766,6 @@ export default function AdminDashboard() {
             recommendation
           `)
           .order("completed_at", { ascending: false })
-          // Remove the limit to get ALL results
-          // .limit(10000) // Still limiting to 10000, but that should be enough
       ]);
 
       const accessRows = safeArray(accessResponse?.data || []);
@@ -755,6 +791,10 @@ export default function AdminDashboard() {
       console.log("Candidates count:", allCandidatesResponse?.data?.length || 0);
     } catch (error) {
       console.error("Error fetching admin dashboard data:", error);
+      if (error.message?.includes("JWT") || error.message?.includes("token")) {
+        await supabase.auth.signOut();
+        router.push("/login");
+      }
     }
   }
 
