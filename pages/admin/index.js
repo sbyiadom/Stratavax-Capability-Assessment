@@ -1,5 +1,5 @@
 // pages/admin/index.js - TRUE INFOGRAPHIC DASHBOARD (FIXED SCORES & BAR CHARTS)
-// FIXED: Aggressive program consolidation + dynamic filtering for all charts
+// FIXED: Default all data view, consolidated dropdowns, select all functionality
 
 import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/router";
@@ -158,7 +158,7 @@ function consolidateProgramName(raw) {
   }
   // Food Science
   if (lower.includes('food science') || lower.includes('food')) {
-    return 'BSc Food Science';
+    return 'BSc Food Science and Postharvest Technology';
   }
   // Statistics/Mathematics
   if (lower.includes('statistics') || lower.includes('mathematics') || lower.includes('math')) {
@@ -172,7 +172,7 @@ function consolidateProgramName(raw) {
   if (lower.includes('arts') || lower.includes('ba ')) {
     return 'BA Arts';
   }
-  // Default - try to clean up
+  // Default - return as is
   return raw;
 }
 
@@ -296,7 +296,9 @@ export default function AdminDashboard() {
       hasResult: !!scoreMap[c.id],
       resultDetails: resultMap[c.id] || null,
       // Add consolidated program name
-      consolidatedProgram: consolidateProgramName(c.programme)
+      consolidatedProgram: consolidateProgramName(c.programme),
+      // Add consolidated university name (normalize for better grouping)
+      consolidatedUniversity: normalizeText(c.university)
     }));
   }, [allCandidates, recentResults]);
 
@@ -310,7 +312,7 @@ export default function AdminDashboard() {
   const progGroup = useMemo(() => getUniqueMasterNames(rawPrograms), [rawPrograms]);
 
   // ============================================================
-  // 🟢 FILTER LOGIC
+  // 🟢 FILTER LOGIC - Default shows ALL data
   // ============================================================
   const filteredCandidates = useMemo(() => {
     let filtered = candidatesWithScores;
@@ -470,7 +472,7 @@ export default function AdminDashboard() {
   const COLORS = ['#1a237e', '#2e7d32', '#f57c00', '#c62828', '#1565c0', '#4a148c', '#00695c', '#bf360c', '#78909c'];
 
   // ============================================================
-  // 🟢 FILTER DROPDOWN OPTIONS (Consolidated)
+  // 🟢 FILTER DROPDOWN OPTIONS - NO REPETITIONS
   // ============================================================
   const universityOptions = useMemo(() => {
     return uniGroup.groups
@@ -491,6 +493,15 @@ export default function AdminDashboard() {
         rawVariants: progGroup.masterToRawMap[name] || []
       }));
   }, [progGroup]);
+
+  // "Select All" functionality for programs
+  const handleSelectAllPrograms = () => {
+    setSelectedProgramOptions(programOptions);
+  };
+
+  const handleClearPrograms = () => {
+    setSelectedProgramOptions([]);
+  };
 
   const resetFilters = () => {
     setSelectedUniversityOption(null);
@@ -672,7 +683,7 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* 🟢 STATS CARDS - Now show FILTERED data */}
+        {/* 🟢 STATS CARDS - Shows FILTERED data or ALL data if no filters */}
         <div style={styles.statsRow}>
           <StatCard icon="👥" label="Filtered Candidates" value={filteredTotalCandidates} subValue={`of ${stats.totalCandidates} total`} />
           <StatCard icon="📊" label="Avg Score" value={`${filteredGlobalAverageScore}%`} />
@@ -696,7 +707,7 @@ export default function AdminDashboard() {
                 value={selectedUniversityOption}
                 onChange={(option) => { 
                   setSelectedUniversityOption(option); 
-                  setSelectedProgramOptions([]); 
+                  if (option) setSelectedProgramOptions([]);
                 }}
                 placeholder="Select University..."
                 isClearable
@@ -706,6 +717,10 @@ export default function AdminDashboard() {
 
             <div style={styles.filterGroup}>
               <label style={styles.filterLabel}>Programs:</label>
+              <div style={{ display: 'flex', gap: '6px', marginBottom: '4px' }}>
+                <button onClick={handleSelectAllPrograms} style={styles.smallButton}>Select All</button>
+                <button onClick={handleClearPrograms} style={styles.smallButton}>Clear</button>
+              </div>
               <Select
                 className="react-select-container"
                 classNamePrefix="react-select"
@@ -751,7 +766,7 @@ export default function AdminDashboard() {
         {/* 🟢 PIE CHARTS - FILTERED DATA */}
         <div style={styles.pieChartGrid}>
           <div style={styles.chartCard}>
-            <h4 style={styles.chartTitle}>University Distribution (Filtered)</h4>
+            <h4 style={styles.chartTitle}>University Distribution {selectedUniversityOption ? `(${selectedUniversityOption.label})` : '(All)'}</h4>
             <div style={{ height: '250px', position: 'relative' }}>
               <Pie
                 data={{
@@ -781,7 +796,7 @@ export default function AdminDashboard() {
           </div>
 
           <div style={styles.chartCard}>
-            <h4 style={styles.chartTitle}>Program Distribution (Filtered)</h4>
+            <h4 style={styles.chartTitle}>Program Distribution {selectedProgramOptions.length > 0 ? '(Filtered)' : '(All)'}</h4>
             <div style={{ height: '250px', position: 'relative' }}>
               <Pie
                 data={{
@@ -814,7 +829,7 @@ export default function AdminDashboard() {
         {/* 🟢 PERFORMANCE BAR CHARTS - FILTERED DATA */}
         <div style={styles.barChartGrid}>
           <div style={styles.chartCard}>
-            <h4 style={styles.chartTitle}>Top Universities (By Avg Score - Filtered)</h4>
+            <h4 style={styles.chartTitle}>Top Universities (By Avg Score)</h4>
             <div style={{ height: '400px' }}>
               <Bar
                 data={{
@@ -837,7 +852,7 @@ export default function AdminDashboard() {
           </div>
 
           <div style={styles.chartCard}>
-            <h4 style={styles.chartTitle}>Top Programs (By Avg Score - Filtered)</h4>
+            <h4 style={styles.chartTitle}>Top Programs (By Avg Score)</h4>
             <div style={{ height: '400px' }}>
               <Bar
                 data={{
@@ -862,7 +877,7 @@ export default function AdminDashboard() {
 
         {/* 🟢 SCORE DISTRIBUTION - FILTERED DATA */}
         <div style={{ ...styles.chartCard, marginBottom: '24px' }}>
-          <h4 style={styles.chartTitle}>Score Distribution (Filtered)</h4>
+          <h4 style={styles.chartTitle}>Score Distribution {selectedProgramOptions.length > 0 || selectedUniversityOption ? '(Filtered)' : '(All)'}</h4>
           <div style={{ height: '250px' }}>
             <Bar
               data={{
@@ -1138,6 +1153,16 @@ const styles = {
     marginLeft: 'auto',
     height: '38px',
     alignSelf: 'flex-end'
+  },
+  smallButton: {
+    padding: '2px 10px',
+    fontSize: '11px',
+    background: '#e2e8f0',
+    border: 'none',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    color: '#334155',
+    fontWeight: '600'
   },
 
   pieChartGrid: {
