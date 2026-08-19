@@ -1,5 +1,5 @@
 // pages/admin/index.js - TRUE INFOGRAPHIC DASHBOARD (FIXED SCORES & BAR CHARTS)
-// FIXED: Enhanced program consolidation to eliminate duplicates
+// FIXED: Consolidated filter dropdowns for Universities and Programs
 
 import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/router";
@@ -63,11 +63,13 @@ const ABBREVIATIONS = {
   'materials': 'Materials', 'material': 'Materials', 'psychology': 'Psychology',
   'statistics': 'Statistics', 'mathematics': 'Mathematics', 'math': 'Mathematics',
   'secretariat': 'Secretariatship', 'mechatronics': 'Mechatronics',
-  'mechatron': 'Mechatronics', 'psych': 'Psychology'
+  'mechatron': 'Mechatronics', 'psych': 'Psychology',
+  'kpoly': 'Kumasi Technical University', 'kpoly': 'Kumasi Technical University',
+  'poly': 'Technical University', 'tech': 'Technical'
 };
 
 // Common words to ignore in program names for better matching
-const IGNORE_WORDS = new Set(['of', 'and', 'in', 'with', 'for', 'the', 'at', 'to', 'on', 'by', 'from']);
+const IGNORE_WORDS = new Set(['of', 'and', 'in', 'with', 'for', 'the', 'at', 'to', 'on', 'by', 'from', 'university']);
 
 function normalizeText(raw, abbreviations = ABBREVIATIONS) {
   if (!raw || typeof raw !== 'string') return '';
@@ -477,17 +479,29 @@ export default function AdminDashboard() {
 
   const COLORS = ['#1a237e', '#2e7d32', '#f57c00', '#c62828', '#1565c0', '#4a148c', '#00695c', '#bf360c', '#78909c'];
 
-  // 7. Filters
+  // 7. Filters - CONSOLIDATED DROPDOWNS
   const universityOptions = useMemo(() => {
-    const map = {};
-    candidatesWithScores.forEach(c => { 
-      if (c.university) map[c.university] = true; 
-    });
-    return Object.keys(map).sort().map(uni => ({ label: uni, value: uni }));
-  }, [candidatesWithScores]);
+    // Use the consolidated master names from uniGroup
+    return uniGroup.groups
+      .sort()
+      .map(name => ({ 
+        label: name, 
+        value: name,
+        // Store the raw variants for filtering
+        rawVariants: uniGroup.masterToRawMap[name] || []
+      }));
+  }, [uniGroup]);
 
   const programOptions = useMemo(() => {
-    return progGroup.groups.map(p => ({ label: p, value: p }));
+    // Use the consolidated master names from progGroup
+    return progGroup.groups
+      .sort()
+      .map(name => ({ 
+        label: name, 
+        value: name,
+        // Store the raw variants for filtering
+        rawVariants: progGroup.masterToRawMap[name] || []
+      }));
   }, [progGroup]);
 
   const resetFilters = () => {
@@ -497,29 +511,40 @@ export default function AdminDashboard() {
     setMaxScore(100);
   };
 
-  // Filtered candidates based on selections
+  // Filtered candidates based on selections - UPDATED to use consolidated names
   const filteredCandidates = useMemo(() => {
     let filtered = candidatesWithScores;
 
+    // Filter by University (using consolidated name)
     if (selectedUniversityOption) {
-      filtered = filtered.filter(c => c.university === selectedUniversityOption.value);
+      const rawVariants = selectedUniversityOption.rawVariants || [];
+      filtered = filtered.filter(c => {
+        // Check if candidate's university matches any raw variant of the selected consolidated university
+        return rawVariants.includes(c.university) || c.university === selectedUniversityOption.value;
+      });
     }
 
+    // Filter by Program (using consolidated name)
     if (selectedProgramOptions.length > 0) {
       const allowedRawNames = [];
       selectedProgramOptions.forEach(opt => {
-        const rawList = progGroup.masterToRawMap[opt.value] || [];
-        allowedRawNames.push(...rawList);
+        const rawVariants = opt.rawVariants || [];
+        allowedRawNames.push(...rawVariants);
+        // Also add the consolidated name itself in case it matches exactly
+        allowedRawNames.push(opt.value);
       });
-      filtered = filtered.filter(c => allowedRawNames.includes(c.programme));
+      filtered = filtered.filter(c => {
+        return allowedRawNames.includes(c.programme);
+      });
     }
 
+    // Filter by Score
     filtered = filtered.filter(c => {
       return c.score >= Number(minScore) && c.score <= Number(maxScore);
     });
 
     return filtered;
-  }, [candidatesWithScores, selectedUniversityOption, selectedProgramOptions, minScore, maxScore, progGroup.masterToRawMap]);
+  }, [candidatesWithScores, selectedUniversityOption, selectedProgramOptions, minScore, maxScore]);
 
   // ============================================================
   // AUTH & FETCH
@@ -706,7 +731,7 @@ export default function AdminDashboard() {
           <StatCard icon="📈" label="Result Records" value={stats.totalResults} />
         </div>
 
-        {/* 🟢 ADVANCED FILTERS BAR */}
+        {/* 🟢 ADVANCED FILTERS BAR - CONSOLIDATED DROPDOWNS */}
         <div style={styles.filtersBar}>
           <div style={styles.filtersRow}>
             <div style={styles.filterGroup}>
