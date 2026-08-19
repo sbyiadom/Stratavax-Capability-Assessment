@@ -171,22 +171,34 @@ export default function AdminDashboard() {
   // 🟢 INFOGRAPHIC ANALYTICS CALCULATIONS
   // ============================================================
   
-  // 1. Join Scores to Candidates (Fixes the 0% bug)
+  // 1. Join Scores to Candidates (FIXED: Now gets all scores, not just 6)
   const candidatesWithScores = useMemo(() => {
-    // Create a map of userId -> score from recentResults
+    // Create a map of userId -> highest/recent score
     const scoreMap = {};
+    const resultMap = {};
+    
     recentResults.forEach(r => {
-      // Only store the score if we don't have one yet (keep the latest one)
-      if (!scoreMap[r.user_id]) {
-        scoreMap[r.user_id] = toNumber(r.percentage_score);
+      const userId = r.user_id;
+      const score = toNumber(r.percentage_score);
+      
+      // Keep the most recent score or highest score
+      if (!scoreMap[userId] || score > scoreMap[userId]) {
+        scoreMap[userId] = score;
+        resultMap[userId] = {
+          score: score,
+          completed_at: r.completed_at,
+          recommendation: r.recommendation
+        };
       }
     });
 
+    console.log("Score map created with", Object.keys(scoreMap).length, "candidates");
+
     return allCandidates.map(c => ({
       ...c,
-      // If we don't have a result, default score is 0
       score: scoreMap[c.id] || 0,
-      hasResult: !!scoreMap[c.id]
+      hasResult: !!scoreMap[c.id],
+      resultDetails: resultMap[c.id] || null
     }));
   }, [allCandidates, recentResults]);
 
@@ -242,9 +254,20 @@ export default function AdminDashboard() {
 
   // 5. Global Stats (Now accurate)
   const globalAverageScore = useMemo(() => {
-    const scores = candidatesWithScores.map(c => c.score).filter(s => s > 0);
+    const scores = candidatesWithScores
+      .map(c => c.score)
+      .filter(s => s > 0);
+    
     if (scores.length === 0) return 0;
-    return Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
+    
+    const avg = scores.reduce((a, b) => a + b, 0) / scores.length;
+    console.log("Average score calculation:", { 
+      totalCandidates: candidatesWithScores.length,
+      candidatesWithScores: scores.length,
+      average: Math.round(avg)
+    });
+    
+    return Math.round(avg);
   }, [candidatesWithScores]);
 
   const globalPassRate = useMemo(() => {
@@ -364,7 +387,18 @@ export default function AdminDashboard() {
     try {
       console.log("Fetching dashboard data...");
 
-      const [ supervisorCount, candidateCount, assessmentCount, completedCount, resultCount, inProgressCount, accessResponse, allCandidatesResponse, recentCandidatesResponse, resultsResponse ] = await Promise.all([
+      const [
+        supervisorCount, 
+        candidateCount, 
+        assessmentCount, 
+        completedCount, 
+        resultCount, 
+        inProgressCount, 
+        accessResponse, 
+        allCandidatesResponse, 
+        recentCandidatesResponse, 
+        resultsResponse
+      ] = await Promise.all([
         getExactCount("supervisor_profiles"),
         getExactCount("candidate_profiles"),
         getExactCount("assessments", (query) => query.eq("is_active", true)),
@@ -381,6 +415,7 @@ export default function AdminDashboard() {
           .select("id, full_name, email, created_at")
           .order("created_at", { ascending: false })
           .limit(6),
+        // FIX: Get ALL results, not just 6
         supabase
           .from("assessment_results")
           .select(`
@@ -391,12 +426,11 @@ export default function AdminDashboard() {
             max_score, 
             percentage_score, 
             completed_at,
-            recommendation,
-            candidate_profiles:user_id(full_name, email),
-            assessments:assessment_id(title)
+            recommendation
           `)
           .order("completed_at", { ascending: false })
-          .limit(6)
+          // Remove the limit to get all results
+          .limit(10000)
       ]);
 
       const accessRows = safeArray(accessResponse?.data || []);
@@ -417,6 +451,9 @@ export default function AdminDashboard() {
       setAllCandidates(allCandidatesResponse?.data || []);
       setRecentCandidates(recentCandidatesResponse?.data || []);
       setRecentResults(resultsResponse?.data || []);
+      
+      console.log("Fetched results count:", resultsResponse?.data?.length || 0);
+      console.log("Sample result:", resultsResponse?.data?.[0]);
     } catch (error) {
       console.error("Error fetching admin dashboard data:", error);
     }
@@ -650,7 +687,7 @@ export default function AdminDashboard() {
               <div style={styles.emptyState}>No results found.</div>
             ) : (
               <div style={styles.list}>
-                {recentResults.map((result) => (
+                {recentResults.slice(0, 6).map((result) => (
                   <div key={result.id} style={styles.listItem}>
                     <div>
                       <div style={styles.listTitle}>
@@ -893,7 +930,7 @@ const styles = {
 
   // 🟢 ACTION CARDS
   actionCardsGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "18px", marginBottom: "30px" },
-  actionCard: { background: "white", padding: "20px", borderRadius: "12px", textDecoration: "none", color: "inherit", display: "flex", alignItems: "center", gap: "15px", boxShadow: "0 2px 8px rgba(0,0,0,0.08)", border: "1px solid #eef2f7", cursor: "pointer", transition: "transform 0.15s ease, box-shadow 0.15s ease", ':hover': { transform: "translateY(-2px)", boxShadow: "0 8px 24px rgba(0,0,0,0.12)" } },
+  actionCard: { background: "white", padding: "20px", borderRadius: "12px", textDecoration: "none", color: "inherit", display: "flex", alignItems: "center", gap: "15px", boxShadow: "0 2px 8px rgba(0,0,0,0.08)", border: "1px solid #eef2f7", cursor: "pointer", transition: "transform 0.15s ease, box-shadow 0.15s ease" },
   actionCardIcon: { fontSize: "32px", flexShrink: 0 },
   actionCardTitle: { margin: 0, fontSize: "16px", fontWeight: 800, color: "#0a1929" },
   actionCardDesc: { margin: "5px 0 0", fontSize: "12px", color: "#718096", lineHeight: 1.45 },
@@ -920,3 +957,11 @@ const styles = {
     headerActions: { width: '100%', justifyContent: 'flex-start' }
   }
 };
+
+// Add hover styles for action cards
+const actionCardHoverStyle = `
+  .action-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+  }
+`;
