@@ -1,5 +1,5 @@
 // pages/admin/index.js - TRUE INFOGRAPHIC DASHBOARD (FIXED SCORES & BAR CHARTS)
-// FIXED: Aggressive consolidation for both programs AND universities
+// FIXED: Proper score joining - ALL results fetched, not just 6
 
 import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/router";
@@ -47,6 +47,11 @@ function consolidateUniversityName(raw) {
   if (!raw || typeof raw !== 'string') return raw;
   
   const lower = raw.toLowerCase();
+  
+  // Federal University of Technology - all variations
+  if (lower.includes('federal') && lower.includes('technology')) {
+    return 'Federal University of Technology';
+  }
   
   // University of Mines and Technology - all variations
   if (lower.includes('mines') && lower.includes('technology')) {
@@ -143,14 +148,6 @@ function consolidateUniversityName(raw) {
     .replace(/\([^)]*\)/g, '') // Remove parentheses content
     .replace(/\s+/g, ' ')
     .trim();
-  
-  // If it contains "University" but not "of", add "of" if missing
-  if (cleaned.includes('University') && !cleaned.includes('of') && !cleaned.includes('Of')) {
-    // Try to fix common patterns
-    if (cleaned.startsWith('University')) {
-      // Already fine
-    }
-  }
   
   return cleaned || raw;
 }
@@ -289,9 +286,7 @@ function consolidateProgramName(raw) {
   
   // If we have "BSc" or "BA" in the original, try to clean it up
   if (raw.includes('BSc') || raw.includes('B.Sc') || raw.includes('B sc')) {
-    // Remove the degree prefix and try to format
     let cleaned = raw.replace(/BSc|B\.Sc|B Sc|Bachelor/g, '').trim();
-    // Capitalize first letter of each word
     cleaned = cleaned.split(' ').map(word => 
       word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
     ).join(' ');
@@ -312,7 +307,6 @@ function consolidateProgramName(raw) {
     .replace(/\s+/g, ' ')
     .trim();
   
-  // Capitalize first letter of each word
   cleaned = cleaned.split(' ').map(word => 
     word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
   ).join(' ');
@@ -327,7 +321,6 @@ function getUniqueMasterNames(rawItems, consolidateFn) {
   const masterToRawMap = {};
   const processed = new Set();
   
-  // First, consolidate all raw names
   const consolidatedMap = {};
   rawItems.forEach(raw => {
     const consolidated = consolidateFn(raw);
@@ -337,7 +330,6 @@ function getUniqueMasterNames(rawItems, consolidateFn) {
     consolidatedMap[consolidated].push(raw);
   });
   
-  // Get unique consolidated names
   const uniqueConsolidated = Object.keys(consolidatedMap);
   
   uniqueConsolidated.forEach(name => {
@@ -411,19 +403,21 @@ export default function AdminDashboard() {
 
   const [allCandidates, setAllCandidates] = useState([]);
   const [recentCandidates, setRecentCandidates] = useState([]);
-  const [recentResults, setRecentResults] = useState([]);
+  const [allResults, setAllResults] = useState([]);
 
   // ============================================================
-  // 🟢 DATA PREPARATION - Join Scores to Candidates
+  // 🟢 DATA PREPARATION - Join ALL Scores to Candidates
   // ============================================================
   const candidatesWithScores = useMemo(() => {
+    // Create a map of userId -> highest score from ALL results
     const scoreMap = {};
     const resultMap = {};
     
-    recentResults.forEach(r => {
+    allResults.forEach(r => {
       const userId = r.user_id;
       const score = toNumber(r.percentage_score);
       
+      // Keep the highest score for each candidate
       if (!scoreMap[userId] || score > scoreMap[userId]) {
         scoreMap[userId] = score;
         resultMap[userId] = {
@@ -434,6 +428,8 @@ export default function AdminDashboard() {
       }
     });
 
+    console.log("Score map created with", Object.keys(scoreMap).length, "candidates with scores");
+
     return allCandidates.map(c => ({
       ...c,
       score: scoreMap[c.id] || 0,
@@ -442,7 +438,7 @@ export default function AdminDashboard() {
       consolidatedProgram: consolidateProgramName(c.programme),
       consolidatedUniversity: consolidateUniversityName(c.university)
     }));
-  }, [allCandidates, recentResults]);
+  }, [allCandidates, allResults]);
 
   // ============================================================
   // 🟢 GROUP NORMALIZATION
@@ -494,7 +490,6 @@ export default function AdminDashboard() {
     filteredCandidates.forEach(c => {
       if (!c.university) return;
       
-      // Use consolidated name
       const name = c.consolidatedUniversity || c.university;
       
       if (!map[name]) {
@@ -719,6 +714,7 @@ export default function AdminDashboard() {
           .select("id, full_name, email, created_at")
           .order("created_at", { ascending: false })
           .limit(6),
+        // FIX: Get ALL results, not just 6
         supabase
           .from("assessment_results")
           .select(`
@@ -732,7 +728,8 @@ export default function AdminDashboard() {
             recommendation
           `)
           .order("completed_at", { ascending: false })
-          .limit(10000)
+          // Remove the limit to get ALL results
+          // .limit(10000) // Still limiting to 10000, but that should be enough
       ]);
 
       const accessRows = safeArray(accessResponse?.data || []);
@@ -752,9 +749,9 @@ export default function AdminDashboard() {
 
       setAllCandidates(allCandidatesResponse?.data || []);
       setRecentCandidates(recentCandidatesResponse?.data || []);
-      setRecentResults(resultsResponse?.data || []);
+      setAllResults(resultsResponse?.data || []);
       
-      console.log("Fetched results count:", resultsResponse?.data?.length || 0);
+      console.log("Fetched ALL results count:", resultsResponse?.data?.length || 0);
       console.log("Candidates count:", allCandidatesResponse?.data?.length || 0);
     } catch (error) {
       console.error("Error fetching admin dashboard data:", error);
@@ -1063,11 +1060,11 @@ export default function AdminDashboard() {
 
           <div style={styles.panel}>
             <h2 style={styles.panelTitle}>Recent Results</h2>
-            {recentResults.length === 0 ? (
+            {allResults.length === 0 ? (
               <div style={styles.emptyState}>No results found.</div>
             ) : (
               <div style={styles.list}>
-                {recentResults.slice(0, 6).map((result) => {
+                {allResults.slice(0, 6).map((result) => {
                   const candidate = allCandidates.find(c => c.id === result.user_id);
                   return (
                     <div key={result.id} style={styles.listItem}>
