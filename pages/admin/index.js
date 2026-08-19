@@ -293,6 +293,30 @@ export default function AdminDashboard() {
     setMaxScore(100);
   };
 
+  // Filtered candidates based on selections
+  const filteredCandidates = useMemo(() => {
+    let filtered = candidatesWithScores;
+
+    if (selectedUniversityOption) {
+      filtered = filtered.filter(c => c.university === selectedUniversityOption.value);
+    }
+
+    if (selectedProgramOptions.length > 0) {
+      const allowedRawNames = [];
+      selectedProgramOptions.forEach(opt => {
+        const rawList = progGroup.masterToRawMap[opt.value] || [];
+        allowedRawNames.push(...rawList);
+      });
+      filtered = filtered.filter(c => allowedRawNames.includes(c.programme));
+    }
+
+    filtered = filtered.filter(c => {
+      return c.score >= Number(minScore) && c.score <= Number(maxScore);
+    });
+
+    return filtered;
+  }, [candidatesWithScores, selectedUniversityOption, selectedProgramOptions, minScore, maxScore, progGroup.masterToRawMap]);
+
   // ============================================================
   // AUTH & FETCH
   // ============================================================
@@ -825,3 +849,74 @@ const styles = {
   resetFilterButton: {
     padding: '8px 20px',
     background: '#f1f5f9',
+    border: '1px solid #e2e8f0',
+    borderRadius: '6px',
+    fontSize: '13px',
+    fontWeight: '600',
+    cursor: 'pointer',
+    color: '#475569',
+    marginLeft: 'auto',
+    height: '38px',
+    alignSelf: 'flex-end'
+  },
+
+  // 🟢 PIE CHART GRID
+  pieChartGrid: {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: '20px',
+    marginBottom: '24px'
+  },
+
+  // 🟢 BAR CHART GRID
+  barChartGrid: {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: '20px',
+    marginBottom: '24px'
+  },
+
+  // 🟢 CHART CARD
+  chartCard: {
+    background: 'white',
+    padding: '20px',
+    borderRadius: '12px',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+    border: '1px solid #eef2f7'
+  },
+  chartTitle: {
+    fontSize: '16px',
+    fontWeight: '600',
+    color: '#0a1929',
+    margin: '0 0 12px 0'
+  },
+
+  // 🟢 ACTION CARDS
+  actionCardsGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "18px", marginBottom: "30px" },
+  actionCard: { background: "white", padding: "20px", borderRadius: "12px", textDecoration: "none", color: "inherit", display: "flex", alignItems: "center", gap: "15px", boxShadow: "0 2px 8px rgba(0,0,0,0.08)", border: "1px solid #eef2f7", cursor: "pointer", transition: "transform 0.15s ease, box-shadow 0.15s ease", ':hover': { transform: "translateY(-2px)", boxShadow: "0 8px 24px rgba(0,0,0,0.12)" } },
+  actionCardIcon: { fontSize: "32px", flexShrink: 0 },
+  actionCardTitle: { margin: 0, fontSize: "16px", fontWeight: 800, color: "#0a1929" },
+  actionCardDesc: { margin: "5px 0 0", fontSize: "12px", color: "#718096", lineHeight: 1.45 },
+  sectionContainer: { marginBottom: "30px" },
+  lowerGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "20px", marginBottom: "30px" },
+  panel: { background: "white", borderRadius: "16px", padding: "22px", boxShadow: "0 4px 12px rgba(0,0,0,0.08)", border: "1px solid #eef2f7" },
+  panelTitle: { margin: "0 0 16px", fontSize: "18px", color: "#0a1929", fontWeight: 800 },
+  emptyState: { background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "10px", padding: "16px", color: "#64748b", textAlign: "center" },
+  list: { display: "flex", flexDirection: "column", gap: "10px" },
+  listItem: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", padding: "12px", border: "1px solid #e2e8f0", borderRadius: "10px", background: "#f8fafc" },
+  listTitle: { fontSize: "14px", fontWeight: 800, color: "#0f172a" },
+  listMeta: { fontSize: "12px", color: "#64748b", marginTop: "4px" },
+  dateBadge: { fontSize: "12px", color: "#334155", background: "#e2e8f0", padding: "5px 10px", borderRadius: "999px", whiteSpace: "nowrap" },
+  scoreBadge: { fontSize: "13px", color: "#166534", background: "#dcfce7", border: "1px solid #86efac", padding: "6px 12px", borderRadius: "999px", fontWeight: 800 },
+
+  // 🟢 RESPONSIVE
+  '@media (max-width: 768px)': {
+    pieChartGrid: { gridTemplateColumns: '1fr' },
+    barChartGrid: { gridTemplateColumns: '1fr' },
+    statsRow: { gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))' },
+    filterGroup: { minWidth: '140px', maxWidth: '100%' },
+    scoreFilterGroup: { flexWrap: 'wrap' },
+    header: { flexDirection: 'column', alignItems: 'flex-start' },
+    headerActions: { width: '100%', justifyContent: 'flex-start' }
+  }
+};
