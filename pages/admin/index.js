@@ -1,11 +1,11 @@
 // pages/admin/index.js - TRUE INFOGRAPHIC DASHBOARD (FIXED SCORES & BAR CHARTS)
-// FIXED: Correct auth import, proper session handling, all results fetched
+// FIXED: Correct import path for supabase client
 
 import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import AppLayout from "../../components/AppLayout";
-import { supabase } from "../../lib/supabaseClient"; // FIXED: Correct import path
+import { supabase } from "../../supabase/client"; // ✅ CORRECTED: Using the original path
 import AssessmentExpiration from "../../components/admin/AssessmentExpiration";
 
 // ============================================================
