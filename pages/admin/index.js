@@ -1,5 +1,5 @@
 // pages/admin/index.js - TRUE INFOGRAPHIC DASHBOARD (FIXED SCORES & BAR CHARTS)
-// FIXED: Consolidated filter dropdowns for Universities and Programs
+// FIXED: All charts and analytics now update based on filters
 
 import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/router";
@@ -39,7 +39,7 @@ ChartJS.register(
 import Select from 'react-select';
 
 // ============================================================
-// 🟢 NORMALIZATION ENGINE - ENHANCED FOR BETTER PROGRAM MATCHING
+// 🟢 NORMALIZATION ENGINE
 // ============================================================
 const ABBREVIATIONS = {
   'bsc': 'BSc', 'b.sc': 'BSc', 'b. sc': 'BSc', 'b.s.c': 'BSc',
@@ -64,11 +64,11 @@ const ABBREVIATIONS = {
   'statistics': 'Statistics', 'mathematics': 'Mathematics', 'math': 'Mathematics',
   'secretariat': 'Secretariatship', 'mechatronics': 'Mechatronics',
   'mechatron': 'Mechatronics', 'psych': 'Psychology',
-  'kpoly': 'Kumasi Technical University', 'kpoly': 'Kumasi Technical University',
-  'poly': 'Technical University', 'tech': 'Technical'
+  'kpoly': 'Kumasi Technical University', 'poly': 'Technical University', 
+  'tech': 'Technical', 'umat': 'University of Mines and Technology',
+  'umat': 'University of Mines and Technology'
 };
 
-// Common words to ignore in program names for better matching
 const IGNORE_WORDS = new Set(['of', 'and', 'in', 'with', 'for', 'the', 'at', 'to', 'on', 'by', 'from', 'university']);
 
 function normalizeText(raw, abbreviations = ABBREVIATIONS) {
@@ -105,24 +105,17 @@ function getUniqueMasterNames(rawItems, abbreviations) {
       
       const words1 = name1.split(' ');
       const words2 = name2.split(' ');
-      
-      // Get significant words (ignore common words)
       const significant1 = words1.filter(w => !IGNORE_WORDS.has(w.toLowerCase()));
       const significant2 = words2.filter(w => !IGNORE_WORDS.has(w.toLowerCase()));
-      
-      // Check if one contains the other's significant words
       const contains = significant1.every(w => significant2.includes(w)) || 
                        significant2.every(w => significant1.includes(w));
-      
-      // Calculate similarity based on significant words
       const intersection = significant1.filter(w => significant2.includes(w)).length;
       const union = new Set([...significant1, ...significant2]).size;
       const similarity = union > 0 ? intersection / union : 0;
       
-      // Special handling for Engineering types
       const getEngineeringType = (s) => {
         const lower = s.toLowerCase();
-        if (lower.includes('electrical') || lower.includes('electronic') || lower.includes('elect/electron') || lower.includes('electrical/electronic')) 
+        if (lower.includes('electrical') || lower.includes('electronic') || lower.includes('elect/electron')) 
           return 'electrical';
         if (lower.includes('mechanical') || lower.includes('mech')) 
           return 'mechanical';
@@ -151,21 +144,18 @@ function getUniqueMasterNames(rawItems, abbreviations) {
       const type2 = getEngineeringType(name2);
       const sameType = type1 && type2 && type1 === type2;
       
-      // Special handling for Management/Business
       const isManagement = (s) => {
         const lower = s.toLowerCase();
         return lower.includes('management') || lower.includes('business') || lower.includes('admin');
       };
       const bothManagement = isManagement(name1) && isManagement(name2);
       
-      // Special handling for Psychology
       const isPsychology = (s) => {
         const lower = s.toLowerCase();
         return lower.includes('psychology') || lower.includes('psych');
       };
       const bothPsychology = isPsychology(name1) && isPsychology(name2);
       
-      // Special handling for Statistics/Mathematics
       const isStatsMath = (s) => {
         const lower = s.toLowerCase();
         return lower.includes('statistics') || lower.includes('mathematics') || lower.includes('math');
@@ -178,17 +168,13 @@ function getUniqueMasterNames(rawItems, abbreviations) {
       }
     });
     
-    // Choose the most descriptive name as master
     const masterName = group.reduce((a, b) => {
-      // Prefer names with "BSc" or "Bachelor"
       const hasBSc = (s) => s.includes('BSc') || s.includes('Bachelor') || s.includes('B-Tech');
       if (hasBSc(a) && !hasBSc(b)) return a;
       if (!hasBSc(a) && hasBSc(b)) return b;
-      // Prefer names with "Engineering"
       const hasEng = (s) => s.includes('Engineering');
       if (hasEng(a) && !hasEng(b)) return a;
       if (!hasEng(a) && hasEng(b)) return b;
-      // Otherwise choose the longer one
       return a.length >= b.length ? a : b;
     });
     
@@ -210,7 +196,6 @@ function getUniqueMasterNames(rawItems, abbreviations) {
       const contains = significant1.every(w => significant2.includes(w)) || 
                        significant2.every(w => significant1.includes(w));
       
-      // Same type checking
       const getEngineeringType = (s) => {
         const lower = s.toLowerCase();
         if (lower.includes('electrical') || lower.includes('electronic') || lower.includes('elect/electron')) 
@@ -332,10 +317,8 @@ export default function AdminDashboard() {
   const [recentResults, setRecentResults] = useState([]);
 
   // ============================================================
-  // 🟢 INFOGRAPHIC ANALYTICS CALCULATIONS
+  // 🟢 DATA PREPARATION - Join Scores to Candidates
   // ============================================================
-  
-  // 1. Join Scores to Candidates
   const candidatesWithScores = useMemo(() => {
     const scoreMap = {};
     const resultMap = {};
@@ -362,17 +345,58 @@ export default function AdminDashboard() {
     }));
   }, [allCandidates, recentResults]);
 
-  // 2. Group Normalization (University & Program)
+  // ============================================================
+  // 🟢 GROUP NORMALIZATION
+  // ============================================================
   const rawUniversities = useMemo(() => candidatesWithScores.map(c => c.university).filter(Boolean), [candidatesWithScores]);
   const rawPrograms = useMemo(() => candidatesWithScores.map(c => c.programme).filter(Boolean), [candidatesWithScores]);
 
   const uniGroup = useMemo(() => getUniqueMasterNames(rawUniversities, ABBREVIATIONS), [rawUniversities]);
   const progGroup = useMemo(() => getUniqueMasterNames(rawPrograms, ABBREVIATIONS), [rawPrograms]);
 
-  // 3. University Analytics (Grouped & Scored)
-  const universityAnalytics = useMemo(() => {
+  // ============================================================
+  // 🟢 FILTER LOGIC - THIS IS THE KEY FIX
+  // ============================================================
+  const filteredCandidates = useMemo(() => {
+    let filtered = candidatesWithScores;
+
+    // Filter by University (using consolidated name)
+    if (selectedUniversityOption) {
+      const rawVariants = selectedUniversityOption.rawVariants || [];
+      filtered = filtered.filter(c => {
+        return rawVariants.includes(c.university) || c.university === selectedUniversityOption.value;
+      });
+    }
+
+    // Filter by Program (using consolidated name)
+    if (selectedProgramOptions.length > 0) {
+      const allowedRawNames = [];
+      selectedProgramOptions.forEach(opt => {
+        const rawVariants = opt.rawVariants || [];
+        allowedRawNames.push(...rawVariants);
+        allowedRawNames.push(opt.value);
+      });
+      filtered = filtered.filter(c => {
+        return allowedRawNames.includes(c.programme);
+      });
+    }
+
+    // Filter by Score Range
+    filtered = filtered.filter(c => {
+      return c.score >= Number(minScore) && c.score <= Number(maxScore);
+    });
+
+    return filtered;
+  }, [candidatesWithScores, selectedUniversityOption, selectedProgramOptions, minScore, maxScore]);
+
+  // ============================================================
+  // 🟢 FILTERED ANALYTICS - ALL CHARTS UPDATE BASED ON FILTERS
+  // ============================================================
+  
+  // 1. Filtered University Analytics
+  const filteredUniversityAnalytics = useMemo(() => {
     const map = {};
-    candidatesWithScores.forEach(c => {
+    filteredCandidates.forEach(c => {
       if (!c.university) return;
       
       let master = c.university;
@@ -386,14 +410,12 @@ export default function AdminDashboard() {
       if (!map[master]) {
         map[master] = { 
           candidates: 0, 
-          scoreTotal: 0, 
-          programs: new Set(),
+          scoreTotal: 0,
           rawNames: new Set()
         };
       }
       map[master].candidates += 1;
       map[master].scoreTotal += c.score;
-      if (c.programme) map[master].programs.add(c.programme);
       map[master].rawNames.add(c.university);
     });
     
@@ -401,16 +423,15 @@ export default function AdminDashboard() {
       name,
       candidates: data.candidates,
       avgScore: data.candidates > 0 ? Math.round(data.scoreTotal / data.candidates) : 0,
-      programs: data.programs.size,
       rawVariants: Array.from(data.rawNames)
     })).sort((a, b) => b.avgScore - a.avgScore);
-  }, [candidatesWithScores, uniGroup.masterToRawMap]);
+  }, [filteredCandidates, uniGroup.masterToRawMap]);
 
-  // 4. Program Analytics (Grouped & Scored) - CONSOLIDATED
-  const programAnalytics = useMemo(() => {
+  // 2. Filtered Program Analytics
+  const filteredProgramAnalytics = useMemo(() => {
     const map = {};
     
-    candidatesWithScores.forEach(c => {
+    filteredCandidates.forEach(c => {
       if (!c.programme) return;
       
       let master = c.programme;
@@ -439,67 +460,84 @@ export default function AdminDashboard() {
       avgScore: data.candidates > 0 ? Math.round(data.scoreTotal / data.candidates) : 0,
       rawVariants: Array.from(data.rawVariants)
     })).sort((a, b) => b.avgScore - a.avgScore);
-  }, [candidatesWithScores, progGroup.masterToRawMap]);
+  }, [filteredCandidates, progGroup.masterToRawMap]);
 
-  // 5. Global Stats
-  const globalAverageScore = useMemo(() => {
-    const scores = candidatesWithScores
+  // 3. Filtered Global Stats
+  const filteredGlobalAverageScore = useMemo(() => {
+    const scores = filteredCandidates
       .map(c => c.score)
       .filter(s => s > 0);
     
     if (scores.length === 0) return 0;
     return Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
-  }, [candidatesWithScores]);
+  }, [filteredCandidates]);
 
-  const globalPassRate = useMemo(() => {
-    const scores = candidatesWithScores.map(c => c.score);
+  const filteredGlobalPassRate = useMemo(() => {
+    const scores = filteredCandidates.map(c => c.score);
     if (scores.length === 0) return 0;
     const passed = scores.filter(s => s >= 70).length;
     return Math.round((passed / scores.length) * 100);
-  }, [candidatesWithScores]);
+  }, [filteredCandidates]);
 
-  // 6. Pie Charts
-  const universityPieData = useMemo(() => {
-    const top8 = universityAnalytics.slice(0, 8);
-    const othersCount = universityAnalytics.slice(8).reduce((sum, u) => sum + u.candidates, 0);
+  const filteredTotalCandidates = filteredCandidates.length;
+
+  // 4. Filtered Pie Charts
+  const filteredUniversityPieData = useMemo(() => {
+    const top8 = filteredUniversityAnalytics.slice(0, 8);
+    const othersCount = filteredUniversityAnalytics.slice(8).reduce((sum, u) => sum + u.candidates, 0);
     const labels = top8.map(u => u.name);
     const data = top8.map(u => u.candidates);
     if (othersCount > 0) { labels.push('Others'); data.push(othersCount); }
     return { labels, data };
-  }, [universityAnalytics]);
+  }, [filteredUniversityAnalytics]);
 
-  const programPieData = useMemo(() => {
-    const top8 = programAnalytics.slice(0, 8);
-    const othersCount = programAnalytics.slice(8).reduce((sum, p) => sum + p.candidates, 0);
+  const filteredProgramPieData = useMemo(() => {
+    const top8 = filteredProgramAnalytics.slice(0, 8);
+    const othersCount = filteredProgramAnalytics.slice(8).reduce((sum, p) => sum + p.candidates, 0);
     const labels = top8.map(p => p.name);
     const data = top8.map(p => p.candidates);
     if (othersCount > 0) { labels.push('Others'); data.push(othersCount); }
     return { labels, data };
-  }, [programAnalytics]);
+  }, [filteredProgramAnalytics]);
+
+  // 5. Score Distribution for Filtered Data
+  const filteredScoreDistribution = useMemo(() => {
+    const bins = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
+    const counts = new Array(bins.length - 1).fill(0);
+    
+    filteredCandidates.forEach(c => {
+      const score = c.score;
+      for (let i = 0; i < bins.length - 1; i++) {
+        if (score >= bins[i] && score < bins[i + 1]) {
+          counts[i]++;
+          break;
+        }
+      }
+    });
+    return { bins, counts };
+  }, [filteredCandidates]);
 
   const COLORS = ['#1a237e', '#2e7d32', '#f57c00', '#c62828', '#1565c0', '#4a148c', '#00695c', '#bf360c', '#78909c'];
 
-  // 7. Filters - CONSOLIDATED DROPDOWNS
+  // ============================================================
+  // 🟢 FILTER DROPDOWN OPTIONS (Consolidated)
+  // ============================================================
   const universityOptions = useMemo(() => {
-    // Use the consolidated master names from uniGroup
     return uniGroup.groups
       .sort()
       .map(name => ({ 
         label: name, 
         value: name,
-        // Store the raw variants for filtering
         rawVariants: uniGroup.masterToRawMap[name] || []
       }));
   }, [uniGroup]);
 
   const programOptions = useMemo(() => {
-    // Use the consolidated master names from progGroup
     return progGroup.groups
       .sort()
       .map(name => ({ 
         label: name, 
         value: name,
-        // Store the raw variants for filtering
         rawVariants: progGroup.masterToRawMap[name] || []
       }));
   }, [progGroup]);
@@ -511,43 +549,8 @@ export default function AdminDashboard() {
     setMaxScore(100);
   };
 
-  // Filtered candidates based on selections - UPDATED to use consolidated names
-  const filteredCandidates = useMemo(() => {
-    let filtered = candidatesWithScores;
-
-    // Filter by University (using consolidated name)
-    if (selectedUniversityOption) {
-      const rawVariants = selectedUniversityOption.rawVariants || [];
-      filtered = filtered.filter(c => {
-        // Check if candidate's university matches any raw variant of the selected consolidated university
-        return rawVariants.includes(c.university) || c.university === selectedUniversityOption.value;
-      });
-    }
-
-    // Filter by Program (using consolidated name)
-    if (selectedProgramOptions.length > 0) {
-      const allowedRawNames = [];
-      selectedProgramOptions.forEach(opt => {
-        const rawVariants = opt.rawVariants || [];
-        allowedRawNames.push(...rawVariants);
-        // Also add the consolidated name itself in case it matches exactly
-        allowedRawNames.push(opt.value);
-      });
-      filtered = filtered.filter(c => {
-        return allowedRawNames.includes(c.programme);
-      });
-    }
-
-    // Filter by Score
-    filtered = filtered.filter(c => {
-      return c.score >= Number(minScore) && c.score <= Number(maxScore);
-    });
-
-    return filtered;
-  }, [candidatesWithScores, selectedUniversityOption, selectedProgramOptions, minScore, maxScore]);
-
   // ============================================================
-  // AUTH & FETCH
+  // 🟢 AUTH & FETCH
   // ============================================================
   useEffect(() => {
     checkAdminAuth();
@@ -719,19 +722,19 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* 🟢 INFOGRAPHIC STATS CARDS */}
+        {/* 🟢 STATS CARDS - Now show FILTERED data */}
         <div style={styles.statsRow}>
-          <StatCard icon="👥" label="Total Candidates" value={stats.totalCandidates} />
-          <StatCard icon="📊" label="Average Score" value={`${globalAverageScore}%`} />
-          <StatCard icon="✅" label="Pass Rate (≥70%)" value={`${globalPassRate}%`} />
-          <StatCard icon="📚" label="Total Programs" value={progGroup.groups.length} />
+          <StatCard icon="👥" label="Filtered Candidates" value={filteredTotalCandidates} subValue={`of ${stats.totalCandidates} total`} />
+          <StatCard icon="📊" label="Avg Score" value={`${filteredGlobalAverageScore}%`} />
+          <StatCard icon="✅" label="Pass Rate" value={`${filteredGlobalPassRate}%`} />
+          <StatCard icon="📚" label="Programs in Filter" value={filteredProgramAnalytics.length} />
           <StatCard icon="📋" label="Active Assessments" value={stats.totalAssessments} />
           <StatCard icon="✓" label="Completed" value={stats.completedAssessments} />
           <StatCard icon="◉" label="In Progress" value={stats.inProgressSessions} />
           <StatCard icon="📈" label="Result Records" value={stats.totalResults} />
         </div>
 
-        {/* 🟢 ADVANCED FILTERS BAR - CONSOLIDATED DROPDOWNS */}
+        {/* 🟢 FILTERS BAR */}
         <div style={styles.filtersBar}>
           <div style={styles.filtersRow}>
             <div style={styles.filterGroup}>
@@ -795,16 +798,16 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* 🟢 PIE CHARTS GRID */}
+        {/* 🟢 PIE CHARTS - FILTERED DATA */}
         <div style={styles.pieChartGrid}>
           <div style={styles.chartCard}>
-            <h4 style={styles.chartTitle}>University Distribution (By Candidates)</h4>
+            <h4 style={styles.chartTitle}>University Distribution (Filtered)</h4>
             <div style={{ height: '250px', position: 'relative' }}>
               <Pie
                 data={{
-                  labels: universityPieData.labels,
+                  labels: filteredUniversityPieData.labels,
                   datasets: [{ 
-                    data: universityPieData.data, 
+                    data: filteredUniversityPieData.data, 
                     backgroundColor: COLORS, 
                     borderWidth: 2, 
                     borderColor: '#fff' 
@@ -828,13 +831,13 @@ export default function AdminDashboard() {
           </div>
 
           <div style={styles.chartCard}>
-            <h4 style={styles.chartTitle}>Program Distribution (By Candidates)</h4>
+            <h4 style={styles.chartTitle}>Program Distribution (Filtered)</h4>
             <div style={{ height: '250px', position: 'relative' }}>
               <Pie
                 data={{
-                  labels: programPieData.labels,
+                  labels: filteredProgramPieData.labels,
                   datasets: [{ 
-                    data: programPieData.data, 
+                    data: filteredProgramPieData.data, 
                     backgroundColor: COLORS, 
                     borderWidth: 2, 
                     borderColor: '#fff' 
@@ -858,17 +861,17 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* 🟢 PERFORMANCE BAR CHARTS */}
+        {/* 🟢 PERFORMANCE BAR CHARTS - FILTERED DATA */}
         <div style={styles.barChartGrid}>
           <div style={styles.chartCard}>
-            <h4 style={styles.chartTitle}>Top 15 Universities (By Average Score)</h4>
+            <h4 style={styles.chartTitle}>Top Universities (By Avg Score - Filtered)</h4>
             <div style={{ height: '400px' }}>
               <Bar
                 data={{
-                  labels: universityAnalytics.slice(0, 15).map(u => u.name),
+                  labels: filteredUniversityAnalytics.slice(0, 15).map(u => u.name),
                   datasets: [{
                     label: 'Avg Score %',
-                    data: universityAnalytics.slice(0, 15).map(u => u.avgScore),
+                    data: filteredUniversityAnalytics.slice(0, 15).map(u => u.avgScore),
                     backgroundColor: '#1a237e',
                     borderRadius: 4,
                   }]
@@ -884,14 +887,14 @@ export default function AdminDashboard() {
           </div>
 
           <div style={styles.chartCard}>
-            <h4 style={styles.chartTitle}>Top 15 Programs (By Average Score)</h4>
+            <h4 style={styles.chartTitle}>Top Programs (By Avg Score - Filtered)</h4>
             <div style={{ height: '400px' }}>
               <Bar
                 data={{
-                  labels: programAnalytics.slice(0, 15).map(p => p.name),
+                  labels: filteredProgramAnalytics.slice(0, 15).map(p => p.name),
                   datasets: [{
                     label: 'Avg Score %',
-                    data: programAnalytics.slice(0, 15).map(p => p.avgScore),
+                    data: filteredProgramAnalytics.slice(0, 15).map(p => p.avgScore),
                     backgroundColor: '#2e7d32',
                     borderRadius: 4,
                   }]
@@ -904,6 +907,29 @@ export default function AdminDashboard() {
                 }}
               />
             </div>
+          </div>
+        </div>
+
+        {/* 🟢 SCORE DISTRIBUTION - FILTERED DATA */}
+        <div style={styles.chartCard} style={{ marginBottom: '24px' }}>
+          <h4 style={styles.chartTitle}>Score Distribution (Filtered)</h4>
+          <div style={{ height: '250px' }}>
+            <Bar
+              data={{
+                labels: filteredScoreDistribution.bins.slice(0, -1).map((b, i) => `${b}-${filteredScoreDistribution.bins[i+1]}%`),
+                datasets: [{
+                  label: 'Number of Candidates',
+                  data: filteredScoreDistribution.counts,
+                  backgroundColor: '#1a237e',
+                  borderRadius: 4,
+                }]
+              }}
+              options={{
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
+              }}
+            />
           </div>
         </div>
 
