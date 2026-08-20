@@ -1,5 +1,7 @@
 // pages/admin/reports/[resultId].js - FULLY CORRECTED DEPLOYMENT VERSION
-// FIX: Fetches behavioral matrix BEFORE setting state and passes it explicitly as a prop.
+// FIX: Added Authorization header to assessment-report API call
+// FIX: Proper role verification using supervisor_profiles
+// FIX: Response validation and error handling
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -128,6 +130,52 @@ function getCategoryScores(data, result, report) {
   return [];
 }
 
+// ============================================================
+// AUTH HELPER - Gets session and validates admin role
+// ============================================================
+
+async function getValidAdminSession() {
+  // Get session
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+  
+  if (sessionError || !sessionData?.session) {
+    console.error('[Admin Report View] No valid session');
+    return { session: null, error: 'No valid session. Please sign in again.' };
+  }
+
+  const session = sessionData.session;
+  const metadataRole = session.user?.user_metadata?.role || null;
+
+  // Verify admin role from supervisor_profiles (authoritative source)
+  const { data: adminProfile, error: profileError } = await supabase
+    .from('supervisor_profiles')
+    .select('id, role, is_active')
+    .eq('id', session.user.id)
+    .maybeSingle();
+
+  if (profileError) {
+    console.error('[Admin Report View] Profile verification error:', profileError);
+    return { session: null, error: 'Unable to verify administrator access.' };
+  }
+
+  const resolvedRole = adminProfile?.role || metadataRole;
+
+  if (resolvedRole !== 'admin') {
+    return { session: null, error: 'You do not have permission to view this report.' };
+  }
+
+  if (adminProfile?.is_active === false) {
+    await supabase.auth.signOut();
+    return { session: null, error: 'Your account is inactive. Please contact support.' };
+  }
+
+  return { session, error: null };
+}
+
+// ============================================================
+// MAIN COMPONENT
+// ============================================================
+
 export default function AdminReportView() {
   const router = useRouter();
   const { resultId } = router.query;
@@ -148,19 +196,75 @@ export default function AdminReportView() {
         setLoading(true);
         setError(null);
 
-        const userRole = session.user?.user_metadata?.role || session.user?.role;
-        if (userRole !== 'admin') {
-          setError('You do not have permission to view this report.');
+        // Step 1: Validate session and admin role
+        const { session: validSession, error: authError } = await getValidAdminSession();
+        
+        if (authError || !validSession) {
+          setError(authError || 'Authentication failed');
           setLoading(false);
+          // Redirect to login after a moment
+          setTimeout(() => router.push('/login'), 2000);
           return;
         }
 
-        const response = await fetch(`/api/assessment-report/${resultId}`);
-        const data = await response.json();
+        const token = validSession.access_token;
 
-        if (!data.success) {
-          throw new Error(data.error || 'Failed to load report');
+        // Step 2: Validate token exists
+        if (!token) {
+          setError('Unauthorized: No valid access token found. Please sign in again.');
+          setLoading(false);
+          setTimeout(() => router.push('/login'), 2000);
+          return;
         }
+
+        console.log('[Admin Report View] Fetching report with authentication...');
+
+        // Step 3: Make authenticated request to assessment-report API
+        const response = await fetch(`/api/assessment-report/${resultId}`, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`, // ✅ FIXED: Added bearer token
+          },
+        });
+
+        // Step 4: Safe JSON parsing
+        let data;
+        try {
+          data = await response.json();
+        } catch (parseError) {
+          console.error('[Admin Report View] Invalid API response:', parseError);
+          throw new Error(
+            `The report server returned an invalid response. HTTP status: ${response.status}`
+          );
+        }
+
+        // Step 5: Validate response
+        if (!response.ok || !data.success) {
+          if (response.status === 401) {
+            throw new Error(
+              data?.error || 'Your session is invalid or has expired. Please sign in again.'
+            );
+          }
+
+          if (response.status === 403) {
+            throw new Error(
+              data?.error || 'You do not have permission to view this report.'
+            );
+          }
+
+          if (response.status === 404) {
+            throw new Error(
+              data?.error || 'The requested assessment report could not be found.'
+            );
+          }
+
+          throw new Error(
+            data?.error || `Failed to load report. HTTP status: ${response.status}`
+          );
+        }
+
+        console.log('[Admin Report View] Report fetched successfully');
 
         const result = data.result || {};
         const parsedResultReportData = getReportDataObject(result.report_data);
@@ -193,8 +297,8 @@ export default function AdminReportView() {
         const candidateName = candidateInfo.fullName || 'Candidate';
         const categoryScores = getCategoryScores(data, result, report);
 
-        // 🟢 FETCH BEHAVIORAL MATRIX BEFORE SETTING STATE
-        const matrix = await fetchBehavioralMatrix(resultId);
+        // Step 6: Fetch behavioral matrix (already authenticated)
+        const matrix = await fetchBehavioralMatrix(resultId, token);
 
         if (isNS) {
           const authoritativeScores = getAuthoritativeNationalServiceScores(data, result, report);
@@ -255,7 +359,7 @@ export default function AdminReportView() {
           };
         }
 
-        // 🟢 PASS BEHAVIORAL MATRIX INTO STATE
+        // Pass behavioral matrix into state
         setReportData({
           ...data,
           report,
@@ -267,32 +371,41 @@ export default function AdminReportView() {
         setBehavioralMatrix(matrix);
         setLoading(false);
       } catch (err) {
-        console.error('Error fetching report:', err);
+        console.error('[Admin Report View] Error fetching report:', err);
         setError(err.message || 'Failed to load report');
         setLoading(false);
+        // If it's an auth error, redirect to login
+        if (err.message?.includes('session') || err.message?.includes('token') || err.message?.includes('Unauthorized')) {
+          setTimeout(() => router.push('/login'), 2000);
+        }
       }
     };
 
     fetchReport();
-  }, [resultId, session]);
+  }, [resultId, session, router]);
 
-  const fetchBehavioralMatrix = async (id) => {
+  const fetchBehavioralMatrix = async (id, token) => {
     try {
       setLoadingBehavioral(true);
 
-      const { data: sessionData } = await supabase.auth.getSession();
-      const token = sessionData?.session?.access_token;
-
       if (!token) {
-        setLoadingBehavioral(false);
+        console.warn('[Admin Report View] No token for behavioral matrix');
         return null;
       }
 
+      console.log('[Admin Report View] Fetching behavioral matrix...');
+
       const response = await fetch(`/api/assessment/behavioral-matrix?resultId=${id}`, {
         headers: {
+          'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`
         }
       });
+
+      if (!response.ok) {
+        console.warn('[Admin Report View] Behavioral matrix returned:', response.status);
+        return null;
+      }
 
       const data = await response.json();
 
@@ -301,7 +414,7 @@ export default function AdminReportView() {
       }
       return null;
     } catch (error) {
-      console.error('Error fetching behavioral matrix:', error);
+      console.error('[Admin Report View] Error fetching behavioral matrix:', error);
       return null;
     } finally {
       setLoadingBehavioral(false);
@@ -311,6 +424,10 @@ export default function AdminReportView() {
   const handleBack = () => {
     router.push('/admin/reports');
   };
+
+  // ============================================================
+  // RENDER STATES
+  // ============================================================
 
   if (authLoading || loading) {
     return (
@@ -327,10 +444,16 @@ export default function AdminReportView() {
     return (
       <AppLayout background="/images/admin-bg.jpg">
         <div style={styles.errorContainer}>
-          <div style={styles.errorIcon}>!</div>
+          <div style={styles.errorIcon}>⚠️</div>
           <h2>Access Denied</h2>
-          <p>{error}</p>
+          <p style={styles.errorMessage}>{error}</p>
           <button onClick={handleBack} style={styles.errorButton}>Go Back</button>
+          <button 
+            onClick={() => router.push('/login')} 
+            style={{ ...styles.errorButton, ...styles.secondaryButton }}
+          >
+            Sign In Again
+          </button>
         </div>
       </AppLayout>
     );
@@ -340,7 +463,7 @@ export default function AdminReportView() {
     return (
       <AppLayout background="/images/admin-bg.jpg">
         <div style={styles.breadcrumb}>
-          <button onClick={handleBack} style={styles.breadcrumbButton}>Back to Reports List</button>
+          <button onClick={handleBack} style={styles.breadcrumbButton}>← Back to Reports List</button>
           <span style={styles.breadcrumbSeparator}>|</span>
           <span style={styles.breadcrumbText}>National Service Report</span>
         </div>
@@ -392,7 +515,7 @@ export default function AdminReportView() {
     return (
       <AppLayout background="/images/admin-bg.jpg">
         <div style={styles.breadcrumb}>
-          <button onClick={handleBack} style={styles.breadcrumbButton}>Back to Reports List</button>
+          <button onClick={handleBack} style={styles.breadcrumbButton}>← Back to Reports List</button>
           <span style={styles.breadcrumbSeparator}>|</span>
           <span style={styles.breadcrumbText}>Assessment Report</span>
         </div>
@@ -410,7 +533,7 @@ export default function AdminReportView() {
   return (
     <AppLayout background="/images/admin-bg.jpg">
       <div style={styles.fallbackContainer}>
-        <button onClick={handleBack} style={styles.backButton}>Back to Reports List</button>
+        <button onClick={handleBack} style={styles.backButton}>← Back to Reports List</button>
         <div style={styles.fallbackContent}>
           <h2>Report Not Available</h2>
           <p>Unable to determine the report type.</p>
@@ -419,6 +542,10 @@ export default function AdminReportView() {
     </AppLayout>
   );
 }
+
+// ============================================================
+// STYLES
+// ============================================================
 
 const styles = {
   loadingContainer: {
@@ -448,8 +575,11 @@ const styles = {
   },
   errorIcon: {
     fontSize: '48px',
-    marginBottom: '16px',
-    color: '#dc2626'
+    marginBottom: '16px'
+  },
+  errorMessage: {
+    color: '#dc2626',
+    marginBottom: '20px'
   },
   errorButton: {
     padding: '10px 24px',
@@ -458,7 +588,14 @@ const styles = {
     border: 'none',
     borderRadius: '8px',
     cursor: 'pointer',
-    marginTop: '16px'
+    marginTop: '16px',
+    marginRight: '8px',
+    fontSize: '14px',
+    fontWeight: '500'
+  },
+  secondaryButton: {
+    background: '#e2e8f0',
+    color: '#1a202c'
   },
   breadcrumb: {
     display: 'flex',
