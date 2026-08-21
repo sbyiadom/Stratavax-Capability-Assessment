@@ -1,269 +1,388 @@
-// pages/supervisor/reports/[resultId].js - FINAL FRONTEND AUTH FIX
-// FIXED: Now sends the Supabase access token in the Authorization header.
+// pages/supervisor/reports/[resultId].js - FULLY CORRECTED
+// FIX: Normalizes behavioral matrix API response (nested → flat schema)
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { supabase } from '../../../supabase/client';
-import { useRequireAuth } from '../../../utils/requireAuth';
 import NationalServiceReport from '../../../components/reports/NationalServiceReport';
 import StratavaxReport from '../../../components/reports/StratavaxReport';
 import AppLayout from '../../../components/AppLayout';
 
+const NATIONAL_SERVICE_ASSESSMENT_ID = 'bdb9d46e-9fac-4d00-8478-1f649e7ac600';
+
+// ============================================================
+// HELPER FUNCTIONS
+// ============================================================
+
+function safeNumber(value, fallback = 0) {
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? numberValue : fallback;
+}
+
+function roundScore(value) {
+  return Math.round(safeNumber(value, 0));
+}
+
+function getReportDataObject(rawReportData) {
+  if (!rawReportData) return {};
+  if (typeof rawReportData === 'object') return rawReportData;
+  if (typeof rawReportData === 'string') {
+    try {
+      const parsed = JSON.parse(rawReportData);
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch (error) {
+      console.error('[Report View] Failed to parse report_data:', error);
+      return {};
+    }
+  }
+  return {};
+}
+
+function formatDuration(seconds) {
+  if (!seconds || seconds <= 0) return '00:00:00';
+  const hrs = Math.floor(seconds / 3600);
+  const mins = Math.floor((seconds % 3600) / 60);
+  const secs = seconds % 60;
+  return `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+}
+
+function normalizeBehavioralMatrix(matrix) {
+  if (!matrix) return null;
+
+  // Check if we have nested structure (timing, behavior, riskAssessment)
+  const isNested = matrix.timing || matrix.behavior || matrix.riskAssessment;
+
+  if (isNested) {
+    // 🟢 Nested schema (from API) - Normalize to flat
+    return {
+      totalTime: matrix.timing?.formattedTotalTime || formatDuration(matrix.timing?.totalTimeSeconds),
+      avgTimePerQuestion: matrix.timing?.averageTimePerQuestion || 0,
+      answerChanges: matrix.behavior?.answerChanges || 0,
+      tabSwitches: matrix.behavior?.tabSwitches || 0,
+      violations: matrix.behavior?.violations || 0,
+      copyPasteAttempts: (matrix.behavior?.copyAttempts || 0) + (matrix.behavior?.pasteAttempts || 0),
+      rightClickAttempts: matrix.behavior?.rightClickAttempts || 0,
+      riskLevel: matrix.riskAssessment?.level || 'Low Risk',
+      riskScore: matrix.riskAssessment?.score || 0,
+      riskFactors: matrix.riskAssessment?.factors || [],
+      flags: {
+        violations: matrix.behavior?.violations || 0,
+        tabSwitches: matrix.behavior?.tabSwitches || 0,
+        answerChanges: matrix.behavior?.answerChanges || 0
+      }
+    };
+  }
+
+  // 🟢 Flat schema - return as-is
+  return matrix;
+}
+
+function getAuthoritativeNationalServiceScores(data, result, report) {
+  const parsedReportData = getReportDataObject(result?.report_data);
+  const reportDimensions = report?.dimensions || {};
+  const parsedDimensions = parsedReportData?.dimensions || {};
+  const parsedScores = parsedReportData?.scores || {};
+
+  const workplaceReadiness = roundScore(
+    parsedDimensions.workplaceReadiness ??
+    parsedScores.workplace ??
+    reportDimensions.workplaceReadiness ??
+    report?.workplaceReadiness ??
+    report?.workplace_readiness ??
+    data?.workplaceReadiness ??
+    result?.workplace_readiness ??
+    0
+  );
+
+  const intellectualCapability = roundScore(
+    parsedDimensions.intellectualCapability ??
+    parsedScores.intellectual ??
+    reportDimensions.intellectualCapability ??
+    report?.intellectualCapability ??
+    report?.intellectual_capability ??
+    data?.intellectualCapability ??
+    result?.intellectual_capability ??
+    0
+  );
+
+  const overallScore = roundScore(
+    parsedDimensions.overallScore ??
+    parsedScores.overall ??
+    parsedReportData?.overallScore ??
+    reportDimensions.overallScore ??
+    report?.overallScore ??
+    report?.percentage_score ??
+    report?.score ??
+    data?.overallScore ??
+    result?.percentage_score ??
+    0
+  );
+
+  return {
+    workplaceReadiness,
+    intellectualCapability,
+    overallScore,
+    parsedReportData
+  };
+}
+
+function getCandidateInfo(data, result, report) {
+  const profile = result?.candidate_profiles || {};
+  const existingInfo = report?.candidateInfo || {};
+
+  return {
+    fullName:
+      profile?.full_name ||
+      existingInfo?.fullName ||
+      data?.candidateName ||
+      result?.candidate_name ||
+      'Candidate',
+    email: profile?.email || existingInfo?.email || '',
+    university: profile?.university || existingInfo?.university || data?.university || 'N/A',
+    programme: profile?.programme || existingInfo?.programme || data?.programme || 'N/A',
+    graduationYear: profile?.graduation_year || existingInfo?.graduationYear || data?.graduationYear || '',
+    preferredDepartment: profile?.preferred_department || existingInfo?.preferredDepartment || data?.preferredDepartment || 'Not Specified',
+    assessmentDate: result?.completed_at ? new Date(result.completed_at).toLocaleDateString() : (existingInfo?.assessmentDate || 'N/A')
+  };
+}
+
+function getCategoryScores(data, result, report) {
+  if (Array.isArray(data?.categoryScores) && data.categoryScores.length > 0) return data.categoryScores;
+  if (Array.isArray(data?.category_scores) && data.category_scores.length > 0) return data.category_scores;
+  if (Array.isArray(data?.workplaceSubCategories) || Array.isArray(data?.intellectualSubCategories)) {
+    return [
+      ...(data.workplaceSubCategories || []),
+      ...(data.intellectualSubCategories || [])
+    ];
+  }
+  if (Array.isArray(result?.category_scores) && result.category_scores.length > 0) return result.category_scores;
+  if (Array.isArray(report?.category_scores) && report.category_scores.length > 0) return report.category_scores;
+  if (Array.isArray(report?.categoryScores) && report.categoryScores.length > 0) return report.categoryScores;
+  if (Array.isArray(report?.categoryBreakdown) && report.categoryBreakdown.length > 0) return report.categoryBreakdown;
+  return [];
+}
+
+// ============================================================
+// MAIN COMPONENT
+// ============================================================
+
 export default function SupervisorReportView() {
   const router = useRouter();
   const { resultId } = router.query;
-  const { session, loading: authLoading } = useRequireAuth();
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [reportData, setReportData] = useState(null);
   const [isNationalService, setIsNationalService] = useState(false);
-  const [isAuthorized, setIsAuthorized] = useState(false);
   const [behavioralMatrix, setBehavioralMatrix] = useState(null);
-  const [showBehavioral, setShowBehavioral] = useState(false);
   const [loadingBehavioral, setLoadingBehavioral] = useState(false);
 
   useEffect(() => {
-    if (!resultId || !session) return;
-
-    const fetchReport = async () => {
-      try {
-        setLoading(true);
-
-        // Check if user is supervisor or admin
-        const userRole = session.user?.user_metadata?.role || session.user?.role;
-        const isSupervisor = userRole === 'supervisor' || userRole === 'admin';
-        
-        if (!isSupervisor) {
-          setError('You do not have permission to view this report.');
-          setLoading(false);
-          return;
-        }
-
-        setIsAuthorized(true);
-
-        // ============================================================
-        // 🟢 CRITICAL FIX: Inject the Authorization Bearer Token
-        // ============================================================
-        const { data: sessionData } = await supabase.auth.getSession();
-        const token = sessionData?.session?.access_token;
-
-        if (!token) {
-          throw new Error('No active session token found. Please sign in again.');
-        }
-
-        const response = await fetch(`/api/assessment-report/${resultId}`, {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          }
-        });
-
-        const data = await response.json();
-
-        if (!data.success) {
-          throw new Error(data.error || 'Failed to load report');
-        }
-
-        console.log('[Supervisor Report] Data received:', data);
-        
-        // Extract raw data
-        const rawResult = data.result || {};
-        const rawReport = data.report || {};
-        const candidateProfile = data.candidate || rawResult.candidate_profiles || {};
-        const isNS = data.isNationalService === true;
-
-        // ============================================================
-        // STEP 1: Extract Candidate Information
-        // ============================================================
-        const candidateName = candidateProfile.full_name || candidateProfile.fullName || candidateProfile.name || 'Candidate';
-        const candidateEmail = candidateProfile.email || '';
-        const candidateUniversity = candidateProfile.university || '';
-        const candidateProgramme = candidateProfile.programme || candidateProfile.program || '';
-        const candidateGradYear = candidateProfile.graduation_year || candidateProfile.graduationYear || '';
-        const candidateDept = candidateProfile.preferred_department || candidateProfile.preferredDepartment || '';
-        const assessmentDate = rawResult.completed_at ? new Date(rawResult.completed_at).toLocaleDateString() : 'N/A';
-
-        // ============================================================
-        // STEP 2: Calculate True Score
-        // ============================================================
-        let trueAverageScore = 0;
-        let safeCategoryScores = rawResult.categoryScores || [];
-
-        if (isNS) {
-          const workplace = Number(rawResult.workplace_readiness || 0);
-          const intellectual = Number(rawResult.intellectual_capability || 0);
-          trueAverageScore = (workplace + intellectual) > 0 ? Math.round((workplace + intellectual) / 2) : Number(rawResult.percentage_score || 0);
-        } else if (safeCategoryScores.length > 0) {
-          const validScores = safeCategoryScores.filter(cat => Number(cat.percentage || 0) > 0);
-          if (validScores.length > 0) {
-            const sum = validScores.reduce((acc, cat) => acc + Number(cat.percentage || 0), 0);
-            trueAverageScore = Math.round(sum / validScores.length);
-          }
-        } else {
-          trueAverageScore = Number(rawResult.percentage_score || 0);
-        }
-
-        // ============================================================
-        // STEP 3: Build the Final Report Object for National Service
-        // ============================================================
-        let finalReport = rawReport;
-
-        if (isNS) {
-          // Ensure categoryBreakdown exists
-          const categoryBreakdown = safeCategoryScores.length > 0 ? safeCategoryScores : (rawResult.report_data?.categoryBreakdown || []);
-
-          finalReport = {
-            ...(rawReport || {}),
-            ...(rawResult.report_data || {}),
-            ...rawResult,
-            
-            // Core National Service Requirements
-            reportType: 'national_service',
-            candidateName: candidateName,
-            
-            // CRITICAL FIX: Inject candidateInfo here
-            candidateInfo: {
-              fullName: candidateName,
-              email: candidateEmail,
-              university: candidateUniversity,
-              programme: candidateProgramme,
-              graduationYear: candidateGradYear,
-              preferredDepartment: candidateDept,
-              assessmentDate: assessmentDate
-            },
-
-            // Dimensions and Scores
-            dimensions: {
-              workplaceReadiness: Number(rawResult.workplace_readiness || 0),
-              intellectualCapability: Number(rawResult.intellectual_capability || 0),
-              overallScore: trueAverageScore
-            },
-            scores: {
-              workplace: Number(rawResult.workplace_readiness || 0),
-              intellectual: Number(rawResult.intellectual_capability || 0),
-              overall: trueAverageScore
-            },
-            workplaceReadiness: Number(rawResult.workplace_readiness || 0),
-            intellectualCapability: Number(rawResult.intellectual_capability || 0),
-            overallScore: trueAverageScore,
-            percentage_score: trueAverageScore,
-            score: trueAverageScore,
-
-            // Recommendation
-            recommendation: rawResult.recommendation || 'Not Recommended',
-
-            // Statistics
-            statistics: {
-              totalQuestions: rawResult.total_questions || rawResult.max_score || 0,
-              totalAnswered: rawResult.answered_questions || rawResult.max_score || 0
-            },
-
-            // Categories
-            category_scores: categoryBreakdown,
-            categoryScores: categoryBreakdown,
-            categoryBreakdown: categoryBreakdown,
-            workplaceSubCategories: rawResult.workplaceSubCategories || [],
-            intellectualSubCategories: rawResult.intellectualSubCategories || [],
-
-            // Placeholder data for compatibility
-            suggestedPlacement: rawResult.suggestedPlacement || [],
-            strengths: rawResult.strengths || [],
-            weaknesses: rawResult.weaknesses || [],
-            recommendations: rawResult.recommendations || [],
-            executiveSummary: rawResult.executiveSummary || ''
-          };
-        }
-
-        // ============================================================
-        // STEP 4: Build the Final Result Object (For Stratavax and general data)
-        // ============================================================
-        const finalResult = {
-          id: rawResult.id,
-          user_id: rawResult.user_id,
-          assessment_id: rawResult.assessment_id,
-          total_score: rawResult.total_score || 0,
-          max_score: rawResult.max_score || 0,
-          completed_at: rawResult.completed_at,
-          risk_level: rawResult.risk_level || 'Low',
-          percentage_score: trueAverageScore,
-          overallScore: trueAverageScore,
-          score: trueAverageScore,
-          categoryScores: safeCategoryScores,
-          category_scores: safeCategoryScores,
-          candidate_profiles: candidateProfile,
-          candidateName: candidateName,
-          classification: rawResult.classification || 'Standard Profile'
-        };
-
-        // ============================================================
-        // STEP 5: Store Data
-        // ============================================================
-        setReportData({
-          ...data,
-          result: finalResult,
-          report: isNS ? finalReport : finalResult,
-          isNationalService: isNS
-        });
-        setIsNationalService(isNS);
-
-        // ============================================================
-        // Fetch Behavioral Matrix
-        // ============================================================
-        await fetchBehavioralMatrix(resultId);
-
-        setLoading(false);
-      } catch (err) {
-        console.error('Error fetching report:', err);
-        setError(err.message);
-        setLoading(false);
-      }
-    };
-
+    if (!resultId) return;
     fetchReport();
-  }, [resultId, session]);
+  }, [resultId]);
 
   // ============================================================
-  // Fetch Behavioral Matrix
+  // FETCH REPORT
   // ============================================================
-  const fetchBehavioralMatrix = async (id) => {
+
+  const fetchReport = async () => {
     try {
-      setLoadingBehavioral(true);
-      console.log('[Behavioral] Fetching for resultId:', id);
-      
+      setLoading(true);
+      setError(null);
+
+      // Get session
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData?.session?.access_token;
 
       if (!token) {
-        console.log('[Behavioral] No token found');
+        setError('Please sign in to view this report.');
+        setLoading(false);
         return;
+      }
+
+      // Fetch report with authentication
+      const response = await fetch(`/api/assessment-report/${resultId}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      let data;
+      try {
+        data = await response.json();
+      } catch (parseError) {
+        console.error('[Report View] Invalid API response:', parseError);
+        throw new Error('Invalid response from server');
+      }
+
+      if (!response.ok || !data.success) {
+        if (response.status === 401) {
+          throw new Error('Your session has expired. Please sign in again.');
+        }
+        if (response.status === 403) {
+          throw new Error('You do not have permission to view this report.');
+        }
+        if (response.status === 404) {
+          throw new Error('The requested report could not be found.');
+        }
+        throw new Error(data?.error || 'Failed to load report');
+      }
+
+      const result = data.result || {};
+      const parsedResultReportData = getReportDataObject(result.report_data);
+      let report = data.report || {};
+
+      if (parsedResultReportData && Object.keys(parsedResultReportData).length > 0) {
+        report = {
+          ...parsedResultReportData,
+          ...report,
+          dimensions: report.dimensions || parsedResultReportData.dimensions || {},
+          scores: report.scores || parsedResultReportData.scores || {},
+          category_scores: report.category_scores || parsedResultReportData.category_scores || parsedResultReportData.categoryBreakdown || [],
+          categoryBreakdown: report.categoryBreakdown || parsedResultReportData.categoryBreakdown || parsedResultReportData.category_scores || [],
+          report_data: parsedResultReportData
+        };
+      }
+
+      const assessmentId = result?.assessment_id || data?.assessment_id || '';
+      const assessmentTypeCode = data?.assessmentTypeCode || result?.assessment_type_code || result?.assessments?.assessment_type?.code || '';
+      const assessmentTitle = result?.assessments?.title || report?.assessmentName || data?.assessmentTitle || '';
+
+      const isNS =
+        assessmentId === NATIONAL_SERVICE_ASSESSMENT_ID ||
+        assessmentTypeCode === 'national_service' ||
+        data?.isNationalService === true ||
+        assessmentTitle === 'National Service Recruitment Assessment' ||
+        report?.reportType === 'national_service';
+
+      const candidateInfo = getCandidateInfo(data, result, report);
+      const candidateName = candidateInfo.fullName || 'Candidate';
+      const categoryScores = getCategoryScores(data, result, report);
+
+      // 🟢 FETCH AND NORMALIZE BEHAVIORAL MATRIX
+      const matrix = await fetchBehavioralMatrix(resultId, token);
+
+      if (isNS) {
+        const authoritativeScores = getAuthoritativeNationalServiceScores(data, result, report);
+
+        report = {
+          ...report,
+          reportType: 'national_service',
+          candidateName,
+          candidateInfo,
+          category_scores: categoryScores,
+          categoryScores: categoryScores,
+          categoryBreakdown: categoryScores,
+          workplaceSubCategories: data.workplaceSubCategories || report.workplaceSubCategories || [],
+          intellectualSubCategories: data.intellectualSubCategories || report.intellectualSubCategories || [],
+          dimensions: {
+            ...(report.dimensions || {}),
+            workplaceReadiness: authoritativeScores.workplaceReadiness,
+            intellectualCapability: authoritativeScores.intellectualCapability,
+            overallScore: authoritativeScores.overallScore
+          },
+          scores: {
+            ...(report.scores || {}),
+            workplace: authoritativeScores.workplaceReadiness,
+            intellectual: authoritativeScores.intellectualCapability,
+            overall: authoritativeScores.overallScore,
+            recommendation: report.scores?.recommendation || report.recommendation || data.recommendation || result.recommendation || 'Not Recommended'
+          },
+          workplaceReadiness: authoritativeScores.workplaceReadiness,
+          intellectualCapability: authoritativeScores.intellectualCapability,
+          workplace_readiness: authoritativeScores.workplaceReadiness,
+          intellectual_capability: authoritativeScores.intellectualCapability,
+          overallScore: authoritativeScores.overallScore,
+          percentage_score: authoritativeScores.overallScore,
+          score: authoritativeScores.overallScore,
+          recommendation: report.scores?.recommendation || report.recommendation || data.recommendation || result.recommendation || 'Not Recommended',
+          statistics: report.statistics || {
+            totalQuestions: result.total_questions || 0,
+            totalAnswered: result.answered_questions || 0
+          },
+          behavioralMatrix: matrix
+        };
+      } else {
+        report = {
+          ...report,
+          reportType: 'stratavax',
+          candidateName,
+          candidateInfo,
+          categoryScores: categoryScores,
+          category_scores: categoryScores,
+          overallScore: roundScore(result.percentage_score ?? report.overallScore ?? data.overallScore ?? 0),
+          percentage_score: roundScore(result.percentage_score ?? report.percentage_score ?? data.percentage_score ?? 0),
+          classification: result.classification || report.classification || data.classification || 'Standard Profile',
+          riskLevel: result.riskLevel || report.riskLevel || result.risk_level || data.riskLevel || 'Medium',
+          strengths: result.strengths || report.strengths || data.strengths || [],
+          weaknesses: result.weaknesses || report.weaknesses || report.developmentAreas || data.weaknesses || [],
+          recommendations: result.recommendations || report.recommendations || data.recommendations || [],
+          total_questions: result.total_questions || 0,
+          answered_questions: result.answered_questions || 0,
+          behavioralMatrix: matrix
+        };
+      }
+
+      setReportData({
+        ...data,
+        report,
+        result,
+        candidateName,
+        behavioralMatrix: matrix
+      });
+      setIsNationalService(isNS);
+      setBehavioralMatrix(matrix);
+      setLoading(false);
+    } catch (err) {
+      console.error('[Report View] Error:', err);
+      setError(err.message || 'Failed to load report');
+      setLoading(false);
+    }
+  };
+
+  // ============================================================
+  // FETCH BEHAVIORAL MATRIX - WITH NORMALIZATION
+  // ============================================================
+
+  const fetchBehavioralMatrix = async (id, token) => {
+    try {
+      setLoadingBehavioral(true);
+
+      if (!token) {
+        console.warn('[Behavioral Matrix] No token');
+        return null;
       }
 
       const response = await fetch(`/api/assessment/behavioral-matrix?resultId=${id}`, {
         headers: {
-          'Authorization': `Bearer ${token}`
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
         }
       });
 
+      if (!response.ok) {
+        console.warn('[Behavioral Matrix] API returned:', response.status);
+        return null;
+      }
+
       const data = await response.json();
-      console.log('[Behavioral] API Response:', data);
-      
+
       if (data.success) {
-        // Try different response formats
-        const matrix = data.behavioralMatrix || data.matrixData || data.data || data.result;
+        const matrix = data.behavioralMatrix || data.matrixData || data.matrix || data.data || data.result || null;
         if (matrix) {
-          console.log('[Behavioral] Matrix data found:');
-          console.log('[Behavioral] - tabSwitches:', matrix.behavior?.tabSwitches);
-          console.log('[Behavioral] - violations:', matrix.behavior?.violations);
-          console.log('[Behavioral] - answerChanges:', matrix.behavior?.answerChanges);
-          setBehavioralMatrix(matrix);
-        } else {
-          console.log('[Behavioral] No matrix data found in response');
+          // 🟢 NORMALIZE THE SCHEMA (nested → flat)
+          const normalized = normalizeBehavioralMatrix(matrix);
+          console.log('[Behavioral Matrix] Normalized:', normalized);
+          return normalized;
         }
       }
+      return null;
     } catch (error) {
-      console.error('Error fetching behavioral matrix:', error);
+      console.error('[Behavioral Matrix] Error fetching:', error);
+      return null;
     } finally {
       setLoadingBehavioral(false);
     }
@@ -273,29 +392,13 @@ export default function SupervisorReportView() {
     router.push('/supervisor');
   };
 
-  const toggleBehavioral = () => {
-    setShowBehavioral(!showBehavioral);
-  };
+  // ============================================================
+  // RENDER STATES
+  // ============================================================
 
-  // ============================================================
-  // Format time helper
-  // ============================================================
-  const formatTime = (seconds) => {
-    if (!seconds) return 'N/A';
-    const hrs = Math.floor(seconds / 3600);
-    const mins = Math.floor((seconds % 3600) / 60);
-    const secs = seconds % 60;
-    return `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-  };
-
-  // ============================================================
-  // Check if behavioral data exists - SIMPLIFIED
-  // ============================================================
-  const hasBehavioralData = behavioralMatrix !== null && behavioralMatrix !== undefined;
-
-  if (authLoading || loading) {
+  if (loading) {
     return (
-      <AppLayout background="/images/supervisor-bg.jpg">
+      <AppLayout background="/images/admin-bg.jpg">
         <div style={styles.loadingContainer}>
           <div style={styles.loadingSpinner}></div>
           <p>Loading report...</p>
@@ -306,452 +409,110 @@ export default function SupervisorReportView() {
 
   if (error) {
     return (
-      <AppLayout background="/images/supervisor-bg.jpg">
+      <AppLayout background="/images/admin-bg.jpg">
         <div style={styles.errorContainer}>
-          <div style={styles.errorIcon}>🔒</div>
-          <h2>Access Denied</h2>
+          <div style={styles.errorIcon}>⚠️</div>
+          <h2>Error Loading Report</h2>
           <p>{error}</p>
           <button onClick={handleBack} style={styles.errorButton}>Go Back</button>
+          <button onClick={fetchReport} style={styles.retryButton}>Retry</button>
         </div>
       </AppLayout>
     );
   }
 
-  // ============================================================
-  // Render the correct report format based on assessment type
-  // ============================================================
-  
-  // If it's a National Service assessment, use the National Service Report
   if (isNationalService && reportData?.report) {
-    console.log('[Supervisor Report] Rendering National Service Report with candidateInfo.');
-    
     return (
-      <AppLayout background="/images/supervisor-bg.jpg">
+      <AppLayout background="/images/admin-bg.jpg">
         <div style={styles.breadcrumb}>
-          <button onClick={handleBack} style={styles.breadcrumbButton}>
-            ← Back to Supervisor Dashboard
-          </button>
+          <button onClick={handleBack} style={styles.breadcrumbButton}>← Back to Dashboard</button>
           <span style={styles.breadcrumbSeparator}>|</span>
           <span style={styles.breadcrumbText}>National Service Report</span>
-          <button onClick={toggleBehavioral} style={styles.behavioralToggle}>
-            {showBehavioral ? 'Hide Behavioral Matrix' : 'Show Behavioral Matrix'}
-          </button>
         </div>
-        
-        <NationalServiceReport 
-          report={reportData.report} 
-          onBack={handleBack} 
-          showAssignment={false}
-          userRole="supervisor"
+
+        <NationalServiceReport
+          report={{
+            ...reportData.report,
+            behavioralMatrix: behavioralMatrix
+          }}
+          onBack={handleBack}
           behavioralMatrix={behavioralMatrix}
           loadingBehavioral={loadingBehavioral}
         />
-        
-        {showBehavioral && (
-          <div style={styles.behavioralSection}>
-            <h3 style={styles.behavioralTitle}>Behavioral Matrix</h3>
-            
-            {loadingBehavioral ? (
-              <div style={styles.loadingBehavioral}>
-                <p>Loading behavioral data...</p>
-              </div>
-            ) : behavioralMatrix && hasBehavioralData ? (
-              <>
-                <div style={styles.behavioralStats}>
-                  <div style={styles.behavioralStat}>
-                    <span style={styles.behavioralLabel}>Total Time</span>
-                    <span style={styles.behavioralValue}>
-                      {formatTime(behavioralMatrix.timing?.totalTimeSeconds)}
-                    </span>
-                  </div>
-                  <div style={styles.behavioralStat}>
-                    <span style={styles.behavioralLabel}>Avg Time per Question</span>
-                    <span style={styles.behavioralValue}>
-                      {behavioralMatrix.timing?.averageTimePerQuestion || 0}s
-                    </span>
-                  </div>
-                  <div style={styles.behavioralStat}>
-                    <span style={styles.behavioralLabel}>Answer Changes</span>
-                    <span style={styles.behavioralValue}>
-                      {behavioralMatrix.behavior?.answerChanges || 0}
-                    </span>
-                  </div>
-                  <div style={styles.behavioralStat}>
-                    <span style={styles.behavioralLabel}>Tab Switches</span>
-                    <span style={styles.behavioralValue}>
-                      {behavioralMatrix.behavior?.tabSwitches || 0}
-                    </span>
-                  </div>
-                  <div style={styles.behavioralStat}>
-                    <span style={styles.behavioralLabel}>Violations</span>
-                    <span style={styles.behavioralValue}>
-                      {behavioralMatrix.behavior?.violations || 0}
-                    </span>
-                  </div>
-                  <div style={styles.behavioralStat}>
-                    <span style={styles.behavioralLabel}>Copy/Paste Attempts</span>
-                    <span style={styles.behavioralValue}>
-                      {(behavioralMatrix.behavior?.copyAttempts || 0) + (behavioralMatrix.behavior?.pasteAttempts || 0)}
-                    </span>
-                  </div>
-                  <div style={styles.behavioralStat}>
-                    <span style={styles.behavioralLabel}>Right-Click Attempts</span>
-                    <span style={styles.behavioralValue}>
-                      {behavioralMatrix.behavior?.rightClickAttempts || 0}
-                    </span>
-                  </div>
-                  <div style={styles.behavioralStat}>
-                    <span style={styles.behavioralLabel}>Risk Level</span>
-                    <span style={{
-                      ...styles.riskBadge,
-                      background: behavioralMatrix.riskAssessment?.level === 'High Risk' ? '#fee2e2' :
-                                 behavioralMatrix.riskAssessment?.level === 'Medium Risk' ? '#fef3c7' : '#dcfce7',
-                      color: behavioralMatrix.riskAssessment?.level === 'High Risk' ? '#991b1b' :
-                             behavioralMatrix.riskAssessment?.level === 'Medium Risk' ? '#92400e' : '#166534'
-                    }}>
-                      {behavioralMatrix.riskAssessment?.level || 'Low Risk'}
-                    </span>
-                  </div>
-                </div>
-                
-                <div style={styles.riskSummary}>
-                  <p>
-                    Behavioral flags: {behavioralMatrix.behavior?.violations || 0} violation(s), {behavioralMatrix.behavior?.tabSwitches || 0} tab switches.
-                  </p>
-                  {behavioralMatrix.riskAssessment?.detail && (
-                    <p style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
-                      {behavioralMatrix.riskAssessment.detail}
-                    </p>
-                  )}
-                </div>
-                
-                {/* Behavioral Commentary */}
-                {behavioralMatrix?.behavior && (
-                  <div style={styles.behavioralCommentary}>
-                    <h4 style={styles.commentaryTitle}>Behavioral Analysis</h4>
-                    <div style={styles.commentaryMetrics}>
-                      <div style={styles.commentaryItem}>
-                        <span style={styles.commentaryLabel}>Tab Switches:</span>
-                        <span style={styles.commentaryText}>
-                          {behavioralMatrix.behavior.tabSwitches === 0
-                            ? 'No tab switching detected. Candidate maintained focus.'
-                            : behavioralMatrix.behavior.tabSwitches <= 5
-                              ? `Minimal tab switching (${behavioralMatrix.behavior.tabSwitches} switches). Occasional distraction.`
-                              : behavioralMatrix.behavior.tabSwitches <= 20
-                                ? `Moderate tab switching (${behavioralMatrix.behavior.tabSwitches} switches). Potential external reference use.`
-                                : `High tab switching (${behavioralMatrix.behavior.tabSwitches} switches). Significant distraction detected.`
-                          }
-                        </span>
-                      </div>
-                      <div style={styles.commentaryItem}>
-                        <span style={styles.commentaryLabel}>Violations:</span>
-                        <span style={styles.commentaryText}>
-                          {behavioralMatrix.behavior.violations === 0
-                            ? 'No rule violations detected. Candidate followed all guidelines.'
-                            : behavioralMatrix.behavior.violations <= 3
-                              ? `Minor violations (${behavioralMatrix.behavior.violations}). May be accidental.`
-                              : behavioralMatrix.behavior.violations <= 10
-                                ? `Moderate violations (${behavioralMatrix.behavior.violations}). Review recommended.`
-                                : `High violations (${behavioralMatrix.behavior.violations}). Immediate review required.`
-                          }
-                        </span>
-                      </div>
-                      <div style={styles.commentaryItem}>
-                        <span style={styles.commentaryLabel}>Answer Changes:</span>
-                        <span style={styles.commentaryText}>
-                          {behavioralMatrix.behavior.answerChanges === 0
-                            ? 'No answer changes. Candidate showed confidence.'
-                            : behavioralMatrix.behavior.answerChanges <= 3
-                              ? `Minimal changes (${behavioralMatrix.behavior.answerChanges}). Some hesitation.`
-                              : behavioralMatrix.behavior.answerChanges <= 10
-                                ? `Moderate changes (${behavioralMatrix.behavior.answerChanges}). Uncertainty detected.`
-                                : `High changes (${behavioralMatrix.behavior.answerChanges}). Significant uncertainty.`
-                          }
-                        </span>
-                      </div>
-                    </div>
-                    
-                    {(behavioralMatrix.behavior.violations > 0 || behavioralMatrix.behavior.tabSwitches > 5) ? (
-                      <div style={styles.recommendationBox}>
-                        <h5 style={styles.recommendationTitle}>Recommendations</h5>
-                        <ul style={styles.recommendationList}>
-                          {behavioralMatrix.behavior.tabSwitches > 20 && (
-                            <li>Consider invalidating the assessment due to excessive tab switching.</li>
-                          )}
-                          {behavioralMatrix.behavior.violations > 10 && (
-                            <li>Immediate review required. Assessment validity is compromised.</li>
-                          )}
-                          {behavioralMatrix.behavior.tabSwitches > 5 && behavioralMatrix.behavior.tabSwitches <= 20 && (
-                            <li>Conduct a follow-up interview to discuss potential external reference use.</li>
-                          )}
-                          {behavioralMatrix.behavior.violations > 3 && behavioralMatrix.behavior.violations <= 10 && (
-                            <li>Review specific flagged questions and discuss with candidate.</li>
-                          )}
-                          {behavioralMatrix.behavior.answerChanges > 5 && (
-                            <li>Review questions where answers were changed for potential ambiguity.</li>
-                          )}
-                        </ul>
-                      </div>
-                    ) : (
-                      <div style={styles.cleanCommentary}>
-                        No concerning behavioral patterns detected. The candidate completed the assessment with integrity.
-                      </div>
-                    )}
-                  </div>
-                )}
-                
-                {behavioralMatrix.flaggedQuestions && behavioralMatrix.flaggedQuestions.length > 0 && (
-                  <div style={styles.flaggedQuestions}>
-                    <h4 style={styles.flaggedTitle}>Flagged Questions</h4>
-                    <ul style={styles.flaggedList}>
-                      {behavioralMatrix.flaggedQuestions.slice(0, 10).map((q, index) => (
-                        <li key={index} style={styles.flaggedItem}>
-                          Question {q.question_id}: {q.time_seconds}s
-                          {q.changed ? ' - Changed' : ''}
-                          {q.violation ? ' - Violation' : ''}
-                          {q.comment ? ` - ${q.comment}` : ''}
-                        </li>
-                      ))}
-                      {behavioralMatrix.flaggedQuestions.length > 10 && (
-                        <li style={styles.flaggedItem}>... and {behavioralMatrix.flaggedQuestions.length - 10} more</li>
-                      )}
-                    </ul>
-                  </div>
-                )}
-              </>
-            ) : (
-              <div style={styles.noBehavioralData}>
-                <p>No behavioral data is available for this assessment.</p>
-                <p style={styles.noBehavioralSubtext}>
-                  Behavioral data (tab switches, violations, answer changes, etc.) 
-                  is only tracked for assessments completed after the behavioral tracking feature was implemented.
-                </p>
-              </div>
-            )}
-          </div>
-        )}
       </AppLayout>
     );
   }
 
-  // ============================================================
-  // DEFAULT: Use Stratavax Report for all non-National Service assessments
-  // ============================================================
-  console.log('[Supervisor Report] Rendering Stratavax Report');
-  
-  // Prepare data for Stratavax report
-  const stratavaxResult = reportData?.result || null;
-  const stratavaxCandidate = stratavaxResult?.candidate_profiles || null;
-  const stratavaxAssessment = stratavaxResult?.assessments || null;
+  if (!isNationalService && reportData?.report) {
+    const report = reportData.report;
+
+    const stratavaxResult = {
+      ...reportData.result,
+      candidate_profiles: {
+        full_name: report.candidateInfo?.fullName || reportData.candidateName || 'Candidate',
+        email: report.candidateInfo?.email || '',
+        university: report.candidateInfo?.university || '',
+        programme: report.candidateInfo?.programme || '',
+        graduation_year: report.candidateInfo?.graduationYear || '',
+        preferred_department: report.candidateInfo?.preferredDepartment || ''
+      },
+      assessments: {
+        title: reportData.result?.assessments?.title || report.assessmentName || 'Assessment',
+        assessment_type: {
+          name: reportData.result?.assessments?.assessment_type?.name || 'General'
+        }
+      },
+      percentage_score: report.overallScore || report.percentage_score || 0,
+      classification: report.classification || 'Standard Profile',
+      riskLevel: report.riskLevel || 'Medium',
+      categoryScores: report.categoryScores || report.category_scores || [],
+      strengths: report.strengths || [],
+      weaknesses: report.weaknesses || [],
+      recommendations: report.recommendations || [],
+      executiveSummary: report.executiveSummary || '',
+      supervisorImplication: report.supervisorImplication || '',
+      total_questions: report.total_questions || 0,
+      answered_questions: report.answered_questions || 0,
+      completed_at: reportData.result?.completed_at || null,
+      candidateName: report.candidateInfo?.fullName || reportData.candidateName || 'Candidate',
+      behavioralMatrix: behavioralMatrix
+    };
+
+    return (
+      <AppLayout background="/images/admin-bg.jpg">
+        <div style={styles.breadcrumb}>
+          <button onClick={handleBack} style={styles.breadcrumbButton}>← Back to Dashboard</button>
+          <span style={styles.breadcrumbSeparator}>|</span>
+          <span style={styles.breadcrumbText}>Assessment Report</span>
+        </div>
+
+        <StratavaxReport
+          result={stratavaxResult}
+          candidate={stratavaxResult.candidate_profiles || null}
+          assessment={stratavaxResult.assessments || null}
+          onBack={handleBack}
+          behavioralMatrix={behavioralMatrix}
+        />
+      </AppLayout>
+    );
+  }
 
   return (
-    <AppLayout background="/images/supervisor-bg.jpg">
-      <div style={styles.breadcrumb}>
-        <button onClick={handleBack} style={styles.breadcrumbButton}>
-          ← Back to Supervisor Dashboard
-        </button>
-        <span style={styles.breadcrumbSeparator}>|</span>
-        <span style={styles.breadcrumbText}>Assessment Report</span>
-        <button onClick={toggleBehavioral} style={styles.behavioralToggle}>
-          {showBehavioral ? 'Hide Behavioral Data' : 'Show Behavioral Data'}
-        </button>
-      </div>
-      
-      <StratavaxReport 
-        result={stratavaxResult}
-        candidate={stratavaxCandidate}
-        assessment={stratavaxAssessment}
-        onBack={handleBack}
-        behavioralMatrix={behavioralMatrix}
-        loadingBehavioral={loadingBehavioral}
-      />
-      
-      {showBehavioral && (
-        <div style={styles.behavioralSection}>
-          <h3 style={styles.behavioralTitle}>Behavioral Matrix</h3>
-          
-          {loadingBehavioral ? (
-            <div style={styles.loadingBehavioral}>
-              <p>Loading behavioral data...</p>
-            </div>
-          ) : behavioralMatrix && hasBehavioralData ? (
-            <>
-              <div style={styles.behavioralStats}>
-                <div style={styles.behavioralStat}>
-                  <span style={styles.behavioralLabel}>Total Time</span>
-                  <span style={styles.behavioralValue}>
-                    {formatTime(behavioralMatrix.timing?.totalTimeSeconds)}
-                  </span>
-                </div>
-                <div style={styles.behavioralStat}>
-                  <span style={styles.behavioralLabel}>Avg Time per Question</span>
-                  <span style={styles.behavioralValue}>
-                    {behavioralMatrix.timing?.averageTimePerQuestion || 0}s
-                  </span>
-                </div>
-                <div style={styles.behavioralStat}>
-                  <span style={styles.behavioralLabel}>Answer Changes</span>
-                  <span style={styles.behavioralValue}>
-                    {behavioralMatrix.behavior?.answerChanges || 0}
-                  </span>
-                </div>
-                <div style={styles.behavioralStat}>
-                  <span style={styles.behavioralLabel}>Tab Switches</span>
-                  <span style={styles.behavioralValue}>
-                    {behavioralMatrix.behavior?.tabSwitches || 0}
-                  </span>
-                </div>
-                <div style={styles.behavioralStat}>
-                  <span style={styles.behavioralLabel}>Violations</span>
-                  <span style={styles.behavioralValue}>
-                    {behavioralMatrix.behavior?.violations || 0}
-                  </span>
-                </div>
-                <div style={styles.behavioralStat}>
-                  <span style={styles.behavioralLabel}>Copy/Paste Attempts</span>
-                  <span style={styles.behavioralValue}>
-                    {(behavioralMatrix.behavior?.copyAttempts || 0) + (behavioralMatrix.behavior?.pasteAttempts || 0)}
-                  </span>
-                </div>
-                <div style={styles.behavioralStat}>
-                  <span style={styles.behavioralLabel}>Right-Click Attempts</span>
-                  <span style={styles.behavioralValue}>
-                    {behavioralMatrix.behavior?.rightClickAttempts || 0}
-                  </span>
-                </div>
-                <div style={styles.behavioralStat}>
-                  <span style={styles.behavioralLabel}>Risk Level</span>
-                  <span style={{
-                    ...styles.riskBadge,
-                    background: behavioralMatrix.riskAssessment?.level === 'High Risk' ? '#fee2e2' :
-                               behavioralMatrix.riskAssessment?.level === 'Medium Risk' ? '#fef3c7' : '#dcfce7',
-                    color: behavioralMatrix.riskAssessment?.level === 'High Risk' ? '#991b1b' :
-                           behavioralMatrix.riskAssessment?.level === 'Medium Risk' ? '#92400e' : '#166534'
-                  }}>
-                    {behavioralMatrix.riskAssessment?.level || 'Low Risk'}
-                  </span>
-                </div>
-              </div>
-              
-              <div style={styles.riskSummary}>
-                <p>
-                  Behavioral flags: {behavioralMatrix.behavior?.violations || 0} violation(s), {behavioralMatrix.behavior?.tabSwitches || 0} tab switches.
-                </p>
-                {behavioralMatrix.riskAssessment?.detail && (
-                  <p style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
-                    {behavioralMatrix.riskAssessment.detail}
-                  </p>
-                )}
-              </div>
-              
-              {/* Behavioral Commentary */}
-              {behavioralMatrix?.behavior && (
-                <div style={styles.behavioralCommentary}>
-                  <h4 style={styles.commentaryTitle}>Behavioral Analysis</h4>
-                  <div style={styles.commentaryMetrics}>
-                    <div style={styles.commentaryItem}>
-                      <span style={styles.commentaryLabel}>Tab Switches:</span>
-                      <span style={styles.commentaryText}>
-                        {behavioralMatrix.behavior.tabSwitches === 0
-                          ? 'No tab switching detected. Candidate maintained focus.'
-                          : behavioralMatrix.behavior.tabSwitches <= 5
-                            ? `Minimal tab switching (${behavioralMatrix.behavior.tabSwitches} switches). Occasional distraction.`
-                            : behavioralMatrix.behavior.tabSwitches <= 20
-                              ? `Moderate tab switching (${behavioralMatrix.behavior.tabSwitches} switches). Potential external reference use.`
-                              : `High tab switching (${behavioralMatrix.behavior.tabSwitches} switches). Significant distraction detected.`
-                        }
-                      </span>
-                    </div>
-                    <div style={styles.commentaryItem}>
-                      <span style={styles.commentaryLabel}>Violations:</span>
-                      <span style={styles.commentaryText}>
-                        {behavioralMatrix.behavior.violations === 0
-                          ? 'No rule violations detected. Candidate followed all guidelines.'
-                          : behavioralMatrix.behavior.violations <= 3
-                            ? `Minor violations (${behavioralMatrix.behavior.violations}). May be accidental.`
-                            : behavioralMatrix.behavior.violations <= 10
-                              ? `Moderate violations (${behavioralMatrix.behavior.violations}). Review recommended.`
-                              : `High violations (${behavioralMatrix.behavior.violations}). Immediate review required.`
-                        }
-                      </span>
-                    </div>
-                    <div style={styles.commentaryItem}>
-                      <span style={styles.commentaryLabel}>Answer Changes:</span>
-                      <span style={styles.commentaryText}>
-                        {behavioralMatrix.behavior.answerChanges === 0
-                          ? 'No answer changes. Candidate showed confidence.'
-                          : behavioralMatrix.behavior.answerChanges <= 3
-                            ? `Minimal changes (${behavioralMatrix.behavior.answerChanges}). Some hesitation.`
-                            : behavioralMatrix.behavior.answerChanges <= 10
-                              ? `Moderate changes (${behavioralMatrix.behavior.answerChanges}). Uncertainty detected.`
-                              : `High changes (${behavioralMatrix.behavior.answerChanges}). Significant uncertainty.`
-                        }
-                      </span>
-                    </div>
-                  </div>
-                  
-                  {(behavioralMatrix.behavior.violations > 0 || behavioralMatrix.behavior.tabSwitches > 5) ? (
-                    <div style={styles.recommendationBox}>
-                      <h5 style={styles.recommendationTitle}>Recommendations</h5>
-                      <ul style={styles.recommendationList}>
-                        {behavioralMatrix.behavior.tabSwitches > 20 && (
-                          <li>Consider invalidating the assessment due to excessive tab switching.</li>
-                        )}
-                        {behavioralMatrix.behavior.violations > 10 && (
-                          <li>Immediate review required. Assessment validity is compromised.</li>
-                        )}
-                        {behavioralMatrix.behavior.tabSwitches > 5 && behavioralMatrix.behavior.tabSwitches <= 20 && (
-                          <li>Conduct a follow-up interview to discuss potential external reference use.</li>
-                        )}
-                        {behavioralMatrix.behavior.violations > 3 && behavioralMatrix.behavior.violations <= 10 && (
-                          <li>Review specific flagged questions and discuss with candidate.</li>
-                        )}
-                        {behavioralMatrix.behavior.answerChanges > 5 && (
-                          <li>Review questions where answers were changed for potential ambiguity.</li>
-                        )}
-                      </ul>
-                    </div>
-                  ) : (
-                    <div style={styles.cleanCommentary}>
-                      No concerning behavioral patterns detected. The candidate completed the assessment with integrity.
-                    </div>
-                  )}
-                </div>
-              )}
-              
-              {behavioralMatrix.flaggedQuestions && behavioralMatrix.flaggedQuestions.length > 0 && (
-                <div style={styles.flaggedQuestions}>
-                  <h4 style={styles.flaggedTitle}>Flagged Questions</h4>
-                  <ul style={styles.flaggedList}>
-                    {behavioralMatrix.flaggedQuestions.slice(0, 10).map((q, index) => (
-                      <li key={index} style={styles.flaggedItem}>
-                        Question {q.question_id}: {q.time_seconds}s
-                        {q.changed ? ' - Changed' : ''}
-                        {q.violation ? ' - Violation' : ''}
-                        {q.comment ? ` - ${q.comment}` : ''}
-                      </li>
-                    ))}
-                    {behavioralMatrix.flaggedQuestions.length > 10 && (
-                      <li style={styles.flaggedItem}>... and {behavioralMatrix.flaggedQuestions.length - 10} more</li>
-                    )}
-                  </ul>
-                </div>
-              )}
-            </>
-          ) : (
-            <div style={styles.noBehavioralData}>
-              <p>No behavioral data is available for this assessment.</p>
-              <p style={styles.noBehavioralSubtext}>
-                Behavioral data (tab switches, violations, answer changes, etc.) 
-                is only tracked for assessments completed after the behavioral tracking feature was implemented.
-              </p>
-            </div>
-          )}
+    <AppLayout background="/images/admin-bg.jpg">
+      <div style={styles.fallbackContainer}>
+        <button onClick={handleBack} style={styles.backButton}>← Back to Dashboard</button>
+        <div style={styles.fallbackContent}>
+          <h2>Report Not Available</h2>
+          <p>Unable to determine the report type.</p>
         </div>
-      )}
+      </div>
     </AppLayout>
   );
 }
+
+// ============================================================
+// STYLES
+// ============================================================
 
 const styles = {
   loadingContainer: {
@@ -790,7 +551,21 @@ const styles = {
     border: 'none',
     borderRadius: '8px',
     cursor: 'pointer',
-    marginTop: '16px'
+    marginTop: '16px',
+    marginRight: '8px',
+    fontSize: '14px',
+    fontWeight: '500'
+  },
+  retryButton: {
+    padding: '10px 24px',
+    background: '#e2e8f0',
+    color: '#1a202c',
+    border: 'none',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    marginTop: '16px',
+    fontSize: '14px',
+    fontWeight: '500'
   },
   breadcrumb: {
     display: 'flex',
@@ -819,193 +594,25 @@ const styles = {
     fontSize: '14px',
     color: '#475569'
   },
-  behavioralToggle: {
-    padding: '6px 16px',
-    background: '#1a237e',
-    color: 'white',
-    border: 'none',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    fontSize: '13px',
-    fontWeight: '500',
-    marginLeft: 'auto'
-  },
-  behavioralSection: {
+  fallbackContainer: {
     maxWidth: '1200px',
-    margin: '24px auto',
-    padding: '24px',
-    background: 'white',
-    borderRadius: '12px',
+    margin: '0 auto',
+    padding: '20px'
+  },
+  backButton: {
+    padding: '8px 16px',
+    background: 'transparent',
     border: '1px solid #e2e8f0',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
-  },
-  behavioralTitle: {
-    fontSize: '18px',
-    fontWeight: '600',
-    color: '#0a1929',
-    margin: '0 0 16px 0',
-    paddingBottom: '12px',
-    borderBottom: '2px solid #e2e8f0'
-  },
-  behavioralStats: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-    gap: '12px',
-    marginBottom: '16px'
-  },
-  behavioralStat: {
-    background: '#f8fafc',
-    padding: '12px 16px',
     borderRadius: '8px',
-    border: '1px solid #e2e8f0',
-    textAlign: 'center'
-  },
-  behavioralLabel: {
-    display: 'block',
-    fontSize: '11px',
-    color: '#94a3b8',
-    textTransform: 'uppercase',
-    letterSpacing: '0.04em',
-    marginBottom: '4px'
-  },
-  behavioralValue: {
-    fontSize: '18px',
-    fontWeight: '700',
-    color: '#0a1929'
-  },
-  riskBadge: {
-    display: 'inline-block',
-    padding: '4px 12px',
-    borderRadius: '12px',
-    fontSize: '13px',
-    fontWeight: '600'
-  },
-  riskSummary: {
-    padding: '12px 16px',
-    background: '#f8fafc',
-    borderRadius: '8px',
-    border: '1px solid #e2e8f0',
-    marginBottom: '12px',
+    cursor: 'pointer',
     fontSize: '14px',
-    color: '#475569'
-  },
-  flaggedQuestions: {
-    marginTop: '12px'
-  },
-  flaggedTitle: {
-    fontSize: '14px',
-    fontWeight: '600',
-    color: '#0a1929',
-    marginBottom: '8px'
-  },
-  flaggedList: {
-    listStyle: 'none',
-    padding: '0',
-    margin: '0'
-  },
-  flaggedItem: {
-    padding: '6px 12px',
-    background: '#f8fafc',
-    borderRadius: '4px',
-    borderBottom: '1px solid #f1f5f9',
-    fontSize: '13px',
-    color: '#475569'
-  },
-  loadingBehavioral: {
-    textAlign: 'center',
-    padding: '20px',
-    color: '#64748b'
-  },
-  noBehavioralData: {
-    textAlign: 'center',
-    padding: '30px 20px',
-    color: '#64748b'
-  },
-  noBehavioralSubtext: {
-    fontSize: '13px',
-    color: '#94a3b8',
-    marginTop: '8px'
-  },
-  // ============================================================
-  // Behavioral Commentary Styles
-  // ============================================================
-  behavioralCommentary: {
-    marginTop: '16px',
-    padding: '16px',
-    background: 'white',
-    borderRadius: '8px',
-    border: '1px solid #e2e8f0'
-  },
-  commentaryTitle: {
-    fontSize: '15px',
-    fontWeight: '600',
-    color: '#0a1929',
-    margin: '0 0 12px 0',
-    paddingBottom: '8px',
-    borderBottom: '1px solid #e2e8f0'
-  },
-  commentaryMetrics: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '8px'
-  },
-  commentaryItem: {
-    display: 'flex',
-    alignItems: 'flex-start',
-    gap: '8px',
-    padding: '6px 0',
-    borderBottom: '1px solid #f8fafc'
-  },
-  commentaryLabel: {
-    fontWeight: '600',
     color: '#475569',
-    minWidth: '120px',
-    fontSize: '13px',
-    flexShrink: 0
+    marginBottom: '20px'
   },
-  commentaryText: {
-    fontSize: '13px',
-    color: '#1a202c',
-    lineHeight: '1.5'
-  },
-  recommendationBox: {
-    marginTop: '12px',
-    padding: '12px 16px',
-    background: '#fef3c7',
-    borderRadius: '8px',
-    border: '1px solid #fcd34d'
-  },
-  recommendationTitle: {
-    fontSize: '13px',
-    fontWeight: '600',
-    color: '#92400e',
-    margin: '0 0 6px 0'
-  },
-  recommendationList: {
-    margin: '0',
-    paddingLeft: '20px',
-    fontSize: '13px',
-    color: '#78350f'
-  },
-  cleanCommentary: {
-    marginTop: '12px',
-    padding: '12px 16px',
-    background: '#dcfce7',
-    borderRadius: '8px',
-    border: '1px solid #bbf7d0',
-    fontSize: '13px',
-    color: '#166534'
+  fallbackContent: {
+    background: 'white',
+    padding: '24px',
+    borderRadius: '12px',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
   }
 };
-
-// Add keyframe animation
-if (typeof document !== 'undefined') {
-  const style = document.createElement('style');
-  style.textContent = `
-    @keyframes spin {
-      0% { transform: rotate(0deg); }
-      100% { transform: rotate(360deg); }
-    }
-  `;
-  document.head.appendChild(style);
-}
