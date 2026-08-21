@@ -1,5 +1,5 @@
-// pages/api/supervisor/dashboard.js - FINAL SOURCE OF TRUTH FIX
-// Counts completed reports from assessment_results, not candidate_assessments.
+// pages/api/supervisor/dashboard.js - FULLY CORRECTED
+// FIX: Uses candidate_supervisors junction table as primary source
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -149,9 +149,6 @@ function calculateNationalServiceRecommendation(workplaceReadiness, intellectual
   return 'Not Recommended';
 }
 
-// ============================================================
-// 🟢 SECTION 5: PAGINATION HELPER
-// ============================================================
 async function fetchAllRows(queryBuilderFactory, pageSize = 1000) {
   let allRows = [];
   let from = 0;
@@ -182,6 +179,7 @@ export default async function handler(req, res) {
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
     if (!supabaseUrl || !supabaseKey) {
+      console.error('[Dashboard] Missing env vars');
       return res.status(500).json({ success: false, error: 'Missing env vars' });
     }
 
@@ -195,13 +193,31 @@ export default async function handler(req, res) {
     const supervisorId = userData.user.id;
     const NATIONAL_SERVICE_ASSESSMENT_ID = 'bdb9d46e-9fac-4d00-8478-1f649e7ac600';
 
+    console.log('[Dashboard] Supervisor ID:', supervisorId);
+
     // ============================================================
-    // STEP 1: GET CANDIDATES ASSIGNED TO SUPERVISOR
+    // STEP 1: GET SUPERVISOR PROFILE
+    // ============================================================
+    const { data: supervisorProfile, error: supervisorError } = await supabase
+      .from('supervisor_profiles')
+      .select('id, full_name, email, role, is_active, university')
+      .eq('id', supervisorId)
+      .maybeSingle();
+
+    if (supervisorError) {
+      console.error('[Dashboard] Supervisor fetch error:', supervisorError);
+    }
+
+    console.log('[Dashboard] Supervisor:', supervisorProfile?.full_name || 'Unknown');
+
+    // ============================================================
+    // STEP 2: GET CANDIDATES ASSIGNED TO SUPERVISOR
+    // 🟢 PRIMARY SOURCE: candidate_supervisors junction table
     // ============================================================
     let allCandidates = [];
     const candidateIdsSet = new Set();
 
-    // 1. Fetch via Junction Table
+    // 1. PRIMARY: Junction Table (candidate_supervisors)
     const { data: junctionAssignments, error: junctionError } = await supabase
       .from('candidate_supervisors')
       .select('candidate_id')
@@ -225,13 +241,16 @@ export default async function handler(req, res) {
       }
     }
 
-    // 2. Fetch via Legacy field
+    // 2. SECONDARY: Legacy field (candidate_profiles.supervisor_id) - Fallback only
     const { data: legacyCandidates, error: legacyError } = await supabase
       .from('candidate_profiles')
       .select('id, full_name, email, university, programme, graduation_year, preferred_department')
       .eq('supervisor_id', supervisorId);
 
     if (!legacyError && legacyCandidates) {
+      if (legacyCandidates.length > 0) {
+        console.warn('[Dashboard] Using legacy supervisor_id field. Consider migrating to candidate_supervisors table.');
+      }
       legacyCandidates.forEach(c => {
         if (!candidateIdsSet.has(c.id)) {
           candidateIdsSet.add(c.id);
@@ -243,10 +262,37 @@ export default async function handler(req, res) {
     const candidates = allCandidates;
     const candidateIds = candidates.map(c => c.id);
 
+    console.log('[Dashboard] Total candidates found:', candidates.length);
+
     // ============================================================
-    // STEP 2: GET ASSESSMENT STATUS AND RESULTS (PAGINATED)
+    // STEP 3: RETURN EARLY IF NO CANDIDATES
     // ============================================================
-    // 🟢 SECTION 5.1: Paginate candidate_assessments
+    if (candidates.length === 0) {
+      return res.status(200).json({
+        success: true,
+        stats: {
+          totalCandidates: 0,
+          completedAssessments: 0,
+          pendingReviews: 0,
+          nationalServiceReports: 0
+        },
+        candidates: [],
+        nationalServiceReports: [],
+        otherReports: [],
+        debug: {
+          supervisorId: supervisorId,
+          supervisorName: supervisorProfile?.full_name || 'Unknown',
+          message: 'No candidates assigned to this supervisor yet',
+          hasJunctionAssignments: junctionAssignments?.length > 0 || false,
+          legacyCandidatesFound: legacyCandidates?.length || 0,
+          hasSupervisorProfile: !!supervisorProfile
+        }
+      });
+    }
+
+    // ============================================================
+    // STEP 4: GET ASSESSMENT DATA
+    // ============================================================
     const candidateAssessments = await fetchAllRows(() => 
       supabase
         .from('candidate_assessments')
@@ -254,7 +300,6 @@ export default async function handler(req, res) {
         .in('user_id', candidateIds)
     );
 
-    // 🟢 SECTION 5.2: Paginate assessment_results
     const candidateResultIds = [...new Set(
       candidates.flatMap(c => [c.id, c.user_id]).filter(Boolean)
     )];
@@ -266,7 +311,8 @@ export default async function handler(req, res) {
         .in('user_id', candidateResultIds)
     );
 
-    // 🟢 SECTION 4.4: Fetch assessments using IDs from BOTH sources
+    console.log('[Dashboard] Results found:', results.length);
+
     const assessmentIDs = [
       ...new Set([
         ...(candidateAssessments || []).map(a => a.assessment_id),
@@ -281,10 +327,9 @@ export default async function handler(req, res) {
 
     if (assessmentsError) {
       console.error('[Dashboard] Assessments error:', assessmentsError);
-      return res.status(500).json({ success: false, error: assessmentsError.message });
     }
 
-    const typeIds = assessments.map(a => a.assessment_type_id).filter(Boolean);
+    const typeIds = assessments?.map(a => a.assessment_type_id).filter(Boolean) || [];
     let typeMap = {};
     if (typeIds.length > 0) {
       const { data: types } = await supabase
@@ -294,10 +339,7 @@ export default async function handler(req, res) {
       if (types) types.forEach(t => typeMap[t.id] = t);
     }
 
-    // ============================================================
-    // STEP 3: BUILD DATA STRUCTURES
-    // ============================================================
-    const assessmentMap = assessments.reduce((acc, a) => ({ ...acc, [a.id]: a }), {});
+    const assessmentMap = assessments?.reduce((acc, a) => ({ ...acc, [a.id]: a }), {}) || {};
     const caMap = candidateAssessments.reduce((acc, ca) => {
       if (!acc[ca.user_id]) acc[ca.user_id] = [];
       acc[ca.user_id].push(ca);
@@ -311,13 +353,12 @@ export default async function handler(req, res) {
     const candidateRows = [];
 
     // ============================================================
-    // STEP 4: PROCESS CANDIDATES (Source of Truth: assessment_results)
+    // STEP 5: PROCESS CANDIDATES
     // ============================================================
     candidates.forEach(c => {
       const userAssessments = caMap[c.id] || [];
-
-      // 🟢 SECTION 4.1: Completed reports must come from assessment_results
       const candidateResults = results.filter(r => String(r.user_id) === String(c.id));
+      
       const completedResults = candidateResults.filter(r => {
         if (!r || r.is_valid === false) return false;
         return (
@@ -333,7 +374,6 @@ export default async function handler(req, res) {
         );
       });
 
-      // 🟢 SECTION 4.3: In-progress excludes assessments that already have a completed result
       const inProgress = userAssessments.filter(a => {
         const hasCompletedResult = completedResults.some(
           r => String(r.assessment_id) === String(a.assessment_id)
@@ -344,11 +384,7 @@ export default async function handler(req, res) {
       totalCompleted += completedResults.length;
       totalInProgress += inProgress.length;
 
-      // 🟢 SECTION 4.2: Replace ca with r references
       const completedAssessments = completedResults.map(r => {
-        const linkedCandidateAssessment = userAssessments.find(
-          ca => String(ca.result_id) === String(r.id) && String(ca.assessment_id) === String(r.assessment_id)
-        );
         const assessment = assessmentMap[r.assessment_id];
         const type = assessment ? typeMap[assessment.assessment_type_id] : null;
 
@@ -362,7 +398,6 @@ export default async function handler(req, res) {
           assessmentTypeName.includes('national service') ||
           assessmentTitle === 'national service recruitment assessment' ||
           assessmentTitle.includes('national service') ||
-          assessmentTitle.includes('nationalservice') ||
           assessmentTitle.includes('service recruitment');
 
         let workplace = 0;
@@ -475,6 +510,10 @@ export default async function handler(req, res) {
     const nationalServiceReportsList = allReports.filter(r => r.is_national_service === true);
     const otherReportsList = allReports.filter(r => r.is_national_service === false);
 
+    console.log('[Dashboard] Total reports:', allReports.length);
+    console.log('[Dashboard] National Service reports:', nationalServiceReportsList.length);
+    console.log('[Dashboard] Other reports:', otherReportsList.length);
+
     return res.status(200).json({
       success: true,
       stats: {
@@ -494,7 +533,9 @@ export default async function handler(req, res) {
         nsReports: nationalServiceReportsList.length,
         otherReports: otherReportsList.length,
         supervisorId: supervisorId,
-        supportsMultiSupervisor: true
+        supervisorName: supervisorProfile?.full_name || 'Unknown',
+        supportsMultiSupervisor: true,
+        hasJunctionTable: junctionAssignments?.length > 0 || false
       }
     });
 
@@ -502,7 +543,8 @@ export default async function handler(req, res) {
     console.error('[Supervisor Dashboard] Error:', error);
     return res.status(500).json({ 
       success: false, 
-      error: error.message || 'Internal server error' 
+      error: error.message || 'Internal server error',
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 }
