@@ -1,5 +1,5 @@
 // pages/admin/reports/[resultId].js - COMPLETE FIXED FILE
-// FIX: Properly extracts and displays behavioral matrix from report_data.proctoring
+// FIX: Properly extracts and passes behavioral matrix to NationalServiceReport
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -53,9 +53,12 @@ function extractBehavioralMatrix(reportData) {
     return null;
   }
 
-  // Get proctoring data from report_data
-  const proctoring = reportData.proctoring || {};
-  
+  // Get proctoring data from multiple possible locations
+  const proctoring = reportData.proctoring || 
+                     reportData.behavioral || 
+                     reportData.behavioralMatrix || 
+                     {};
+
   console.log('[Behavioral Matrix] Raw proctoring data:', JSON.stringify(proctoring, null, 2));
 
   // If no proctoring data, return null
@@ -64,7 +67,7 @@ function extractBehavioralMatrix(reportData) {
     return null;
   }
 
-  // Format total time from completedAt if available
+  // Calculate total time from completedAt if available
   let totalTime = '00:00:00';
   if (reportData.completedAt) {
     try {
@@ -79,7 +82,7 @@ function extractBehavioralMatrix(reportData) {
         totalTime = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
       }
     } catch (e) {
-      totalTime = '00:19:50';
+      totalTime = '00:00:00';
     }
   }
 
@@ -94,7 +97,7 @@ function extractBehavioralMatrix(reportData) {
         avgTimePerQuestion = Math.round(diffMs / reportData.totalMax / 1000);
       }
     } catch (e) {
-      avgTimePerQuestion = 12;
+      avgTimePerQuestion = 0;
     }
   }
 
@@ -102,19 +105,19 @@ function extractBehavioralMatrix(reportData) {
   const matrix = {
     totalTime: totalTime,
     avgTimePerQuestion: avgTimePerQuestion || proctoring.avgTimePerQuestion || 0,
-    answerChanges: proctoring.answerChanges || 0,
-    tabSwitches: proctoring.tabSwitches || 0,
-    violations: proctoring.totalViolations || proctoring.violations || 0,
-    copyPasteAttempts: proctoring.copyPasteAttempts || 0,
-    rightClickAttempts: proctoring.rightClickAttempts || 0,
-    riskLevel: proctoring.riskLevel || 'Low Risk',
-    riskScore: proctoring.riskScore || 0,
-    riskFactors: proctoring.riskFactors || [],
-    externalUrlsVisited: proctoring.externalUrlsVisited || 0,
+    answerChanges: proctoring.answerChanges || proctoring.answer_changes || 0,
+    tabSwitches: proctoring.tabSwitches || proctoring.tab_switches || 0,
+    violations: proctoring.totalViolations || proctoring.violations || proctoring.violation_count || 0,
+    copyPasteAttempts: proctoring.copyPasteAttempts || proctoring.copy_paste_attempts || 0,
+    rightClickAttempts: proctoring.rightClickAttempts || proctoring.right_click_attempts || 0,
+    riskLevel: proctoring.riskLevel || proctoring.risk_level || 'Low Risk',
+    riskScore: proctoring.riskScore || proctoring.risk_score || 0,
+    riskFactors: proctoring.riskFactors || proctoring.risk_factors || [],
+    externalUrlsVisited: proctoring.externalUrlsVisited || proctoring.external_urls_visited || 0,
     flags: {
       violations: proctoring.totalViolations || proctoring.violations || 0,
-      tabSwitches: proctoring.tabSwitches || 0,
-      answerChanges: proctoring.answerChanges || 0
+      tabSwitches: proctoring.tabSwitches || proctoring.tab_switches || 0,
+      answerChanges: proctoring.answerChanges || proctoring.answer_changes || 0
     }
   };
 
@@ -208,7 +211,7 @@ function getCategoryScores(data, result, report) {
 }
 
 // ============================================================
-// AUTH HELPER - Gets session and validates admin role
+// AUTH HELPER
 // ============================================================
 
 async function getValidAdminSession() {
@@ -366,7 +369,7 @@ export default function AdminReportView() {
         // 🟢 EXTRACT BEHAVIORAL MATRIX FROM REPORT DATA
         const matrix = extractBehavioralMatrix(parsedResultReportData || report);
 
-        console.log('[Admin Report View] Extracted Behavioral Matrix:', matrix);
+        console.log('[Admin Report View] Extracted Behavioral Matrix:', JSON.stringify(matrix, null, 2));
 
         if (isNS) {
           const authoritativeScores = getAuthoritativeNationalServiceScores(data, result, report);
@@ -407,6 +410,7 @@ export default function AdminReportView() {
               totalAnswered: result.answered_questions || 0
             },
             // 🟢 INCLUDE BEHAVIORAL MATRIX IN REPORT
+            proctoring: parsedResultReportData?.proctoring || report.proctoring || null,
             behavioralMatrix: matrix
           };
         } else {
@@ -427,6 +431,7 @@ export default function AdminReportView() {
             total_questions: result.total_questions || 0,
             answered_questions: result.answered_questions || 0,
             // 🟢 INCLUDE BEHAVIORAL MATRIX IN REPORT
+            proctoring: parsedResultReportData?.proctoring || report.proctoring || null,
             behavioralMatrix: matrix
           };
         }
@@ -504,7 +509,10 @@ export default function AdminReportView() {
         <NationalServiceReport
           report={{
             ...reportData.report,
-            behavioralMatrix: behavioralMatrix
+            proctoring: reportData.report.proctoring,
+            behavioralMatrix: behavioralMatrix,
+            // Include the raw report data too
+            report_data: reportData.report.report_data || {}
           }}
           onBack={handleBack}
           behavioralMatrix={behavioralMatrix}
@@ -547,6 +555,7 @@ export default function AdminReportView() {
       completed_at: reportData.result?.completed_at || null,
       candidateName: report.candidateInfo?.fullName || reportData.candidateName || 'Candidate',
       // 🟢 INCLUDE BEHAVIORAL MATRIX
+      proctoring: report.proctoring,
       behavioralMatrix: behavioralMatrix
     };
 
