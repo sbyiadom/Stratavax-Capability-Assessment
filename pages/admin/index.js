@@ -1,5 +1,5 @@
 // pages/admin/index.js - FULLY CORRECTED WITH AGGRESSIVE CONSOLIDATION
-// FIXED: Uses regular supabase client instead of service role key
+// FIXED: Shows ALL consolidated groups (no "Others"), catches all variations
 
 import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/router";
@@ -65,171 +65,303 @@ function formatDate(value) {
 }
 
 // ============================================================
-// AGGRESSIVE UNIVERSITY CONSOLIDATION
+// AGGRESSIVE UNIVERSITY CONSOLIDATION - CATCHES ALL VARIATIONS
 // ============================================================
 function consolidateUniversityName(raw) {
   if (!raw || typeof raw !== 'string') return raw;
   
   const lower = raw.toLowerCase().trim();
   
-  // University of Mines and Technology - ALL variations
+  // Remove extra spaces and clean
+  const cleaned = raw.replace(/\s+/g, ' ').trim();
+  
+  // ============================================================
+  // UNIVERSITY OF MINES AND TECHNOLOGY - ALL VARIATIONS
+  // ============================================================
   if (lower.includes('mines') && lower.includes('technology') || 
       lower === 'umat' || 
       lower.includes('umat') ||
-      lower.includes('university of mines')) {
+      lower.includes('university of mines') ||
+      lower.includes('u.m.a.t') ||
+      lower.includes('umat, tarkwa') ||
+      lower.includes('umat tarkwa') ||
+      lower.includes('mines and technology') ||
+      lower.includes('mines & technology') ||
+      lower.includes('tarkwa') && lower.includes('mines')) {
     return 'University of Mines and Technology (UMaT)';
   }
   
-  // KNUST - ALL variations
+  // ============================================================
+  // KNUST - ALL VARIATIONS
+  // ============================================================
   if (lower.includes('kwame nkrumah') || 
       lower === 'knust' ||
       lower.includes('knust') ||
-      lower.includes('k.n.u.s.t')) {
+      lower.includes('k.n.u.s.t') ||
+      lower.includes('kwame nkrumah university') ||
+      lower.includes('k.n.u.s.t') ||
+      lower.includes('knust -') ||
+      lower.includes('knust-')) {
     return 'Kwame Nkrumah University of Science and Technology (KNUST)';
   }
   
-  // University of Ghana - ALL variations
+  // ============================================================
+  // UNIVERSITY OF GHANA - ALL VARIATIONS
+  // ============================================================
   if (lower.includes('university of ghana') || 
       lower === 'ug' ||
+      lower.includes('ug ') ||
       lower === 'legon' ||
-      lower.includes('legon')) {
-    return 'University of Ghana';
+      lower.includes('legon') ||
+      lower.includes('u.g') ||
+      lower.includes('university of ghana-') ||
+      lower.includes('university of ghana ')) {
+    return 'University of Ghana (UG)';
   }
   
-  // University of Cape Coast
+  // ============================================================
+  // UNIVERSITY OF CAPE COAST
+  // ============================================================
   if (lower.includes('cape coast') || 
       lower === 'ucc' ||
-      lower.includes('ucc')) {
-    return 'University of Cape Coast';
+      lower.includes('ucc ') ||
+      lower.includes('u.c.c') ||
+      lower.includes('university of cape coast')) {
+    return 'University of Cape Coast (UCC)';
   }
   
-  // Takoradi Technical University
+  // ============================================================
+  // TAKORADI TECHNICAL UNIVERSITY
+  // ============================================================
   if (lower.includes('takoradi') && lower.includes('technical')) {
     return 'Takoradi Technical University';
   }
   
-  // Kumasi Technical University
+  // ============================================================
+  // KUMASI TECHNICAL UNIVERSITY
+  // ============================================================
   if (lower.includes('kumasi') && lower.includes('technical')) {
     return 'Kumasi Technical University';
   }
   
-  // Accra Technical University
+  // ============================================================
+  // ACCRA TECHNICAL UNIVERSITY
+  // ============================================================
   if (lower.includes('accra') && lower.includes('technical')) {
     return 'Accra Technical University';
   }
   
-  // Koforidua Technical University
+  // ============================================================
+  // KOFORIDUA TECHNICAL UNIVERSITY
+  // ============================================================
   if (lower.includes('koforidua') && lower.includes('technical')) {
     return 'Koforidua Technical University';
   }
   
-  // Sunyani Technical University
+  // ============================================================
+  // SUNYANI TECHNICAL UNIVERSITY
+  // ============================================================
   if (lower.includes('sunyani') && lower.includes('technical')) {
     return 'Sunyani Technical University';
   }
   
-  // Cape Coast Technical University
+  // ============================================================
+  // CAPE COAST TECHNICAL UNIVERSITY
+  // ============================================================
   if (lower.includes('cape coast') && lower.includes('technical')) {
     return 'Cape Coast Technical University';
   }
   
-  // Ho Technical University
-  if (lower.includes('ho') && lower.includes('technical')) {
+  // ============================================================
+  // HO TECHNICAL UNIVERSITY
+  // ============================================================
+  if ((lower.includes('ho') || lower.includes('ho ')) && lower.includes('technical')) {
     return 'Ho Technical University';
   }
   
-  // University of Energy and Natural Resources
+  // ============================================================
+  // UNIVERSITY OF ENERGY AND NATURAL RESOURCES
+  // ============================================================
   if (lower.includes('energy') && lower.includes('natural resources')) {
     return 'University of Energy and Natural Resources';
   }
   
-  // University for Development Studies
-  if (lower.includes('development studies') || lower === 'uds' || lower.includes('uds')) {
-    return 'University for Development Studies';
+  // ============================================================
+  // UNIVERSITY FOR DEVELOPMENT STUDIES
+  // ============================================================
+  if (lower.includes('development studies') || 
+      lower === 'uds' || 
+      lower.includes('uds ') ||
+      lower.includes('u.d.s') ||
+      lower.includes('university for development')) {
+    return 'University for Development Studies (UDS)';
   }
   
-  // Pentecost University
+  // ============================================================
+  // PENTECOST UNIVERSITY
+  // ============================================================
   if (lower.includes('pentecost')) {
     return 'Pentecost University';
   }
   
-  // University of Professional Studies
-  if (lower.includes('professional studies') || lower === 'upsa' || lower.includes('upsa')) {
+  // ============================================================
+  // UNIVERSITY OF PROFESSIONAL STUDIES
+  // ============================================================
+  if (lower.includes('professional studies') || 
+      lower === 'upsa' || 
+      lower.includes('upsa ') ||
+      lower.includes('u.p.s.a')) {
     return 'University of Professional Studies (UPSA)';
   }
   
-  // Ghana Communication Technology University
-  if (lower.includes('communication technology') || lower === 'gctu' || lower.includes('gctu')) {
+  // ============================================================
+  // GHANA COMMUNICATION TECHNOLOGY UNIVERSITY
+  // ============================================================
+  if (lower.includes('communication technology') || 
+      lower === 'gctu' || 
+      lower.includes('gctu ') ||
+      lower.includes('g.c.t.u')) {
     return 'Ghana Communication Technology University (GCTU)';
   }
   
-  // Regional Maritime University
-  if (lower.includes('maritime') || lower === 'rmu' || lower.includes('rmu')) {
-    return 'Regional Maritime University';
+  // ============================================================
+  // REGIONAL MARITIME UNIVERSITY
+  // ============================================================
+  if (lower.includes('maritime') || 
+      lower === 'rmu' || 
+      lower.includes('rmu ') ||
+      lower.includes('regional maritime')) {
+    return 'Regional Maritime University (RMU)';
   }
   
-  // All Nations University
-  if (lower.includes('all nations') || lower === 'anu' || lower.includes('anu')) {
+  // ============================================================
+  // ALL NATIONS UNIVERSITY
+  // ============================================================
+  if (lower.includes('all nations') || 
+      lower === 'anu' || 
+      lower.includes('anu ')) {
     return 'All Nations University';
   }
   
-  // Accra Institute of Technology
-  if (lower.includes('accra institute') || lower.includes('ait')) {
-    return 'Accra Institute of Technology';
+  // ============================================================
+  // ACCRA INSTITUTE OF TECHNOLOGY
+  // ============================================================
+  if (lower.includes('accra institute') || 
+      lower.includes('ait') ||
+      lower.includes('a.i.t')) {
+    return 'Accra Institute of Technology (AIT)';
   }
   
-  // Koforidua Polytechnic / KPoly
-  if (lower.includes('koforidua poly') || lower === 'kpoly' || lower.includes('kpoly')) {
+  // ============================================================
+  // KOFORIDUA POLYTECHNIC / KPoly
+  // ============================================================
+  if (lower.includes('koforidua poly') || 
+      lower === 'kpoly' || 
+      lower.includes('kpoly ') ||
+      lower.includes('k.poly') ||
+      lower.includes('koforidua polytechnic')) {
     return 'Koforidua Polytechnic (KPoly)';
   }
   
-  // University of Skills Training
-  if (lower.includes('skills training') || lower.includes('entrepreneurial')) {
+  // ============================================================
+  // UNIVERSITY OF SKILLS TRAINING
+  // ============================================================
+  if (lower.includes('skills training') || 
+      lower.includes('entrepreneurial') ||
+      lower.includes('skills training and entrepreneurial')) {
     return 'University of Skills Training and Entrepreneurial Development';
   }
   
-  // Central University
+  // ============================================================
+  // CENTRAL UNIVERSITY
+  // ============================================================
   if (lower.includes('central university')) {
     return 'Central University';
   }
   
-  // Wisconsin International University
+  // ============================================================
+  // WISCONSIN INTERNATIONAL UNIVERSITY
+  // ============================================================
   if (lower.includes('wisconsin')) {
     return 'Wisconsin International University';
   }
   
-  // Christian Service University
+  // ============================================================
+  // CHRISTIAN SERVICE UNIVERSITY
+  // ============================================================
   if (lower.includes('christian service')) {
     return 'Christian Service University';
   }
   
-  // Data Link University
+  // ============================================================
+  // DATA LINK UNIVERSITY
+  // ============================================================
   if (lower.includes('data link')) {
     return 'Data Link University';
   }
   
-  // Blue Crest University
+  // ============================================================
+  // BLUE CREST UNIVERSITY
+  // ============================================================
   if (lower.includes('blue crest')) {
     return 'Blue Crest University';
   }
   
-  // Remove parentheses content for matching
-  let cleaned = raw.replace(/\([^)]*\)/g, '').replace(/\s+/g, ' ').trim();
-  
-  // Check if cleaned matches any of the above patterns
-  const cleanedLower = cleaned.toLowerCase();
-  if (cleanedLower.includes('mines') || cleanedLower.includes('umat')) {
-    return 'University of Mines and Technology (UMaT)';
-  }
-  if (cleanedLower.includes('knust') || cleanedLower.includes('kwame nkrumah')) {
-    return 'Kwame Nkrumah University of Science and Technology (KNUST)';
+  // ============================================================
+  // GARDEN CITY UNIVERSITY
+  // ============================================================
+  if (lower.includes('garden city')) {
+    return 'Garden City University';
   }
   
-  return cleaned || raw;
+  // ============================================================
+  // METHODIST UNIVERSITY
+  // ============================================================
+  if (lower.includes('methodist')) {
+    return 'Methodist University';
+  }
+  
+  // ============================================================
+  // PRESBYTERIAN UNIVERSITY
+  // ============================================================
+  if (lower.includes('presbyterian')) {
+    return 'Presbyterian University';
+  }
+  
+  // ============================================================
+  // VALLEY VIEW UNIVERSITY
+  // ============================================================
+  if (lower.includes('valley view')) {
+    return 'Valley View University';
+  }
+  
+  // ============================================================
+  // ZION UNIVERSITY
+  // ============================================================
+  if (lower.includes('zion')) {
+    return 'Zion University';
+  }
+  
+  // ============================================================
+  // KENTUCKY UNIVERSITY
+  // ============================================================
+  if (lower.includes('kentucky')) {
+    return 'Kentucky University';
+  }
+  
+  // ============================================================
+  // HARVARD UNIVERSITY (just in case 😄)
+  // ============================================================
+  if (lower.includes('harvard')) {
+    return 'Harvard University';
+  }
+  
+  // Return cleaned version
+  return cleaned;
 }
 
 // ============================================================
-// AGGRESSIVE PROGRAM CONSOLIDATION
+// AGGRESSIVE PROGRAM CONSOLIDATION - CATCHES ALL VARIATIONS
 // ============================================================
 function consolidateProgramName(raw) {
   if (!raw || typeof raw !== 'string') return raw;
@@ -248,242 +380,389 @@ function consolidateProgramName(raw) {
   
   const cleanLower = cleanForMatch(raw);
   
-  // Electrical/Electronic Engineering - ALL variations
+  // ============================================================
+  // ELECTRICAL/ELECTRONIC ENGINEERING - ALL VARIATIONS
+  // ============================================================
   if (cleanLower.includes('electrical') || 
       cleanLower.includes('electronic') || 
       cleanLower.includes('elect/electron') || 
       cleanLower.includes('electrical/electronic') ||
       cleanLower.includes('electrical electronic') || 
       cleanLower.includes('electrical and electronic') ||
+      cleanLower.includes('electrical & electronic') ||
       lower === 'eee' ||
-      lower.includes('eee')) {
+      lower.includes('eee ')) {
     return 'BSc Electrical/Electronic Engineering';
   }
   
-  // Mechanical Engineering - ALL variations
+  // ============================================================
+  // MECHANICAL ENGINEERING - ALL VARIATIONS
+  // ============================================================
   if (cleanLower.includes('mechanical') || 
       cleanLower.includes('mech') ||
       lower === 'me' ||
-      lower.includes('me ')) {
+      lower.includes('me ') ||
+      cleanLower.includes('mechanical engineering')) {
     return 'BSc Mechanical Engineering';
   }
   
-  // Chemical Engineering
+  // ============================================================
+  // CHEMICAL ENGINEERING
+  // ============================================================
   if (cleanLower.includes('chemical') || 
       cleanLower.includes('chem') ||
       lower === 'che' ||
-      lower.includes('che ')) {
+      lower.includes('che ') ||
+      cleanLower.includes('chemical engineering')) {
     return 'BSc Chemical Engineering';
   }
   
-  // Civil Engineering
-  if (cleanLower.includes('civil') || lower === 'ce' || lower.includes('ce ')) {
+  // ============================================================
+  // CIVIL ENGINEERING
+  // ============================================================
+  if (cleanLower.includes('civil') || 
+      lower === 'ce' || 
+      lower.includes('ce ') ||
+      cleanLower.includes('civil engineering')) {
     return 'BSc Civil Engineering';
   }
   
-  // Computer Engineering
-  if (cleanLower.includes('computer') || lower === 'cpe' || lower.includes('cpe ')) {
+  // ============================================================
+  // COMPUTER ENGINEERING
+  // ============================================================
+  if (cleanLower.includes('computer') || 
+      lower === 'cpe' || 
+      lower.includes('cpe ') ||
+      cleanLower.includes('computer engineering')) {
     return 'BSc Computer Engineering';
   }
   
-  // Industrial Engineering
-  if (cleanLower.includes('industrial') || lower === 'ie' || lower.includes('ie ')) {
+  // ============================================================
+  // INDUSTRIAL ENGINEERING
+  // ============================================================
+  if (cleanLower.includes('industrial') || 
+      lower === 'ie' || 
+      lower.includes('ie ') ||
+      cleanLower.includes('industrial engineering')) {
     return 'BSc Industrial Engineering';
   }
   
-  // Agricultural Engineering
+  // ============================================================
+  // AGRICULTURAL ENGINEERING
+  // ============================================================
   if (cleanLower.includes('agricultural') || 
       cleanLower.includes('agric') ||
       lower === 'age' ||
-      lower.includes('age ')) {
+      lower.includes('age ') ||
+      cleanLower.includes('agricultural engineering')) {
     return 'BSc Agricultural Engineering';
   }
   
-  // Petroleum Engineering
+  // ============================================================
+  // PETROLEUM ENGINEERING
+  // ============================================================
   if (cleanLower.includes('petroleum') || 
       cleanLower.includes('petrol') ||
       lower === 'pe' ||
-      lower.includes('pe ')) {
+      lower.includes('pe ') ||
+      cleanLower.includes('petroleum engineering')) {
     return 'BSc Petroleum Engineering';
   }
   
-  // Geological Engineering
+  // ============================================================
+  // GEOLOGICAL ENGINEERING
+  // ============================================================
   if (cleanLower.includes('geological') || 
       cleanLower.includes('geo') ||
       lower === 'ge' ||
-      lower.includes('ge ')) {
+      lower.includes('ge ') ||
+      cleanLower.includes('geological engineering')) {
     return 'BSc Geological Engineering';
   }
   
-  // Geomatic Engineering
-  if (cleanLower.includes('geomatic')) {
+  // ============================================================
+  // GEOMATIC ENGINEERING
+  // ============================================================
+  if (cleanLower.includes('geomatic') ||
+      cleanLower.includes('geomatic engineering')) {
     return 'BSc Geomatic Engineering';
   }
   
-  // Materials Engineering
+  // ============================================================
+  // MATERIALS ENGINEERING
+  // ============================================================
   if (cleanLower.includes('materials') || 
       cleanLower.includes('material') ||
       lower === 'mte' ||
-      lower.includes('mte ')) {
+      lower.includes('mte ') ||
+      cleanLower.includes('materials engineering')) {
     return 'BSc Materials Engineering';
   }
   
-  // Telecommunications Engineering
+  // ============================================================
+  // TELECOMMUNICATIONS ENGINEERING
+  // ============================================================
   if (cleanLower.includes('telecommunications') || 
       cleanLower.includes('telecom') ||
+      cleanLower.includes('telecommunication') ||
       lower === 'tele' ||
-      lower.includes('tele ')) {
+      lower.includes('tele ') ||
+      cleanLower.includes('telecommunications engineering')) {
     return 'BSc Telecommunications Engineering';
   }
   
-  // Renewable Energy Engineering
+  // ============================================================
+  // RENEWABLE ENERGY ENGINEERING
+  // ============================================================
   if (cleanLower.includes('renewable') || 
-      cleanLower.includes('energy')) {
+      cleanLower.includes('energy') ||
+      cleanLower.includes('renewable energy')) {
     return 'BSc Renewable Energy Engineering';
   }
   
-  // Automobile Engineering
+  // ============================================================
+  // AUTOMOBILE ENGINEERING
+  // ============================================================
   if (cleanLower.includes('automobile') || 
-      cleanLower.includes('auto')) {
+      cleanLower.includes('auto') ||
+      cleanLower.includes('automobile engineering')) {
     return 'BSc Automobile Engineering';
   }
   
-  // Information Technology
+  // ============================================================
+  // INFORMATION TECHNOLOGY
+  // ============================================================
   if (cleanLower.includes('information technology') || 
       cleanLower.includes('info tech') ||
       lower === 'it' ||
-      lower.includes('it ')) {
+      lower.includes('it ') ||
+      cleanLower.includes('information technology management') ||
+      cleanLower.includes('business information technology')) {
     return 'BSc Information Technology';
   }
   
-  // Information Systems
+  // ============================================================
+  // INFORMATION SYSTEMS
+  // ============================================================
   if (cleanLower.includes('information systems') || 
-      cleanLower.includes('info systems')) {
+      cleanLower.includes('info systems') ||
+      cleanLower.includes('information system')) {
     return 'BSc Information Systems';
   }
   
-  // Biomedical Engineering
+  // ============================================================
+  // BIOMEDICAL ENGINEERING
+  // ============================================================
   if (cleanLower.includes('biomedical') || 
-      cleanLower.includes('bio medical')) {
+      cleanLower.includes('bio medical') ||
+      cleanLower.includes('biomedical engineering')) {
     return 'BSc Biomedical Engineering';
   }
   
-  // Minerals Engineering
+  // ============================================================
+  // MINERALS ENGINEERING
+  // ============================================================
   if (cleanLower.includes('minerals') || 
-      cleanLower.includes('mining')) {
+      cleanLower.includes('mining') ||
+      cleanLower.includes('minerals engineering')) {
     return 'BSc Minerals Engineering';
   }
   
-  // Psychology
+  // ============================================================
+  // PSYCHOLOGY
+  // ============================================================
   if (cleanLower.includes('psychology') || 
       cleanLower.includes('psych')) {
     return 'BA Psychology';
   }
   
-  // Political Science
+  // ============================================================
+  // POLITICAL SCIENCE
+  // ============================================================
   if (cleanLower.includes('political science') || 
-      cleanLower.includes('politics')) {
+      cleanLower.includes('politics') ||
+      cleanLower.includes('political')) {
     return 'BA Political Science';
   }
   
-  // Laboratory Technology
+  // ============================================================
+  // LABORATORY TECHNOLOGY
+  // ============================================================
   if (cleanLower.includes('laboratory') || 
-      cleanLower.includes('lab')) {
+      cleanLower.includes('lab') ||
+      cleanLower.includes('laboratory technology')) {
     return 'BSc Laboratory Technology';
   }
   
-  // Food Science
+  // ============================================================
+  // FOOD SCIENCE
+  // ============================================================
   if (cleanLower.includes('food science') || 
-      cleanLower.includes('food')) {
+      cleanLower.includes('food') ||
+      cleanLower.includes('food science and postharvest technology')) {
     return 'BSc Food Science and Postharvest Technology';
   }
   
-  // Statistics and Mathematics
-  if (cleanLower.includes('statistics') && cleanLower.includes('mathematics') || 
-      cleanLower.includes('stat') && cleanLower.includes('math')) {
+  // ============================================================
+  // STATISTICS AND MATHEMATICS
+  // ============================================================
+  if ((cleanLower.includes('statistics') || cleanLower.includes('stat')) && 
+      (cleanLower.includes('mathematics') || cleanLower.includes('math'))) {
     return 'BSc Statistics and Mathematics';
   }
   
-  // Accounting
+  // ============================================================
+  // MATHEMATICS
+  // ============================================================
+  if (cleanLower.includes('mathematics') || 
+      cleanLower.includes('math') ||
+      lower === 'maths' ||
+      lower.includes('maths ')) {
+    return 'BSc Mathematics';
+  }
+  
+  // ============================================================
+  // STATISTICS
+  // ============================================================
+  if (cleanLower.includes('statistics') || 
+      cleanLower.includes('stat')) {
+    return 'BSc Statistics';
+  }
+  
+  // ============================================================
+  // ACCOUNTING
+  // ============================================================
   if (cleanLower.includes('accounting')) {
     return 'BSc Accounting';
   }
   
-  // Accounting and Economics
+  // ============================================================
+  // ACCOUNTING AND ECONOMICS
+  // ============================================================
   if (cleanLower.includes('accounting') && cleanLower.includes('economics')) {
     return 'BSc Accounting and Economics';
   }
   
-  // Economics
+  // ============================================================
+  // ECONOMICS
+  // ============================================================
   if (cleanLower.includes('economics')) {
     return 'BSc Economics';
   }
   
-  // Business Administration / Management
+  // ============================================================
+  // BUSINESS ADMINISTRATION / MANAGEMENT
+  // ============================================================
   if (cleanLower.includes('business administration') || 
       cleanLower.includes('business admin') ||
       cleanLower.includes('management') ||
       cleanLower.includes('admin') || 
-      cleanLower.includes('secretariat')) {
+      cleanLower.includes('secretariat') ||
+      cleanLower.includes('secretariatship')) {
     return 'Business Administration';
   }
   
-  // Marketing
+  // ============================================================
+  // MARKETING
+  // ============================================================
   if (cleanLower.includes('marketing')) {
     return 'BSc Marketing';
   }
   
-  // Human Resource Management
+  // ============================================================
+  // HUMAN RESOURCE MANAGEMENT
+  // ============================================================
   if (cleanLower.includes('human resource') || 
       cleanLower.includes('hr')) {
     return 'BSc Human Resource Management';
   }
   
-  // Public Administration
+  // ============================================================
+  // PUBLIC ADMINISTRATION
+  // ============================================================
   if (cleanLower.includes('public administration')) {
     return 'BSc Public Administration';
   }
   
-  // Public Health
+  // ============================================================
+  // PUBLIC HEALTH
+  // ============================================================
   if (cleanLower.includes('public health')) {
     return 'BSc Public Health';
   }
   
-  // Nursing
+  // ============================================================
+  // NURSING
+  // ============================================================
   if (cleanLower.includes('nursing')) {
     return 'BSc Nursing';
   }
   
-  // Midwifery
+  // ============================================================
+  // MIDWIFERY
+  // ============================================================
   if (cleanLower.includes('midwifery')) {
     return 'BSc Midwifery';
   }
   
-  // Architecture
+  // ============================================================
+  // ARCHITECTURE
+  // ============================================================
   if (cleanLower.includes('architecture')) {
     return 'BSc Architecture';
   }
   
-  // Estate Management
+  // ============================================================
+  // ESTATE MANAGEMENT
+  // ============================================================
   if (cleanLower.includes('estate management') || 
       cleanLower.includes('estate')) {
     return 'BSc Estate Management';
   }
   
-  // Quantity Surveying
+  // ============================================================
+  // QUANTITY SURVEYING
+  // ============================================================
   if (cleanLower.includes('quantity surveying') || 
       cleanLower.includes('surveying')) {
     return 'BSc Quantity Surveying';
   }
   
-  // Arts
+  // ============================================================
+  // ARTS
+  // ============================================================
   if (cleanLower.includes('arts') || 
       lower.includes('ba ') || 
-      lower.includes('b.a ')) {
+      lower.includes('b.a ') ||
+      cleanLower.includes('ba arts')) {
     return 'BA Arts';
   }
   
+  // ============================================================
+  // BIOLOGICAL SCIENCES
+  // ============================================================
+  if (cleanLower.includes('biological') || 
+      cleanLower.includes('biology')) {
+    return 'BSc Biological Sciences';
+  }
+  
+  // ============================================================
+  // CHEMISTRY
+  // ============================================================
+  if (cleanLower.includes('chemistry')) {
+    return 'BSc Chemistry';
+  }
+  
+  // ============================================================
+  // PHYSICS
+  // ============================================================
+  if (cleanLower.includes('physics')) {
+    return 'BSc Physics';
+  }
+  
+  // ============================================================
   // If we have "BSc" or "BA" in the original, clean it up
+  // ============================================================
   if (raw.includes('BSc') || raw.includes('B.Sc') || raw.includes('B sc') || raw.includes('Bachelor')) {
     let cleaned = raw.replace(/BSc|B\.Sc|B Sc|Bachelor/g, '').trim();
     cleaned = cleaned.split(' ').map(word => 
@@ -684,6 +963,51 @@ export default function AdminDashboard() {
   const progGroup = useMemo(() => getUniqueMasterNames(rawPrograms, consolidateProgramName), [rawPrograms]);
 
   // ============================================================
+  // DEBUG: Log all unique universities and programs
+  // ============================================================
+  useEffect(() => {
+    // Log all unique universities and their consolidated versions
+    const unis = candidatesWithScores.map(c => c.university).filter(Boolean);
+    const uniqueUnis = [...new Set(unis)];
+    
+    console.log('=== ALL UNIQUE UNIVERSITIES (' + uniqueUnis.length + ' total) ===');
+    const uniMap = {};
+    uniqueUnis.forEach(u => {
+      const consolidated = consolidateUniversityName(u);
+      if (!uniMap[consolidated]) uniMap[consolidated] = [];
+      uniMap[consolidated].push(u);
+    });
+    
+    const sortedUnis = Object.keys(uniMap).sort((a, b) => uniMap[b].length - uniMap[a].length);
+    sortedUnis.forEach(master => {
+      console.log(`\n📌 MASTER: "${master}" (${uniMap[master].length} variations)`);
+      uniMap[master].forEach(raw => {
+        console.log(`   └─ "${raw}"`);
+      });
+    });
+    
+    // Log all unique programs and their consolidated versions
+    const progs = candidatesWithScores.map(c => c.programme).filter(Boolean);
+    const uniqueProgs = [...new Set(progs)];
+    
+    console.log('\n\n=== ALL UNIQUE PROGRAMS (' + uniqueProgs.length + ' total) ===');
+    const progMap = {};
+    uniqueProgs.forEach(p => {
+      const consolidated = consolidateProgramName(p);
+      if (!progMap[consolidated]) progMap[consolidated] = [];
+      progMap[consolidated].push(p);
+    });
+    
+    const sortedProgs = Object.keys(progMap).sort((a, b) => progMap[b].length - progMap[a].length);
+    sortedProgs.forEach(master => {
+      console.log(`\n📌 MASTER: "${master}" (${progMap[master].length} variations)`);
+      progMap[master].forEach(raw => {
+        console.log(`   └─ "${raw}"`);
+      });
+    });
+  }, [candidatesWithScores]);
+
+  // ============================================================
   // FILTER LOGIC
   // ============================================================
   const filteredCandidates = useMemo(() => {
@@ -783,21 +1107,18 @@ export default function AdminDashboard() {
 
   const filteredTotalCandidates = filteredCandidates.length;
 
+  // ============================================================
+  // PIE CHARTS - SHOW ALL GROUPS (NO "OTHERS" CATEGORY)
+  // ============================================================
   const filteredUniversityPieData = useMemo(() => {
-    const top8 = filteredUniversityAnalytics.slice(0, 8);
-    const othersCount = filteredUniversityAnalytics.slice(8).reduce((sum, u) => sum + u.candidates, 0);
-    const labels = top8.map(u => u.name);
-    const data = top8.map(u => u.candidates);
-    if (othersCount > 0) { labels.push('Others'); data.push(othersCount); }
+    const labels = filteredUniversityAnalytics.map(u => u.name);
+    const data = filteredUniversityAnalytics.map(u => u.candidates);
     return { labels, data };
   }, [filteredUniversityAnalytics]);
 
   const filteredProgramPieData = useMemo(() => {
-    const top8 = filteredProgramAnalytics.slice(0, 8);
-    const othersCount = filteredProgramAnalytics.slice(8).reduce((sum, p) => sum + p.candidates, 0);
-    const labels = top8.map(p => p.name);
-    const data = top8.map(p => p.candidates);
-    if (othersCount > 0) { labels.push('Others'); data.push(othersCount); }
+    const labels = filteredProgramAnalytics.map(p => p.name);
+    const data = filteredProgramAnalytics.map(p => p.candidates);
     return { labels, data };
   }, [filteredProgramAnalytics]);
 
@@ -816,7 +1137,7 @@ export default function AdminDashboard() {
     return { bins, counts };
   }, [filteredCandidates]);
 
-  const COLORS = ['#1a237e', '#2e7d32', '#f57c00', '#c62828', '#1565c0', '#4a148c', '#00695c', '#bf360c', '#78909c'];
+  const COLORS = ['#1a237e', '#2e7d32', '#f57c00', '#c62828', '#1565c0', '#4a148c', '#00695c', '#bf360c', '#78909c', '#8d6e63', '#4e342e', '#3e2723', '#4a148c', '#1a237e', '#0d47a1', '#00695c', '#2e7d32', '#827717', '#f57f17', '#e65100', '#bf360c', '#880e4f', '#4a148c', '#1a237e'];
 
   // ============================================================
   // FILTER DROPDOWN OPTIONS
@@ -847,7 +1168,7 @@ export default function AdminDashboard() {
   };
 
   // ============================================================
-  // AUTH & FETCH - USING REGULAR SUPABASE CLIENT
+  // AUTH & FETCH
   // ============================================================
   useEffect(() => {
     checkAdminAuth();
@@ -910,7 +1231,6 @@ export default function AdminDashboard() {
     try {
       console.log("Fetching admin dashboard data...");
 
-      // 🟢 USE REGULAR SUPABASE CLIENT (not service role)
       const [
         supervisorCount,
         candidateCount,
@@ -1113,7 +1433,7 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* PIE CHARTS */}
+        {/* PIE CHARTS - SHOW ALL GROUPS, NO "OTHERS" */}
         <div style={styles.pieChartGrid}>
           <div style={styles.chartCard}>
             <h4 style={styles.chartTitle}>University Distribution {selectedUniversityOption ? `(${selectedUniversityOption.label})` : '(All)'}</h4>
@@ -1123,7 +1443,7 @@ export default function AdminDashboard() {
                   labels: filteredUniversityPieData.labels,
                   datasets: [{ 
                     data: filteredUniversityPieData.data, 
-                    backgroundColor: COLORS, 
+                    backgroundColor: COLORS.slice(0, filteredUniversityPieData.labels.length), 
                     borderWidth: 2, 
                     borderColor: '#fff' 
                   }]
@@ -1153,7 +1473,7 @@ export default function AdminDashboard() {
                   labels: filteredProgramPieData.labels,
                   datasets: [{ 
                     data: filteredProgramPieData.data, 
-                    backgroundColor: COLORS, 
+                    backgroundColor: COLORS.slice(0, filteredProgramPieData.labels.length), 
                     borderWidth: 2, 
                     borderColor: '#fff' 
                   }]
