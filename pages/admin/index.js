@@ -1,5 +1,5 @@
-// pages/admin/index.js - WITH CORRECTED STATUS BREAKDOWN
-// FIXED: Properly maps candidate_assessments statuses (completed, in_progress, scheduled, unblocked, blocked, not_started)
+// pages/admin/index.js - COMPLETE FIXED FILE
+// FIXED: Includes "Not Specified" category, aggressive university consolidation
 
 import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/router";
@@ -65,142 +65,293 @@ function formatDate(value) {
 }
 
 // ============================================================
-// CONSOLIDATION FUNCTIONS
+// ULTRA AGGRESSIVE UNIVERSITY CONSOLIDATION
 // ============================================================
 function consolidateUniversityName(raw) {
-  if (!raw || typeof raw !== 'string') return raw;
+  if (!raw || typeof raw !== 'string') return 'Not Specified';
   
   const lower = raw.toLowerCase().trim();
   const cleaned = raw.replace(/\s+/g, ' ').trim();
   
-  if (lower.includes('mines') && lower.includes('technology') || 
-      lower === 'umat' || lower.includes('umat') ||
-      lower.includes('university of mines') || lower.includes('u.m.a.t') || 
-      lower.includes('umat tarkwa') || lower.includes('umat,')) {
-    return 'University of Mines and Technology (UMaT)';
-  }
-  
-  if (lower.includes('kwame nkrumah') || lower === 'knust' ||
-      lower.includes('knust') || lower.includes('k.n.u.s.t')) {
+  // ============================================================
+  // KNUST - ALL VARIATIONS (MUST BE FIRST TO CATCH ALL)
+  // ============================================================
+  if (lower.includes('kwame nkrumah') || 
+      lower === 'knust' ||
+      lower.includes('knust') ||
+      lower.includes('k.n.u.s.t') ||
+      lower.includes('kwame nkrumah university') ||
+      lower.includes('knust -') ||
+      lower.includes('knust-') ||
+      lower.includes('kwame nkrumah university of science and technology')) {
     return 'Kwame Nkrumah University of Science and Technology (KNUST)';
   }
   
-  if (lower.includes('university of ghana') || lower === 'ug' ||
-      lower.includes('ug ') || lower === 'legon' || lower.includes('legon')) {
+  // ============================================================
+  // UNIVERSITY OF MINES AND TECHNOLOGY - ALL VARIATIONS
+  // ============================================================
+  if (lower.includes('mines') && lower.includes('technology') || 
+      lower === 'umat' || 
+      lower.includes('umat') ||
+      lower.includes('university of mines') ||
+      lower.includes('u.m.a.t') ||
+      lower.includes('umat tarkwa') ||
+      lower.includes('umat,') ||
+      lower.includes('mines and technology') ||
+      lower.includes('university of mines and technology')) {
+    return 'University of Mines and Technology (UMaT)';
+  }
+  
+  // ============================================================
+  // UNIVERSITY OF GHANA - ALL VARIATIONS
+  // ============================================================
+  if (lower.includes('university of ghana') || 
+      lower === 'ug' ||
+      lower.includes('ug ') ||
+      lower === 'legon' ||
+      lower.includes('legon') ||
+      lower.includes('u.g') ||
+      lower.includes('university of ghana-')) {
     return 'University of Ghana (UG)';
   }
   
-  if (lower.includes('cape coast') || lower === 'ucc' || lower.includes('ucc ')) {
+  // ============================================================
+  // UNIVERSITY OF CAPE COAST - ALL VARIATIONS
+  // ============================================================
+  if (lower.includes('cape coast') || 
+      lower === 'ucc' ||
+      lower.includes('ucc ') ||
+      lower.includes('u.c.c') ||
+      lower.includes('university of cape coast')) {
     return 'University of Cape Coast (UCC)';
   }
   
+  // ============================================================
+  // TAKORADI TECHNICAL UNIVERSITY
+  // ============================================================
   if (lower.includes('takoradi') && lower.includes('technical')) {
     return 'Takoradi Technical University';
   }
   
+  // ============================================================
+  // KUMASI TECHNICAL UNIVERSITY
+  // ============================================================
   if (lower.includes('kumasi') && lower.includes('technical')) {
     return 'Kumasi Technical University';
   }
   
+  // ============================================================
+  // ACCRA TECHNICAL UNIVERSITY
+  // ============================================================
   if (lower.includes('accra') && lower.includes('technical')) {
     return 'Accra Technical University';
   }
   
+  // ============================================================
+  // KOFORIDUA TECHNICAL UNIVERSITY
+  // ============================================================
   if (lower.includes('koforidua') && lower.includes('technical')) {
     return 'Koforidua Technical University';
   }
   
+  // ============================================================
+  // SUNYANI TECHNICAL UNIVERSITY
+  // ============================================================
   if (lower.includes('sunyani') && lower.includes('technical')) {
     return 'Sunyani Technical University';
   }
   
+  // ============================================================
+  // CAPE COAST TECHNICAL UNIVERSITY
+  // ============================================================
   if (lower.includes('cape coast') && lower.includes('technical')) {
     return 'Cape Coast Technical University';
   }
   
+  // ============================================================
+  // HO TECHNICAL UNIVERSITY
+  // ============================================================
   if ((lower.includes('ho') || lower.includes('ho ')) && lower.includes('technical')) {
     return 'Ho Technical University';
   }
   
+  // ============================================================
+  // UNIVERSITY OF ENERGY AND NATURAL RESOURCES
+  // ============================================================
   if (lower.includes('energy') && lower.includes('natural resources')) {
     return 'University of Energy and Natural Resources';
   }
   
-  if (lower.includes('development studies') || lower === 'uds' || lower.includes('uds ')) {
+  // ============================================================
+  // UNIVERSITY FOR DEVELOPMENT STUDIES
+  // ============================================================
+  if (lower.includes('development studies') || 
+      lower === 'uds' || 
+      lower.includes('uds ') ||
+      lower.includes('u.d.s') ||
+      lower.includes('university for development')) {
     return 'University for Development Studies (UDS)';
   }
   
+  // ============================================================
+  // PENTECOST UNIVERSITY
+  // ============================================================
   if (lower.includes('pentecost')) {
     return 'Pentecost University';
   }
   
-  if (lower.includes('professional studies') || lower === 'upsa' || lower.includes('upsa ')) {
+  // ============================================================
+  // UNIVERSITY OF PROFESSIONAL STUDIES
+  // ============================================================
+  if (lower.includes('professional studies') || 
+      lower === 'upsa' || 
+      lower.includes('upsa ') ||
+      lower.includes('u.p.s.a')) {
     return 'University of Professional Studies (UPSA)';
   }
   
-  if (lower.includes('communication technology') || lower === 'gctu' || lower.includes('gctu ')) {
+  // ============================================================
+  // GHANA COMMUNICATION TECHNOLOGY UNIVERSITY
+  // ============================================================
+  if (lower.includes('communication technology') || 
+      lower === 'gctu' || 
+      lower.includes('gctu ') ||
+      lower.includes('g.c.t.u')) {
     return 'Ghana Communication Technology University (GCTU)';
   }
   
-  if (lower.includes('maritime') || lower === 'rmu' || lower.includes('rmu ')) {
+  // ============================================================
+  // REGIONAL MARITIME UNIVERSITY
+  // ============================================================
+  if (lower.includes('maritime') || 
+      lower === 'rmu' || 
+      lower.includes('rmu ') ||
+      lower.includes('regional maritime')) {
     return 'Regional Maritime University (RMU)';
   }
   
-  if (lower.includes('all nations') || lower === 'anu' || lower.includes('anu ')) {
-    return 'All Nations University';
-  }
-  
-  if (lower.includes('accra institute') || lower.includes('ait')) {
-    return 'Accra Institute of Technology (AIT)';
-  }
-  
-  if (lower.includes('koforidua poly') || lower === 'kpoly' || lower.includes('kpoly ')) {
+  // ============================================================
+  // KOFORIDUA POLYTECHNIC / KPoly
+  // ============================================================
+  if (lower.includes('koforidua poly') || 
+      lower === 'kpoly' || 
+      lower.includes('kpoly ') ||
+      lower.includes('k.poly') ||
+      lower.includes('koforidua polytechnic')) {
     return 'Koforidua Polytechnic (KPoly)';
   }
   
-  if (lower.includes('skills training') || lower.includes('entrepreneurial')) {
+  // ============================================================
+  // UNIVERSITY OF SKILLS TRAINING
+  // ============================================================
+  if (lower.includes('skills training') || 
+      lower.includes('entrepreneurial') ||
+      lower.includes('skills training and entrepreneurial')) {
     return 'University of Skills Training and Entrepreneurial Development';
   }
   
+  // ============================================================
+  // ALL NATIONS UNIVERSITY
+  // ============================================================
+  if (lower.includes('all nations') || 
+      lower === 'anu' || 
+      lower.includes('anu ')) {
+    return 'All Nations University';
+  }
+  
+  // ============================================================
+  // ACCRA INSTITUTE OF TECHNOLOGY
+  // ============================================================
+  if (lower.includes('accra institute') || 
+      lower.includes('ait') ||
+      lower.includes('a.i.t')) {
+    return 'Accra Institute of Technology (AIT)';
+  }
+  
+  // ============================================================
+  // CENTRAL UNIVERSITY
+  // ============================================================
   if (lower.includes('central university')) {
     return 'Central University';
   }
   
+  // ============================================================
+  // WISCONSIN INTERNATIONAL UNIVERSITY
+  // ============================================================
   if (lower.includes('wisconsin')) {
     return 'Wisconsin International University';
   }
   
+  // ============================================================
+  // CHRISTIAN SERVICE UNIVERSITY
+  // ============================================================
   if (lower.includes('christian service')) {
     return 'Christian Service University';
   }
   
+  // ============================================================
+  // DATA LINK UNIVERSITY
+  // ============================================================
   if (lower.includes('data link')) {
     return 'Data Link University';
   }
   
+  // ============================================================
+  // BLUE CREST UNIVERSITY
+  // ============================================================
   if (lower.includes('blue crest')) {
     return 'Blue Crest University';
   }
   
+  // ============================================================
+  // GARDEN CITY UNIVERSITY
+  // ============================================================
   if (lower.includes('garden city')) {
     return 'Garden City University';
   }
   
+  // ============================================================
+  // METHODIST UNIVERSITY
+  // ============================================================
   if (lower.includes('methodist')) {
     return 'Methodist University';
   }
   
+  // ============================================================
+  // PRESBYTERIAN UNIVERSITY
+  // ============================================================
   if (lower.includes('presbyterian')) {
     return 'Presbyterian University';
   }
   
+  // ============================================================
+  // VALLEY VIEW UNIVERSITY
+  // ============================================================
   if (lower.includes('valley view')) {
     return 'Valley View University';
   }
   
+  // ============================================================
+  // KENTUCKY UNIVERSITY
+  // ============================================================
+  if (lower.includes('kentucky')) {
+    return 'Kentucky University';
+  }
+  
+  // ============================================================
+  // If it's null or empty, return "Not Specified"
+  // ============================================================
+  if (!raw || raw.trim() === '') {
+    return 'Not Specified';
+  }
+  
+  // Return cleaned version
   return cleaned;
 }
 
+// ============================================================
+// PROGRAM CONSOLIDATION
+// ============================================================
 function consolidateProgramName(raw) {
   if (!raw || typeof raw !== 'string') return raw;
   
@@ -531,6 +682,7 @@ export default function AdminDashboard() {
       hasResult: !!scoreMap[c.id],
       resultDetails: resultMap[c.id] || null,
       consolidatedProgram: consolidateProgramName(c.programme),
+      // 🔥 FIX: Use consolidateUniversityName which returns "Not Specified" for null
       consolidatedUniversity: consolidateUniversityName(c.university),
       assessmentStatuses: statusMap[c.id] || ['not_started']
     }));
@@ -546,14 +698,14 @@ export default function AdminDashboard() {
   const progGroup = useMemo(() => getUniqueMasterNames(rawPrograms, consolidateProgramName), [rawPrograms]);
 
   // ============================================================
-  // UNIVERSITY BREAKDOWN - WITH CORRECT STATUS MAPPING
+  // UNIVERSITY BREAKDOWN - INCLUDES "NOT SPECIFIED"
   // ============================================================
   const universityBreakdown = useMemo(() => {
     const map = {};
     
     candidatesWithScores.forEach(c => {
-      if (!c.university) return;
-      const name = c.consolidatedUniversity || c.university;
+      // 🔥 FIX: Always use consolidated name (which handles null as "Not Specified")
+      const name = c.consolidatedUniversity || 'Not Specified';
       
       if (!map[name]) {
         map[name] = {
@@ -572,17 +724,13 @@ export default function AdminDashboard() {
       map[name].total += 1;
       map[name].candidates.push(c);
       
-      // 🟢 Use the actual statuses from candidate_assessments
       const statuses = c.assessmentStatuses || ['not_started'];
-      
-      // Check each status type
       const hasCompleted = statuses.some(s => s === 'completed');
       const hasInProgress = statuses.some(s => s === 'in_progress');
       const hasBlocked = statuses.some(s => s === 'blocked');
       const hasUnblocked = statuses.some(s => s === 'unblocked');
       const hasScheduled = statuses.some(s => s === 'scheduled');
       
-      // Prioritize: completed > in_progress > scheduled > unblocked > blocked > not_started
       if (hasCompleted) {
         map[name].completed += 1;
       } else if (hasInProgress) {
@@ -903,7 +1051,6 @@ export default function AdminDashboard() {
       
       console.log("Fetched results count:", resultsResponse?.data?.length || 0);
       console.log("Candidates count:", allCandidatesResponse?.data?.length || 0);
-      console.log("Candidate assessments count:", accessRows?.length || 0);
     } catch (error) {
       console.error("Error fetching admin dashboard data:", error);
     }
@@ -1075,7 +1222,14 @@ export default function AdminDashboard() {
               <tbody>
                 {universityBreakdown.map((uni) => (
                   <tr key={uni.name} style={styles.breakdownTr}>
-                    <td style={styles.breakdownTd}><strong>{uni.name}</strong></td>
+                    <td style={styles.breakdownTd}>
+                      <strong>{uni.name}</strong>
+                      {uni.name === 'Not Specified' && (
+                        <span style={{ marginLeft: '8px', fontSize: '10px', color: '#f57c00', background: '#fff3e0', padding: '2px 8px', borderRadius: '4px' }}>
+                          No University
+                        </span>
+                      )}
+                    </td>
                     <td style={styles.breakdownTd}>{uni.total}</td>
                     <td style={{ ...styles.breakdownTd, color: '#2e7d32', fontWeight: 600 }}>{uni.completed}</td>
                     <td style={{ ...styles.breakdownTd, color: '#f57c00', fontWeight: 600 }}>{uni.inProgress}</td>
