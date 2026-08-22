@@ -90,7 +90,7 @@ export default async function handler(req, res) {
       autoSubmitReason, 
       allowIncomplete,
       proctoringData,
-      startedAt // Add this to accept started_at from frontend
+      startedAt // This comes from req.body
     } = req.body;
 
     if (!sessionId) {
@@ -254,7 +254,7 @@ export default async function handler(req, res) {
     // STEP 8: Calculate TIME TRACKING
     // ============================================================
     const completedAt = new Date().toISOString();
-    let startedAt = null;
+    let assessmentStartedAt = null; // ✅ FIXED: renamed to avoid redeclaration
     let totalSeconds = 0;
     let totalDurationFormatted = '00:00:00';
     let avgTimePerQuestion = '0s';
@@ -262,14 +262,14 @@ export default async function handler(req, res) {
 
     // Priority 1: Use startedAt from frontend (most accurate)
     if (startedAt) {
-      startedAt = startedAt;
-      const start = new Date(startedAt);
+      assessmentStartedAt = startedAt;
+      const start = new Date(assessmentStartedAt);
       const end = new Date(completedAt);
       totalSeconds = Math.floor((end - start) / 1000);
     }
     // Priority 2: Use started_at from session
     else if (session.started_at) {
-      startedAt = session.started_at;
+      assessmentStartedAt = session.started_at;
       const start = new Date(session.started_at);
       const end = new Date(completedAt);
       totalSeconds = Math.floor((end - start) / 1000);
@@ -277,16 +277,16 @@ export default async function handler(req, res) {
     // Priority 3: Use duration from proctoring data
     else if (proctoringData?.summary?.duration) {
       totalSeconds = Math.floor(Number(proctoringData.summary.duration));
-      // Estimate started_at from completed_at minus duration
+      // Estimate assessmentStartedAt from completed_at minus duration
       if (totalSeconds > 0) {
         const estimatedStart = new Date(completedAt);
         estimatedStart.setSeconds(estimatedStart.getSeconds() - totalSeconds);
-        startedAt = estimatedStart.toISOString();
+        assessmentStartedAt = estimatedStart.toISOString();
       }
     }
     // Priority 4: Use session.created_at as fallback
     else if (session.created_at) {
-      startedAt = session.created_at;
+      assessmentStartedAt = session.created_at;
       const start = new Date(session.created_at);
       const end = new Date(completedAt);
       totalSeconds = Math.floor((end - start) / 1000);
@@ -301,7 +301,7 @@ export default async function handler(req, res) {
     // Calculate average time per question
     avgTimePerQuestion = calculateAvgTimePerQuestion(totalSeconds, questionCount);
 
-    console.log(`[Submit] Time Tracking: Started: ${startedAt}, Total: ${totalDurationFormatted}, Avg/Question: ${avgTimePerQuestion}`);
+    console.log(`[Submit] Time Tracking: Started: ${assessmentStartedAt}, Total: ${totalDurationFormatted}, Avg/Question: ${avgTimePerQuestion}`);
 
     // ============================================================
     // STEP 9: Process proctoring data
@@ -429,7 +429,7 @@ export default async function handler(req, res) {
       total_score: totalEarned,
       max_score: totalMax,
       percentage_score: finalPercentage,
-      started_at: startedAt,
+      started_at: assessmentStartedAt, // ✅ FIXED: using assessmentStartedAt
       completed_at: completedAt,
       total_seconds: totalSeconds,
       is_valid: riskLevel !== 'high',
@@ -479,7 +479,7 @@ export default async function handler(req, res) {
         workplaceReadiness: workplaceReadiness,
         intellectualCapability: intellectualCapability,
         recommendation: recommendation,
-        startedAt: startedAt,
+        startedAt: assessmentStartedAt, // ✅ FIXED: using assessmentStartedAt
         completedAt: completedAt,
         totalSeconds: totalSeconds,
         totalDurationFormatted: totalDurationFormatted,
@@ -580,7 +580,7 @@ export default async function handler(req, res) {
       isNationalService: isNationalService,
       isAutoSubmitted: autoSubmitted || false,
       timeTracking: {
-        startedAt: startedAt,
+        startedAt: assessmentStartedAt, // ✅ FIXED: using assessmentStartedAt
         completedAt: completedAt,
         totalSeconds: totalSeconds,
         totalDurationFormatted: totalDurationFormatted,
