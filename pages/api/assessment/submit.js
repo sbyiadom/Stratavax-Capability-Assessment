@@ -1,4 +1,4 @@
-// pages/api/assessment/submit.js - FINAL VERSION
+// pages/api/assessment/submit.js - FULLY CORRECTED WITH TIME TRACKING
 // Handles assessment submission with correct scoring, proctoring, and Risk/Recommendation Logic
 
 import { createClient } from "@supabase/supabase-js";
@@ -51,6 +51,33 @@ function calculateScoresFromCategories(categoryScores) {
   return { workplaceReadiness, intellectualCapability };
 }
 
+// ============================================================
+// HELPER: Format seconds to HH:MM:SS
+// ============================================================
+function formatDuration(seconds) {
+  if (!seconds || seconds <= 0) return '00:00:00';
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = seconds % 60;
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+}
+
+// ============================================================
+// HELPER: Calculate average time per question
+// ============================================================
+function calculateAvgTimePerQuestion(totalSeconds, questionCount) {
+  if (!totalSeconds || totalSeconds <= 0 || !questionCount || questionCount <= 0) {
+    return '0s';
+  }
+  const avgSeconds = Math.round(totalSeconds / questionCount);
+  if (avgSeconds < 60) {
+    return `${avgSeconds}s`;
+  }
+  const minutes = Math.floor(avgSeconds / 60);
+  const seconds = avgSeconds % 60;
+  return `${minutes}m ${seconds}s`;
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ success: false, error: "Method not allowed" });
@@ -62,7 +89,8 @@ export default async function handler(req, res) {
       autoSubmitted, 
       autoSubmitReason, 
       allowIncomplete,
-      proctoringData
+      proctoringData,
+      startedAt // Add this to accept started_at from frontend
     } = req.body;
 
     if (!sessionId) {
@@ -223,7 +251,60 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 8: Process proctoring data
+    // STEP 8: Calculate TIME TRACKING
+    // ============================================================
+    const completedAt = new Date().toISOString();
+    let startedAt = null;
+    let totalSeconds = 0;
+    let totalDurationFormatted = '00:00:00';
+    let avgTimePerQuestion = '0s';
+    const questionCount = (questions || []).length || 1;
+
+    // Priority 1: Use startedAt from frontend (most accurate)
+    if (startedAt) {
+      startedAt = startedAt;
+      const start = new Date(startedAt);
+      const end = new Date(completedAt);
+      totalSeconds = Math.floor((end - start) / 1000);
+    }
+    // Priority 2: Use started_at from session
+    else if (session.started_at) {
+      startedAt = session.started_at;
+      const start = new Date(session.started_at);
+      const end = new Date(completedAt);
+      totalSeconds = Math.floor((end - start) / 1000);
+    }
+    // Priority 3: Use duration from proctoring data
+    else if (proctoringData?.summary?.duration) {
+      totalSeconds = Math.floor(Number(proctoringData.summary.duration));
+      // Estimate started_at from completed_at minus duration
+      if (totalSeconds > 0) {
+        const estimatedStart = new Date(completedAt);
+        estimatedStart.setSeconds(estimatedStart.getSeconds() - totalSeconds);
+        startedAt = estimatedStart.toISOString();
+      }
+    }
+    // Priority 4: Use session.created_at as fallback
+    else if (session.created_at) {
+      startedAt = session.created_at;
+      const start = new Date(session.created_at);
+      const end = new Date(completedAt);
+      totalSeconds = Math.floor((end - start) / 1000);
+    }
+
+    // Ensure we don't have negative time
+    if (totalSeconds < 0) totalSeconds = 0;
+
+    // Format the total time
+    totalDurationFormatted = formatDuration(totalSeconds);
+
+    // Calculate average time per question
+    avgTimePerQuestion = calculateAvgTimePerQuestion(totalSeconds, questionCount);
+
+    console.log(`[Submit] Time Tracking: Started: ${startedAt}, Total: ${totalDurationFormatted}, Avg/Question: ${avgTimePerQuestion}`);
+
+    // ============================================================
+    // STEP 9: Process proctoring data
     // ============================================================
     const proctoring = proctoringData || {};
     
@@ -242,13 +323,13 @@ export default async function handler(req, res) {
     
     const copyPasteAttempts = Number(summary.copyPasteAttempts) || 0;
     const rightClickAttempts = Number(summary.rightClickAttempts) || 0;
-    const duration = Number(summary.duration) || 0;
+    const duration = Number(summary.duration) || totalSeconds;
     
     const totalExternalUrls = externalUrls.length;
     const uniqueDomains = [...new Set(externalUrls.map(u => u.domain || u.url))].length;
     
     // ============================================================
-    // 🟢 FIX: INDEPENDENT RISK CALCULATION
+    // STEP 10: RISK CALCULATION
     // ============================================================
     let riskScore = 0;
     
@@ -301,19 +382,19 @@ export default async function handler(req, res) {
     console.log(`[Submit] Proctoring: Risk Level ${riskLevel}, Score ${riskScore}`);
 
     // ============================================================
-    // STEP 9: Update session status
+    // STEP 11: Update session status
     // ============================================================
     await serviceClient
       .from("assessment_sessions")
       .update({
         status: "completed",
-        completed_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+        completed_at: completedAt,
+        updated_at: completedAt
       })
       .eq("id", sessionId);
 
     // ============================================================
-    // STEP 10: Check for existing result
+    // STEP 12: Check for existing result
     // ============================================================
     const { data: existingResult, error: resultError } = await serviceClient
       .from("assessment_results")
@@ -322,7 +403,7 @@ export default async function handler(req, res) {
       .maybeSingle();
 
     // ============================================================
-    // STEP 11: Calculate Recommendation based on finalPercentage
+    // STEP 13: Calculate Recommendation based on finalPercentage
     // ============================================================
     let recommendation = null;
     if (isNationalService) {
@@ -330,10 +411,16 @@ export default async function handler(req, res) {
       else if (finalPercentage >= 75) recommendation = 'Recommended';
       else if (finalPercentage >= 65) recommendation = 'Reserve Pool';
       else recommendation = 'Not Recommended';
+    } else {
+      if (finalPercentage >= 85) recommendation = 'Highly Recommended';
+      else if (finalPercentage >= 75) recommendation = 'Recommended';
+      else if (finalPercentage >= 65) recommendation = 'Reserve Pool';
+      else if (finalPercentage >= 50) recommendation = 'Consider for Development';
+      else recommendation = 'Not Recommended';
     }
 
     // ============================================================
-    // STEP 12: Build resultData
+    // STEP 14: Build resultData with time tracking
     // ============================================================
     const resultData = {
       user_id: session.user_id,
@@ -342,7 +429,9 @@ export default async function handler(req, res) {
       total_score: totalEarned,
       max_score: totalMax,
       percentage_score: finalPercentage,
-      completed_at: new Date().toISOString(),
+      started_at: startedAt,
+      completed_at: completedAt,
+      total_seconds: totalSeconds,
       is_valid: riskLevel !== 'high',
       is_auto_submitted: autoSubmitted || false,
       
@@ -359,7 +448,9 @@ export default async function handler(req, res) {
           uniqueDomains: uniqueDomains,
           copyPasteAttempts: copyPasteAttempts,
           rightClickAttempts: rightClickAttempts,
-          duration: duration,
+          duration: totalSeconds,
+          durationFormatted: totalDurationFormatted,
+          avgTimePerQuestion: avgTimePerQuestion,
           riskLevel: riskLevel,
           riskScore: riskScore
         },
@@ -388,14 +479,22 @@ export default async function handler(req, res) {
         workplaceReadiness: workplaceReadiness,
         intellectualCapability: intellectualCapability,
         recommendation: recommendation,
-        completedAt: new Date().toISOString(),
+        startedAt: startedAt,
+        completedAt: completedAt,
+        totalSeconds: totalSeconds,
+        totalDurationFormatted: totalDurationFormatted,
+        avgTimePerQuestion: avgTimePerQuestion,
+        totalQuestions: questionCount,
         proctoring: {
           riskLevel: riskLevel,
           riskScore: riskScore,
           totalViolations: totalViolations,
           externalUrlsVisited: totalExternalUrls,
           tabSwitches: totalTabSwitches,
-          riskFactors: riskFactors
+          riskFactors: riskFactors,
+          duration: totalSeconds,
+          durationFormatted: totalDurationFormatted,
+          avgTimePerQuestion: avgTimePerQuestion
         }
       }
     };
@@ -432,7 +531,7 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 13: Save proctoring violations to logs
+    // STEP 15: Save proctoring violations to logs
     // ============================================================
     if (violations.length > 0 && resultId) {
       const violationLogs = violations.map(violation => ({
@@ -449,7 +548,7 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 14: Update candidate_assessments
+    // STEP 16: Update candidate_assessments
     // ============================================================
     if (resultId) {
       await serviceClient
@@ -457,15 +556,15 @@ export default async function handler(req, res) {
         .update({
           result_id: resultId,
           status: "completed",
-          completed_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
+          completed_at: completedAt,
+          updated_at: completedAt
         })
         .eq("user_id", session.user_id)
         .eq("assessment_id", session.assessment_id);
     }
 
     // ============================================================
-    // STEP 15: Return response
+    // STEP 17: Return response
     // ============================================================
     return res.status(200).json({
       success: true,
@@ -480,6 +579,14 @@ export default async function handler(req, res) {
       recommendation: recommendation,
       isNationalService: isNationalService,
       isAutoSubmitted: autoSubmitted || false,
+      timeTracking: {
+        startedAt: startedAt,
+        completedAt: completedAt,
+        totalSeconds: totalSeconds,
+        totalDurationFormatted: totalDurationFormatted,
+        avgTimePerQuestion: avgTimePerQuestion,
+        totalQuestions: questionCount
+      },
       proctoring: {
         riskLevel: riskLevel,
         riskScore: riskScore,
