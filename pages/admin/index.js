@@ -1,5 +1,5 @@
-// pages/admin/index.js - WITH UNIVERSITY DETAILED BREAKDOWN
-// NEW: University breakdown with registration, completed, not started, in progress
+// pages/admin/index.js - WITH CORRECTED STATUS BREAKDOWN
+// FIXED: Properly maps candidate_assessments statuses (completed, in_progress, scheduled, unblocked, blocked, not_started)
 
 import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/router";
@@ -65,7 +65,7 @@ function formatDate(value) {
 }
 
 // ============================================================
-// AGGRESSIVE UNIVERSITY CONSOLIDATION
+// CONSOLIDATION FUNCTIONS
 // ============================================================
 function consolidateUniversityName(raw) {
   if (!raw || typeof raw !== 'string') return raw;
@@ -73,157 +73,127 @@ function consolidateUniversityName(raw) {
   const lower = raw.toLowerCase().trim();
   const cleaned = raw.replace(/\s+/g, ' ').trim();
   
-  // University of Mines and Technology
   if (lower.includes('mines') && lower.includes('technology') || 
       lower === 'umat' || lower.includes('umat') ||
-      lower.includes('university of mines') ||
-      lower.includes('u.m.a.t') || lower.includes('umat tarkwa')) {
+      lower.includes('university of mines') || lower.includes('u.m.a.t') || 
+      lower.includes('umat tarkwa') || lower.includes('umat,')) {
     return 'University of Mines and Technology (UMaT)';
   }
   
-  // KNUST
   if (lower.includes('kwame nkrumah') || lower === 'knust' ||
       lower.includes('knust') || lower.includes('k.n.u.s.t')) {
     return 'Kwame Nkrumah University of Science and Technology (KNUST)';
   }
   
-  // University of Ghana
   if (lower.includes('university of ghana') || lower === 'ug' ||
       lower.includes('ug ') || lower === 'legon' || lower.includes('legon')) {
     return 'University of Ghana (UG)';
   }
   
-  // University of Cape Coast
   if (lower.includes('cape coast') || lower === 'ucc' || lower.includes('ucc ')) {
     return 'University of Cape Coast (UCC)';
   }
   
-  // Takoradi Technical University
   if (lower.includes('takoradi') && lower.includes('technical')) {
     return 'Takoradi Technical University';
   }
   
-  // Kumasi Technical University
   if (lower.includes('kumasi') && lower.includes('technical')) {
     return 'Kumasi Technical University';
   }
   
-  // Accra Technical University
   if (lower.includes('accra') && lower.includes('technical')) {
     return 'Accra Technical University';
   }
   
-  // Koforidua Technical University
   if (lower.includes('koforidua') && lower.includes('technical')) {
     return 'Koforidua Technical University';
   }
   
-  // Sunyani Technical University
   if (lower.includes('sunyani') && lower.includes('technical')) {
     return 'Sunyani Technical University';
   }
   
-  // Cape Coast Technical University
   if (lower.includes('cape coast') && lower.includes('technical')) {
     return 'Cape Coast Technical University';
   }
   
-  // Ho Technical University
   if ((lower.includes('ho') || lower.includes('ho ')) && lower.includes('technical')) {
     return 'Ho Technical University';
   }
   
-  // University of Energy and Natural Resources
   if (lower.includes('energy') && lower.includes('natural resources')) {
     return 'University of Energy and Natural Resources';
   }
   
-  // University for Development Studies
   if (lower.includes('development studies') || lower === 'uds' || lower.includes('uds ')) {
     return 'University for Development Studies (UDS)';
   }
   
-  // Pentecost University
   if (lower.includes('pentecost')) {
     return 'Pentecost University';
   }
   
-  // University of Professional Studies
   if (lower.includes('professional studies') || lower === 'upsa' || lower.includes('upsa ')) {
     return 'University of Professional Studies (UPSA)';
   }
   
-  // Ghana Communication Technology University
   if (lower.includes('communication technology') || lower === 'gctu' || lower.includes('gctu ')) {
     return 'Ghana Communication Technology University (GCTU)';
   }
   
-  // Regional Maritime University
   if (lower.includes('maritime') || lower === 'rmu' || lower.includes('rmu ')) {
     return 'Regional Maritime University (RMU)';
   }
   
-  // All Nations University
   if (lower.includes('all nations') || lower === 'anu' || lower.includes('anu ')) {
     return 'All Nations University';
   }
   
-  // Accra Institute of Technology
   if (lower.includes('accra institute') || lower.includes('ait')) {
     return 'Accra Institute of Technology (AIT)';
   }
   
-  // Koforidua Polytechnic / KPoly
   if (lower.includes('koforidua poly') || lower === 'kpoly' || lower.includes('kpoly ')) {
     return 'Koforidua Polytechnic (KPoly)';
   }
   
-  // University of Skills Training
   if (lower.includes('skills training') || lower.includes('entrepreneurial')) {
     return 'University of Skills Training and Entrepreneurial Development';
   }
   
-  // Central University
   if (lower.includes('central university')) {
     return 'Central University';
   }
   
-  // Wisconsin International University
   if (lower.includes('wisconsin')) {
     return 'Wisconsin International University';
   }
   
-  // Christian Service University
   if (lower.includes('christian service')) {
     return 'Christian Service University';
   }
   
-  // Data Link University
   if (lower.includes('data link')) {
     return 'Data Link University';
   }
   
-  // Blue Crest University
   if (lower.includes('blue crest')) {
     return 'Blue Crest University';
   }
   
-  // Garden City University
   if (lower.includes('garden city')) {
     return 'Garden City University';
   }
   
-  // Methodist University
   if (lower.includes('methodist')) {
     return 'Methodist University';
   }
   
-  // Presbyterian University
   if (lower.includes('presbyterian')) {
     return 'Presbyterian University';
   }
   
-  // Valley View University
   if (lower.includes('valley view')) {
     return 'Valley View University';
   }
@@ -231,9 +201,6 @@ function consolidateUniversityName(raw) {
   return cleaned;
 }
 
-// ============================================================
-// AGGRESSIVE PROGRAM CONSOLIDATION
-// ============================================================
 function consolidateProgramName(raw) {
   if (!raw || typeof raw !== 'string') return raw;
   
@@ -250,7 +217,6 @@ function consolidateProgramName(raw) {
   
   const cleanLower = cleanForMatch(raw);
   
-  // Electrical/Electronic Engineering
   if (cleanLower.includes('electrical') || cleanLower.includes('electronic') || 
       cleanLower.includes('elect/electron') || cleanLower.includes('electrical/electronic') ||
       cleanLower.includes('electrical electronic') || cleanLower.includes('electrical and electronic') ||
@@ -258,225 +224,183 @@ function consolidateProgramName(raw) {
     return 'BSc Electrical/Electronic Engineering';
   }
   
-  // Mechanical Engineering
   if (cleanLower.includes('mechanical') || cleanLower.includes('mech') ||
       lower === 'me' || lower.includes('me ')) {
     return 'BSc Mechanical Engineering';
   }
   
-  // Chemical Engineering
   if (cleanLower.includes('chemical') || cleanLower.includes('chem') ||
       lower === 'che' || lower.includes('che ')) {
     return 'BSc Chemical Engineering';
   }
   
-  // Civil Engineering
   if (cleanLower.includes('civil') || lower === 'ce' || lower.includes('ce ')) {
     return 'BSc Civil Engineering';
   }
   
-  // Computer Engineering
   if (cleanLower.includes('computer') || lower === 'cpe' || lower.includes('cpe ')) {
     return 'BSc Computer Engineering';
   }
   
-  // Industrial Engineering
   if (cleanLower.includes('industrial') || lower === 'ie' || lower.includes('ie ')) {
     return 'BSc Industrial Engineering';
   }
   
-  // Agricultural Engineering
   if (cleanLower.includes('agricultural') || cleanLower.includes('agric') ||
       lower === 'age' || lower.includes('age ')) {
     return 'BSc Agricultural Engineering';
   }
   
-  // Petroleum Engineering
   if (cleanLower.includes('petroleum') || cleanLower.includes('petrol') ||
       lower === 'pe' || lower.includes('pe ')) {
     return 'BSc Petroleum Engineering';
   }
   
-  // Geological Engineering
   if (cleanLower.includes('geological') || cleanLower.includes('geo') ||
       lower === 'ge' || lower.includes('ge ')) {
     return 'BSc Geological Engineering';
   }
   
-  // Geomatic Engineering
   if (cleanLower.includes('geomatic')) {
     return 'BSc Geomatic Engineering';
   }
   
-  // Materials Engineering
   if (cleanLower.includes('materials') || cleanLower.includes('material') ||
       lower === 'mte' || lower.includes('mte ')) {
     return 'BSc Materials Engineering';
   }
   
-  // Telecommunications Engineering
   if (cleanLower.includes('telecommunications') || cleanLower.includes('telecom') ||
       cleanLower.includes('telecommunication') || lower === 'tele' || lower.includes('tele ')) {
     return 'BSc Telecommunications Engineering';
   }
   
-  // Renewable Energy Engineering
   if (cleanLower.includes('renewable') || cleanLower.includes('energy')) {
     return 'BSc Renewable Energy Engineering';
   }
   
-  // Automobile Engineering
   if (cleanLower.includes('automobile') || cleanLower.includes('auto')) {
     return 'BSc Automobile Engineering';
   }
   
-  // Information Technology
   if (cleanLower.includes('information technology') || cleanLower.includes('info tech') ||
       lower === 'it' || lower.includes('it ')) {
     return 'BSc Information Technology';
   }
   
-  // Information Systems
   if (cleanLower.includes('information systems') || cleanLower.includes('info systems')) {
     return 'BSc Information Systems';
   }
   
-  // Biomedical Engineering
   if (cleanLower.includes('biomedical') || cleanLower.includes('bio medical')) {
     return 'BSc Biomedical Engineering';
   }
   
-  // Minerals Engineering
   if (cleanLower.includes('minerals') || cleanLower.includes('mining')) {
     return 'BSc Minerals Engineering';
   }
   
-  // Psychology
   if (cleanLower.includes('psychology') || cleanLower.includes('psych')) {
     return 'BA Psychology';
   }
   
-  // Political Science
   if (cleanLower.includes('political science') || cleanLower.includes('politics') ||
       cleanLower.includes('political')) {
     return 'BA Political Science';
   }
   
-  // Laboratory Technology
   if (cleanLower.includes('laboratory') || cleanLower.includes('lab')) {
     return 'BSc Laboratory Technology';
   }
   
-  // Food Science
   if (cleanLower.includes('food science') || cleanLower.includes('food')) {
     return 'BSc Food Science and Postharvest Technology';
   }
   
-  // Statistics and Mathematics
   if ((cleanLower.includes('statistics') || cleanLower.includes('stat')) && 
       (cleanLower.includes('mathematics') || cleanLower.includes('math'))) {
     return 'BSc Statistics and Mathematics';
   }
   
-  // Mathematics
   if (cleanLower.includes('mathematics') || cleanLower.includes('math') ||
       lower === 'maths' || lower.includes('maths ')) {
     return 'BSc Mathematics';
   }
   
-  // Statistics
   if (cleanLower.includes('statistics') || cleanLower.includes('stat')) {
     return 'BSc Statistics';
   }
   
-  // Accounting
   if (cleanLower.includes('accounting')) {
     return 'BSc Accounting';
   }
   
-  // Accounting and Economics
   if (cleanLower.includes('accounting') && cleanLower.includes('economics')) {
     return 'BSc Accounting and Economics';
   }
   
-  // Economics
   if (cleanLower.includes('economics')) {
     return 'BSc Economics';
   }
   
-  // Business Administration
   if (cleanLower.includes('business administration') || cleanLower.includes('business admin') ||
       cleanLower.includes('management') || cleanLower.includes('admin') || 
       cleanLower.includes('secretariat') || cleanLower.includes('secretariatship')) {
     return 'Business Administration';
   }
   
-  // Marketing
   if (cleanLower.includes('marketing')) {
     return 'BSc Marketing';
   }
   
-  // Human Resource Management
   if (cleanLower.includes('human resource') || cleanLower.includes('hr')) {
     return 'BSc Human Resource Management';
   }
   
-  // Public Administration
   if (cleanLower.includes('public administration')) {
     return 'BSc Public Administration';
   }
   
-  // Public Health
   if (cleanLower.includes('public health')) {
     return 'BSc Public Health';
   }
   
-  // Nursing
   if (cleanLower.includes('nursing')) {
     return 'BSc Nursing';
   }
   
-  // Midwifery
   if (cleanLower.includes('midwifery')) {
     return 'BSc Midwifery';
   }
   
-  // Architecture
   if (cleanLower.includes('architecture')) {
     return 'BSc Architecture';
   }
   
-  // Estate Management
   if (cleanLower.includes('estate management') || cleanLower.includes('estate')) {
     return 'BSc Estate Management';
   }
   
-  // Quantity Surveying
   if (cleanLower.includes('quantity surveying') || cleanLower.includes('surveying')) {
     return 'BSc Quantity Surveying';
   }
   
-  // Arts
   if (cleanLower.includes('arts') || lower.includes('ba ') || lower.includes('b.a ')) {
     return 'BA Arts';
   }
   
-  // Biological Sciences
   if (cleanLower.includes('biological') || cleanLower.includes('biology')) {
     return 'BSc Biological Sciences';
   }
   
-  // Chemistry
   if (cleanLower.includes('chemistry')) {
     return 'BSc Chemistry';
   }
   
-  // Physics
   if (cleanLower.includes('physics')) {
     return 'BSc Physics';
   }
   
-  // Default - clean up
   let cleaned = raw
     .replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, ' ')
     .replace(/\s+/g, ' ')
@@ -489,9 +413,6 @@ function consolidateProgramName(raw) {
   return cleaned || raw;
 }
 
-// ============================================================
-// GET UNIQUE MASTER NAMES
-// ============================================================
 function getUniqueMasterNames(rawItems, consolidateFn) {
   if (!rawItems || rawItems.length === 0) return { groups: [], masterToRawMap: {} };
   
@@ -596,7 +517,6 @@ export default function AdminDashboard() {
       }
     });
 
-    // Create a map of candidate assessment status
     const statusMap = {};
     candidateAssessmentsData.forEach(ca => {
       if (!statusMap[ca.user_id]) {
@@ -626,7 +546,7 @@ export default function AdminDashboard() {
   const progGroup = useMemo(() => getUniqueMasterNames(rawPrograms, consolidateProgramName), [rawPrograms]);
 
   // ============================================================
-  // UNIVERSITY BREAKDOWN - WITH STATUS COUNTS
+  // UNIVERSITY BREAKDOWN - WITH CORRECT STATUS MAPPING
   // ============================================================
   const universityBreakdown = useMemo(() => {
     const map = {};
@@ -643,6 +563,7 @@ export default function AdminDashboard() {
           notStarted: 0,
           blocked: 0,
           unblocked: 0,
+          scheduled: 0,
           programs: {},
           candidates: []
         };
@@ -651,26 +572,31 @@ export default function AdminDashboard() {
       map[name].total += 1;
       map[name].candidates.push(c);
       
-      // Determine status
+      // 🟢 Use the actual statuses from candidate_assessments
       const statuses = c.assessmentStatuses || ['not_started'];
+      
+      // Check each status type
       const hasCompleted = statuses.some(s => s === 'completed');
       const hasInProgress = statuses.some(s => s === 'in_progress');
       const hasBlocked = statuses.some(s => s === 'blocked');
       const hasUnblocked = statuses.some(s => s === 'unblocked');
+      const hasScheduled = statuses.some(s => s === 'scheduled');
       
+      // Prioritize: completed > in_progress > scheduled > unblocked > blocked > not_started
       if (hasCompleted) {
         map[name].completed += 1;
       } else if (hasInProgress) {
         map[name].inProgress += 1;
-      } else if (hasBlocked) {
-        map[name].blocked += 1;
+      } else if (hasScheduled) {
+        map[name].scheduled += 1;
       } else if (hasUnblocked) {
         map[name].unblocked += 1;
+      } else if (hasBlocked) {
+        map[name].blocked += 1;
       } else {
         map[name].notStarted += 1;
       }
       
-      // Track programs
       const prog = c.consolidatedProgram || c.programme || 'Unknown';
       if (!map[name].programs[prog]) {
         map[name].programs[prog] = 0;
@@ -778,7 +704,7 @@ export default function AdminDashboard() {
   const filteredTotalCandidates = filteredCandidates.length;
 
   // ============================================================
-  // PIE CHARTS - SHOW ALL GROUPS
+  // PIE CHARTS
   // ============================================================
   const filteredUniversityPieData = useMemo(() => {
     const labels = filteredUniversityAnalytics.map(u => u.name);
@@ -977,6 +903,7 @@ export default function AdminDashboard() {
       
       console.log("Fetched results count:", resultsResponse?.data?.length || 0);
       console.log("Candidates count:", allCandidatesResponse?.data?.length || 0);
+      console.log("Candidate assessments count:", accessRows?.length || 0);
     } catch (error) {
       console.error("Error fetching admin dashboard data:", error);
     }
@@ -1013,6 +940,15 @@ export default function AdminDashboard() {
 
   if (!isAdmin) return null;
 
+  // Calculate overall stats
+  const totalRegistered = universityBreakdown.reduce((sum, u) => sum + u.total, 0);
+  const totalCompleted = universityBreakdown.reduce((sum, u) => sum + u.completed, 0);
+  const totalInProgress = universityBreakdown.reduce((sum, u) => sum + u.inProgress, 0);
+  const totalNotStarted = universityBreakdown.reduce((sum, u) => sum + u.notStarted, 0);
+  const totalBlocked = universityBreakdown.reduce((sum, u) => sum + u.blocked, 0);
+  const totalUnblocked = universityBreakdown.reduce((sum, u) => sum + u.unblocked, 0);
+  const totalScheduled = universityBreakdown.reduce((sum, u) => sum + u.scheduled, 0);
+
   return (
     <AppLayout background="/images/admin-bg.jpg">
       <div style={styles.container}>
@@ -1029,14 +965,14 @@ export default function AdminDashboard() {
 
         {/* STATS CARDS */}
         <div style={styles.statsRow}>
-          <StatCard icon="👥" label="Filtered Candidates" value={filteredTotalCandidates} subValue={`of ${stats.totalCandidates} total`} />
+          <StatCard icon="👥" label="Total Candidates" value={totalRegistered} />
+          <StatCard icon="✅" label="Completed" value={totalCompleted} />
+          <StatCard icon="🔄" label="In Progress" value={totalInProgress} />
+          <StatCard icon="📅" label="Scheduled" value={totalScheduled} />
+          <StatCard icon="🔓" label="Unblocked" value={totalUnblocked} />
+          <StatCard icon="🔒" label="Blocked" value={totalBlocked} />
+          <StatCard icon="⏳" label="Not Started" value={totalNotStarted} />
           <StatCard icon="📊" label="Avg Score" value={`${filteredGlobalAverageScore}%`} />
-          <StatCard icon="✅" label="Pass Rate" value={`${filteredGlobalPassRate}%`} />
-          <StatCard icon="📚" label="Programs in Filter" value={filteredProgramAnalytics.length} />
-          <StatCard icon="📋" label="Active Assessments" value={stats.totalAssessments} />
-          <StatCard icon="✓" label="Completed" value={stats.completedAssessments} />
-          <StatCard icon="◉" label="In Progress" value={stats.inProgressSessions} />
-          <StatCard icon="📈" label="Result Records" value={stats.totalResults} />
         </div>
 
         {/* FILTERS BAR */}
@@ -1108,10 +1044,19 @@ export default function AdminDashboard() {
         </div>
 
         {/* ============================================================
-            🟢 UNIVERSITY BREAKDOWN TABLE - NEW!
+            UNIVERSITY BREAKDOWN TABLE
             ============================================================ */}
         <div style={styles.breakdownContainer}>
-          <h2 style={styles.breakdownTitle}>University Breakdown</h2>
+          <div style={styles.breakdownHeader}>
+            <h2 style={styles.breakdownTitle}>University Breakdown</h2>
+            <div style={styles.breakdownSummary}>
+              <span>🏛️ {universityBreakdown.length} Universities</span>
+              <span>👥 {totalRegistered} Candidates</span>
+              <span>✅ {totalCompleted} Completed</span>
+              <span>🔄 {totalInProgress} In Progress</span>
+              <span>🔒 {totalBlocked} Blocked</span>
+            </div>
+          </div>
           <div style={styles.breakdownTableWrapper}>
             <table style={styles.breakdownTable}>
               <thead>
@@ -1120,9 +1065,10 @@ export default function AdminDashboard() {
                   <th style={styles.breakdownTh}>Total</th>
                   <th style={styles.breakdownTh}>✅ Completed</th>
                   <th style={styles.breakdownTh}>🔄 In Progress</th>
-                  <th style={styles.breakdownTh}>⏳ Not Started</th>
-                  <th style={styles.breakdownTh}>🔒 Blocked</th>
+                  <th style={styles.breakdownTh}>📅 Scheduled</th>
                   <th style={styles.breakdownTh}>🔓 Unblocked</th>
+                  <th style={styles.breakdownTh}>🔒 Blocked</th>
+                  <th style={styles.breakdownTh}>⏳ Not Started</th>
                   <th style={styles.breakdownTh}>Programs</th>
                 </tr>
               </thead>
@@ -1133,25 +1079,26 @@ export default function AdminDashboard() {
                     <td style={styles.breakdownTd}>{uni.total}</td>
                     <td style={{ ...styles.breakdownTd, color: '#2e7d32', fontWeight: 600 }}>{uni.completed}</td>
                     <td style={{ ...styles.breakdownTd, color: '#f57c00', fontWeight: 600 }}>{uni.inProgress}</td>
-                    <td style={{ ...styles.breakdownTd, color: '#94a3b8' }}>{uni.notStarted}</td>
+                    <td style={{ ...styles.breakdownTd, color: '#1565c0', fontWeight: 600 }}>{uni.scheduled}</td>
+                    <td style={{ ...styles.breakdownTd, color: '#0d47a1', fontWeight: 600 }}>{uni.unblocked}</td>
                     <td style={{ ...styles.breakdownTd, color: '#c62828', fontWeight: 600 }}>{uni.blocked}</td>
-                    <td style={{ ...styles.breakdownTd, color: '#1565c0', fontWeight: 600 }}>{uni.unblocked}</td>
+                    <td style={{ ...styles.breakdownTd, color: '#94a3b8' }}>{uni.notStarted}</td>
                     <td style={styles.breakdownTd}>
                       <button 
                         onClick={() => toggleUniversityExpand(uni.name)}
                         style={styles.expandButton}
                       >
-                        {expandedUniversity === uni.name ? 'Hide Programs' : `Show ${uni.programs.length} Programs`}
+                        {expandedUniversity === uni.name ? 'Hide' : `Show ${uni.programs.length}`}
                       </button>
                     </td>
                   </tr>
                 ))}
                 {expandedUniversity && (
                   <tr>
-                    <td colSpan="8" style={styles.expandedRow}>
+                    <td colSpan="9" style={styles.expandedRow}>
                       <div style={styles.programBreakdown}>
                         <h4 style={styles.programBreakdownTitle}>
-                          Program Distribution for {expandedUniversity}
+                          📚 Program Distribution for {expandedUniversity}
                         </h4>
                         <div style={styles.programTags}>
                           {universityBreakdown
@@ -1425,23 +1372,23 @@ const styles = {
   logoutButton: { background: "#f44336", color: "white", border: "none", padding: "10px 20px", borderRadius: "8px", cursor: "pointer", fontSize: "14px", fontWeight: 700 },
   statsRow: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-    gap: '16px',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))',
+    gap: '10px',
     marginBottom: '24px'
   },
   statCard: {
     background: 'white',
-    padding: '16px 18px',
+    padding: '12px 14px',
     borderRadius: '12px',
     display: 'flex',
     alignItems: 'center',
-    gap: '14px',
+    gap: '10px',
     boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
     border: '1px solid #eef2f7'
   },
-  statIcon: { fontSize: '28px' },
-  statLabel: { fontSize: '11px', color: '#718096', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' },
-  statValue: { fontSize: '22px', fontWeight: 800, color: '#0a1929' },
+  statIcon: { fontSize: '20px' },
+  statLabel: { fontSize: '9px', color: '#718096', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' },
+  statValue: { fontSize: '18px', fontWeight: 800, color: '#0a1929' },
   filtersBar: {
     background: 'white',
     borderRadius: '12px',
@@ -1516,9 +1463,6 @@ const styles = {
     color: '#334155',
     fontWeight: '600'
   },
-  // ============================================================
-  // UNIVERSITY BREAKDOWN STYLES
-  // ============================================================
   breakdownContainer: {
     background: 'white',
     borderRadius: '12px',
@@ -1528,11 +1472,26 @@ const styles = {
     boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
     overflowX: 'auto'
   },
+  breakdownHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '16px',
+    flexWrap: 'wrap',
+    gap: '12px'
+  },
   breakdownTitle: {
     fontSize: '18px',
     fontWeight: 600,
     color: '#0a1929',
-    margin: '0 0 16px 0'
+    margin: 0
+  },
+  breakdownSummary: {
+    display: 'flex',
+    gap: '16px',
+    fontSize: '13px',
+    color: '#64748b',
+    flexWrap: 'wrap'
   },
   breakdownTableWrapper: {
     overflowX: 'auto'
@@ -1540,15 +1499,16 @@ const styles = {
   breakdownTable: {
     width: '100%',
     borderCollapse: 'collapse',
-    fontSize: '14px'
+    fontSize: '13px',
+    minWidth: '800px'
   },
   breakdownTh: {
-    padding: '10px 12px',
+    padding: '8px 10px',
     textAlign: 'left',
     fontWeight: 600,
     color: '#475569',
     borderBottom: '2px solid #e2e8f0',
-    fontSize: '12px',
+    fontSize: '10px',
     textTransform: 'uppercase',
     letterSpacing: '0.05em',
     background: '#f8fafc',
@@ -1561,18 +1521,18 @@ const styles = {
     }
   },
   breakdownTd: {
-    padding: '10px 12px',
-    fontSize: '14px',
+    padding: '8px 10px',
+    fontSize: '13px',
     color: '#1a202c',
     verticalAlign: 'middle'
   },
   expandButton: {
-    padding: '4px 12px',
+    padding: '3px 10px',
     background: '#e2e8f0',
     border: 'none',
     borderRadius: '4px',
     cursor: 'pointer',
-    fontSize: '12px',
+    fontSize: '11px',
     color: '#334155',
     fontWeight: 500,
     '&:hover': {
@@ -1606,9 +1566,6 @@ const styles = {
     color: '#475569',
     whiteSpace: 'nowrap'
   },
-  // ============================================================
-  // CHART STYLES
-  // ============================================================
   pieChartGrid: {
     display: 'grid',
     gridTemplateColumns: '1fr 1fr',
