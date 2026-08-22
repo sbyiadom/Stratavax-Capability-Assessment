@@ -1,5 +1,5 @@
-// pages/admin/index.js - FULLY CORRECTED WITH AGGRESSIVE CONSOLIDATION
-// FIXED: Shows ALL consolidated groups (no "Others"), catches all variations
+// pages/admin/index.js - WITH UNIVERSITY DETAILED BREAKDOWN
+// NEW: University breakdown with registration, completed, not started, in progress
 
 import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/router";
@@ -65,310 +65,180 @@ function formatDate(value) {
 }
 
 // ============================================================
-// AGGRESSIVE UNIVERSITY CONSOLIDATION - CATCHES ALL VARIATIONS
+// AGGRESSIVE UNIVERSITY CONSOLIDATION
 // ============================================================
 function consolidateUniversityName(raw) {
   if (!raw || typeof raw !== 'string') return raw;
   
   const lower = raw.toLowerCase().trim();
-  
-  // Remove extra spaces and clean
   const cleaned = raw.replace(/\s+/g, ' ').trim();
   
-  // ============================================================
-  // UNIVERSITY OF MINES AND TECHNOLOGY - ALL VARIATIONS
-  // ============================================================
+  // University of Mines and Technology
   if (lower.includes('mines') && lower.includes('technology') || 
-      lower === 'umat' || 
-      lower.includes('umat') ||
+      lower === 'umat' || lower.includes('umat') ||
       lower.includes('university of mines') ||
-      lower.includes('u.m.a.t') ||
-      lower.includes('umat, tarkwa') ||
-      lower.includes('umat tarkwa') ||
-      lower.includes('mines and technology') ||
-      lower.includes('mines & technology') ||
-      lower.includes('tarkwa') && lower.includes('mines')) {
+      lower.includes('u.m.a.t') || lower.includes('umat tarkwa')) {
     return 'University of Mines and Technology (UMaT)';
   }
   
-  // ============================================================
-  // KNUST - ALL VARIATIONS
-  // ============================================================
-  if (lower.includes('kwame nkrumah') || 
-      lower === 'knust' ||
-      lower.includes('knust') ||
-      lower.includes('k.n.u.s.t') ||
-      lower.includes('kwame nkrumah university') ||
-      lower.includes('k.n.u.s.t') ||
-      lower.includes('knust -') ||
-      lower.includes('knust-')) {
+  // KNUST
+  if (lower.includes('kwame nkrumah') || lower === 'knust' ||
+      lower.includes('knust') || lower.includes('k.n.u.s.t')) {
     return 'Kwame Nkrumah University of Science and Technology (KNUST)';
   }
   
-  // ============================================================
-  // UNIVERSITY OF GHANA - ALL VARIATIONS
-  // ============================================================
-  if (lower.includes('university of ghana') || 
-      lower === 'ug' ||
-      lower.includes('ug ') ||
-      lower === 'legon' ||
-      lower.includes('legon') ||
-      lower.includes('u.g') ||
-      lower.includes('university of ghana-') ||
-      lower.includes('university of ghana ')) {
+  // University of Ghana
+  if (lower.includes('university of ghana') || lower === 'ug' ||
+      lower.includes('ug ') || lower === 'legon' || lower.includes('legon')) {
     return 'University of Ghana (UG)';
   }
   
-  // ============================================================
-  // UNIVERSITY OF CAPE COAST
-  // ============================================================
-  if (lower.includes('cape coast') || 
-      lower === 'ucc' ||
-      lower.includes('ucc ') ||
-      lower.includes('u.c.c') ||
-      lower.includes('university of cape coast')) {
+  // University of Cape Coast
+  if (lower.includes('cape coast') || lower === 'ucc' || lower.includes('ucc ')) {
     return 'University of Cape Coast (UCC)';
   }
   
-  // ============================================================
-  // TAKORADI TECHNICAL UNIVERSITY
-  // ============================================================
+  // Takoradi Technical University
   if (lower.includes('takoradi') && lower.includes('technical')) {
     return 'Takoradi Technical University';
   }
   
-  // ============================================================
-  // KUMASI TECHNICAL UNIVERSITY
-  // ============================================================
+  // Kumasi Technical University
   if (lower.includes('kumasi') && lower.includes('technical')) {
     return 'Kumasi Technical University';
   }
   
-  // ============================================================
-  // ACCRA TECHNICAL UNIVERSITY
-  // ============================================================
+  // Accra Technical University
   if (lower.includes('accra') && lower.includes('technical')) {
     return 'Accra Technical University';
   }
   
-  // ============================================================
-  // KOFORIDUA TECHNICAL UNIVERSITY
-  // ============================================================
+  // Koforidua Technical University
   if (lower.includes('koforidua') && lower.includes('technical')) {
     return 'Koforidua Technical University';
   }
   
-  // ============================================================
-  // SUNYANI TECHNICAL UNIVERSITY
-  // ============================================================
+  // Sunyani Technical University
   if (lower.includes('sunyani') && lower.includes('technical')) {
     return 'Sunyani Technical University';
   }
   
-  // ============================================================
-  // CAPE COAST TECHNICAL UNIVERSITY
-  // ============================================================
+  // Cape Coast Technical University
   if (lower.includes('cape coast') && lower.includes('technical')) {
     return 'Cape Coast Technical University';
   }
   
-  // ============================================================
-  // HO TECHNICAL UNIVERSITY
-  // ============================================================
+  // Ho Technical University
   if ((lower.includes('ho') || lower.includes('ho ')) && lower.includes('technical')) {
     return 'Ho Technical University';
   }
   
-  // ============================================================
-  // UNIVERSITY OF ENERGY AND NATURAL RESOURCES
-  // ============================================================
+  // University of Energy and Natural Resources
   if (lower.includes('energy') && lower.includes('natural resources')) {
     return 'University of Energy and Natural Resources';
   }
   
-  // ============================================================
-  // UNIVERSITY FOR DEVELOPMENT STUDIES
-  // ============================================================
-  if (lower.includes('development studies') || 
-      lower === 'uds' || 
-      lower.includes('uds ') ||
-      lower.includes('u.d.s') ||
-      lower.includes('university for development')) {
+  // University for Development Studies
+  if (lower.includes('development studies') || lower === 'uds' || lower.includes('uds ')) {
     return 'University for Development Studies (UDS)';
   }
   
-  // ============================================================
-  // PENTECOST UNIVERSITY
-  // ============================================================
+  // Pentecost University
   if (lower.includes('pentecost')) {
     return 'Pentecost University';
   }
   
-  // ============================================================
-  // UNIVERSITY OF PROFESSIONAL STUDIES
-  // ============================================================
-  if (lower.includes('professional studies') || 
-      lower === 'upsa' || 
-      lower.includes('upsa ') ||
-      lower.includes('u.p.s.a')) {
+  // University of Professional Studies
+  if (lower.includes('professional studies') || lower === 'upsa' || lower.includes('upsa ')) {
     return 'University of Professional Studies (UPSA)';
   }
   
-  // ============================================================
-  // GHANA COMMUNICATION TECHNOLOGY UNIVERSITY
-  // ============================================================
-  if (lower.includes('communication technology') || 
-      lower === 'gctu' || 
-      lower.includes('gctu ') ||
-      lower.includes('g.c.t.u')) {
+  // Ghana Communication Technology University
+  if (lower.includes('communication technology') || lower === 'gctu' || lower.includes('gctu ')) {
     return 'Ghana Communication Technology University (GCTU)';
   }
   
-  // ============================================================
-  // REGIONAL MARITIME UNIVERSITY
-  // ============================================================
-  if (lower.includes('maritime') || 
-      lower === 'rmu' || 
-      lower.includes('rmu ') ||
-      lower.includes('regional maritime')) {
+  // Regional Maritime University
+  if (lower.includes('maritime') || lower === 'rmu' || lower.includes('rmu ')) {
     return 'Regional Maritime University (RMU)';
   }
   
-  // ============================================================
-  // ALL NATIONS UNIVERSITY
-  // ============================================================
-  if (lower.includes('all nations') || 
-      lower === 'anu' || 
-      lower.includes('anu ')) {
+  // All Nations University
+  if (lower.includes('all nations') || lower === 'anu' || lower.includes('anu ')) {
     return 'All Nations University';
   }
   
-  // ============================================================
-  // ACCRA INSTITUTE OF TECHNOLOGY
-  // ============================================================
-  if (lower.includes('accra institute') || 
-      lower.includes('ait') ||
-      lower.includes('a.i.t')) {
+  // Accra Institute of Technology
+  if (lower.includes('accra institute') || lower.includes('ait')) {
     return 'Accra Institute of Technology (AIT)';
   }
   
-  // ============================================================
-  // KOFORIDUA POLYTECHNIC / KPoly
-  // ============================================================
-  if (lower.includes('koforidua poly') || 
-      lower === 'kpoly' || 
-      lower.includes('kpoly ') ||
-      lower.includes('k.poly') ||
-      lower.includes('koforidua polytechnic')) {
+  // Koforidua Polytechnic / KPoly
+  if (lower.includes('koforidua poly') || lower === 'kpoly' || lower.includes('kpoly ')) {
     return 'Koforidua Polytechnic (KPoly)';
   }
   
-  // ============================================================
-  // UNIVERSITY OF SKILLS TRAINING
-  // ============================================================
-  if (lower.includes('skills training') || 
-      lower.includes('entrepreneurial') ||
-      lower.includes('skills training and entrepreneurial')) {
+  // University of Skills Training
+  if (lower.includes('skills training') || lower.includes('entrepreneurial')) {
     return 'University of Skills Training and Entrepreneurial Development';
   }
   
-  // ============================================================
-  // CENTRAL UNIVERSITY
-  // ============================================================
+  // Central University
   if (lower.includes('central university')) {
     return 'Central University';
   }
   
-  // ============================================================
-  // WISCONSIN INTERNATIONAL UNIVERSITY
-  // ============================================================
+  // Wisconsin International University
   if (lower.includes('wisconsin')) {
     return 'Wisconsin International University';
   }
   
-  // ============================================================
-  // CHRISTIAN SERVICE UNIVERSITY
-  // ============================================================
+  // Christian Service University
   if (lower.includes('christian service')) {
     return 'Christian Service University';
   }
   
-  // ============================================================
-  // DATA LINK UNIVERSITY
-  // ============================================================
+  // Data Link University
   if (lower.includes('data link')) {
     return 'Data Link University';
   }
   
-  // ============================================================
-  // BLUE CREST UNIVERSITY
-  // ============================================================
+  // Blue Crest University
   if (lower.includes('blue crest')) {
     return 'Blue Crest University';
   }
   
-  // ============================================================
-  // GARDEN CITY UNIVERSITY
-  // ============================================================
+  // Garden City University
   if (lower.includes('garden city')) {
     return 'Garden City University';
   }
   
-  // ============================================================
-  // METHODIST UNIVERSITY
-  // ============================================================
+  // Methodist University
   if (lower.includes('methodist')) {
     return 'Methodist University';
   }
   
-  // ============================================================
-  // PRESBYTERIAN UNIVERSITY
-  // ============================================================
+  // Presbyterian University
   if (lower.includes('presbyterian')) {
     return 'Presbyterian University';
   }
   
-  // ============================================================
-  // VALLEY VIEW UNIVERSITY
-  // ============================================================
+  // Valley View University
   if (lower.includes('valley view')) {
     return 'Valley View University';
   }
   
-  // ============================================================
-  // ZION UNIVERSITY
-  // ============================================================
-  if (lower.includes('zion')) {
-    return 'Zion University';
-  }
-  
-  // ============================================================
-  // KENTUCKY UNIVERSITY
-  // ============================================================
-  if (lower.includes('kentucky')) {
-    return 'Kentucky University';
-  }
-  
-  // ============================================================
-  // HARVARD UNIVERSITY (just in case 😄)
-  // ============================================================
-  if (lower.includes('harvard')) {
-    return 'Harvard University';
-  }
-  
-  // Return cleaned version
   return cleaned;
 }
 
 // ============================================================
-// AGGRESSIVE PROGRAM CONSOLIDATION - CATCHES ALL VARIATIONS
+// AGGRESSIVE PROGRAM CONSOLIDATION
 // ============================================================
 function consolidateProgramName(raw) {
   if (!raw || typeof raw !== 'string') return raw;
   
   const lower = raw.toLowerCase().trim();
   
-  // Remove common prefixes for better matching
   const cleanForMatch = (str) => {
     return str
       .toLowerCase()
@@ -380,406 +250,233 @@ function consolidateProgramName(raw) {
   
   const cleanLower = cleanForMatch(raw);
   
-  // ============================================================
-  // ELECTRICAL/ELECTRONIC ENGINEERING - ALL VARIATIONS
-  // ============================================================
-  if (cleanLower.includes('electrical') || 
-      cleanLower.includes('electronic') || 
-      cleanLower.includes('elect/electron') || 
-      cleanLower.includes('electrical/electronic') ||
-      cleanLower.includes('electrical electronic') || 
-      cleanLower.includes('electrical and electronic') ||
-      cleanLower.includes('electrical & electronic') ||
-      lower === 'eee' ||
-      lower.includes('eee ')) {
+  // Electrical/Electronic Engineering
+  if (cleanLower.includes('electrical') || cleanLower.includes('electronic') || 
+      cleanLower.includes('elect/electron') || cleanLower.includes('electrical/electronic') ||
+      cleanLower.includes('electrical electronic') || cleanLower.includes('electrical and electronic') ||
+      cleanLower.includes('electrical & electronic') || lower === 'eee' || lower.includes('eee ')) {
     return 'BSc Electrical/Electronic Engineering';
   }
   
-  // ============================================================
-  // MECHANICAL ENGINEERING - ALL VARIATIONS
-  // ============================================================
-  if (cleanLower.includes('mechanical') || 
-      cleanLower.includes('mech') ||
-      lower === 'me' ||
-      lower.includes('me ') ||
-      cleanLower.includes('mechanical engineering')) {
+  // Mechanical Engineering
+  if (cleanLower.includes('mechanical') || cleanLower.includes('mech') ||
+      lower === 'me' || lower.includes('me ')) {
     return 'BSc Mechanical Engineering';
   }
   
-  // ============================================================
-  // CHEMICAL ENGINEERING
-  // ============================================================
-  if (cleanLower.includes('chemical') || 
-      cleanLower.includes('chem') ||
-      lower === 'che' ||
-      lower.includes('che ') ||
-      cleanLower.includes('chemical engineering')) {
+  // Chemical Engineering
+  if (cleanLower.includes('chemical') || cleanLower.includes('chem') ||
+      lower === 'che' || lower.includes('che ')) {
     return 'BSc Chemical Engineering';
   }
   
-  // ============================================================
-  // CIVIL ENGINEERING
-  // ============================================================
-  if (cleanLower.includes('civil') || 
-      lower === 'ce' || 
-      lower.includes('ce ') ||
-      cleanLower.includes('civil engineering')) {
+  // Civil Engineering
+  if (cleanLower.includes('civil') || lower === 'ce' || lower.includes('ce ')) {
     return 'BSc Civil Engineering';
   }
   
-  // ============================================================
-  // COMPUTER ENGINEERING
-  // ============================================================
-  if (cleanLower.includes('computer') || 
-      lower === 'cpe' || 
-      lower.includes('cpe ') ||
-      cleanLower.includes('computer engineering')) {
+  // Computer Engineering
+  if (cleanLower.includes('computer') || lower === 'cpe' || lower.includes('cpe ')) {
     return 'BSc Computer Engineering';
   }
   
-  // ============================================================
-  // INDUSTRIAL ENGINEERING
-  // ============================================================
-  if (cleanLower.includes('industrial') || 
-      lower === 'ie' || 
-      lower.includes('ie ') ||
-      cleanLower.includes('industrial engineering')) {
+  // Industrial Engineering
+  if (cleanLower.includes('industrial') || lower === 'ie' || lower.includes('ie ')) {
     return 'BSc Industrial Engineering';
   }
   
-  // ============================================================
-  // AGRICULTURAL ENGINEERING
-  // ============================================================
-  if (cleanLower.includes('agricultural') || 
-      cleanLower.includes('agric') ||
-      lower === 'age' ||
-      lower.includes('age ') ||
-      cleanLower.includes('agricultural engineering')) {
+  // Agricultural Engineering
+  if (cleanLower.includes('agricultural') || cleanLower.includes('agric') ||
+      lower === 'age' || lower.includes('age ')) {
     return 'BSc Agricultural Engineering';
   }
   
-  // ============================================================
-  // PETROLEUM ENGINEERING
-  // ============================================================
-  if (cleanLower.includes('petroleum') || 
-      cleanLower.includes('petrol') ||
-      lower === 'pe' ||
-      lower.includes('pe ') ||
-      cleanLower.includes('petroleum engineering')) {
+  // Petroleum Engineering
+  if (cleanLower.includes('petroleum') || cleanLower.includes('petrol') ||
+      lower === 'pe' || lower.includes('pe ')) {
     return 'BSc Petroleum Engineering';
   }
   
-  // ============================================================
-  // GEOLOGICAL ENGINEERING
-  // ============================================================
-  if (cleanLower.includes('geological') || 
-      cleanLower.includes('geo') ||
-      lower === 'ge' ||
-      lower.includes('ge ') ||
-      cleanLower.includes('geological engineering')) {
+  // Geological Engineering
+  if (cleanLower.includes('geological') || cleanLower.includes('geo') ||
+      lower === 'ge' || lower.includes('ge ')) {
     return 'BSc Geological Engineering';
   }
   
-  // ============================================================
-  // GEOMATIC ENGINEERING
-  // ============================================================
-  if (cleanLower.includes('geomatic') ||
-      cleanLower.includes('geomatic engineering')) {
+  // Geomatic Engineering
+  if (cleanLower.includes('geomatic')) {
     return 'BSc Geomatic Engineering';
   }
   
-  // ============================================================
-  // MATERIALS ENGINEERING
-  // ============================================================
-  if (cleanLower.includes('materials') || 
-      cleanLower.includes('material') ||
-      lower === 'mte' ||
-      lower.includes('mte ') ||
-      cleanLower.includes('materials engineering')) {
+  // Materials Engineering
+  if (cleanLower.includes('materials') || cleanLower.includes('material') ||
+      lower === 'mte' || lower.includes('mte ')) {
     return 'BSc Materials Engineering';
   }
   
-  // ============================================================
-  // TELECOMMUNICATIONS ENGINEERING
-  // ============================================================
-  if (cleanLower.includes('telecommunications') || 
-      cleanLower.includes('telecom') ||
-      cleanLower.includes('telecommunication') ||
-      lower === 'tele' ||
-      lower.includes('tele ') ||
-      cleanLower.includes('telecommunications engineering')) {
+  // Telecommunications Engineering
+  if (cleanLower.includes('telecommunications') || cleanLower.includes('telecom') ||
+      cleanLower.includes('telecommunication') || lower === 'tele' || lower.includes('tele ')) {
     return 'BSc Telecommunications Engineering';
   }
   
-  // ============================================================
-  // RENEWABLE ENERGY ENGINEERING
-  // ============================================================
-  if (cleanLower.includes('renewable') || 
-      cleanLower.includes('energy') ||
-      cleanLower.includes('renewable energy')) {
+  // Renewable Energy Engineering
+  if (cleanLower.includes('renewable') || cleanLower.includes('energy')) {
     return 'BSc Renewable Energy Engineering';
   }
   
-  // ============================================================
-  // AUTOMOBILE ENGINEERING
-  // ============================================================
-  if (cleanLower.includes('automobile') || 
-      cleanLower.includes('auto') ||
-      cleanLower.includes('automobile engineering')) {
+  // Automobile Engineering
+  if (cleanLower.includes('automobile') || cleanLower.includes('auto')) {
     return 'BSc Automobile Engineering';
   }
   
-  // ============================================================
-  // INFORMATION TECHNOLOGY
-  // ============================================================
-  if (cleanLower.includes('information technology') || 
-      cleanLower.includes('info tech') ||
-      lower === 'it' ||
-      lower.includes('it ') ||
-      cleanLower.includes('information technology management') ||
-      cleanLower.includes('business information technology')) {
+  // Information Technology
+  if (cleanLower.includes('information technology') || cleanLower.includes('info tech') ||
+      lower === 'it' || lower.includes('it ')) {
     return 'BSc Information Technology';
   }
   
-  // ============================================================
-  // INFORMATION SYSTEMS
-  // ============================================================
-  if (cleanLower.includes('information systems') || 
-      cleanLower.includes('info systems') ||
-      cleanLower.includes('information system')) {
+  // Information Systems
+  if (cleanLower.includes('information systems') || cleanLower.includes('info systems')) {
     return 'BSc Information Systems';
   }
   
-  // ============================================================
-  // BIOMEDICAL ENGINEERING
-  // ============================================================
-  if (cleanLower.includes('biomedical') || 
-      cleanLower.includes('bio medical') ||
-      cleanLower.includes('biomedical engineering')) {
+  // Biomedical Engineering
+  if (cleanLower.includes('biomedical') || cleanLower.includes('bio medical')) {
     return 'BSc Biomedical Engineering';
   }
   
-  // ============================================================
-  // MINERALS ENGINEERING
-  // ============================================================
-  if (cleanLower.includes('minerals') || 
-      cleanLower.includes('mining') ||
-      cleanLower.includes('minerals engineering')) {
+  // Minerals Engineering
+  if (cleanLower.includes('minerals') || cleanLower.includes('mining')) {
     return 'BSc Minerals Engineering';
   }
   
-  // ============================================================
-  // PSYCHOLOGY
-  // ============================================================
-  if (cleanLower.includes('psychology') || 
-      cleanLower.includes('psych')) {
+  // Psychology
+  if (cleanLower.includes('psychology') || cleanLower.includes('psych')) {
     return 'BA Psychology';
   }
   
-  // ============================================================
-  // POLITICAL SCIENCE
-  // ============================================================
-  if (cleanLower.includes('political science') || 
-      cleanLower.includes('politics') ||
+  // Political Science
+  if (cleanLower.includes('political science') || cleanLower.includes('politics') ||
       cleanLower.includes('political')) {
     return 'BA Political Science';
   }
   
-  // ============================================================
-  // LABORATORY TECHNOLOGY
-  // ============================================================
-  if (cleanLower.includes('laboratory') || 
-      cleanLower.includes('lab') ||
-      cleanLower.includes('laboratory technology')) {
+  // Laboratory Technology
+  if (cleanLower.includes('laboratory') || cleanLower.includes('lab')) {
     return 'BSc Laboratory Technology';
   }
   
-  // ============================================================
-  // FOOD SCIENCE
-  // ============================================================
-  if (cleanLower.includes('food science') || 
-      cleanLower.includes('food') ||
-      cleanLower.includes('food science and postharvest technology')) {
+  // Food Science
+  if (cleanLower.includes('food science') || cleanLower.includes('food')) {
     return 'BSc Food Science and Postharvest Technology';
   }
   
-  // ============================================================
-  // STATISTICS AND MATHEMATICS
-  // ============================================================
+  // Statistics and Mathematics
   if ((cleanLower.includes('statistics') || cleanLower.includes('stat')) && 
       (cleanLower.includes('mathematics') || cleanLower.includes('math'))) {
     return 'BSc Statistics and Mathematics';
   }
   
-  // ============================================================
-  // MATHEMATICS
-  // ============================================================
-  if (cleanLower.includes('mathematics') || 
-      cleanLower.includes('math') ||
-      lower === 'maths' ||
-      lower.includes('maths ')) {
+  // Mathematics
+  if (cleanLower.includes('mathematics') || cleanLower.includes('math') ||
+      lower === 'maths' || lower.includes('maths ')) {
     return 'BSc Mathematics';
   }
   
-  // ============================================================
-  // STATISTICS
-  // ============================================================
-  if (cleanLower.includes('statistics') || 
-      cleanLower.includes('stat')) {
+  // Statistics
+  if (cleanLower.includes('statistics') || cleanLower.includes('stat')) {
     return 'BSc Statistics';
   }
   
-  // ============================================================
-  // ACCOUNTING
-  // ============================================================
+  // Accounting
   if (cleanLower.includes('accounting')) {
     return 'BSc Accounting';
   }
   
-  // ============================================================
-  // ACCOUNTING AND ECONOMICS
-  // ============================================================
+  // Accounting and Economics
   if (cleanLower.includes('accounting') && cleanLower.includes('economics')) {
     return 'BSc Accounting and Economics';
   }
   
-  // ============================================================
-  // ECONOMICS
-  // ============================================================
+  // Economics
   if (cleanLower.includes('economics')) {
     return 'BSc Economics';
   }
   
-  // ============================================================
-  // BUSINESS ADMINISTRATION / MANAGEMENT
-  // ============================================================
-  if (cleanLower.includes('business administration') || 
-      cleanLower.includes('business admin') ||
-      cleanLower.includes('management') ||
-      cleanLower.includes('admin') || 
-      cleanLower.includes('secretariat') ||
-      cleanLower.includes('secretariatship')) {
+  // Business Administration
+  if (cleanLower.includes('business administration') || cleanLower.includes('business admin') ||
+      cleanLower.includes('management') || cleanLower.includes('admin') || 
+      cleanLower.includes('secretariat') || cleanLower.includes('secretariatship')) {
     return 'Business Administration';
   }
   
-  // ============================================================
-  // MARKETING
-  // ============================================================
+  // Marketing
   if (cleanLower.includes('marketing')) {
     return 'BSc Marketing';
   }
   
-  // ============================================================
-  // HUMAN RESOURCE MANAGEMENT
-  // ============================================================
-  if (cleanLower.includes('human resource') || 
-      cleanLower.includes('hr')) {
+  // Human Resource Management
+  if (cleanLower.includes('human resource') || cleanLower.includes('hr')) {
     return 'BSc Human Resource Management';
   }
   
-  // ============================================================
-  // PUBLIC ADMINISTRATION
-  // ============================================================
+  // Public Administration
   if (cleanLower.includes('public administration')) {
     return 'BSc Public Administration';
   }
   
-  // ============================================================
-  // PUBLIC HEALTH
-  // ============================================================
+  // Public Health
   if (cleanLower.includes('public health')) {
     return 'BSc Public Health';
   }
   
-  // ============================================================
-  // NURSING
-  // ============================================================
+  // Nursing
   if (cleanLower.includes('nursing')) {
     return 'BSc Nursing';
   }
   
-  // ============================================================
-  // MIDWIFERY
-  // ============================================================
+  // Midwifery
   if (cleanLower.includes('midwifery')) {
     return 'BSc Midwifery';
   }
   
-  // ============================================================
-  // ARCHITECTURE
-  // ============================================================
+  // Architecture
   if (cleanLower.includes('architecture')) {
     return 'BSc Architecture';
   }
   
-  // ============================================================
-  // ESTATE MANAGEMENT
-  // ============================================================
-  if (cleanLower.includes('estate management') || 
-      cleanLower.includes('estate')) {
+  // Estate Management
+  if (cleanLower.includes('estate management') || cleanLower.includes('estate')) {
     return 'BSc Estate Management';
   }
   
-  // ============================================================
-  // QUANTITY SURVEYING
-  // ============================================================
-  if (cleanLower.includes('quantity surveying') || 
-      cleanLower.includes('surveying')) {
+  // Quantity Surveying
+  if (cleanLower.includes('quantity surveying') || cleanLower.includes('surveying')) {
     return 'BSc Quantity Surveying';
   }
   
-  // ============================================================
-  // ARTS
-  // ============================================================
-  if (cleanLower.includes('arts') || 
-      lower.includes('ba ') || 
-      lower.includes('b.a ') ||
-      cleanLower.includes('ba arts')) {
+  // Arts
+  if (cleanLower.includes('arts') || lower.includes('ba ') || lower.includes('b.a ')) {
     return 'BA Arts';
   }
   
-  // ============================================================
-  // BIOLOGICAL SCIENCES
-  // ============================================================
-  if (cleanLower.includes('biological') || 
-      cleanLower.includes('biology')) {
+  // Biological Sciences
+  if (cleanLower.includes('biological') || cleanLower.includes('biology')) {
     return 'BSc Biological Sciences';
   }
   
-  // ============================================================
-  // CHEMISTRY
-  // ============================================================
+  // Chemistry
   if (cleanLower.includes('chemistry')) {
     return 'BSc Chemistry';
   }
   
-  // ============================================================
-  // PHYSICS
-  // ============================================================
+  // Physics
   if (cleanLower.includes('physics')) {
     return 'BSc Physics';
   }
   
-  // ============================================================
-  // If we have "BSc" or "BA" in the original, clean it up
-  // ============================================================
-  if (raw.includes('BSc') || raw.includes('B.Sc') || raw.includes('B sc') || raw.includes('Bachelor')) {
-    let cleaned = raw.replace(/BSc|B\.Sc|B Sc|Bachelor/g, '').trim();
-    cleaned = cleaned.split(' ').map(word => 
-      word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
-    ).join(' ');
-    if (cleaned && cleaned.length > 2) return `BSc ${cleaned}`;
-  }
-  
-  if (raw.includes('BA') || raw.includes('B.A') || raw.includes('B A')) {
-    let cleaned = raw.replace(/BA|B\.A|B A/g, '').trim();
-    cleaned = cleaned.split(' ').map(word => 
-      word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
-    ).join(' ');
-    if (cleaned && cleaned.length > 2) return `BA ${cleaned}`;
-  }
-  
-  // Default - clean up and return
+  // Default - clean up
   let cleaned = raw
     .replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, ' ')
     .replace(/\s+/g, ' ')
@@ -793,70 +490,24 @@ function consolidateProgramName(raw) {
 }
 
 // ============================================================
-// GET UNIQUE MASTER NAMES WITH MERGING
+// GET UNIQUE MASTER NAMES
 // ============================================================
 function getUniqueMasterNames(rawItems, consolidateFn) {
   if (!rawItems || rawItems.length === 0) return { groups: [], masterToRawMap: {} };
   
   const map = {};
-  const rawToMasterMap = {};
   
-  // First pass: consolidate all items
   rawItems.forEach(raw => {
     const consolidated = consolidateFn(raw);
     if (!map[consolidated]) {
       map[consolidated] = [];
     }
     map[consolidated].push(raw);
-    rawToMasterMap[raw] = consolidated;
-  });
-  
-  // Second pass: merge similar master names (case insensitive)
-  const masterNames = Object.keys(map);
-  const mergedMap = {};
-  const processed = new Set();
-  
-  masterNames.forEach(name1 => {
-    if (processed.has(name1)) return;
-    
-    const group = [name1];
-    processed.add(name1);
-    
-    masterNames.forEach(name2 => {
-      if (processed.has(name2)) return;
-      
-      // Check if names are similar (case insensitive)
-      const n1 = name1.toLowerCase();
-      const n2 = name2.toLowerCase();
-      
-      // If one contains the other or they share significant words
-      const words1 = n1.split(' ');
-      const words2 = n2.split(' ');
-      const commonWords = words1.filter(w => words2.includes(w) && w.length > 3);
-      
-      if (commonWords.length >= 2 || n1.includes(n2) || n2.includes(n1)) {
-        processed.add(name2);
-        group.push(name2);
-      }
-    });
-    
-    // Use the longest name as master
-    const master = group.reduce((a, b) => a.length >= b.length ? a : b);
-    mergedMap[master] = [];
-    
-    group.forEach(name => {
-      // Merge all raw items from this group
-      map[name].forEach(raw => {
-        if (!mergedMap[master].includes(raw)) {
-          mergedMap[master].push(raw);
-        }
-      });
-    });
   });
   
   return { 
-    groups: Object.keys(mergedMap), 
-    masterToRawMap: mergedMap 
+    groups: Object.keys(map), 
+    masterToRawMap: map 
   };
 }
 
@@ -906,6 +557,7 @@ export default function AdminDashboard() {
   const [selectedProgramOptions, setSelectedProgramOptions] = useState([]);
   const [minScore, setMinScore] = useState(0);
   const [maxScore, setMaxScore] = useState(100);
+  const [expandedUniversity, setExpandedUniversity] = useState(null);
 
   const [stats, setStats] = useState({
     totalSupervisors: 0,
@@ -921,6 +573,7 @@ export default function AdminDashboard() {
   const [allCandidates, setAllCandidates] = useState([]);
   const [recentCandidates, setRecentCandidates] = useState([]);
   const [allResults, setAllResults] = useState([]);
+  const [candidateAssessmentsData, setCandidateAssessmentsData] = useState([]);
 
   // ============================================================
   // DATA PREPARATION
@@ -943,18 +596,28 @@ export default function AdminDashboard() {
       }
     });
 
+    // Create a map of candidate assessment status
+    const statusMap = {};
+    candidateAssessmentsData.forEach(ca => {
+      if (!statusMap[ca.user_id]) {
+        statusMap[ca.user_id] = [];
+      }
+      statusMap[ca.user_id].push(ca.status);
+    });
+
     return allCandidates.map(c => ({
       ...c,
       score: scoreMap[c.id] || 0,
       hasResult: !!scoreMap[c.id],
       resultDetails: resultMap[c.id] || null,
       consolidatedProgram: consolidateProgramName(c.programme),
-      consolidatedUniversity: consolidateUniversityName(c.university)
+      consolidatedUniversity: consolidateUniversityName(c.university),
+      assessmentStatuses: statusMap[c.id] || ['not_started']
     }));
-  }, [allCandidates, allResults]);
+  }, [allCandidates, allResults, candidateAssessmentsData]);
 
   // ============================================================
-  // GROUP NORMALIZATION - USING AGGRESSIVE CONSOLIDATION
+  // GROUP NORMALIZATION
   // ============================================================
   const rawUniversities = useMemo(() => candidatesWithScores.map(c => c.university).filter(Boolean), [candidatesWithScores]);
   const rawPrograms = useMemo(() => candidatesWithScores.map(c => c.programme).filter(Boolean), [candidatesWithScores]);
@@ -963,48 +626,65 @@ export default function AdminDashboard() {
   const progGroup = useMemo(() => getUniqueMasterNames(rawPrograms, consolidateProgramName), [rawPrograms]);
 
   // ============================================================
-  // DEBUG: Log all unique universities and programs
+  // UNIVERSITY BREAKDOWN - WITH STATUS COUNTS
   // ============================================================
-  useEffect(() => {
-    // Log all unique universities and their consolidated versions
-    const unis = candidatesWithScores.map(c => c.university).filter(Boolean);
-    const uniqueUnis = [...new Set(unis)];
+  const universityBreakdown = useMemo(() => {
+    const map = {};
     
-    console.log('=== ALL UNIQUE UNIVERSITIES (' + uniqueUnis.length + ' total) ===');
-    const uniMap = {};
-    uniqueUnis.forEach(u => {
-      const consolidated = consolidateUniversityName(u);
-      if (!uniMap[consolidated]) uniMap[consolidated] = [];
-      uniMap[consolidated].push(u);
+    candidatesWithScores.forEach(c => {
+      if (!c.university) return;
+      const name = c.consolidatedUniversity || c.university;
+      
+      if (!map[name]) {
+        map[name] = {
+          total: 0,
+          completed: 0,
+          inProgress: 0,
+          notStarted: 0,
+          blocked: 0,
+          unblocked: 0,
+          programs: {},
+          candidates: []
+        };
+      }
+      
+      map[name].total += 1;
+      map[name].candidates.push(c);
+      
+      // Determine status
+      const statuses = c.assessmentStatuses || ['not_started'];
+      const hasCompleted = statuses.some(s => s === 'completed');
+      const hasInProgress = statuses.some(s => s === 'in_progress');
+      const hasBlocked = statuses.some(s => s === 'blocked');
+      const hasUnblocked = statuses.some(s => s === 'unblocked');
+      
+      if (hasCompleted) {
+        map[name].completed += 1;
+      } else if (hasInProgress) {
+        map[name].inProgress += 1;
+      } else if (hasBlocked) {
+        map[name].blocked += 1;
+      } else if (hasUnblocked) {
+        map[name].unblocked += 1;
+      } else {
+        map[name].notStarted += 1;
+      }
+      
+      // Track programs
+      const prog = c.consolidatedProgram || c.programme || 'Unknown';
+      if (!map[name].programs[prog]) {
+        map[name].programs[prog] = 0;
+      }
+      map[name].programs[prog] += 1;
     });
     
-    const sortedUnis = Object.keys(uniMap).sort((a, b) => uniMap[b].length - uniMap[a].length);
-    sortedUnis.forEach(master => {
-      console.log(`\n📌 MASTER: "${master}" (${uniMap[master].length} variations)`);
-      uniMap[master].forEach(raw => {
-        console.log(`   └─ "${raw}"`);
-      });
-    });
-    
-    // Log all unique programs and their consolidated versions
-    const progs = candidatesWithScores.map(c => c.programme).filter(Boolean);
-    const uniqueProgs = [...new Set(progs)];
-    
-    console.log('\n\n=== ALL UNIQUE PROGRAMS (' + uniqueProgs.length + ' total) ===');
-    const progMap = {};
-    uniqueProgs.forEach(p => {
-      const consolidated = consolidateProgramName(p);
-      if (!progMap[consolidated]) progMap[consolidated] = [];
-      progMap[consolidated].push(p);
-    });
-    
-    const sortedProgs = Object.keys(progMap).sort((a, b) => progMap[b].length - progMap[a].length);
-    sortedProgs.forEach(master => {
-      console.log(`\n📌 MASTER: "${master}" (${progMap[master].length} variations)`);
-      progMap[master].forEach(raw => {
-        console.log(`   └─ "${raw}"`);
-      });
-    });
+    return Object.entries(map).map(([name, data]) => ({
+      name,
+      ...data,
+      programs: Object.entries(data.programs)
+        .sort((a, b) => b[1] - a[1])
+        .map(([prog, count]) => ({ name: prog, count }))
+    })).sort((a, b) => b.total - a.total);
   }, [candidatesWithScores]);
 
   // ============================================================
@@ -1046,14 +726,9 @@ export default function AdminDashboard() {
     const map = {};
     filteredCandidates.forEach(c => {
       if (!c.university) return;
-      // Use consolidated name for grouping
       const name = c.consolidatedUniversity || c.university;
       if (!map[name]) {
-        map[name] = { 
-          candidates: 0, 
-          scoreTotal: 0,
-          rawNames: new Set()
-        };
+        map[name] = { candidates: 0, scoreTotal: 0, rawNames: new Set() };
       }
       map[name].candidates += 1;
       map[name].scoreTotal += c.score;
@@ -1071,14 +746,9 @@ export default function AdminDashboard() {
     const map = {};
     filteredCandidates.forEach(c => {
       if (!c.programme) return;
-      // Use consolidated name for grouping
       const name = c.consolidatedProgram || c.programme;
       if (!map[name]) {
-        map[name] = { 
-          candidates: 0, 
-          scoreTotal: 0,
-          rawVariants: new Set()
-        };
+        map[name] = { candidates: 0, scoreTotal: 0, rawVariants: new Set() };
       }
       map[name].candidates += 1;
       map[name].scoreTotal += c.score;
@@ -1108,7 +778,7 @@ export default function AdminDashboard() {
   const filteredTotalCandidates = filteredCandidates.length;
 
   // ============================================================
-  // PIE CHARTS - SHOW ALL GROUPS (NO "OTHERS" CATEGORY)
+  // PIE CHARTS - SHOW ALL GROUPS
   // ============================================================
   const filteredUniversityPieData = useMemo(() => {
     const labels = filteredUniversityAnalytics.map(u => u.name);
@@ -1165,6 +835,10 @@ export default function AdminDashboard() {
     setSelectedProgramOptions([]);
     setMinScore(0);
     setMaxScore(100);
+  };
+
+  const toggleUniversityExpand = (name) => {
+    setExpandedUniversity(expandedUniversity === name ? null : name);
   };
 
   // ============================================================
@@ -1249,7 +923,7 @@ export default function AdminDashboard() {
         supabase.from("candidate_assessments").select("*", { count: "exact", head: true }).eq("status", "completed"),
         supabase.from("assessment_results").select("*", { count: "exact", head: true }),
         supabase.from("assessment_sessions").select("*", { count: "exact", head: true }).eq("status", "in_progress"),
-        supabase.from("candidate_assessments").select("status"),
+        supabase.from("candidate_assessments").select("*"),
         supabase
           .from("candidate_profiles")
           .select("id, full_name, email, university, programme, created_at")
@@ -1274,7 +948,6 @@ export default function AdminDashboard() {
           .order("completed_at", { ascending: false })
       ]);
 
-      // Log any errors
       if (supervisorCount.error) console.error("Supervisor count error:", supervisorCount.error);
       if (candidateCount.error) console.error("Candidate count error:", candidateCount.error);
       if (assessmentCount.error) console.error("Assessment count error:", assessmentCount.error);
@@ -1300,6 +973,7 @@ export default function AdminDashboard() {
       setAllCandidates(allCandidatesResponse?.data || []);
       setRecentCandidates(recentCandidatesResponse?.data || []);
       setAllResults(resultsResponse?.data || []);
+      setCandidateAssessmentsData(accessRows || []);
       
       console.log("Fetched results count:", resultsResponse?.data?.length || 0);
       console.log("Candidates count:", allCandidatesResponse?.data?.length || 0);
@@ -1433,7 +1107,71 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* PIE CHARTS - SHOW ALL GROUPS, NO "OTHERS" */}
+        {/* ============================================================
+            🟢 UNIVERSITY BREAKDOWN TABLE - NEW!
+            ============================================================ */}
+        <div style={styles.breakdownContainer}>
+          <h2 style={styles.breakdownTitle}>University Breakdown</h2>
+          <div style={styles.breakdownTableWrapper}>
+            <table style={styles.breakdownTable}>
+              <thead>
+                <tr>
+                  <th style={styles.breakdownTh}>University</th>
+                  <th style={styles.breakdownTh}>Total</th>
+                  <th style={styles.breakdownTh}>✅ Completed</th>
+                  <th style={styles.breakdownTh}>🔄 In Progress</th>
+                  <th style={styles.breakdownTh}>⏳ Not Started</th>
+                  <th style={styles.breakdownTh}>🔒 Blocked</th>
+                  <th style={styles.breakdownTh}>🔓 Unblocked</th>
+                  <th style={styles.breakdownTh}>Programs</th>
+                </tr>
+              </thead>
+              <tbody>
+                {universityBreakdown.map((uni) => (
+                  <tr key={uni.name} style={styles.breakdownTr}>
+                    <td style={styles.breakdownTd}><strong>{uni.name}</strong></td>
+                    <td style={styles.breakdownTd}>{uni.total}</td>
+                    <td style={{ ...styles.breakdownTd, color: '#2e7d32', fontWeight: 600 }}>{uni.completed}</td>
+                    <td style={{ ...styles.breakdownTd, color: '#f57c00', fontWeight: 600 }}>{uni.inProgress}</td>
+                    <td style={{ ...styles.breakdownTd, color: '#94a3b8' }}>{uni.notStarted}</td>
+                    <td style={{ ...styles.breakdownTd, color: '#c62828', fontWeight: 600 }}>{uni.blocked}</td>
+                    <td style={{ ...styles.breakdownTd, color: '#1565c0', fontWeight: 600 }}>{uni.unblocked}</td>
+                    <td style={styles.breakdownTd}>
+                      <button 
+                        onClick={() => toggleUniversityExpand(uni.name)}
+                        style={styles.expandButton}
+                      >
+                        {expandedUniversity === uni.name ? 'Hide Programs' : `Show ${uni.programs.length} Programs`}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {expandedUniversity && (
+                  <tr>
+                    <td colSpan="8" style={styles.expandedRow}>
+                      <div style={styles.programBreakdown}>
+                        <h4 style={styles.programBreakdownTitle}>
+                          Program Distribution for {expandedUniversity}
+                        </h4>
+                        <div style={styles.programTags}>
+                          {universityBreakdown
+                            .find(u => u.name === expandedUniversity)
+                            ?.programs.map((prog, idx) => (
+                              <span key={idx} style={styles.programTag}>
+                                {prog.name}: <strong>{prog.count}</strong>
+                              </span>
+                            ))}
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* PIE CHARTS */}
         <div style={styles.pieChartGrid}>
           <div style={styles.chartCard}>
             <h4 style={styles.chartTitle}>University Distribution {selectedUniversityOption ? `(${selectedUniversityOption.label})` : '(All)'}</h4>
@@ -1778,6 +1516,99 @@ const styles = {
     color: '#334155',
     fontWeight: '600'
   },
+  // ============================================================
+  // UNIVERSITY BREAKDOWN STYLES
+  // ============================================================
+  breakdownContainer: {
+    background: 'white',
+    borderRadius: '12px',
+    padding: '20px',
+    marginBottom: '24px',
+    border: '1px solid #eef2f7',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+    overflowX: 'auto'
+  },
+  breakdownTitle: {
+    fontSize: '18px',
+    fontWeight: 600,
+    color: '#0a1929',
+    margin: '0 0 16px 0'
+  },
+  breakdownTableWrapper: {
+    overflowX: 'auto'
+  },
+  breakdownTable: {
+    width: '100%',
+    borderCollapse: 'collapse',
+    fontSize: '14px'
+  },
+  breakdownTh: {
+    padding: '10px 12px',
+    textAlign: 'left',
+    fontWeight: 600,
+    color: '#475569',
+    borderBottom: '2px solid #e2e8f0',
+    fontSize: '12px',
+    textTransform: 'uppercase',
+    letterSpacing: '0.05em',
+    background: '#f8fafc',
+    whiteSpace: 'nowrap'
+  },
+  breakdownTr: {
+    borderBottom: '1px solid #e2e8f0',
+    '&:hover': {
+      background: '#f8fafc'
+    }
+  },
+  breakdownTd: {
+    padding: '10px 12px',
+    fontSize: '14px',
+    color: '#1a202c',
+    verticalAlign: 'middle'
+  },
+  expandButton: {
+    padding: '4px 12px',
+    background: '#e2e8f0',
+    border: 'none',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    fontSize: '12px',
+    color: '#334155',
+    fontWeight: 500,
+    '&:hover': {
+      background: '#d0d8e0'
+    }
+  },
+  expandedRow: {
+    padding: '16px 20px',
+    background: '#f8fafc'
+  },
+  programBreakdown: {
+    padding: '12px 16px'
+  },
+  programBreakdownTitle: {
+    fontSize: '14px',
+    fontWeight: 600,
+    color: '#0a1929',
+    margin: '0 0 12px 0'
+  },
+  programTags: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '8px'
+  },
+  programTag: {
+    padding: '4px 12px',
+    background: 'white',
+    borderRadius: '4px',
+    border: '1px solid #e2e8f0',
+    fontSize: '12px',
+    color: '#475569',
+    whiteSpace: 'nowrap'
+  },
+  // ============================================================
+  // CHART STYLES
+  // ============================================================
   pieChartGrid: {
     display: 'grid',
     gridTemplateColumns: '1fr 1fr',
