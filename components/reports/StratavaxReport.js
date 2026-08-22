@@ -1,4 +1,5 @@
-// components/reports/StratavaxReport.js - FULLY CORRECTED WITH TIME TRACKING
+// components/reports/StratavaxReport.js - FULLY CORRECTED WITH BEHAVIORAL MATRIX FIX
+// FIX: Properly extracts proctoring data from proctoring_data.summary
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../supabase/client';
@@ -11,19 +12,6 @@ import {
   generalReportPhrases,
   scoreLevelPhrases
 } from '../../utils/phraseLibrary';
-
-function safeNumber(value, fallback = 0) {
-  const num = Number(value);
-  return Number.isFinite(num) ? num : fallback;
-}
-
-function safeText(value, fallback = '') {
-  return (value === null || value === undefined) ? fallback : String(value);
-}
-
-function safeArray(value) {
-  return Array.isArray(value) ? value : [];
-}
 
 // ============================================================
 // FORMAT TIME HELPERS
@@ -42,6 +30,74 @@ function formatAvgTime(seconds) {
   const minutes = Math.floor(seconds / 60);
   const secs = Math.round(seconds % 60);
   return `${minutes}m ${secs}s`;
+}
+
+// ============================================================
+// EXTRACT BEHAVIORAL MATRIX - FIXED FOR CORRECT DATA STRUCTURE
+// ============================================================
+function extractBehavioralMatrix(report) {
+  if (!report) return null;
+
+  // Get the report_data
+  const reportData = report.report_data || report || {};
+  
+  // ✅ FIX: Correctly access proctoring_data from the report
+  let proctoringData = report.proctoring_data || reportData.proctoring || null;
+  
+  if (!proctoringData) {
+    console.log('[Behavioral Matrix] No proctoring data found');
+    return null;
+  }
+
+  // ✅ FIX: Extract summary data from proctoring_data
+  const summary = proctoringData.summary || proctoringData;
+  
+  console.log('[Behavioral Matrix] Extracted summary:', summary);
+
+  // Get duration from summary
+  const totalSeconds = summary.duration || 0;
+  const totalDurationFormatted = formatTime(totalSeconds);
+  
+  // Calculate avg time per question
+  const totalQuestions = reportData.totalQuestions || report.totalQuestions || 10;
+  const avgTimePerQuestion = totalSeconds > 0 ? formatAvgTime(totalSeconds / totalQuestions) : '0s';
+
+  // Extract all values from summary
+  const matrix = {
+    totalTime: totalDurationFormatted,
+    avgTimePerQuestion: avgTimePerQuestion,
+    answerChanges: summary.answerChanges || 0,
+    tabSwitches: summary.tabSwitches || 0,
+    violations: summary.totalViolations || 0,
+    copyPasteAttempts: summary.copyPasteAttempts || 0,
+    rightClickAttempts: summary.rightClickAttempts || 0,
+    riskLevel: summary.riskLevel || 'Low Risk',
+    riskScore: summary.riskScore || 0,
+    externalUrlsVisited: summary.externalUrlsVisited || 0,
+    riskFactors: proctoringData.riskFactors || [],
+    flags: {
+      violations: summary.totalViolations || 0,
+      tabSwitches: summary.tabSwitches || 0,
+      answerChanges: summary.answerChanges || 0
+    },
+    _raw: proctoringData
+  };
+
+  console.log('[Behavioral Matrix] Extracted matrix:', matrix);
+  return matrix;
+}
+
+function safeNumber(value, fallback = 0) {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : fallback;
+}
+
+function safeText(value, fallback = '') {
+  return (value === null || value === undefined) ? fallback : String(value);
+}
+
+function safeArray(value) {
+  return Array.isArray(value) ? value : [];
 }
 
 function getLevelLabel(score) {
@@ -729,18 +785,25 @@ export default function StratavaxReport({
   // Extract report data
   const reportData = result?.report_data || result || {};
   
-  // Get time data from report_data
-  const totalSeconds = reportData.totalSeconds || result?.total_seconds || 0;
-  const totalDurationFormatted = reportData.totalDurationFormatted || formatTime(totalSeconds);
-  const avgTimePerQuestion = reportData.avgTimePerQuestion || formatAvgTime(totalSeconds / (reportData.totalQuestions || 10));
-
-  const behavioralMatrix = propBehavioralMatrix !== undefined ? propBehavioralMatrix : localBehavioralMatrix;
+  // Extract behavioral matrix from report data
+  const extractedMatrix = extractBehavioralMatrix(result || reportData);
+  
+  const behavioralMatrix = 
+    extractedMatrix || 
+    propBehavioralMatrix !== undefined ? propBehavioralMatrix : 
+    localBehavioralMatrix;
+    
   const loadingBehavioral = propLoadingBehavioral !== undefined ? propLoadingBehavioral : localLoadingBehavioral;
   const hasBehavioralData = behavioralMatrix !== null && behavioralMatrix !== undefined;
 
   useEffect(() => {
+    if (extractedMatrix) {
+      console.log('[StratavaxReport] Using extracted matrix from report');
+      return;
+    }
+    
     if (propBehavioralMatrix !== undefined) {
-      console.log('[StratavaxReport] Using behavioralMatrix from props:', propBehavioralMatrix);
+      console.log('[StratavaxReport] Using behavioralMatrix from props');
       return;
     }
 
@@ -748,7 +811,7 @@ export default function StratavaxReport({
     if (resultId) {
       fetchBehavioralMatrix(resultId);
     }
-  }, [result, propBehavioralMatrix]);
+  }, [result, propBehavioralMatrix, extractedMatrix]);
 
   const fetchBehavioralMatrix = async (id) => {
     try {
@@ -1106,7 +1169,7 @@ export default function StratavaxReport({
       </div>
 
       {/* ============================================================
-          BEHAVIORAL MATRIX SECTION - WITH TIME TRACKING
+          BEHAVIORAL MATRIX SECTION - WITH FIXED EXTRACTION
           ============================================================ */}
       <div style={styles.behavioralToggleContainer}>
         <button onClick={toggleBehavioral} style={styles.behavioralToggleButton}>
@@ -1129,50 +1192,43 @@ export default function StratavaxReport({
                 <div style={styles.behavioralStat}>
                   <span style={styles.behavioralLabel}>Total Time</span>
                   <span style={styles.behavioralValue}>
-                    {behavioralMatrix.totalTime || 
-                     behavioralMatrix.timing?.totalTimeFormatted || 
-                     totalDurationFormatted ||
-                     formatTime(behavioralMatrix.timing?.totalTimeSeconds || totalSeconds || 0)}
+                    {behavioralMatrix.totalTime || '00:00:00'}
                   </span>
                 </div>
                 <div style={styles.behavioralStat}>
                   <span style={styles.behavioralLabel}>Avg Time per Question</span>
                   <span style={styles.behavioralValue}>
-                    {behavioralMatrix.avgTimePerQuestion ||
-                     behavioralMatrix.timing?.averageTimePerQuestionFormatted ||
-                     avgTimePerQuestion ||
-                     formatAvgTime(behavioralMatrix.timing?.averageTimePerQuestion || 0)}
+                    {behavioralMatrix.avgTimePerQuestion || '0s'}
                   </span>
                 </div>
                 <div style={styles.behavioralStat}>
                   <span style={styles.behavioralLabel}>Answer Changes</span>
                   <span style={styles.behavioralValue}>
-                    {behavioralMatrix.behavior?.answerChanges || behavioralMatrix.answerChanges || 0}
+                    {behavioralMatrix.answerChanges || 0}
                   </span>
                 </div>
                 <div style={styles.behavioralStat}>
                   <span style={styles.behavioralLabel}>Tab Switches</span>
                   <span style={styles.behavioralValue}>
-                    {behavioralMatrix.behavior?.tabSwitches || behavioralMatrix.tabSwitches || 0}
+                    {behavioralMatrix.tabSwitches || 0}
                   </span>
                 </div>
                 <div style={styles.behavioralStat}>
                   <span style={styles.behavioralLabel}>Violations</span>
                   <span style={styles.behavioralValue}>
-                    {behavioralMatrix.behavior?.violations || behavioralMatrix.violations || 0}
+                    {behavioralMatrix.violations || 0}
                   </span>
                 </div>
                 <div style={styles.behavioralStat}>
                   <span style={styles.behavioralLabel}>Copy/Paste Attempts</span>
                   <span style={styles.behavioralValue}>
-                    {(behavioralMatrix.behavior?.copyAttempts || 0) + (behavioralMatrix.behavior?.pasteAttempts || 0) ||
-                     behavioralMatrix.copyPasteAttempts || 0}
+                    {behavioralMatrix.copyPasteAttempts || 0}
                   </span>
                 </div>
                 <div style={styles.behavioralStat}>
                   <span style={styles.behavioralLabel}>Right-Click Attempts</span>
                   <span style={styles.behavioralValue}>
-                    {behavioralMatrix.behavior?.rightClickAttempts || behavioralMatrix.rightClickAttempts || 0}
+                    {behavioralMatrix.rightClickAttempts || 0}
                   </span>
                 </div>
                 <div style={styles.behavioralStat}>
@@ -1194,14 +1250,10 @@ export default function StratavaxReport({
               {/* Risk Summary */}
               <div style={styles.riskSummary}>
                 <p>
-                  Behavioral flags: {behavioralMatrix.behavior?.violations || behavioralMatrix.violations || 0} violation(s), 
-                  {behavioralMatrix.behavior?.tabSwitches || behavioralMatrix.tabSwitches || 0} tab switches.
+                  Behavioral flags: {behavioralMatrix.violations || 0} violation(s), 
+                  {behavioralMatrix.tabSwitches || 0} tab switch(es), and 
+                  {behavioralMatrix.answerChanges || 0} answer change(s).
                 </p>
-                {behavioralMatrix.riskAssessment?.detail && (
-                  <p style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
-                    {behavioralMatrix.riskAssessment.detail}
-                  </p>
-                )}
                 {behavioralMatrix.riskFactors && behavioralMatrix.riskFactors.length > 0 && (
                   <p style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
                     Risk Factors: {behavioralMatrix.riskFactors.join(', ')}
@@ -1210,173 +1262,75 @@ export default function StratavaxReport({
               </div>
 
               {/* BEHAVIORAL COMMENTARY */}
-              {behavioralMatrix?.behavior && (
-                <div style={styles.behavioralCommentary}>
-                  <h4 style={styles.commentaryTitle}>Assessment Integrity Analysis</h4>
+              <div style={styles.behavioralCommentary}>
+                <h4 style={styles.commentaryTitle}>Assessment Integrity Analysis</h4>
 
-                  <div style={styles.commentaryMetrics}>
-                    <div style={styles.commentaryItem}>
-                      <span style={styles.commentaryLabel}>Tab Switches:</span>
-                      <span style={styles.commentaryText}>
-                        {(behavioralMatrix.behavior.tabSwitches || 0) === 0
-                          ? '✅ No tab switching detected. Candidate maintained focus on the assessment.'
-                          : (behavioralMatrix.behavior.tabSwitches || 0) <= 3
-                            ? `⚠️ Minimal tab switching (${behavioralMatrix.behavior.tabSwitches} switches). This may indicate occasional distraction.`
-                            : `❌ High tab switching (${behavioralMatrix.behavior.tabSwitches} switches). This suggests significant distraction or potential external reference use.`
-                        }
-                      </span>
-                    </div>
-
-                    <div style={styles.commentaryItem}>
-                      <span style={styles.commentaryLabel}>Violations:</span>
-                      <span style={styles.commentaryText}>
-                        {(behavioralMatrix.behavior.violations || 0) === 0
-                          ? '✅ No rule violations detected. Candidate followed all assessment guidelines.'
-                          : (behavioralMatrix.behavior.violations || 0) <= 3
-                            ? `⚠️ Minor violations (${behavioralMatrix.behavior.violations} violations). These may be accidental.`
-                            : `❌ High violations (${behavioralMatrix.behavior.violations} violations). This indicates significant disregard for assessment rules.`
-                        }
-                      </span>
-                    </div>
-
-                    <div style={styles.commentaryItem}>
-                      <span style={styles.commentaryLabel}>Answer Changes:</span>
-                      <span style={styles.commentaryText}>
-                        {(behavioralMatrix.behavior.answerChanges || 0) === 0
-                          ? '✅ No answer changes. Candidate was confident in their responses.'
-                          : (behavioralMatrix.behavior.answerChanges || 0) <= 5
-                            ? `⚠️ Few answer changes (${behavioralMatrix.behavior.answerChanges} changes). This is normal behavior.`
-                            : `❌ Many answer changes (${behavioralMatrix.behavior.answerChanges} changes). This may indicate uncertainty or guessing.`
-                        }
-                      </span>
-                    </div>
+                <div style={styles.commentaryMetrics}>
+                  <div style={styles.commentaryItem}>
+                    <span style={styles.commentaryLabel}>Tab Switches:</span>
+                    <span style={styles.commentaryText}>
+                      {(behavioralMatrix.tabSwitches || 0) === 0
+                        ? '✅ No tab switching detected. Candidate maintained focus on the assessment.'
+                        : (behavioralMatrix.tabSwitches || 0) <= 3
+                          ? `⚠️ Minimal tab switching (${behavioralMatrix.tabSwitches} switches). This may indicate occasional distraction.`
+                          : `❌ High tab switching (${behavioralMatrix.tabSwitches} switches). This suggests significant distraction or potential external reference use.`
+                      }
+                    </span>
                   </div>
 
-                  {/* Recommendations */}
-                  {(behavioralMatrix.behavior.violations > 0 || behavioralMatrix.behavior.tabSwitches > 5) ? (
-                    <div style={styles.recommendationBox}>
-                      <h5 style={styles.recommendationTitle}>Recommendations</h5>
-                      <ul style={styles.recommendationList}>
-                        {behavioralMatrix.behavior.tabSwitches > 20 && (
-                          <li>Consider invalidating the assessment due to excessive tab switching.</li>
-                        )}
-                        {behavioralMatrix.behavior.violations > 10 && (
-                          <li>Immediate review required. Assessment validity is compromised.</li>
-                        )}
-                        {behavioralMatrix.behavior.tabSwitches > 5 && behavioralMatrix.behavior.tabSwitches <= 20 && (
-                          <li>Conduct a follow-up interview to discuss potential external reference use.</li>
-                        )}
-                        {behavioralMatrix.behavior.violations > 3 && behavioralMatrix.behavior.violations <= 10 && (
-                          <li>Review specific flagged questions and discuss with candidate.</li>
-                        )}
-                        {behavioralMatrix.behavior.answerChanges > 5 && (
-                          <li>Review questions where answers were changed for potential ambiguity.</li>
-                        )}
-                      </ul>
-                    </div>
-                  ) : (
-                    <div style={styles.cleanCommentary}>
-                      No concerning behavioral patterns detected. The candidate completed the assessment with integrity.
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* EXTERNAL URLS SECTION */}
-              {behavioralMatrix?.externalUrls && behavioralMatrix.externalUrls.length > 0 && (
-                <div style={styles.externalUrlsSection}>
-                  <h4 style={styles.externalUrlsTitle}>
-                    🌐 External URLs Visited ({behavioralMatrix.externalUrls.length})
-                  </h4>
-                  
-                  <div style={styles.externalUrlsTable}>
-                    <table style={styles.urlTable}>
-                      <thead>
-                        <tr style={styles.urlTableHeader}>
-                          <th style={styles.urlTableHeaderCell}>Domain</th>
-                          <th style={styles.urlTableHeaderCell}>Category</th>
-                          <th style={styles.urlTableHeaderCell}>URL</th>
-                          <th style={styles.urlTableHeaderCell}>Duration</th>
-                          <th style={styles.urlTableHeaderCell}>Time</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {behavioralMatrix.externalUrls.slice(0, 20).map((url, index) => (
-                          <tr key={index} style={styles.urlTableRow}>
-                            <td style={styles.urlTableCell}>
-                              <span style={styles.domainBadge}>{url.domain || 'Unknown'}</span>
-                            </td>
-                            <td style={styles.urlTableCell}>
-                              <span style={{
-                                ...styles.categoryBadge,
-                                background: url.category === 'search_engine' ? '#fef3c7' :
-                                           url.category === 'ai_tool' ? '#ede9fe' :
-                                           url.category === 'social_media' ? '#fce4ec' :
-                                           url.category === 'messaging' ? '#e3f2fd' :
-                                           url.category === 'educational' ? '#dcfce7' :
-                                           url.category === 'code_reference' ? '#e0e7ff' :
-                                           '#f1f5f9'
-                              }}>
-                                {url.category || 'other'}
-                              </span>
-                            </td>
-                            <td style={styles.urlTableCell}>
-                              <a href={url.url} target="_blank" rel="noopener noreferrer" style={styles.urlLink}>
-                                {url.url && url.url.length > 50 ? url.url.substring(0, 50) + '...' : url.url || 'N/A'}
-                              </a>
-                            </td>
-                            <td style={styles.urlTableCell}>
-                              {url.duration ? `${Math.round(url.duration)}s` : 'N/A'}
-                            </td>
-                            <td style={styles.urlTableCell}>
-                              {url.timestamp ? new Date(url.timestamp).toLocaleTimeString() : 'N/A'}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                    {behavioralMatrix.externalUrls.length > 20 && (
-                      <div style={styles.moreUrlsNote}>
-                        ... and {behavioralMatrix.externalUrls.length - 20} more external URLs
-                      </div>
-                    )}
+                  <div style={styles.commentaryItem}>
+                    <span style={styles.commentaryLabel}>Violations:</span>
+                    <span style={styles.commentaryText}>
+                      {(behavioralMatrix.violations || 0) === 0
+                        ? '✅ No rule violations detected. Candidate followed all assessment guidelines.'
+                        : (behavioralMatrix.violations || 0) <= 3
+                          ? `⚠️ Minor violations (${behavioralMatrix.violations} violations). These may be accidental.`
+                          : `❌ High violations (${behavioralMatrix.violations} violations). This indicates significant disregard for assessment rules.`
+                      }
+                    </span>
                   </div>
-                  
-                  {/* Domain Summary */}
-                  {behavioralMatrix.domainVisits && Object.keys(behavioralMatrix.domainVisits).length > 0 && (
-                    <div style={styles.domainSummary}>
-                      <h5 style={styles.domainSummaryTitle}>Domain Visit Summary</h5>
-                      <div style={styles.domainTags}>
-                        {Object.entries(behavioralMatrix.domainVisits).map(([domain, count]) => (
-                          <span key={domain} style={styles.domainTag}>
-                            {domain}: {count} visit{count > 1 ? 's' : ''}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
 
-              {/* Flagged Questions */}
-              {behavioralMatrix.flaggedQuestions && behavioralMatrix.flaggedQuestions.length > 0 && (
-                <div style={styles.flaggedQuestions}>
-                  <h4 style={styles.flaggedTitle}>Flagged Questions</h4>
-                  <ul style={styles.flaggedList}>
-                    {behavioralMatrix.flaggedQuestions.slice(0, 10).map((q, index) => (
-                      <li key={index} style={styles.flaggedItem}>
-                        Question {q.question_id}: {q.time_seconds}s
-                        {q.changed ? ' - Changed' : ''}
-                        {q.violation ? ' - Violation' : ''}
-                        {q.comment ? ` - ${q.comment}` : ''}
-                      </li>
-                    ))}
-                    {behavioralMatrix.flaggedQuestions.length > 10 && (
-                      <li style={styles.flaggedItem}>... and {behavioralMatrix.flaggedQuestions.length - 10} more</li>
-                    )}
-                  </ul>
+                  <div style={styles.commentaryItem}>
+                    <span style={styles.commentaryLabel}>Answer Changes:</span>
+                    <span style={styles.commentaryText}>
+                      {(behavioralMatrix.answerChanges || 0) === 0
+                        ? '✅ No answer changes. Candidate was confident in their responses.'
+                        : (behavioralMatrix.answerChanges || 0) <= 5
+                          ? `⚠️ Few answer changes (${behavioralMatrix.answerChanges} changes). This is normal behavior.`
+                          : `❌ Many answer changes (${behavioralMatrix.answerChanges} changes). This may indicate uncertainty or guessing.`
+                      }
+                    </span>
+                  </div>
                 </div>
-              )}
+
+                {/* Recommendations based on behavioral flags */}
+                {(behavioralMatrix.violations > 0 || behavioralMatrix.tabSwitches > 5) ? (
+                  <div style={styles.recommendationBox}>
+                    <h5 style={styles.recommendationTitle}>Recommendations</h5>
+                    <ul style={styles.recommendationList}>
+                      {behavioralMatrix.tabSwitches > 20 && (
+                        <li>Consider invalidating the assessment due to excessive tab switching.</li>
+                      )}
+                      {behavioralMatrix.violations > 10 && (
+                        <li>Immediate review required. Assessment validity is compromised.</li>
+                      )}
+                      {behavioralMatrix.tabSwitches > 5 && behavioralMatrix.tabSwitches <= 20 && (
+                        <li>Conduct a follow-up interview to discuss potential external reference use.</li>
+                      )}
+                      {behavioralMatrix.violations > 3 && behavioralMatrix.violations <= 10 && (
+                        <li>Review specific flagged questions and discuss with candidate.</li>
+                      )}
+                      {behavioralMatrix.answerChanges > 5 && (
+                        <li>Review questions where answers were changed for potential ambiguity.</li>
+                      )}
+                    </ul>
+                  </div>
+                ) : (
+                  <div style={styles.cleanCommentary}>
+                    No concerning behavioral patterns detected. The candidate completed the assessment with integrity.
+                  </div>
+                )}
+              </div>
             </>
           ) : (
             <div style={styles.noBehavioralData}>
