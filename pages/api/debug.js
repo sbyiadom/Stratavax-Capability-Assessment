@@ -26,7 +26,13 @@ export default async function handler(req, res) {
       });
     }
     
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    // 🔴 FIX: Create client with auth disabled for service role
+    const supabase = createClient(supabaseUrl, supabaseKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false
+      }
+    });
     
     // Test 1: Check supervisor_profiles
     const { data: supervisors, error: sError } = await supabase
@@ -65,22 +71,66 @@ export default async function handler(req, res) {
     };
     
     // Test 4: Check assessment_results for Maabena's candidates
-    const { data: maabenaResults, error: mError } = await supabase
-      .from('assessment_results')
-      .select('id, user_id, assessment_id, percentage_score')
-      .in('user_id', 
-        await supabase
-          .from('candidate_supervisors')
-          .select('candidate_id')
-          .eq('supervisor_id', '972a8a23-e0c4-4031-a553-191c9a31fbed')
-          .then(res => res.data?.map(r => r.candidate_id) || [])
-      )
-      .limit(5);
+    // First get Maabena's candidate IDs
+    const { data: maabenaAssignments, error: maabenaError } = await supabase
+      .from('candidate_supervisors')
+      .select('candidate_id')
+      .eq('supervisor_id', '972a8a23-e0c4-4031-a553-191c9a31fbed');
+    
+    let maabenaCandidateIds = [];
+    if (!maabenaError && maabenaAssignments) {
+      maabenaCandidateIds = maabenaAssignments.map(a => a.candidate_id).filter(Boolean);
+    }
+    
+    result.maabena = {
+      assignedCandidates: maabenaCandidateIds.length,
+      error: maabenaError ? { message: maabenaError.message, code: maabenaError.code } : null
+    };
+    
+    // Get assessment results for Maabena's candidates
+    let maabenaResults = [];
+    let mError = null;
+    
+    if (maabenaCandidateIds.length > 0) {
+      const { data: results, error: resultsError } = await supabase
+        .from('assessment_results')
+        .select('id, user_id, assessment_id, percentage_score, status, completed_at')
+        .in('user_id', maabenaCandidateIds)
+        .limit(10);
+      
+      maabenaResults = results || [];
+      mError = resultsError;
+    }
     
     result.maabenaResults = {
-      count: maabenaResults?.length || 0,
+      count: maabenaResults.length,
       error: mError ? { message: mError.message, code: mError.code } : null,
-      sample: maabenaResults?.[0] || null
+      sample: maabenaResults.length > 0 ? maabenaResults[0] : null
+    };
+    
+    // Test 5: Check assessments table
+    const { data: assessments, error: assError } = await supabase
+      .from('assessments')
+      .select('id, title, assessment_type_id')
+      .limit(5);
+    
+    result.assessments = {
+      count: assessments?.length || 0,
+      error: assError ? { message: assError.message, code: assError.code } : null,
+      sample: assessments?.[0] || null
+    };
+    
+    // Test 6: Check if the National Service assessment exists
+    const { data: nsAssessment, error: nsError } = await supabase
+      .from('assessments')
+      .select('id, title, assessment_type_id')
+      .eq('id', 'bdb9d46e-9fac-4d00-8478-1f649e7ac600')
+      .maybeSingle();
+    
+    result.nationalServiceAssessment = {
+      exists: !!nsAssessment,
+      error: nsError ? { message: nsError.message, code: nsError.code } : null,
+      data: nsAssessment || null
     };
     
     return res.status(200).json({
