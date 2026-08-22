@@ -1,4 +1,4 @@
-// components/reports/StratavaxReport.js - COMPLETE WITH EXTERNAL URLS
+// components/reports/StratavaxReport.js - FULLY CORRECTED WITH TIME TRACKING
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../supabase/client';
@@ -23,6 +23,25 @@ function safeText(value, fallback = '') {
 
 function safeArray(value) {
   return Array.isArray(value) ? value : [];
+}
+
+// ============================================================
+// FORMAT TIME HELPERS
+// ============================================================
+function formatTime(seconds) {
+  if (!seconds || seconds <= 0) return '00:00:00';
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = seconds % 60;
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+}
+
+function formatAvgTime(seconds) {
+  if (!seconds || seconds <= 0) return '0s';
+  if (seconds < 60) return `${Math.round(seconds)}s`;
+  const minutes = Math.floor(seconds / 60);
+  const secs = Math.round(seconds % 60);
+  return `${minutes}m ${secs}s`;
 }
 
 function getLevelLabel(score) {
@@ -68,702 +87,8 @@ function formatDate(dateString) {
 }
 
 // ============================================================
-// FORMAT TIME HELPER
-// ============================================================
-function formatTime(seconds) {
-  if (!seconds) return 'N/A';
-  const hrs = Math.floor(seconds / 3600);
-  const mins = Math.floor((seconds % 3600) / 60);
-  const secs = seconds % 60;
-  return `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-}
-
-export default function StratavaxReport({ 
-  result, 
-  candidate, 
-  assessment, 
-  onBack,
-  behavioralMatrix: propBehavioralMatrix,
-  loadingBehavioral: propLoadingBehavioral 
-}) {
-  // State for behavioral matrix
-  const [localBehavioralMatrix, setLocalBehavioralMatrix] = useState(null);
-  const [localLoadingBehavioral, setLocalLoadingBehavioral] = useState(false);
-  const [showBehavioral, setShowBehavioral] = useState(false);
-
-  // Use prop data if available, otherwise use local state
-  const behavioralMatrix = propBehavioralMatrix !== undefined ? propBehavioralMatrix : localBehavioralMatrix;
-  const loadingBehavioral = propLoadingBehavioral !== undefined ? propLoadingBehavioral : localLoadingBehavioral;
-
-  // Fetch behavioral matrix if not provided via props
-  useEffect(() => {
-    if (propBehavioralMatrix !== undefined) {
-      console.log('[StratavaxReport] Using behavioralMatrix from props:', propBehavioralMatrix);
-      return;
-    }
-
-    const resultId = result?.id || result?.result_id;
-    if (resultId) {
-      fetchBehavioralMatrix(resultId);
-    }
-  }, [result, propBehavioralMatrix]);
-
-  const fetchBehavioralMatrix = async (id) => {
-    try {
-      setLocalLoadingBehavioral(true);
-      console.log('[Stratavax] Fetching behavioral matrix for resultId:', id);
-
-      const { data: session } = await supabase.auth.getSession();
-      const token = session?.session?.access_token;
-
-      if (!token) {
-        console.log('[Stratavax] No token found');
-        setLocalLoadingBehavioral(false);
-        return;
-      }
-
-      const response = await fetch(`/api/assessment/behavioral-matrix?resultId=${id}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-
-      const data = await response.json();
-      console.log('[Stratavax] Behavioral API Response:', data);
-
-      if (data.success) {
-        const matrix = data.behavioralMatrix || data.matrixData || data.data || data.result;
-        if (matrix) {
-          console.log('[Stratavax] Matrix data:', matrix);
-          setLocalBehavioralMatrix(matrix);
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching behavioral matrix:', error);
-    } finally {
-      setLocalLoadingBehavioral(false);
-    }
-  };
-
-  const toggleBehavioral = () => {
-    setShowBehavioral(!showBehavioral);
-  };
-
-  // ============================================================
-  // CHECK IF BEHAVIORAL DATA EXISTS
-  // ============================================================
-  const hasBehavioralData = behavioralMatrix !== null && behavioralMatrix !== undefined;
-
-  if (!result) {
-    return (
-      <div style={styles.loadingContainer}>
-        <p>No report data available.</p>
-        {onBack && (
-          <button onClick={onBack} style={styles.backButton}>Back to Dashboard</button>
-        )}
-      </div>
-    );
-  }
-
-  // ============================================================
-  // Extract data
-  // ============================================================
-  const categoryScores = safeArray(result.categoryScores || result.category_scores || []);
-  const strengths = safeArray(result.strengths || []);
-  const weaknesses = safeArray(result.weaknesses || result.developmentAreas || []);
-  const recommendations = safeArray(result.recommendations || []);
-  
-  const overallScore = safeNumber(result.percentage_score || result.overallScore || 0);
-  const classification = safeText(result.classification || 'Standard Profile');
-  const riskLevel = safeText(result.riskLevel || result.risk_level || 'Medium');
-  
-  const candidateName = safeText(candidate?.full_name || result.candidateName || 'Candidate');
-  const candidateEmail = safeText(candidate?.email || result.candidateEmail || '');
-  const assessmentName = safeText(assessment?.title || result.assessmentName || 'Assessment');
-  
-  const completedAt = result.completed_at || result.completedAt || null;
-  const totalQuestions = safeNumber(result.total_questions || result.totalQuestions || 0);
-  const answeredQuestions = safeNumber(result.answered_questions || result.answeredQuestions || 0);
-
-  // ============================================================
-  // Generate robust analysis for each category
-  // ============================================================
-  const generateCategoryAnalysis = (category, score) => {
-    const percentage = safeNumber(score, 0);
-    const levelKey = getScoreLevelKey(percentage);
-    const levelLabel = getLevelLabel(percentage);
-    const grade = getGrade(percentage);
-    
-    const summaryPhrases = scoreLevelPhrases[levelKey]?.summary || [];
-    const supervisorPhrases = scoreLevelPhrases[levelKey]?.supervisor || [];
-    
-    const summary = selectPhrase(
-      summaryPhrases,
-      `${category}-${percentage}-summary`
-    ) || `${category} shows ${levelLabel.toLowerCase()} evidence of capability.`;
-    
-    const supervisorNote = selectPhrase(
-      supervisorPhrases,
-      `${category}-${percentage}-supervisor`
-    ) || `Supervisor should provide appropriate guidance and feedback for this area.`;
-    
-    return {
-      level: levelKey,
-      label: levelLabel,
-      grade: grade,
-      summary: replaceVariables(summary, { 
-        area: category,
-        percentage: Math.round(percentage)
-      }),
-      supervisorNote: replaceVariables(supervisorNote, { 
-        area: category,
-        percentage: Math.round(percentage)
-      })
-    };
-  };
-
-  // ============================================================
-  // Generate executive summary
-  // ============================================================
-  const generateExecutiveSummary = () => {
-    const strengthCount = strengths.length;
-    const weaknessCount = weaknesses.length;
-    const strengthNames = strengths.slice(0, 3).map(s => s.category || s.name || '');
-    const weaknessNames = weaknesses.slice(0, 2).map(w => w.category || w.name || '');
-    
-    let summary = '';
-    
-    if (overallScore >= 75) {
-      summary = `${candidateName} completed the ${assessmentName} with a score of ${Math.round(overallScore)}%, indicating strong overall performance. `;
-    } else if (overallScore >= 65) {
-      summary = `${candidateName} completed the ${assessmentName} with a score of ${Math.round(overallScore)}%, indicating adequate overall performance with room for growth. `;
-    } else if (overallScore >= 55) {
-      summary = `${candidateName} completed the ${assessmentName} with a score of ${Math.round(overallScore)}%, indicating developing capability with clear opportunities for improvement. `;
-    } else {
-      summary = `${candidateName} completed the ${assessmentName} with a score of ${Math.round(overallScore)}%, indicating significant development opportunities. `;
-    }
-    
-    if (strengthCount > 0) {
-      const topStrengths = strengthNames.length > 0 ? strengthNames.join(', ') : '';
-      summary += `Key strengths include ${topStrengths}. `;
-    } else {
-      summary += `No dominant strength areas were identified above the current threshold. `;
-    }
-    
-    if (weaknessCount > 0) {
-      const topWeaknesses = weaknessNames.length > 0 ? weaknessNames.join(' and ') : '';
-      summary += `Development opportunities include ${topWeaknesses}. `;
-    } else {
-      summary += `No major development areas were identified below the current threshold. `;
-    }
-    
-    if (overallScore >= 75) {
-      summary += `This profile suggests strong potential for professional growth and increased responsibility.`;
-    } else if (overallScore >= 65) {
-      summary += `With targeted development and practical application, the candidate can strengthen their overall capability.`;
-    } else if (overallScore >= 55) {
-      summary += `Structured development and focused practice will help build a stronger foundation for professional growth.`;
-    } else {
-      summary += `Immediate intervention and comprehensive development are recommended in the identified areas.`;
-    }
-    
-    return summary;
-  };
-
-  // ============================================================
-  // Generate category analysis data
-  // ============================================================
-  const categoryAnalysis = {};
-  categoryScores.forEach(cat => {
-    const name = cat.category || cat.name || 'Unknown';
-    const score = safeNumber(cat.percentage || cat.score || 0);
-    categoryAnalysis[name] = generateCategoryAnalysis(name, score);
-  });
-
-  // ============================================================
-  // Render
-  // ============================================================
-  return (
-    <div style={styles.container}>
-      {onBack && (
-        <button onClick={onBack} style={styles.backButton}>
-          ← Back to Dashboard
-        </button>
-      )}
-
-      {/* Header */}
-      <div style={styles.header}>
-        <h1 style={styles.title}>Assessment Report</h1>
-        <div style={styles.headerGrid}>
-          <div><span style={styles.label}>Candidate:</span> <span style={styles.value}>{candidateName}</span></div>
-          {candidateEmail && <div><span style={styles.label}>Email:</span> <span style={styles.value}>{candidateEmail}</span></div>}
-          <div><span style={styles.label}>Assessment:</span> <span style={styles.value}>{assessmentName}</span></div>
-          <div><span style={styles.label}>Completed:</span> <span style={styles.value}>{formatDate(completedAt)}</span></div>
-          <div><span style={styles.label}>Classification:</span> <span style={styles.value}>{classification}</span></div>
-          <div><span style={styles.label}>Risk Level:</span> <span style={styles.value}>{riskLevel}</span></div>
-        </div>
-      </div>
-
-      {/* Stats Cards */}
-      <div style={styles.statsGrid}>
-        <div style={styles.statCard}>
-          <div style={styles.statValue}>{Math.round(overallScore)}%</div>
-          <div style={styles.statLabel}>Overall Score</div>
-          <div style={{ ...styles.statBadge, backgroundColor: getLevelColor(overallScore), color: '#fff' }}>
-            {getLevelLabel(overallScore)}
-          </div>
-        </div>
-        <div style={styles.statCard}>
-          <div style={styles.statValue}>{answeredQuestions} / {totalQuestions}</div>
-          <div style={styles.statLabel}>Questions Answered</div>
-        </div>
-        <div style={styles.statCard}>
-          <div style={styles.statValue}>{categoryScores.length}</div>
-          <div style={styles.statLabel}>Categories Assessed</div>
-        </div>
-        <div style={styles.statCard}>
-          <div style={styles.statValue}>{strengths.length}</div>
-          <div style={styles.statLabel}>Strengths Identified</div>
-        </div>
-      </div>
-
-      {/* Executive Summary */}
-      <div style={styles.section}>
-        <h2 style={styles.sectionTitle}>Executive Summary</h2>
-        <div style={styles.summaryBox}>
-          <p style={styles.summaryText}>{generateExecutiveSummary()}</p>
-        </div>
-      </div>
-
-      {/* Category Scores */}
-      <div style={styles.section}>
-        <h2 style={styles.sectionTitle}>Category Analysis</h2>
-        <div style={styles.categoryGrid}>
-          {categoryScores.map((cat, index) => {
-            const name = cat.category || cat.name || 'Unknown';
-            const percentage = safeNumber(cat.percentage || cat.score || 0);
-            const maxScore = safeNumber(cat.maxScore || cat.max || 100, 100);
-            const earnedScore = safeNumber(cat.score || cat.earned || 0);
-            const analysis = categoryAnalysis[name] || generateCategoryAnalysis(name, percentage);
-            
-            return (
-              <div key={index} style={styles.categoryCard}>
-                <div style={styles.categoryHeader}>
-                  <span style={styles.categoryName}>{name}</span>
-                  <span style={{ ...styles.categoryScore, color: getLevelColor(percentage) }}>
-                    {Math.round(percentage)}%
-                  </span>
-                </div>
-                
-                <div style={styles.categoryBar}>
-                  <div style={{ 
-                    ...styles.categoryBarFill, 
-                    width: Math.min(percentage, 100) + '%',
-                    backgroundColor: getLevelColor(percentage)
-                  }} />
-                </div>
-                
-                <div style={styles.categoryDetail}>
-                  Score: {Math.round(earnedScore)} / {Math.round(maxScore)} • Grade: {analysis.grade} • {analysis.label}
-                </div>
-                
-                <div style={styles.categoryAnalysis}>
-                  <p style={styles.categorySummary}>{analysis.summary}</p>
-                  <p style={styles.categorySupervisor}><strong>Supervisor Note:</strong> {analysis.supervisorNote}</p>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Strengths Section */}
-      {strengths.length > 0 && (
-        <div style={styles.section}>
-          <h2 style={styles.sectionTitle}>Strengths</h2>
-          <p style={styles.sectionSubtitle}>
-            The following categories are identified as strengths (score greater than or equal to 75%). These areas represent the candidate's strongest capabilities.
-          </p>
-          <div style={styles.strengthGrid}>
-            {strengths.slice(0, 5).map((strength, index) => {
-              const name = strength.category || strength.name || 'Unknown';
-              const percentage = safeNumber(strength.percentage || 0);
-              const analysis = categoryAnalysis[name] || generateCategoryAnalysis(name, percentage);
-              
-              return (
-                <div key={index} style={styles.strengthCard}>
-                  <div style={styles.strengthHeader}>
-                    <span style={styles.strengthNumber}>{index + 1}</span>
-                    <span style={styles.strengthName}>{name}</span>
-                    <span style={{ ...styles.strengthScore, color: getLevelColor(percentage) }}>
-                      {Math.round(percentage)}%
-                    </span>
-                  </div>
-                  <p style={styles.strengthDescription}>{analysis.summary}</p>
-                  <p style={styles.strengthNote}><strong>Implication:</strong> {analysis.supervisorNote}</p>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Development Areas */}
-      {weaknesses.length > 0 && (
-        <div style={styles.section}>
-          <h2 style={styles.sectionTitle}>Development Areas</h2>
-          <p style={styles.sectionSubtitle}>
-            The following categories are identified as areas for development (score below 65%). These areas represent opportunities for growth.
-          </p>
-          <div style={styles.developmentGrid}>
-            {weaknesses.slice(0, 5).map((weakness, index) => {
-              const name = weakness.category || weakness.name || 'Unknown';
-              const percentage = safeNumber(weakness.percentage || 0);
-              const analysis = categoryAnalysis[name] || generateCategoryAnalysis(name, percentage);
-              
-              return (
-                <div key={index} style={styles.developmentCard}>
-                  <div style={styles.developmentHeader}>
-                    <span style={styles.developmentNumber}>{index + 1}</span>
-                    <span style={styles.developmentName}>{name}</span>
-                    <span style={{ ...styles.developmentScore, color: getLevelColor(percentage) }}>
-                      {Math.round(percentage)}%
-                    </span>
-                  </div>
-                  <p style={styles.developmentDescription}>{analysis.summary}</p>
-                  <p style={styles.developmentNote}><strong>Development Focus:</strong> {analysis.supervisorNote}</p>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Recommendations */}
-      <div style={styles.section}>
-        <h2 style={styles.sectionTitle}>Recommendations</h2>
-        {recommendations.length > 0 ? (
-          <div style={styles.recommendationGrid}>
-            {recommendations.map((rec, index) => (
-              <div key={index} style={styles.recommendationCard}>
-                <div style={styles.recommendationHeader}>
-                  <span style={styles.recommendationNumber}>{index + 1}</span>
-                  <span style={styles.recommendationPriority}>
-                    {rec.priority || 'Medium'} Priority
-                  </span>
-                </div>
-                <p style={styles.recommendationText}>{rec.recommendation || rec.text || ''}</p>
-                {rec.action && (
-                  <p style={styles.recommendationAction}><strong>Action:</strong> {rec.action}</p>
-                )}
-                {rec.impact && (
-                  <p style={styles.recommendationImpact}><strong>Impact:</strong> {rec.impact}</p>
-                )}
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div style={styles.emptyState}>
-            <p>No specific recommendations are available based on the current assessment results.</p>
-            <p style={styles.emptyStateSub}>Continued reinforcement, practical validation, and regular feedback are recommended to support the candidate's professional growth.</p>
-          </div>
-        )}
-      </div>
-
-      {/* ============================================================
-          BEHAVIORAL MATRIX SECTION
-          ============================================================ */}
-      <div style={styles.behavioralToggleContainer}>
-        <button onClick={toggleBehavioral} style={styles.behavioralToggleButton}>
-          {showBehavioral ? 'Hide Behavioral Matrix' : 'Show Behavioral Matrix'}
-        </button>
-      </div>
-
-      {showBehavioral && (
-        <div style={styles.behavioralSection}>
-          <h3 style={styles.behavioralTitle}>Behavioral Matrix</h3>
-
-          {loadingBehavioral ? (
-            <div style={styles.loadingBehavioral}>
-              <p>Loading behavioral data...</p>
-            </div>
-          ) : behavioralMatrix && hasBehavioralData ? (
-            <>
-              {/* Behavioral Stats */}
-              <div style={styles.behavioralStats}>
-                <div style={styles.behavioralStat}>
-                  <span style={styles.behavioralLabel}>Total Time</span>
-                  <span style={styles.behavioralValue}>
-                    {formatTime(behavioralMatrix.timing?.totalTimeSeconds || 0)}
-                  </span>
-                </div>
-                <div style={styles.behavioralStat}>
-                  <span style={styles.behavioralLabel}>Avg Time per Question</span>
-                  <span style={styles.behavioralValue}>
-                    {behavioralMatrix.timing?.averageTimePerQuestion || 0}s
-                  </span>
-                </div>
-                <div style={styles.behavioralStat}>
-                  <span style={styles.behavioralLabel}>Answer Changes</span>
-                  <span style={styles.behavioralValue}>
-                    {behavioralMatrix.behavior?.answerChanges || 0}
-                  </span>
-                </div>
-                <div style={styles.behavioralStat}>
-                  <span style={styles.behavioralLabel}>Tab Switches</span>
-                  <span style={styles.behavioralValue}>
-                    {behavioralMatrix.behavior?.tabSwitches || 0}
-                  </span>
-                </div>
-                <div style={styles.behavioralStat}>
-                  <span style={styles.behavioralLabel}>Violations</span>
-                  <span style={styles.behavioralValue}>
-                    {behavioralMatrix.behavior?.violations || 0}
-                  </span>
-                </div>
-                <div style={styles.behavioralStat}>
-                  <span style={styles.behavioralLabel}>Copy/Paste Attempts</span>
-                  <span style={styles.behavioralValue}>
-                    {(behavioralMatrix.behavior?.copyAttempts || 0) + (behavioralMatrix.behavior?.pasteAttempts || 0)}
-                  </span>
-                </div>
-                <div style={styles.behavioralStat}>
-                  <span style={styles.behavioralLabel}>Right-Click Attempts</span>
-                  <span style={styles.behavioralValue}>
-                    {behavioralMatrix.behavior?.rightClickAttempts || 0}
-                  </span>
-                </div>
-                <div style={styles.behavioralStat}>
-                  <span style={styles.behavioralLabel}>Risk Level</span>
-                  <span style={{
-                    ...styles.riskBadge,
-                    background: behavioralMatrix.riskAssessment?.level === 'High Risk' ? '#fee2e2' :
-                      behavioralMatrix.riskAssessment?.level === 'Medium Risk' ? '#fef3c7' : '#dcfce7',
-                    color: behavioralMatrix.riskAssessment?.level === 'High Risk' ? '#991b1b' :
-                      behavioralMatrix.riskAssessment?.level === 'Medium Risk' ? '#92400e' : '#166534'
-                  }}>
-                    {behavioralMatrix.riskAssessment?.level || 'Low Risk'}
-                  </span>
-                </div>
-              </div>
-
-              {/* Risk Summary */}
-              <div style={styles.riskSummary}>
-                <p>
-                  Behavioral flags: {behavioralMatrix.behavior?.violations || 0} violation(s), {behavioralMatrix.behavior?.tabSwitches || 0} tab switches.
-                </p>
-                {behavioralMatrix.riskAssessment?.detail && (
-                  <p style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
-                    {behavioralMatrix.riskAssessment.detail}
-                  </p>
-                )}
-              </div>
-
-              {/* ============================================================
-                  BEHAVIORAL COMMENTARY SECTION
-                  ============================================================ */}
-              {behavioralMatrix?.behavior && (
-                <div style={styles.behavioralCommentary}>
-                  <h4 style={styles.commentaryTitle}>Behavioral Analysis</h4>
-
-                  <div style={styles.commentaryMetrics}>
-                    <div style={styles.commentaryItem}>
-                      <span style={styles.commentaryLabel}>Tab Switches:</span>
-                      <span style={styles.commentaryText}>
-                        {behavioralMatrix.behavior.tabSwitches === 0
-                          ? 'No tab switching detected. Candidate maintained focus.'
-                          : behavioralMatrix.behavior.tabSwitches <= 5
-                            ? `Minimal tab switching (${behavioralMatrix.behavior.tabSwitches} switches). Occasional distraction.`
-                            : behavioralMatrix.behavior.tabSwitches <= 20
-                              ? `Moderate tab switching (${behavioralMatrix.behavior.tabSwitches} switches). Potential external reference use.`
-                              : `High tab switching (${behavioralMatrix.behavior.tabSwitches} switches). Significant distraction detected.`
-                        }
-                      </span>
-                    </div>
-
-                    <div style={styles.commentaryItem}>
-                      <span style={styles.commentaryLabel}>Violations:</span>
-                      <span style={styles.commentaryText}>
-                        {behavioralMatrix.behavior.violations === 0
-                          ? 'No rule violations detected. Candidate followed all guidelines.'
-                          : behavioralMatrix.behavior.violations <= 3
-                            ? `Minor violations (${behavioralMatrix.behavior.violations}). May be accidental.`
-                            : behavioralMatrix.behavior.violations <= 10
-                              ? `Moderate violations (${behavioralMatrix.behavior.violations}). Review recommended.`
-                              : `High violations (${behavioralMatrix.behavior.violations}). Immediate review required.`
-                        }
-                      </span>
-                    </div>
-
-                    <div style={styles.commentaryItem}>
-                      <span style={styles.commentaryLabel}>Answer Changes:</span>
-                      <span style={styles.commentaryText}>
-                        {behavioralMatrix.behavior.answerChanges === 0
-                          ? 'No answer changes. Candidate showed confidence.'
-                          : behavioralMatrix.behavior.answerChanges <= 3
-                            ? `Minimal changes (${behavioralMatrix.behavior.answerChanges}). Some hesitation.`
-                            : behavioralMatrix.behavior.answerChanges <= 10
-                              ? `Moderate changes (${behavioralMatrix.behavior.answerChanges}). Uncertainty detected.`
-                              : `High changes (${behavioralMatrix.behavior.answerChanges}). Significant uncertainty.`
-                        }
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Recommendations */}
-                  {(behavioralMatrix.behavior.violations > 0 || behavioralMatrix.behavior.tabSwitches > 5) ? (
-                    <div style={styles.recommendationBox}>
-                      <h5 style={styles.recommendationTitle}>Recommendations</h5>
-                      <ul style={styles.recommendationList}>
-                        {behavioralMatrix.behavior.tabSwitches > 20 && (
-                          <li>Consider invalidating the assessment due to excessive tab switching.</li>
-                        )}
-                        {behavioralMatrix.behavior.violations > 10 && (
-                          <li>Immediate review required. Assessment validity is compromised.</li>
-                        )}
-                        {behavioralMatrix.behavior.tabSwitches > 5 && behavioralMatrix.behavior.tabSwitches <= 20 && (
-                          <li>Conduct a follow-up interview to discuss potential external reference use.</li>
-                        )}
-                        {behavioralMatrix.behavior.violations > 3 && behavioralMatrix.behavior.violations <= 10 && (
-                          <li>Review specific flagged questions and discuss with candidate.</li>
-                        )}
-                        {behavioralMatrix.behavior.answerChanges > 5 && (
-                          <li>Review questions where answers were changed for potential ambiguity.</li>
-                        )}
-                      </ul>
-                    </div>
-                  ) : (
-                    <div style={styles.cleanCommentary}>
-                      No concerning behavioral patterns detected. The candidate completed the assessment with integrity.
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* ============================================================
-                  EXTERNAL URLS SECTION - ADDED
-                  ============================================================ */}
-              {behavioralMatrix?.externalUrls && behavioralMatrix.externalUrls.length > 0 && (
-                <div style={styles.externalUrlsSection}>
-                  <h4 style={styles.externalUrlsTitle}>
-                    🌐 External URLs Visited ({behavioralMatrix.externalUrls.length})
-                  </h4>
-                  
-                  <div style={styles.externalUrlsTable}>
-                    <table style={styles.urlTable}>
-                      <thead>
-                        <tr style={styles.urlTableHeader}>
-                          <th style={styles.urlTableHeaderCell}>Domain</th>
-                          <th style={styles.urlTableHeaderCell}>Category</th>
-                          <th style={styles.urlTableHeaderCell}>URL</th>
-                          <th style={styles.urlTableHeaderCell}>Duration</th>
-                          <th style={styles.urlTableHeaderCell}>Time</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {behavioralMatrix.externalUrls.slice(0, 20).map((url, index) => (
-                          <tr key={index} style={styles.urlTableRow}>
-                            <td style={styles.urlTableCell}>
-                              <span style={styles.domainBadge}>{url.domain || 'Unknown'}</span>
-                            </td>
-                            <td style={styles.urlTableCell}>
-                              <span style={{
-                                ...styles.categoryBadge,
-                                background: url.category === 'search_engine' ? '#fef3c7' :
-                                           url.category === 'ai_tool' ? '#ede9fe' :
-                                           url.category === 'social_media' ? '#fce4ec' :
-                                           url.category === 'messaging' ? '#e3f2fd' :
-                                           url.category === 'educational' ? '#dcfce7' :
-                                           url.category === 'code_reference' ? '#e0e7ff' :
-                                           '#f1f5f9'
-                              }}>
-                                {url.category || 'other'}
-                              </span>
-                            </td>
-                            <td style={styles.urlTableCell}>
-                              <a href={url.url} target="_blank" rel="noopener noreferrer" style={styles.urlLink}>
-                                {url.url && url.url.length > 50 ? url.url.substring(0, 50) + '...' : url.url || 'N/A'}
-                              </a>
-                            </td>
-                            <td style={styles.urlTableCell}>
-                              {url.duration ? `${Math.round(url.duration)}s` : 'N/A'}
-                            </td>
-                            <td style={styles.urlTableCell}>
-                              {url.timestamp ? new Date(url.timestamp).toLocaleTimeString() : 'N/A'}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                    {behavioralMatrix.externalUrls.length > 20 && (
-                      <div style={styles.moreUrlsNote}>
-                        ... and {behavioralMatrix.externalUrls.length - 20} more external URLs
-                      </div>
-                    )}
-                  </div>
-                  
-                  {/* Domain Summary */}
-                  {behavioralMatrix.domainVisits && Object.keys(behavioralMatrix.domainVisits).length > 0 && (
-                    <div style={styles.domainSummary}>
-                      <h5 style={styles.domainSummaryTitle}>Domain Visit Summary</h5>
-                      <div style={styles.domainTags}>
-                        {Object.entries(behavioralMatrix.domainVisits).map(([domain, count]) => (
-                          <span key={domain} style={styles.domainTag}>
-                            {domain}: {count} visit{count > 1 ? 's' : ''}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Flagged Questions */}
-              {behavioralMatrix.flaggedQuestions && behavioralMatrix.flaggedQuestions.length > 0 && (
-                <div style={styles.flaggedQuestions}>
-                  <h4 style={styles.flaggedTitle}>Flagged Questions</h4>
-                  <ul style={styles.flaggedList}>
-                    {behavioralMatrix.flaggedQuestions.slice(0, 10).map((q, index) => (
-                      <li key={index} style={styles.flaggedItem}>
-                        Question {q.question_id}: {q.time_seconds}s
-                        {q.changed ? ' - Changed' : ''}
-                        {q.violation ? ' - Violation' : ''}
-                        {q.comment ? ` - ${q.comment}` : ''}
-                      </li>
-                    ))}
-                    {behavioralMatrix.flaggedQuestions.length > 10 && (
-                      <li style={styles.flaggedItem}>... and {behavioralMatrix.flaggedQuestions.length - 10} more</li>
-                    )}
-                  </ul>
-                </div>
-              )}
-            </>
-          ) : (
-            <div style={styles.noBehavioralData}>
-              <p>No behavioral data is available for this assessment.</p>
-              <p style={styles.noBehavioralSubtext}>
-                Behavioral data (tab switches, violations, answer changes, etc.)
-                is only tracked for assessments completed after the behavioral tracking feature was implemented.
-              </p>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Print Button */}
-      <div style={styles.actions}>
-        <button onClick={() => window.print()} style={styles.printButton}>
-          Print Report
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// ============================================================
 // STYLES
 // ============================================================
-
 const styles = {
   container: {
     maxWidth: '1200px',
@@ -1110,9 +435,6 @@ const styles = {
     fontWeight: '600',
     cursor: 'pointer'
   },
-  // ============================================================
-  // BEHAVIORAL MATRIX STYLES
-  // ============================================================
   behavioralToggleContainer: {
     marginTop: '24px',
     textAlign: 'center'
@@ -1184,46 +506,6 @@ const styles = {
     fontSize: '14px',
     color: '#475569'
   },
-  flaggedQuestions: {
-    marginTop: '12px'
-  },
-  flaggedTitle: {
-    fontSize: '14px',
-    fontWeight: '600',
-    color: '#0a1929',
-    marginBottom: '8px'
-  },
-  flaggedList: {
-    listStyle: 'none',
-    padding: '0',
-    margin: '0'
-  },
-  flaggedItem: {
-    padding: '6px 12px',
-    background: 'white',
-    borderRadius: '4px',
-    borderBottom: '1px solid #f1f5f9',
-    fontSize: '13px',
-    color: '#475569'
-  },
-  loadingBehavioral: {
-    textAlign: 'center',
-    padding: '20px',
-    color: '#64748b'
-  },
-  noBehavioralData: {
-    textAlign: 'center',
-    padding: '30px 20px',
-    color: '#64748b'
-  },
-  noBehavioralSubtext: {
-    fontSize: '13px',
-    color: '#94a3b8',
-    marginTop: '8px'
-  },
-  // ============================================================
-  // BEHAVIORAL COMMENTARY STYLES
-  // ============================================================
   behavioralCommentary: {
     marginTop: '16px',
     padding: '16px',
@@ -1291,9 +573,21 @@ const styles = {
     fontSize: '13px',
     color: '#166534'
   },
-  // ============================================================
-  // EXTERNAL URLS STYLES - ADDED
-  // ============================================================
+  noBehavioralData: {
+    textAlign: 'center',
+    padding: '30px 20px',
+    color: '#64748b'
+  },
+  noBehavioralSubtext: {
+    fontSize: '13px',
+    color: '#94a3b8',
+    marginTop: '8px'
+  },
+  loadingBehavioral: {
+    textAlign: 'center',
+    padding: '20px',
+    color: '#64748b'
+  },
   externalUrlsSection: {
     marginTop: '16px',
     padding: '16px',
@@ -1392,5 +686,716 @@ const styles = {
     border: '1px solid #e2e8f0',
     fontSize: '12px',
     color: '#475569'
+  },
+  flaggedQuestions: {
+    marginTop: '12px'
+  },
+  flaggedTitle: {
+    fontSize: '14px',
+    fontWeight: '600',
+    color: '#0a1929',
+    marginBottom: '8px'
+  },
+  flaggedList: {
+    listStyle: 'none',
+    padding: '0',
+    margin: '0'
+  },
+  flaggedItem: {
+    padding: '6px 12px',
+    background: 'white',
+    borderRadius: '4px',
+    borderBottom: '1px solid #f1f5f9',
+    fontSize: '13px',
+    color: '#475569'
   }
 };
+
+// ============================================================
+// COMPONENT
+// ============================================================
+export default function StratavaxReport({ 
+  result, 
+  candidate, 
+  assessment, 
+  onBack,
+  behavioralMatrix: propBehavioralMatrix,
+  loadingBehavioral: propLoadingBehavioral 
+}) {
+  const [localBehavioralMatrix, setLocalBehavioralMatrix] = useState(null);
+  const [localLoadingBehavioral, setLocalLoadingBehavioral] = useState(false);
+  const [showBehavioral, setShowBehavioral] = useState(false);
+
+  // Extract report data
+  const reportData = result?.report_data || result || {};
+  
+  // Get time data from report_data
+  const totalSeconds = reportData.totalSeconds || result?.total_seconds || 0;
+  const totalDurationFormatted = reportData.totalDurationFormatted || formatTime(totalSeconds);
+  const avgTimePerQuestion = reportData.avgTimePerQuestion || formatAvgTime(totalSeconds / (reportData.totalQuestions || 10));
+
+  const behavioralMatrix = propBehavioralMatrix !== undefined ? propBehavioralMatrix : localBehavioralMatrix;
+  const loadingBehavioral = propLoadingBehavioral !== undefined ? propLoadingBehavioral : localLoadingBehavioral;
+  const hasBehavioralData = behavioralMatrix !== null && behavioralMatrix !== undefined;
+
+  useEffect(() => {
+    if (propBehavioralMatrix !== undefined) {
+      console.log('[StratavaxReport] Using behavioralMatrix from props:', propBehavioralMatrix);
+      return;
+    }
+
+    const resultId = result?.id || result?.result_id;
+    if (resultId) {
+      fetchBehavioralMatrix(resultId);
+    }
+  }, [result, propBehavioralMatrix]);
+
+  const fetchBehavioralMatrix = async (id) => {
+    try {
+      setLocalLoadingBehavioral(true);
+      console.log('[Stratavax] Fetching behavioral matrix for resultId:', id);
+
+      const { data: session } = await supabase.auth.getSession();
+      const token = session?.session?.access_token;
+
+      if (!token) {
+        console.log('[Stratavax] No token found');
+        setLocalLoadingBehavioral(false);
+        return;
+      }
+
+      const response = await fetch(`/api/assessment/behavioral-matrix?resultId=${id}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      const data = await response.json();
+      console.log('[Stratavax] Behavioral API Response:', data);
+
+      if (data.success) {
+        const matrix = data.behavioralMatrix || data.matrixData || data.data || data.result;
+        if (matrix) {
+          console.log('[Stratavax] Matrix data:', matrix);
+          setLocalBehavioralMatrix(matrix);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching behavioral matrix:', error);
+    } finally {
+      setLocalLoadingBehavioral(false);
+    }
+  };
+
+  const toggleBehavioral = () => {
+    setShowBehavioral(!showBehavioral);
+  };
+
+  if (!result) {
+    return (
+      <div style={styles.loadingContainer}>
+        <p>No report data available.</p>
+        {onBack && (
+          <button onClick={onBack} style={styles.backButton}>Back to Dashboard</button>
+        )}
+      </div>
+    );
+  }
+
+  // ============================================================
+  // Extract data
+  // ============================================================
+  const categoryScores = safeArray(result.categoryScores || result.category_scores || []);
+  const strengths = safeArray(result.strengths || []);
+  const weaknesses = safeArray(result.weaknesses || result.developmentAreas || []);
+  const recommendations = safeArray(result.recommendations || []);
+  
+  const overallScore = safeNumber(result.percentage_score || result.overallScore || 0);
+  const classification = safeText(result.classification || 'Standard Profile');
+  const riskLevel = safeText(result.riskLevel || result.risk_level || 'Medium');
+  
+  const candidateName = safeText(candidate?.full_name || result.candidateName || 'Candidate');
+  const candidateEmail = safeText(candidate?.email || result.candidateEmail || '');
+  const assessmentName = safeText(assessment?.title || result.assessmentName || 'Assessment');
+  
+  const completedAt = result.completed_at || result.completedAt || null;
+  const totalQuestions = safeNumber(result.total_questions || result.totalQuestions || 0);
+  const answeredQuestions = safeNumber(result.answered_questions || result.answeredQuestions || 0);
+
+  // ============================================================
+  // Generate robust analysis for each category
+  // ============================================================
+  const generateCategoryAnalysis = (category, score) => {
+    const percentage = safeNumber(score, 0);
+    const levelKey = getScoreLevelKey(percentage);
+    const levelLabel = getLevelLabel(percentage);
+    const grade = getGrade(percentage);
+    
+    const summaryPhrases = scoreLevelPhrases[levelKey]?.summary || [];
+    const supervisorPhrases = scoreLevelPhrases[levelKey]?.supervisor || [];
+    
+    const summary = selectPhrase(
+      summaryPhrases,
+      `${category}-${percentage}-summary`
+    ) || `${category} shows ${levelLabel.toLowerCase()} evidence of capability.`;
+    
+    const supervisorNote = selectPhrase(
+      supervisorPhrases,
+      `${category}-${percentage}-supervisor`
+    ) || `Supervisor should provide appropriate guidance and feedback for this area.`;
+    
+    return {
+      level: levelKey,
+      label: levelLabel,
+      grade: grade,
+      summary: replaceVariables(summary, { 
+        area: category,
+        percentage: Math.round(percentage)
+      }),
+      supervisorNote: replaceVariables(supervisorNote, { 
+        area: category,
+        percentage: Math.round(percentage)
+      })
+    };
+  };
+
+  // ============================================================
+  // Generate executive summary
+  // ============================================================
+  const generateExecutiveSummary = () => {
+    const strengthCount = strengths.length;
+    const weaknessCount = weaknesses.length;
+    const strengthNames = strengths.slice(0, 3).map(s => s.category || s.name || '');
+    const weaknessNames = weaknesses.slice(0, 2).map(w => w.category || w.name || '');
+    
+    let summary = '';
+    
+    if (overallScore >= 75) {
+      summary = `${candidateName} completed the ${assessmentName} with a score of ${Math.round(overallScore)}%, indicating strong overall performance. `;
+    } else if (overallScore >= 65) {
+      summary = `${candidateName} completed the ${assessmentName} with a score of ${Math.round(overallScore)}%, indicating adequate overall performance with room for growth. `;
+    } else if (overallScore >= 55) {
+      summary = `${candidateName} completed the ${assessmentName} with a score of ${Math.round(overallScore)}%, indicating developing capability with clear opportunities for improvement. `;
+    } else {
+      summary = `${candidateName} completed the ${assessmentName} with a score of ${Math.round(overallScore)}%, indicating significant development opportunities. `;
+    }
+    
+    if (strengthCount > 0) {
+      const topStrengths = strengthNames.length > 0 ? strengthNames.join(', ') : '';
+      summary += `Key strengths include ${topStrengths}. `;
+    } else {
+      summary += `No dominant strength areas were identified above the current threshold. `;
+    }
+    
+    if (weaknessCount > 0) {
+      const topWeaknesses = weaknessNames.length > 0 ? weaknessNames.join(' and ') : '';
+      summary += `Development opportunities include ${topWeaknesses}. `;
+    } else {
+      summary += `No major development areas were identified below the current threshold. `;
+    }
+    
+    if (overallScore >= 75) {
+      summary += `This profile suggests strong potential for professional growth and increased responsibility.`;
+    } else if (overallScore >= 65) {
+      summary += `With targeted development and practical application, the candidate can strengthen their overall capability.`;
+    } else if (overallScore >= 55) {
+      summary += `Structured development and focused practice will help build a stronger foundation for professional growth.`;
+    } else {
+      summary += `Immediate intervention and comprehensive development are recommended in the identified areas.`;
+    }
+    
+    return summary;
+  };
+
+  // ============================================================
+  // Generate category analysis data
+  // ============================================================
+  const categoryAnalysis = {};
+  categoryScores.forEach(cat => {
+    const name = cat.category || cat.name || 'Unknown';
+    const score = safeNumber(cat.percentage || cat.score || 0);
+    categoryAnalysis[name] = generateCategoryAnalysis(name, score);
+  });
+
+  // ============================================================
+  // Render
+  // ============================================================
+  return (
+    <div style={styles.container}>
+      {onBack && (
+        <button onClick={onBack} style={styles.backButton}>
+          ← Back to Dashboard
+        </button>
+      )}
+
+      {/* Header */}
+      <div style={styles.header}>
+        <h1 style={styles.title}>Assessment Report</h1>
+        <div style={styles.headerGrid}>
+          <div><span style={styles.label}>Candidate:</span> <span style={styles.value}>{candidateName}</span></div>
+          {candidateEmail && <div><span style={styles.label}>Email:</span> <span style={styles.value}>{candidateEmail}</span></div>}
+          <div><span style={styles.label}>Assessment:</span> <span style={styles.value}>{assessmentName}</span></div>
+          <div><span style={styles.label}>Completed:</span> <span style={styles.value}>{formatDate(completedAt)}</span></div>
+          <div><span style={styles.label}>Classification:</span> <span style={styles.value}>{classification}</span></div>
+          <div><span style={styles.label}>Risk Level:</span> <span style={styles.value}>{riskLevel}</span></div>
+        </div>
+      </div>
+
+      {/* Stats Cards */}
+      <div style={styles.statsGrid}>
+        <div style={styles.statCard}>
+          <div style={styles.statValue}>{Math.round(overallScore)}%</div>
+          <div style={styles.statLabel}>Overall Score</div>
+          <div style={{ ...styles.statBadge, backgroundColor: getLevelColor(overallScore), color: '#fff' }}>
+            {getLevelLabel(overallScore)}
+          </div>
+        </div>
+        <div style={styles.statCard}>
+          <div style={styles.statValue}>{answeredQuestions} / {totalQuestions}</div>
+          <div style={styles.statLabel}>Questions Answered</div>
+        </div>
+        <div style={styles.statCard}>
+          <div style={styles.statValue}>{categoryScores.length}</div>
+          <div style={styles.statLabel}>Categories Assessed</div>
+        </div>
+        <div style={styles.statCard}>
+          <div style={styles.statValue}>{strengths.length}</div>
+          <div style={styles.statLabel}>Strengths Identified</div>
+        </div>
+      </div>
+
+      {/* Executive Summary */}
+      <div style={styles.section}>
+        <h2 style={styles.sectionTitle}>Executive Summary</h2>
+        <div style={styles.summaryBox}>
+          <p style={styles.summaryText}>{generateExecutiveSummary()}</p>
+        </div>
+      </div>
+
+      {/* Category Scores */}
+      <div style={styles.section}>
+        <h2 style={styles.sectionTitle}>Category Analysis</h2>
+        <div style={styles.categoryGrid}>
+          {categoryScores.map((cat, index) => {
+            const name = cat.category || cat.name || 'Unknown';
+            const percentage = safeNumber(cat.percentage || cat.score || 0);
+            const maxScore = safeNumber(cat.maxScore || cat.max || 100, 100);
+            const earnedScore = safeNumber(cat.score || cat.earned || 0);
+            const analysis = categoryAnalysis[name] || generateCategoryAnalysis(name, percentage);
+            
+            return (
+              <div key={index} style={styles.categoryCard}>
+                <div style={styles.categoryHeader}>
+                  <span style={styles.categoryName}>{name}</span>
+                  <span style={{ ...styles.categoryScore, color: getLevelColor(percentage) }}>
+                    {Math.round(percentage)}%
+                  </span>
+                </div>
+                
+                <div style={styles.categoryBar}>
+                  <div style={{ 
+                    ...styles.categoryBarFill, 
+                    width: Math.min(percentage, 100) + '%',
+                    backgroundColor: getLevelColor(percentage)
+                  }} />
+                </div>
+                
+                <div style={styles.categoryDetail}>
+                  Score: {Math.round(earnedScore)} / {Math.round(maxScore)} • Grade: {analysis.grade} • {analysis.label}
+                </div>
+                
+                <div style={styles.categoryAnalysis}>
+                  <p style={styles.categorySummary}>{analysis.summary}</p>
+                  <p style={styles.categorySupervisor}><strong>Supervisor Note:</strong> {analysis.supervisorNote}</p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Strengths Section */}
+      {strengths.length > 0 && (
+        <div style={styles.section}>
+          <h2 style={styles.sectionTitle}>Strengths</h2>
+          <p style={styles.sectionSubtitle}>
+            The following categories are identified as strengths (score greater than or equal to 75%). These areas represent the candidate's strongest capabilities.
+          </p>
+          <div style={styles.strengthGrid}>
+            {strengths.slice(0, 5).map((strength, index) => {
+              const name = strength.category || strength.name || 'Unknown';
+              const percentage = safeNumber(strength.percentage || 0);
+              const analysis = categoryAnalysis[name] || generateCategoryAnalysis(name, percentage);
+              
+              return (
+                <div key={index} style={styles.strengthCard}>
+                  <div style={styles.strengthHeader}>
+                    <span style={styles.strengthNumber}>{index + 1}</span>
+                    <span style={styles.strengthName}>{name}</span>
+                    <span style={{ ...styles.strengthScore, color: getLevelColor(percentage) }}>
+                      {Math.round(percentage)}%
+                    </span>
+                  </div>
+                  <p style={styles.strengthDescription}>{analysis.summary}</p>
+                  <p style={styles.strengthNote}><strong>Implication:</strong> {analysis.supervisorNote}</p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Development Areas */}
+      {weaknesses.length > 0 && (
+        <div style={styles.section}>
+          <h2 style={styles.sectionTitle}>Development Areas</h2>
+          <p style={styles.sectionSubtitle}>
+            The following categories are identified as areas for development (score below 65%). These areas represent opportunities for growth.
+          </p>
+          <div style={styles.developmentGrid}>
+            {weaknesses.slice(0, 5).map((weakness, index) => {
+              const name = weakness.category || weakness.name || 'Unknown';
+              const percentage = safeNumber(weakness.percentage || 0);
+              const analysis = categoryAnalysis[name] || generateCategoryAnalysis(name, percentage);
+              
+              return (
+                <div key={index} style={styles.developmentCard}>
+                  <div style={styles.developmentHeader}>
+                    <span style={styles.developmentNumber}>{index + 1}</span>
+                    <span style={styles.developmentName}>{name}</span>
+                    <span style={{ ...styles.developmentScore, color: getLevelColor(percentage) }}>
+                      {Math.round(percentage)}%
+                    </span>
+                  </div>
+                  <p style={styles.developmentDescription}>{analysis.summary}</p>
+                  <p style={styles.developmentNote}><strong>Development Focus:</strong> {analysis.supervisorNote}</p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Recommendations */}
+      <div style={styles.section}>
+        <h2 style={styles.sectionTitle}>Recommendations</h2>
+        {recommendations.length > 0 ? (
+          <div style={styles.recommendationGrid}>
+            {recommendations.map((rec, index) => (
+              <div key={index} style={styles.recommendationCard}>
+                <div style={styles.recommendationHeader}>
+                  <span style={styles.recommendationNumber}>{index + 1}</span>
+                  <span style={styles.recommendationPriority}>
+                    {rec.priority || 'Medium'} Priority
+                  </span>
+                </div>
+                <p style={styles.recommendationText}>{rec.recommendation || rec.text || ''}</p>
+                {rec.action && (
+                  <p style={styles.recommendationAction}><strong>Action:</strong> {rec.action}</p>
+                )}
+                {rec.impact && (
+                  <p style={styles.recommendationImpact}><strong>Impact:</strong> {rec.impact}</p>
+                )}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={styles.emptyState}>
+            <p>No specific recommendations are available based on the current assessment results.</p>
+            <p style={styles.emptyStateSub}>Continued reinforcement, practical validation, and regular feedback are recommended to support the candidate's professional growth.</p>
+          </div>
+        )}
+      </div>
+
+      {/* ============================================================
+          BEHAVIORAL MATRIX SECTION - WITH TIME TRACKING
+          ============================================================ */}
+      <div style={styles.behavioralToggleContainer}>
+        <button onClick={toggleBehavioral} style={styles.behavioralToggleButton}>
+          {showBehavioral ? 'Hide Behavioral Matrix' : 'Show Behavioral Matrix'}
+        </button>
+      </div>
+
+      {showBehavioral && (
+        <div style={styles.behavioralSection}>
+          <h3 style={styles.behavioralTitle}>Behavioral Matrix</h3>
+
+          {loadingBehavioral ? (
+            <div style={styles.loadingBehavioral}>
+              <p>Loading behavioral data...</p>
+            </div>
+          ) : behavioralMatrix && hasBehavioralData ? (
+            <>
+              {/* Behavioral Stats with Time Tracking */}
+              <div style={styles.behavioralStats}>
+                <div style={styles.behavioralStat}>
+                  <span style={styles.behavioralLabel}>Total Time</span>
+                  <span style={styles.behavioralValue}>
+                    {behavioralMatrix.totalTime || 
+                     behavioralMatrix.timing?.totalTimeFormatted || 
+                     totalDurationFormatted ||
+                     formatTime(behavioralMatrix.timing?.totalTimeSeconds || totalSeconds || 0)}
+                  </span>
+                </div>
+                <div style={styles.behavioralStat}>
+                  <span style={styles.behavioralLabel}>Avg Time per Question</span>
+                  <span style={styles.behavioralValue}>
+                    {behavioralMatrix.avgTimePerQuestion ||
+                     behavioralMatrix.timing?.averageTimePerQuestionFormatted ||
+                     avgTimePerQuestion ||
+                     formatAvgTime(behavioralMatrix.timing?.averageTimePerQuestion || 0)}
+                  </span>
+                </div>
+                <div style={styles.behavioralStat}>
+                  <span style={styles.behavioralLabel}>Answer Changes</span>
+                  <span style={styles.behavioralValue}>
+                    {behavioralMatrix.behavior?.answerChanges || behavioralMatrix.answerChanges || 0}
+                  </span>
+                </div>
+                <div style={styles.behavioralStat}>
+                  <span style={styles.behavioralLabel}>Tab Switches</span>
+                  <span style={styles.behavioralValue}>
+                    {behavioralMatrix.behavior?.tabSwitches || behavioralMatrix.tabSwitches || 0}
+                  </span>
+                </div>
+                <div style={styles.behavioralStat}>
+                  <span style={styles.behavioralLabel}>Violations</span>
+                  <span style={styles.behavioralValue}>
+                    {behavioralMatrix.behavior?.violations || behavioralMatrix.violations || 0}
+                  </span>
+                </div>
+                <div style={styles.behavioralStat}>
+                  <span style={styles.behavioralLabel}>Copy/Paste Attempts</span>
+                  <span style={styles.behavioralValue}>
+                    {(behavioralMatrix.behavior?.copyAttempts || 0) + (behavioralMatrix.behavior?.pasteAttempts || 0) ||
+                     behavioralMatrix.copyPasteAttempts || 0}
+                  </span>
+                </div>
+                <div style={styles.behavioralStat}>
+                  <span style={styles.behavioralLabel}>Right-Click Attempts</span>
+                  <span style={styles.behavioralValue}>
+                    {behavioralMatrix.behavior?.rightClickAttempts || behavioralMatrix.rightClickAttempts || 0}
+                  </span>
+                </div>
+                <div style={styles.behavioralStat}>
+                  <span style={styles.behavioralLabel}>Risk Level</span>
+                  <span style={{
+                    ...styles.riskBadge,
+                    background: behavioralMatrix.riskLevel === 'High Risk' || behavioralMatrix.riskLevel === 'high' ? '#fee2e2' :
+                              behavioralMatrix.riskLevel === 'Medium Risk' || behavioralMatrix.riskLevel === 'medium' ? '#fef3c7' : '#dcfce7',
+                    color: behavioralMatrix.riskLevel === 'High Risk' || behavioralMatrix.riskLevel === 'high' ? '#991b1b' :
+                           behavioralMatrix.riskLevel === 'Medium Risk' || behavioralMatrix.riskLevel === 'medium' ? '#92400e' : '#166534'
+                  }}>
+                    {typeof behavioralMatrix.riskLevel === 'string' 
+                      ? behavioralMatrix.riskLevel.charAt(0).toUpperCase() + behavioralMatrix.riskLevel.slice(1)
+                      : 'Low Risk'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Risk Summary */}
+              <div style={styles.riskSummary}>
+                <p>
+                  Behavioral flags: {behavioralMatrix.behavior?.violations || behavioralMatrix.violations || 0} violation(s), 
+                  {behavioralMatrix.behavior?.tabSwitches || behavioralMatrix.tabSwitches || 0} tab switches.
+                </p>
+                {behavioralMatrix.riskAssessment?.detail && (
+                  <p style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
+                    {behavioralMatrix.riskAssessment.detail}
+                  </p>
+                )}
+                {behavioralMatrix.riskFactors && behavioralMatrix.riskFactors.length > 0 && (
+                  <p style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
+                    Risk Factors: {behavioralMatrix.riskFactors.join(', ')}
+                  </p>
+                )}
+              </div>
+
+              {/* BEHAVIORAL COMMENTARY */}
+              {behavioralMatrix?.behavior && (
+                <div style={styles.behavioralCommentary}>
+                  <h4 style={styles.commentaryTitle}>Assessment Integrity Analysis</h4>
+
+                  <div style={styles.commentaryMetrics}>
+                    <div style={styles.commentaryItem}>
+                      <span style={styles.commentaryLabel}>Tab Switches:</span>
+                      <span style={styles.commentaryText}>
+                        {(behavioralMatrix.behavior.tabSwitches || 0) === 0
+                          ? '✅ No tab switching detected. Candidate maintained focus on the assessment.'
+                          : (behavioralMatrix.behavior.tabSwitches || 0) <= 3
+                            ? `⚠️ Minimal tab switching (${behavioralMatrix.behavior.tabSwitches} switches). This may indicate occasional distraction.`
+                            : `❌ High tab switching (${behavioralMatrix.behavior.tabSwitches} switches). This suggests significant distraction or potential external reference use.`
+                        }
+                      </span>
+                    </div>
+
+                    <div style={styles.commentaryItem}>
+                      <span style={styles.commentaryLabel}>Violations:</span>
+                      <span style={styles.commentaryText}>
+                        {(behavioralMatrix.behavior.violations || 0) === 0
+                          ? '✅ No rule violations detected. Candidate followed all assessment guidelines.'
+                          : (behavioralMatrix.behavior.violations || 0) <= 3
+                            ? `⚠️ Minor violations (${behavioralMatrix.behavior.violations} violations). These may be accidental.`
+                            : `❌ High violations (${behavioralMatrix.behavior.violations} violations). This indicates significant disregard for assessment rules.`
+                        }
+                      </span>
+                    </div>
+
+                    <div style={styles.commentaryItem}>
+                      <span style={styles.commentaryLabel}>Answer Changes:</span>
+                      <span style={styles.commentaryText}>
+                        {(behavioralMatrix.behavior.answerChanges || 0) === 0
+                          ? '✅ No answer changes. Candidate was confident in their responses.'
+                          : (behavioralMatrix.behavior.answerChanges || 0) <= 5
+                            ? `⚠️ Few answer changes (${behavioralMatrix.behavior.answerChanges} changes). This is normal behavior.`
+                            : `❌ Many answer changes (${behavioralMatrix.behavior.answerChanges} changes). This may indicate uncertainty or guessing.`
+                        }
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Recommendations */}
+                  {(behavioralMatrix.behavior.violations > 0 || behavioralMatrix.behavior.tabSwitches > 5) ? (
+                    <div style={styles.recommendationBox}>
+                      <h5 style={styles.recommendationTitle}>Recommendations</h5>
+                      <ul style={styles.recommendationList}>
+                        {behavioralMatrix.behavior.tabSwitches > 20 && (
+                          <li>Consider invalidating the assessment due to excessive tab switching.</li>
+                        )}
+                        {behavioralMatrix.behavior.violations > 10 && (
+                          <li>Immediate review required. Assessment validity is compromised.</li>
+                        )}
+                        {behavioralMatrix.behavior.tabSwitches > 5 && behavioralMatrix.behavior.tabSwitches <= 20 && (
+                          <li>Conduct a follow-up interview to discuss potential external reference use.</li>
+                        )}
+                        {behavioralMatrix.behavior.violations > 3 && behavioralMatrix.behavior.violations <= 10 && (
+                          <li>Review specific flagged questions and discuss with candidate.</li>
+                        )}
+                        {behavioralMatrix.behavior.answerChanges > 5 && (
+                          <li>Review questions where answers were changed for potential ambiguity.</li>
+                        )}
+                      </ul>
+                    </div>
+                  ) : (
+                    <div style={styles.cleanCommentary}>
+                      No concerning behavioral patterns detected. The candidate completed the assessment with integrity.
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* EXTERNAL URLS SECTION */}
+              {behavioralMatrix?.externalUrls && behavioralMatrix.externalUrls.length > 0 && (
+                <div style={styles.externalUrlsSection}>
+                  <h4 style={styles.externalUrlsTitle}>
+                    🌐 External URLs Visited ({behavioralMatrix.externalUrls.length})
+                  </h4>
+                  
+                  <div style={styles.externalUrlsTable}>
+                    <table style={styles.urlTable}>
+                      <thead>
+                        <tr style={styles.urlTableHeader}>
+                          <th style={styles.urlTableHeaderCell}>Domain</th>
+                          <th style={styles.urlTableHeaderCell}>Category</th>
+                          <th style={styles.urlTableHeaderCell}>URL</th>
+                          <th style={styles.urlTableHeaderCell}>Duration</th>
+                          <th style={styles.urlTableHeaderCell}>Time</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {behavioralMatrix.externalUrls.slice(0, 20).map((url, index) => (
+                          <tr key={index} style={styles.urlTableRow}>
+                            <td style={styles.urlTableCell}>
+                              <span style={styles.domainBadge}>{url.domain || 'Unknown'}</span>
+                            </td>
+                            <td style={styles.urlTableCell}>
+                              <span style={{
+                                ...styles.categoryBadge,
+                                background: url.category === 'search_engine' ? '#fef3c7' :
+                                           url.category === 'ai_tool' ? '#ede9fe' :
+                                           url.category === 'social_media' ? '#fce4ec' :
+                                           url.category === 'messaging' ? '#e3f2fd' :
+                                           url.category === 'educational' ? '#dcfce7' :
+                                           url.category === 'code_reference' ? '#e0e7ff' :
+                                           '#f1f5f9'
+                              }}>
+                                {url.category || 'other'}
+                              </span>
+                            </td>
+                            <td style={styles.urlTableCell}>
+                              <a href={url.url} target="_blank" rel="noopener noreferrer" style={styles.urlLink}>
+                                {url.url && url.url.length > 50 ? url.url.substring(0, 50) + '...' : url.url || 'N/A'}
+                              </a>
+                            </td>
+                            <td style={styles.urlTableCell}>
+                              {url.duration ? `${Math.round(url.duration)}s` : 'N/A'}
+                            </td>
+                            <td style={styles.urlTableCell}>
+                              {url.timestamp ? new Date(url.timestamp).toLocaleTimeString() : 'N/A'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {behavioralMatrix.externalUrls.length > 20 && (
+                      <div style={styles.moreUrlsNote}>
+                        ... and {behavioralMatrix.externalUrls.length - 20} more external URLs
+                      </div>
+                    )}
+                  </div>
+                  
+                  {/* Domain Summary */}
+                  {behavioralMatrix.domainVisits && Object.keys(behavioralMatrix.domainVisits).length > 0 && (
+                    <div style={styles.domainSummary}>
+                      <h5 style={styles.domainSummaryTitle}>Domain Visit Summary</h5>
+                      <div style={styles.domainTags}>
+                        {Object.entries(behavioralMatrix.domainVisits).map(([domain, count]) => (
+                          <span key={domain} style={styles.domainTag}>
+                            {domain}: {count} visit{count > 1 ? 's' : ''}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Flagged Questions */}
+              {behavioralMatrix.flaggedQuestions && behavioralMatrix.flaggedQuestions.length > 0 && (
+                <div style={styles.flaggedQuestions}>
+                  <h4 style={styles.flaggedTitle}>Flagged Questions</h4>
+                  <ul style={styles.flaggedList}>
+                    {behavioralMatrix.flaggedQuestions.slice(0, 10).map((q, index) => (
+                      <li key={index} style={styles.flaggedItem}>
+                        Question {q.question_id}: {q.time_seconds}s
+                        {q.changed ? ' - Changed' : ''}
+                        {q.violation ? ' - Violation' : ''}
+                        {q.comment ? ` - ${q.comment}` : ''}
+                      </li>
+                    ))}
+                    {behavioralMatrix.flaggedQuestions.length > 10 && (
+                      <li style={styles.flaggedItem}>... and {behavioralMatrix.flaggedQuestions.length - 10} more</li>
+                    )}
+                  </ul>
+                </div>
+              )}
+            </>
+          ) : (
+            <div style={styles.noBehavioralData}>
+              <p>No behavioral data is available for this assessment.</p>
+              <p style={styles.noBehavioralSubtext}>
+                Behavioral data (tab switches, violations, answer changes, etc.)
+                is only tracked for assessments completed after the behavioral tracking feature was implemented.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Print Button */}
+      <div style={styles.actions}>
+        <button onClick={() => window.print()} style={styles.printButton}>
+          🖨️ Print Report
+        </button>
+      </div>
+    </div>
+  );
+}
