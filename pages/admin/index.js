@@ -1,8 +1,6 @@
 // pages/admin/index.js - FINAL DEPLOYMENT VERSION
-// FIXED: Separated KNUST and KSTU (Kumasi Technical University) as distinct universities
-// FIXED: Includes "Not Specified" category for candidates without university
-// FIXED: Correct status mapping (completed, in_progress, scheduled, unblocked, blocked, not_started)
-// FIXED: Counts each candidate once (not duplicate assessments)
+// FIXED: Universal aggressive consolidation for ALL universities
+// FIXED: Handles ALL variations, typos, and case differences for every university
 
 import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/router";
@@ -68,7 +66,7 @@ function formatDate(value) {
 }
 
 // ============================================================
-// ULTRA AGGRESSIVE UNIVERSITY CONSOLIDATION
+// UNIVERSAL AGGRESSIVE UNIVERSITY CONSOLIDATION
 // ============================================================
 function consolidateUniversityName(raw) {
   if (!raw || typeof raw !== 'string' || raw.trim() === '') {
@@ -79,353 +77,343 @@ function consolidateUniversityName(raw) {
   const cleaned = raw.replace(/\s+/g, ' ').trim();
   
   // ============================================================
-  // KNUST - Kwame Nkrumah University of Science and Technology
+  // STEP 1: CHECK FOR KNUST VARIATIONS
   // ============================================================
-  if (lower.includes('kwame nkrumah') || 
-      lower === 'knust' ||
+  // Matches: KNUST, knust, K.N.U.S.T, Kwame Nkrumah, Kwame Nkrumah University,
+  // Kwame Nkrumah University of Science and Technology, etc.
+  if (lower === 'knust' ||
       lower.includes('knust') ||
       lower.includes('k.n.u.s.t') ||
-      lower.includes('kwame nkrumah university') ||
-      lower.includes('knust -') ||
-      lower.includes('knust-') ||
-      lower.includes('kwame nkrumah university of science and technology') ||
-      lower.includes('kwmane nkrumah')) {
+      lower.includes('kwame nkrumah') ||
+      lower.includes('kwmane nkrumah') ||
+      (lower.includes('kwame') && lower.includes('nkrumah'))) {
     return 'Kwame Nkrumah University of Science and Technology (KNUST)';
   }
   
   // ============================================================
-  // KUMASI TECHNICAL UNIVERSITY - KSTU (NOT the same as KNUST!)
+  // STEP 2: CHECK FOR UMaT VARIATIONS
   // ============================================================
-  if (lower.includes('kumasi') && lower.includes('technical') || 
-      lower === 'kstu' ||
-      lower.includes('kstu ') ||
-      lower.includes('k.s.t.u') ||
-      lower.includes('kumasitech') ||
-      lower.includes('kumasi tech')) {
-    return 'Kumasi Technical University (KSTU)';
-  }
-  
-  // ============================================================
-  // UNIVERSITY OF MINES AND TECHNOLOGY - UMaT
-  // ============================================================
-  if (lower.includes('mines') && lower.includes('technology') || 
-      lower === 'umat' || 
+  // Matches: UMaT, umat, U.M.A.T, University of Mines and Technology,
+  // University of Mines and Technology Tarkwa, UMaT Tarkwa, all typos
+  if (lower === 'umat' ||
       lower.includes('umat') ||
-      lower.includes('university of mines') ||
       lower.includes('u.m.a.t') ||
-      lower.includes('umat tarkwa') ||
-      lower.includes('umat,') ||
-      lower.includes('mines and technology') ||
-      lower.includes('university of mines and technology') ||
-      lower.includes('university of mine') ||
-      lower.includes('university of mine and technology') ||
-      lower.includes('mine and technology') ||
-      lower.includes('university of mines and technology tarkwa')) {
+      (lower.includes('mines') && lower.includes('technology')) ||
+      (lower.includes('mine') && lower.includes('technology')) ||
+      (lower.includes('mines') && lower.includes('tech')) ||
+      (lower.includes('mines') && lower.includes('tarkwa')) ||
+      (lower.includes('university of mines'))) {
     return 'University of Mines and Technology (UMaT)';
   }
   
   // ============================================================
-  // UNIVERSITY OF GHANA - UG
+  // STEP 3: CHECK FOR UNIVERSITY OF GHANA VARIATIONS
   // ============================================================
-  if (lower.includes('university of ghana') || 
-      lower === 'ug' ||
+  // Matches: UG, ug, U.G, University of Ghana, Legon, etc.
+  if (lower === 'ug' ||
       lower.includes('ug ') ||
+      lower.includes('u.g') ||
       lower === 'legon' ||
       lower.includes('legon') ||
-      lower.includes('u.g') ||
-      lower.includes('university of ghana-') ||
-      lower.includes('university of ghana legon')) {
+      lower.includes('university of ghana')) {
     return 'University of Ghana (UG)';
   }
   
   // ============================================================
-  // UNIVERSITY OF CAPE COAST - UCC
+  // STEP 4: CHECK FOR UNIVERSITY OF CAPE COAST VARIATIONS
   // ============================================================
-  if (lower.includes('cape coast') || 
-      lower === 'ucc' ||
+  // Matches: UCC, ucc, U.C.C, University of Cape Coast, Cape Coast, Capecoast
+  if (lower === 'ucc' ||
       lower.includes('ucc ') ||
       lower.includes('u.c.c') ||
-      lower.includes('university of cape coast') ||
+      lower.includes('cape coast') ||
       lower.includes('capecoast') ||
-      lower.includes('university of capecoast')) {
+      lower.includes('university of cape coast')) {
     return 'University of Cape Coast (UCC)';
   }
   
   // ============================================================
-  // TAKORADI TECHNICAL UNIVERSITY
+  // STEP 5: CHECK FOR KUMASI TECHNICAL UNIVERSITY VARIATIONS
+  // ============================================================
+  // Matches: KSTU, kstu, K.S.T.U, Kumasi Technical University, Kumasi Tech
+  if (lower === 'kstu' ||
+      lower.includes('kstu ') ||
+      lower.includes('k.s.t.u') ||
+      (lower.includes('kumasi') && lower.includes('technical')) ||
+      (lower.includes('kumasi') && lower.includes('tech'))) {
+    return 'Kumasi Technical University (KSTU)';
+  }
+  
+  // ============================================================
+  // STEP 6: CHECK FOR TAKORADI TECHNICAL UNIVERSITY
   // ============================================================
   if (lower.includes('takoradi') && lower.includes('technical')) {
     return 'Takoradi Technical University';
   }
   
   // ============================================================
-  // ACCRA TECHNICAL UNIVERSITY
+  // STEP 7: CHECK FOR ACCRA TECHNICAL UNIVERSITY
   // ============================================================
   if (lower.includes('accra') && lower.includes('technical')) {
     return 'Accra Technical University';
   }
   
   // ============================================================
-  // KOFORIDUA TECHNICAL UNIVERSITY
+  // STEP 8: CHECK FOR KOFORIDUA TECHNICAL UNIVERSITY
   // ============================================================
-  if ((lower.includes('koforidua') || lower.includes('korforidua')) && lower.includes('technical')) {
+  if ((lower.includes('koforidua') || lower.includes('korforidua')) && 
+      lower.includes('technical')) {
     return 'Koforidua Technical University';
   }
   
   // ============================================================
-  // SUNYANI TECHNICAL UNIVERSITY
+  // STEP 9: CHECK FOR SUNYANI TECHNICAL UNIVERSITY
   // ============================================================
   if (lower.includes('sunyani') && lower.includes('technical')) {
     return 'Sunyani Technical University';
   }
   
   // ============================================================
-  // CAPE COAST TECHNICAL UNIVERSITY
+  // STEP 10: CHECK FOR CAPE COAST TECHNICAL UNIVERSITY
   // ============================================================
   if (lower.includes('cape coast') && lower.includes('technical')) {
     return 'Cape Coast Technical University';
   }
   
   // ============================================================
-  // HO TECHNICAL UNIVERSITY
+  // STEP 11: CHECK FOR HO TECHNICAL UNIVERSITY
   // ============================================================
   if ((lower.includes('ho') || lower.includes('ho ')) && lower.includes('technical')) {
     return 'Ho Technical University';
   }
   
   // ============================================================
-  // TAMALE TECHNICAL UNIVERSITY
+  // STEP 12: CHECK FOR TAMALE TECHNICAL UNIVERSITY
   // ============================================================
   if (lower.includes('tamale') && lower.includes('technical')) {
     return 'Tamale Technical University';
   }
   
   // ============================================================
-  // UNIVERSITY OF ENERGY AND NATURAL RESOURCES
+  // STEP 13: CHECK FOR UNIVERSITY OF ENERGY AND NATURAL RESOURCES
   // ============================================================
   if (lower.includes('energy') && lower.includes('natural resources')) {
     return 'University of Energy and Natural Resources';
   }
   
   // ============================================================
-  // UNIVERSITY FOR DEVELOPMENT STUDIES - UDS
+  // STEP 14: CHECK FOR UNIVERSITY FOR DEVELOPMENT STUDIES
   // ============================================================
-  if (lower.includes('development studies') || 
-      lower === 'uds' || 
+  if (lower === 'uds' ||
       lower.includes('uds ') ||
       lower.includes('u.d.s') ||
+      lower.includes('development studies') ||
       lower.includes('university for development')) {
     return 'University for Development Studies (UDS)';
   }
   
   // ============================================================
-  // UNIVERSITY OF EDUCATION WINNEBA
+  // STEP 15: CHECK FOR UNIVERSITY OF EDUCATION WINNEBA
   // ============================================================
   if (lower.includes('education') && lower.includes('winneba')) {
     return 'University of Education, Winneba';
   }
   
   // ============================================================
-  // FEDERAL UNIVERSITY OF TECHNOLOGY
+  // STEP 16: CHECK FOR FEDERAL UNIVERSITY OF TECHNOLOGY
   // ============================================================
-  if (lower.includes('federal') && lower.includes('technology') || 
-      lower.includes('federal university of technology') ||
-      lower.includes('federal university of technology overwri') ||
-      lower.includes('federal university of technology owerri')) {
+  if (lower.includes('federal') && lower.includes('technology')) {
     return 'Federal University of Technology';
   }
   
   // ============================================================
-  // GHANA COMMUNICATION TECHNOLOGY UNIVERSITY - GCTU
+  // STEP 17: CHECK FOR GHANA COMMUNICATION TECHNOLOGY UNIVERSITY
   // ============================================================
-  if (lower.includes('communication technology') || 
-      lower.includes('communications technology') ||
-      lower === 'gctu' || 
+  if (lower === 'gctu' ||
       lower.includes('gctu ') ||
       lower.includes('g.c.t.u') ||
-      lower.includes('ghana communication') ||
-      lower.includes('ghana communications')) {
+      lower.includes('communication technology') ||
+      lower.includes('communications technology') ||
+      lower.includes('ghana communication')) {
     return 'Ghana Communication Technology University (GCTU)';
   }
   
   // ============================================================
-  // PENTECOST UNIVERSITY
+  // STEP 18: CHECK FOR PENTECOST UNIVERSITY
   // ============================================================
   if (lower.includes('pentecost')) {
     return 'Pentecost University';
   }
   
   // ============================================================
-  // UNIVERSITY OF PROFESSIONAL STUDIES - UPSA
+  // STEP 19: CHECK FOR UNIVERSITY OF PROFESSIONAL STUDIES
   // ============================================================
-  if (lower.includes('professional studies') || 
-      lower === 'upsa' || 
+  if (lower === 'upsa' ||
       lower.includes('upsa ') ||
-      lower.includes('u.p.s.a')) {
+      lower.includes('u.p.s.a') ||
+      lower.includes('professional studies')) {
     return 'University of Professional Studies (UPSA)';
   }
   
   // ============================================================
-  // REGIONAL MARITIME UNIVERSITY - RMU
+  // STEP 20: CHECK FOR REGIONAL MARITIME UNIVERSITY
   // ============================================================
-  if (lower.includes('maritime') || 
-      lower === 'rmu' || 
+  if (lower === 'rmu' ||
       lower.includes('rmu ') ||
-      lower.includes('regional maritime')) {
+      lower.includes('regional maritime') ||
+      lower.includes('maritime')) {
     return 'Regional Maritime University (RMU)';
   }
   
   // ============================================================
-  // KOFORIDUA POLYTECHNIC - KPoly
+  // STEP 21: CHECK FOR KOFORIDUA POLYTECHNIC
   // ============================================================
-  if (lower.includes('koforidua poly') || 
-      lower === 'kpoly' || 
+  if (lower === 'kpoly' ||
       lower.includes('kpoly ') ||
       lower.includes('k.poly') ||
+      lower.includes('koforidua poly') ||
       lower.includes('koforidua polytechnic')) {
     return 'Koforidua Polytechnic (KPoly)';
   }
   
   // ============================================================
-  // UNIVERSITY OF SKILLS TRAINING
+  // STEP 22: CHECK FOR UNIVERSITY OF SKILLS TRAINING
   // ============================================================
   if (lower.includes('skills training') || 
-      lower.includes('entrepreneurial') ||
-      lower.includes('skills training and entrepreneurial')) {
+      lower.includes('entrepreneurial')) {
     return 'University of Skills Training and Entrepreneurial Development';
   }
   
   // ============================================================
-  // ASHESI UNIVERSITY
+  // STEP 23: CHECK FOR ASHESI UNIVERSITY
   // ============================================================
   if (lower.includes('ashesi')) {
     return 'Ashesi University';
   }
   
   // ============================================================
-  // VALLEY VIEW UNIVERSITY
+  // STEP 24: CHECK FOR VALLEY VIEW UNIVERSITY
   // ============================================================
   if (lower.includes('valley view')) {
     return 'Valley View University';
   }
   
   // ============================================================
-  // CENTRAL UNIVERSITY
+  // STEP 25: CHECK FOR CENTRAL UNIVERSITY
   // ============================================================
   if (lower.includes('central university')) {
     return 'Central University';
   }
   
   // ============================================================
-  // ALL NATIONS UNIVERSITY - ANU
+  // STEP 26: CHECK FOR ALL NATIONS UNIVERSITY
   // ============================================================
-  if (lower.includes('all nations') || 
-      lower === 'anu' || 
-      lower.includes('anu ')) {
+  if (lower === 'anu' ||
+      lower.includes('anu ') ||
+      lower.includes('all nations')) {
     return 'All Nations University';
   }
   
   // ============================================================
-  // ACCRA INSTITUTE OF TECHNOLOGY - AIT
+  // STEP 27: CHECK FOR ACCRA INSTITUTE OF TECHNOLOGY
   // ============================================================
-  if (lower.includes('accra institute') || 
-      lower.includes('ait') ||
-      lower.includes('a.i.t')) {
+  if (lower.includes('ait') ||
+      lower.includes('a.i.t') ||
+      lower.includes('accra institute')) {
     return 'Accra Institute of Technology (AIT)';
   }
   
   // ============================================================
-  // WISCONSIN INTERNATIONAL UNIVERSITY
+  // STEP 28: CHECK FOR WISCONSIN INTERNATIONAL UNIVERSITY
   // ============================================================
   if (lower.includes('wisconsin')) {
     return 'Wisconsin International University';
   }
   
   // ============================================================
-  // CHRISTIAN SERVICE UNIVERSITY
+  // STEP 29: CHECK FOR CHRISTIAN SERVICE UNIVERSITY
   // ============================================================
   if (lower.includes('christian service')) {
     return 'Christian Service University';
   }
   
   // ============================================================
-  // DATA LINK UNIVERSITY
+  // STEP 30: CHECK FOR DATA LINK UNIVERSITY
   // ============================================================
   if (lower.includes('data link')) {
     return 'Data Link University';
   }
   
   // ============================================================
-  // BLUE CREST UNIVERSITY
+  // STEP 31: CHECK FOR BLUE CREST UNIVERSITY
   // ============================================================
   if (lower.includes('blue crest')) {
     return 'Blue Crest University';
   }
   
   // ============================================================
-  // GARDEN CITY UNIVERSITY
+  // STEP 32: CHECK FOR GARDEN CITY UNIVERSITY
   // ============================================================
   if (lower.includes('garden city')) {
     return 'Garden City University';
   }
   
   // ============================================================
-  // METHODIST UNIVERSITY
+  // STEP 33: CHECK FOR METHODIST UNIVERSITY
   // ============================================================
   if (lower.includes('methodist')) {
     return 'Methodist University';
   }
   
   // ============================================================
-  // PRESBYTERIAN UNIVERSITY
+  // STEP 34: CHECK FOR PRESBYTERIAN UNIVERSITY
   // ============================================================
   if (lower.includes('presbyterian')) {
     return 'Presbyterian University';
   }
   
   // ============================================================
-  // UNIVERSITY OF UYO
+  // STEP 35: CHECK FOR UNIVERSITY OF UYO
   // ============================================================
   if (lower.includes('uyo')) {
     return 'University of Uyo';
   }
   
   // ============================================================
-  // MARWADI UNIVERSITY
+  // STEP 36: CHECK FOR MARWADI UNIVERSITY
   // ============================================================
   if (lower.includes('marwadi')) {
     return 'Marwadi University';
   }
   
   // ============================================================
-  // UNIVERSITY OF TECHNOLOGY AND APPLIED SCIENCES
+  // STEP 37: CHECK FOR UNIVERSITY OF TECHNOLOGY AND APPLIED SCIENCES
   // ============================================================
   if (lower.includes('technology and applied sciences')) {
     return 'University of Technology and Applied Sciences';
   }
   
   // ============================================================
-  // AAMUSTED
+  // STEP 38: CHECK FOR AAMUSTED
   // ============================================================
   if (lower.includes('aamusted')) {
     return 'AAMUSTED';
   }
   
   // ============================================================
-  // ANNOITED TECHNICAL TRAINING INSTITUTE
+  // STEP 39: CHECK FOR ANNOITED TECHNICAL TRAINING INSTITUTE
   // ============================================================
   if (lower.includes('annoited') || lower.includes('anointed')) {
     return 'Annoited Technical Training Institute';
   }
   
   // ============================================================
-  // If it's null or empty, return "Not Specified"
+  // STEP 40: DEFAULT - Clean up and return
   // ============================================================
   if (!raw || raw.trim() === '') {
     return 'Not Specified';
   }
   
-  // Return cleaned version
   return cleaned;
 }
 
@@ -448,6 +436,7 @@ function consolidateProgramName(raw) {
   
   const cleanLower = cleanForMatch(raw);
   
+  // Electrical/Electronic Engineering
   if (cleanLower.includes('electrical') || cleanLower.includes('electronic') || 
       cleanLower.includes('elect/electron') || cleanLower.includes('electrical/electronic') ||
       cleanLower.includes('electrical electronic') || cleanLower.includes('electrical and electronic') ||
@@ -455,179 +444,220 @@ function consolidateProgramName(raw) {
     return 'BSc Electrical/Electronic Engineering';
   }
   
+  // Mechanical Engineering
   if (cleanLower.includes('mechanical') || cleanLower.includes('mech') ||
       lower === 'me' || lower.includes('me ')) {
     return 'BSc Mechanical Engineering';
   }
   
+  // Chemical Engineering
   if (cleanLower.includes('chemical') || cleanLower.includes('chem') ||
       lower === 'che' || lower.includes('che ')) {
     return 'BSc Chemical Engineering';
   }
   
+  // Civil Engineering
   if (cleanLower.includes('civil') || lower === 'ce' || lower.includes('ce ')) {
     return 'BSc Civil Engineering';
   }
   
+  // Computer Engineering
   if (cleanLower.includes('computer') || lower === 'cpe' || lower.includes('cpe ')) {
     return 'BSc Computer Engineering';
   }
   
+  // Industrial Engineering
   if (cleanLower.includes('industrial') || lower === 'ie' || lower.includes('ie ')) {
     return 'BSc Industrial Engineering';
   }
   
+  // Agricultural Engineering
   if (cleanLower.includes('agricultural') || cleanLower.includes('agric') ||
       lower === 'age' || lower.includes('age ')) {
     return 'BSc Agricultural Engineering';
   }
   
+  // Petroleum Engineering
   if (cleanLower.includes('petroleum') || cleanLower.includes('petrol') ||
       lower === 'pe' || lower.includes('pe ')) {
     return 'BSc Petroleum Engineering';
   }
   
+  // Geological Engineering
   if (cleanLower.includes('geological') || cleanLower.includes('geo') ||
       lower === 'ge' || lower.includes('ge ')) {
     return 'BSc Geological Engineering';
   }
   
+  // Geomatic Engineering
   if (cleanLower.includes('geomatic')) {
     return 'BSc Geomatic Engineering';
   }
   
+  // Materials Engineering
   if (cleanLower.includes('materials') || cleanLower.includes('material') ||
       lower === 'mte' || lower.includes('mte ')) {
     return 'BSc Materials Engineering';
   }
   
+  // Telecommunications Engineering
   if (cleanLower.includes('telecommunications') || cleanLower.includes('telecom') ||
       cleanLower.includes('telecommunication') || lower === 'tele' || lower.includes('tele ')) {
     return 'BSc Telecommunications Engineering';
   }
   
+  // Renewable Energy Engineering
   if (cleanLower.includes('renewable') || cleanLower.includes('energy')) {
     return 'BSc Renewable Energy Engineering';
   }
   
+  // Automobile Engineering
   if (cleanLower.includes('automobile') || cleanLower.includes('auto')) {
     return 'BSc Automobile Engineering';
   }
   
+  // Information Technology
   if (cleanLower.includes('information technology') || cleanLower.includes('info tech') ||
       lower === 'it' || lower.includes('it ')) {
     return 'BSc Information Technology';
   }
   
+  // Information Systems
   if (cleanLower.includes('information systems') || cleanLower.includes('info systems')) {
     return 'BSc Information Systems';
   }
   
+  // Biomedical Engineering
   if (cleanLower.includes('biomedical') || cleanLower.includes('bio medical')) {
     return 'BSc Biomedical Engineering';
   }
   
+  // Minerals Engineering
   if (cleanLower.includes('minerals') || cleanLower.includes('mining')) {
     return 'BSc Minerals Engineering';
   }
   
+  // Psychology
   if (cleanLower.includes('psychology') || cleanLower.includes('psych')) {
     return 'BA Psychology';
   }
   
+  // Political Science
   if (cleanLower.includes('political science') || cleanLower.includes('politics') ||
       cleanLower.includes('political')) {
     return 'BA Political Science';
   }
   
+  // Laboratory Technology
   if (cleanLower.includes('laboratory') || cleanLower.includes('lab')) {
     return 'BSc Laboratory Technology';
   }
   
+  // Food Science
   if (cleanLower.includes('food science') || cleanLower.includes('food')) {
     return 'BSc Food Science and Postharvest Technology';
   }
   
+  // Statistics and Mathematics
   if ((cleanLower.includes('statistics') || cleanLower.includes('stat')) && 
       (cleanLower.includes('mathematics') || cleanLower.includes('math'))) {
     return 'BSc Statistics and Mathematics';
   }
   
+  // Mathematics
   if (cleanLower.includes('mathematics') || cleanLower.includes('math') ||
       lower === 'maths' || lower.includes('maths ')) {
     return 'BSc Mathematics';
   }
   
+  // Statistics
   if (cleanLower.includes('statistics') || cleanLower.includes('stat')) {
     return 'BSc Statistics';
   }
   
+  // Accounting
   if (cleanLower.includes('accounting')) {
     return 'BSc Accounting';
   }
   
+  // Accounting and Economics
   if (cleanLower.includes('accounting') && cleanLower.includes('economics')) {
     return 'BSc Accounting and Economics';
   }
   
+  // Economics
   if (cleanLower.includes('economics')) {
     return 'BSc Economics';
   }
   
+  // Business Administration
   if (cleanLower.includes('business administration') || cleanLower.includes('business admin') ||
       cleanLower.includes('management') || cleanLower.includes('admin') || 
       cleanLower.includes('secretariat') || cleanLower.includes('secretariatship')) {
     return 'Business Administration';
   }
   
+  // Marketing
   if (cleanLower.includes('marketing')) {
     return 'BSc Marketing';
   }
   
+  // Human Resource Management
   if (cleanLower.includes('human resource') || cleanLower.includes('hr')) {
     return 'BSc Human Resource Management';
   }
   
+  // Public Administration
   if (cleanLower.includes('public administration')) {
     return 'BSc Public Administration';
   }
   
+  // Public Health
   if (cleanLower.includes('public health')) {
     return 'BSc Public Health';
   }
   
+  // Nursing
   if (cleanLower.includes('nursing')) {
     return 'BSc Nursing';
   }
   
+  // Midwifery
   if (cleanLower.includes('midwifery')) {
     return 'BSc Midwifery';
   }
   
+  // Architecture
   if (cleanLower.includes('architecture')) {
     return 'BSc Architecture';
   }
   
+  // Estate Management
   if (cleanLower.includes('estate management') || cleanLower.includes('estate')) {
     return 'BSc Estate Management';
   }
   
+  // Quantity Surveying
   if (cleanLower.includes('quantity surveying') || cleanLower.includes('surveying')) {
     return 'BSc Quantity Surveying';
   }
   
+  // Arts
   if (cleanLower.includes('arts') || lower.includes('ba ') || lower.includes('b.a ')) {
     return 'BA Arts';
   }
   
+  // Biological Sciences
   if (cleanLower.includes('biological') || cleanLower.includes('biology')) {
     return 'BSc Biological Sciences';
   }
   
+  // Chemistry
   if (cleanLower.includes('chemistry')) {
     return 'BSc Chemistry';
   }
   
+  // Physics
   if (cleanLower.includes('physics')) {
     return 'BSc Physics';
   }
