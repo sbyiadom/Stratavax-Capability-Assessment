@@ -1,8 +1,74 @@
-// components/reports/NationalServiceReport.js - COMPLETE FIXED FILE
-// FIX: Properly displays behavioral matrix from report_data.proctoring
+// components/reports/NationalServiceReport.js - FULLY CORRECTED WITH TIME TRACKING
+// FIX: Properly displays behavioral matrix with time tracking from report_data
 
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../../supabase/client';
+
+// ============================================================
+// FORMAT TIME HELPERS
+// ============================================================
+function formatTime(seconds) {
+  if (!seconds || seconds <= 0) return '00:00:00';
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = seconds % 60;
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+}
+
+function formatAvgTime(seconds) {
+  if (!seconds || seconds <= 0) return '0s';
+  if (seconds < 60) return `${Math.round(seconds)}s`;
+  const minutes = Math.floor(seconds / 60);
+  const secs = Math.round(seconds % 60);
+  return `${minutes}m ${secs}s`;
+}
+
+// ============================================================
+// EXTRACT BEHAVIORAL MATRIX
+// ============================================================
+function extractBehavioralMatrix(report) {
+  if (!report) return null;
+
+  // Try multiple sources for proctoring data
+  const proctoring = 
+    report.proctoring || 
+    report.report_data?.proctoring || 
+    report.behavioralMatrix ||
+    null;
+
+  if (!proctoring) {
+    console.log('[Behavioral Matrix] No proctoring data found');
+    return null;
+  }
+
+  // Get time data from report_data
+  const reportData = report.report_data || report;
+  const totalSeconds = report.total_seconds || reportData.totalSeconds || 0;
+  const totalDurationFormatted = reportData.totalDurationFormatted || formatTime(totalSeconds);
+  const avgTimePerQuestion = reportData.avgTimePerQuestion || formatAvgTime(totalSeconds / (reportData.totalQuestions || 10));
+
+  const matrix = {
+    totalTime: totalDurationFormatted,
+    avgTimePerQuestion: avgTimePerQuestion,
+    answerChanges: proctoring.answerChanges || proctoring.answer_changes || 0,
+    tabSwitches: proctoring.tabSwitches || proctoring.tab_switches || 0,
+    violations: proctoring.totalViolations || proctoring.violations || 0,
+    copyPasteAttempts: proctoring.copyPasteAttempts || 0,
+    rightClickAttempts: proctoring.rightClickAttempts || 0,
+    riskLevel: proctoring.riskLevel || 'Low Risk',
+    riskScore: proctoring.riskScore || 0,
+    riskFactors: proctoring.riskFactors || [],
+    externalUrlsVisited: proctoring.externalUrlsVisited || 0,
+    flags: {
+      violations: proctoring.totalViolations || proctoring.violations || 0,
+      tabSwitches: proctoring.tabSwitches || 0,
+      answerChanges: proctoring.answerChanges || 0
+    }
+  };
+
+  console.log('[Behavioral Matrix] Extracted matrix:', matrix);
+  return matrix;
+}
 
 // ============================================================
 // STYLES
@@ -325,7 +391,7 @@ const styles = {
     fontSize: '18px',
     color: '#64748b'
   },
-  // 🟢 BEHAVIORAL MATRIX STYLES
+  // BEHAVIORAL MATRIX STYLES
   behavioralToggleContainer: {
     marginTop: '24px',
     textAlign: 'center'
@@ -457,181 +523,8 @@ const styles = {
     textAlign: 'center',
     padding: '20px',
     color: '#64748b'
-  },
-  // 🟢 EXTERNAL URLS STYLES
-  externalUrlsSection: {
-    marginTop: '16px',
-    padding: '16px',
-    background: 'white',
-    borderRadius: '8px',
-    border: '1px solid #e2e8f0',
-    overflowX: 'auto'
-  },
-  externalUrlsTitle: {
-    fontSize: '14px',
-    fontWeight: '600',
-    color: '#0a1929',
-    margin: '0 0 12px 0'
-  },
-  externalUrlsTable: {
-    overflowX: 'auto'
-  },
-  urlTable: {
-    width: '100%',
-    borderCollapse: 'collapse',
-    fontSize: '13px',
-    minWidth: '600px'
-  },
-  urlTableHeader: {
-    background: '#f8fafc',
-    borderBottom: '2px solid #e2e8f0'
-  },
-  urlTableHeaderCell: {
-    padding: '8px 12px',
-    textAlign: 'left',
-    fontWeight: '600',
-    color: '#64748b',
-    fontSize: '11px',
-    textTransform: 'uppercase',
-    letterSpacing: '0.5px'
-  },
-  urlTableRow: {
-    borderBottom: '1px solid #f1f5f9'
-  },
-  urlTableCell: {
-    padding: '8px 12px',
-    verticalAlign: 'middle',
-    fontSize: '13px'
-  },
-  domainBadge: {
-    display: 'inline-block',
-    padding: '2px 8px',
-    background: '#f1f5f9',
-    borderRadius: '4px',
-    fontSize: '12px',
-    fontWeight: '600',
-    color: '#1a202c'
-  },
-  urlLink: {
-    color: '#2563eb',
-    textDecoration: 'none',
-    fontSize: '12px',
-    wordBreak: 'break-all'
-  },
-  moreUrlsNote: {
-    padding: '8px 12px',
-    fontSize: '12px',
-    color: '#64748b',
-    textAlign: 'center',
-    fontStyle: 'italic'
-  },
-  domainSummary: {
-    marginTop: '12px',
-    padding: '12px',
-    background: '#f8fafc',
-    borderRadius: '8px'
-  },
-  domainSummaryTitle: {
-    fontSize: '13px',
-    fontWeight: '600',
-    color: '#0a1929',
-    margin: '0 0 8px 0'
-  },
-  domainTags: {
-    display: 'flex',
-    flexWrap: 'wrap',
-    gap: '8px'
-  },
-  domainTag: {
-    padding: '4px 12px',
-    background: 'white',
-    borderRadius: '4px',
-    border: '1px solid #e2e8f0',
-    fontSize: '12px',
-    color: '#475569'
   }
 };
-
-// ============================================================
-// 🟢 BEHAVIORAL MATRIX HELPER - Extracts from proctoring data
-// ============================================================
-
-function extractBehavioralMatrix(report) {
-  if (!report) return null;
-
-  // Try multiple sources for proctoring data
-  const proctoring = 
-    report.proctoring || 
-    report.report_data?.proctoring || 
-    report.behavioralMatrix ||
-    null;
-
-  if (!proctoring) {
-    console.log('[Behavioral Matrix] No proctoring data found');
-    return null;
-  }
-
-  console.log('[Behavioral Matrix] Raw proctoring data:', proctoring);
-
-  // Format total time
-  let totalTime = '00:00:00';
-  const completedAt = report.completedAt || report.completed_at;
-  if (completedAt) {
-    try {
-      const startTime = new Date(completedAt);
-      const now = new Date();
-      const diffMs = now - startTime;
-      if (diffMs > 0 && diffMs < 24 * 60 * 60 * 1000) {
-        const diffSeconds = Math.floor(diffMs / 1000);
-        const hours = Math.floor(diffSeconds / 3600);
-        const minutes = Math.floor((diffSeconds % 3600) / 60);
-        const seconds = diffSeconds % 60;
-        totalTime = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-      }
-    } catch (e) {
-      totalTime = '00:00:00';
-    }
-  }
-
-  // Calculate avg time per question
-  let avgTimePerQuestion = 0;
-  const totalMax = report.totalMax || report.total_max || 0;
-  if (totalMax > 0 && completedAt) {
-    try {
-      const startTime = new Date(completedAt);
-      const now = new Date();
-      const diffMs = now - startTime;
-      if (diffMs > 0) {
-        avgTimePerQuestion = Math.round(diffMs / totalMax / 1000);
-      }
-    } catch (e) {
-      avgTimePerQuestion = 0;
-    }
-  }
-
-  // Build the behavioral matrix
-  const matrix = {
-    totalTime: proctoring.totalTime || totalTime,
-    avgTimePerQuestion: proctoring.avgTimePerQuestion || avgTimePerQuestion || 0,
-    answerChanges: proctoring.answerChanges || proctoring.answer_changes || 0,
-    tabSwitches: proctoring.tabSwitches || proctoring.tab_switches || 0,
-    violations: proctoring.totalViolations || proctoring.violations || 0,
-    copyPasteAttempts: proctoring.copyPasteAttempts || 0,
-    rightClickAttempts: proctoring.rightClickAttempts || 0,
-    riskLevel: proctoring.riskLevel || 'Low Risk',
-    riskScore: proctoring.riskScore || 0,
-    riskFactors: proctoring.riskFactors || [],
-    externalUrlsVisited: proctoring.externalUrlsVisited || 0,
-    flags: {
-      violations: proctoring.totalViolations || proctoring.violations || 0,
-      tabSwitches: proctoring.tabSwitches || 0,
-      answerChanges: proctoring.answerChanges || 0
-    }
-  };
-
-  console.log('[Behavioral Matrix] Extracted matrix:', matrix);
-  return matrix;
-}
 
 // ============================================================
 // COMPONENT
@@ -646,7 +539,6 @@ export default function NationalServiceReport({
   const [localLoadingBehavioral, setLocalLoadingBehavioral] = useState(false);
   const [showBehavioral, setShowBehavioral] = useState(true);
 
-  // 🟢 FIRST: Try to extract from report, THEN use prop, THEN fetch
   const extractedMatrix = extractBehavioralMatrix(report);
   
   const behavioralMatrix = 
@@ -657,21 +549,16 @@ export default function NationalServiceReport({
     
   const loadingBehavioral = propLoadingBehavioral || localLoadingBehavioral || false;
 
-  // 🟢 Only fetch if no data in report and no prop
   useEffect(() => {
-    // If we already have extracted data, no need to fetch
     if (extractedMatrix) {
       console.log('[Behavioral Matrix] Using extracted data from report');
       return;
     }
-
-    // If prop has data, no need to fetch
     if (propBehavioralMatrix) {
       console.log('[Behavioral Matrix] Using prop data');
       return;
     }
 
-    // Otherwise fetch
     const resultId = report?.resultId || report?.id || report?.result_id;
     if (resultId) {
       console.log('[Behavioral Matrix] Fetching for resultId:', resultId);
@@ -682,7 +569,6 @@ export default function NationalServiceReport({
   const fetchBehavioralMatrix = async (id) => {
     try {
       setLocalLoadingBehavioral(true);
-
       const { data: session } = await supabase.auth.getSession();
       const token = session?.session?.access_token;
 
@@ -692,9 +578,7 @@ export default function NationalServiceReport({
       }
 
       const response = await fetch(`/api/assessment/behavioral-matrix?resultId=${id}`, {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
+        headers: { Authorization: `Bearer ${token}` }
       });
 
       const data = await response.json();
@@ -714,49 +598,6 @@ export default function NationalServiceReport({
 
   const toggleBehavioral = () => {
     setShowBehavioral(!showBehavioral);
-  };
-
-  // ============================================================
-  // FORMAT TIME HELPER
-  // ============================================================
-  const formatTime = (seconds) => {
-    if (!seconds) return 'N/A';
-    const hrs = Math.floor(seconds / 3600);
-    const mins = Math.floor((seconds % 3600) / 60);
-    const secs = seconds % 60;
-    return `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-  };
-
-  // ============================================================
-  // SAFE STRING CONVERSION
-  // ============================================================
-  const safeString = (value) => {
-    if (value === null || value === undefined) return '';
-    if (typeof value === 'string') return value;
-    if (typeof value === 'number') return String(value);
-    if (typeof value === 'object') {
-      if (value.recommendation) return String(value.recommendation);
-      if (value.level) return String(value.level);
-      if (value.label) return String(value.label);
-      return JSON.stringify(value);
-    }
-    return String(value);
-  };
-
-  // ============================================================
-  // CALCULATE AVERAGE FROM ITEMS
-  // ============================================================
-  const getCategoryAverage = (items) => {
-    if (!items || items.length === 0) return 0;
-    return Math.round(items.reduce((sum, cat) => sum + (Number(cat.percentage) || 0), 0) / items.length);
-  };
-
-  // ============================================================
-  // SAFE NUMBER CONVERSION
-  // ============================================================
-  const toDisplayScore = (value, fallback = 0) => {
-    const numericValue = Number(value);
-    return Number.isFinite(numericValue) ? Math.round(numericValue) : fallback;
   };
 
   if (!report) {
@@ -826,6 +667,13 @@ export default function NationalServiceReport({
     'Intellectual Capability'
   ];
 
+  const safeString = (value) => {
+    if (value === null || value === undefined) return '';
+    if (typeof value === 'string') return value;
+    if (typeof value === 'number') return String(value);
+    return String(value);
+  };
+
   if (categoryScores && categoryScores.length > 0) {
     categoryScores.forEach(cat => {
       const categoryName = safeString(cat.category || cat.name || cat.key || 'Unknown');
@@ -879,7 +727,7 @@ export default function NationalServiceReport({
   }
 
   // ============================================================
-  // CALCULATE AVERAGES FROM SUB-CATEGORIES
+  // CALCULATE AVERAGES
   // ============================================================
   const displayWorkplace = workplaceSubCategories.length > 0 
     ? Math.round(workplaceSubCategories.reduce((sum, cat) => sum + (cat.percentage || 0), 0) / workplaceSubCategories.length)
@@ -976,11 +824,9 @@ export default function NationalServiceReport({
     return { text: 'Critical Gap', color: '#c62828' };
   };
 
-  // Sort categories
   const sortedWorkplace = [...workplaceSubCategories].sort((a, b) => (b.percentage || 0) - (a.percentage || 0));
   const sortedIntellectual = [...intellectualSubCategories].sort((a, b) => (b.percentage || 0) - (a.percentage || 0));
 
-  // Top strengths and development areas
   const allSubCategories = [...workplaceSubCategories, ...intellectualSubCategories];
   const topStrengths = [...allSubCategories]
     .filter(c => (c.percentage || 0) > 0)
@@ -991,7 +837,9 @@ export default function NationalServiceReport({
     .filter(c => (c.percentage || 0) > 0 && (c.percentage || 0) < 60)
     .sort((a, b) => (a.percentage || 0) - (b.percentage || 0));
 
-  // Suggested placements
+  // ============================================================
+  // SUGGESTED PLACEMENTS
+  // ============================================================
   const getSuggestedPlacements = () => {
     if (report.suggestedPlacement && report.suggestedPlacement.length > 0) {
       return report.suggestedPlacement;
@@ -1245,7 +1093,7 @@ export default function NationalServiceReport({
       </div>
 
       {/* ============================================================
-          🟢 BEHAVIORAL MATRIX SECTION - FIXED
+          BEHAVIORAL MATRIX SECTION - WITH TIME TRACKING
           ============================================================ */}
       <div style={styles.behavioralToggleContainer}>
         <button onClick={toggleBehavioral} style={styles.behavioralToggleButton}>
@@ -1263,7 +1111,7 @@ export default function NationalServiceReport({
             </div>
           ) : behavioralMatrix && hasBehavioralData ? (
             <>
-              {/* 🟢 BEHAVIORAL STATS - Shows all data from proctoring */}
+              {/* BEHAVIORAL STATS - Shows all data from proctoring with time tracking */}
               <div style={styles.behavioralStats}>
                 <div style={styles.behavioralStat}>
                   <span style={styles.behavioralLabel}>Total Time</span>
@@ -1274,7 +1122,7 @@ export default function NationalServiceReport({
                 <div style={styles.behavioralStat}>
                   <span style={styles.behavioralLabel}>Avg Time per Question</span>
                   <span style={styles.behavioralValue}>
-                    {behavioralMatrix.avgTimePerQuestion || 0}s
+                    {behavioralMatrix.avgTimePerQuestion || '0s'}
                   </span>
                 </div>
                 <div style={styles.behavioralStat}>
@@ -1323,7 +1171,7 @@ export default function NationalServiceReport({
                 </div>
               </div>
 
-              {/* 🟢 RISK SUMMARY */}
+              {/* RISK SUMMARY */}
               <div style={styles.riskSummary}>
                 <p>
                   Behavioral flags: {behavioralMatrix.violations || 0} violation(s), 
@@ -1337,7 +1185,7 @@ export default function NationalServiceReport({
                 )}
               </div>
 
-              {/* 🟢 BEHAVIORAL COMMENTARY */}
+              {/* BEHAVIORAL COMMENTARY */}
               <div style={styles.behavioralCommentary}>
                 <h4 style={styles.commentaryTitle}>Assessment Integrity Analysis</h4>
                 <div style={styles.commentaryMetrics}>
@@ -1392,7 +1240,8 @@ export default function NationalServiceReport({
             <div style={styles.noBehavioralData}>
               <p>No behavioral data is available for this assessment.</p>
               <p style={styles.noBehavioralSubtext}>
-                Behavioral data helps validate the integrity of the assessment results.
+                Behavioral data (tab switches, violations, answer changes, etc.)
+                is only tracked for assessments completed after the behavioral tracking feature was implemented.
               </p>
             </div>
           )}
