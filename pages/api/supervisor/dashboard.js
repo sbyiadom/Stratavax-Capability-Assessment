@@ -1,6 +1,4 @@
-// pages/api/supervisor/dashboard.js - FULLY CORRECTED
-// FIX: Removed 'university' column from supervisor_profiles query
-
+// pages/api/supervisor/dashboard.js
 import { createClient } from '@supabase/supabase-js';
 
 function extractBearerToken(req) {
@@ -183,7 +181,13 @@ export default async function handler(req, res) {
       return res.status(500).json({ success: false, error: 'Missing env vars' });
     }
 
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    // 🔴 FIX: Create client with auth disabled for service role
+    const supabase = createClient(supabaseUrl, supabaseKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false
+      }
+    });
 
     const { data: userData, error: userError } = await supabase.auth.getUser(token);
     if (userError || !userData?.user) {
@@ -197,11 +201,10 @@ export default async function handler(req, res) {
 
     // ============================================================
     // STEP 1: GET SUPERVISOR PROFILE
-    // FIXED: Removed 'university' column
     // ============================================================
     const { data: supervisorProfile, error: supervisorError } = await supabase
       .from('supervisor_profiles')
-      .select('id, full_name, email, role, is_active')  // ← 'university' removed
+      .select('id, full_name, email, role, is_active')
       .eq('id', supervisorId)
       .maybeSingle();
 
@@ -213,7 +216,6 @@ export default async function handler(req, res) {
 
     // ============================================================
     // STEP 2: GET CANDIDATES ASSIGNED TO SUPERVISOR
-    // PRIMARY SOURCE: candidate_supervisors junction table
     // ============================================================
     let allCandidates = [];
     const candidateIdsSet = new Set();
