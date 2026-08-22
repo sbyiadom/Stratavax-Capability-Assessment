@@ -1,5 +1,5 @@
-// components/reports/NationalServiceReport.js - FULLY CORRECTED WITH TIME TRACKING
-// FIX: Properly displays behavioral matrix with time tracking from report_data
+// components/reports/NationalServiceReport.js - FULLY CORRECTED WITH BEHAVIORAL MATRIX FIX
+// FIX: Properly extracts proctoring data from proctoring_data.summary
 
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../../supabase/client';
@@ -24,46 +24,58 @@ function formatAvgTime(seconds) {
 }
 
 // ============================================================
-// EXTRACT BEHAVIORAL MATRIX
+// EXTRACT BEHAVIORAL MATRIX - FIXED FOR CORRECT DATA STRUCTURE
 // ============================================================
 function extractBehavioralMatrix(report) {
   if (!report) return null;
 
-  // Try multiple sources for proctoring data
-  const proctoring = 
-    report.proctoring || 
-    report.report_data?.proctoring || 
-    report.behavioralMatrix ||
-    null;
-
-  if (!proctoring) {
+  // Get the report_data
+  const reportData = report.report_data || report || {};
+  
+  // ✅ FIX: Correctly access proctoring_data from the report
+  // Priority 1: report.proctoring_data (top level)
+  // Priority 2: reportData.proctoring (inside report_data)
+  
+  let proctoringData = report.proctoring_data || reportData.proctoring || null;
+  
+  if (!proctoringData) {
     console.log('[Behavioral Matrix] No proctoring data found');
     return null;
   }
 
-  // Get time data from report_data
-  const reportData = report.report_data || report;
-  const totalSeconds = report.total_seconds || reportData.totalSeconds || 0;
-  const totalDurationFormatted = reportData.totalDurationFormatted || formatTime(totalSeconds);
-  const avgTimePerQuestion = reportData.avgTimePerQuestion || formatAvgTime(totalSeconds / (reportData.totalQuestions || 10));
+  // ✅ FIX: Extract summary data from proctoring_data
+  const summary = proctoringData.summary || proctoringData;
+  
+  console.log('[Behavioral Matrix] Extracted summary:', summary);
 
+  // Get duration from summary
+  const totalSeconds = summary.duration || 0;
+  const totalDurationFormatted = formatTime(totalSeconds);
+  
+  // Calculate avg time per question (use totalQuestions from report or default to 10)
+  const totalQuestions = reportData.totalQuestions || report.totalQuestions || 10;
+  const avgTimePerQuestion = totalSeconds > 0 ? formatAvgTime(totalSeconds / totalQuestions) : '0s';
+
+  // Extract all values from summary
   const matrix = {
     totalTime: totalDurationFormatted,
     avgTimePerQuestion: avgTimePerQuestion,
-    answerChanges: proctoring.answerChanges || proctoring.answer_changes || 0,
-    tabSwitches: proctoring.tabSwitches || proctoring.tab_switches || 0,
-    violations: proctoring.totalViolations || proctoring.violations || 0,
-    copyPasteAttempts: proctoring.copyPasteAttempts || 0,
-    rightClickAttempts: proctoring.rightClickAttempts || 0,
-    riskLevel: proctoring.riskLevel || 'Low Risk',
-    riskScore: proctoring.riskScore || 0,
-    riskFactors: proctoring.riskFactors || [],
-    externalUrlsVisited: proctoring.externalUrlsVisited || 0,
+    answerChanges: summary.answerChanges || 0,
+    tabSwitches: summary.tabSwitches || 0,
+    violations: summary.totalViolations || 0,
+    copyPasteAttempts: summary.copyPasteAttempts || 0,
+    rightClickAttempts: summary.rightClickAttempts || 0,
+    riskLevel: summary.riskLevel || 'Low Risk',
+    riskScore: summary.riskScore || 0,
+    externalUrlsVisited: summary.externalUrlsVisited || 0,
+    riskFactors: proctoringData.riskFactors || [],
     flags: {
-      violations: proctoring.totalViolations || proctoring.violations || 0,
-      tabSwitches: proctoring.tabSwitches || 0,
-      answerChanges: proctoring.answerChanges || 0
-    }
+      violations: summary.totalViolations || 0,
+      tabSwitches: summary.tabSwitches || 0,
+      answerChanges: summary.answerChanges || 0
+    },
+    // Store raw data for debugging
+    _raw: proctoringData
   };
 
   console.log('[Behavioral Matrix] Extracted matrix:', matrix);
@@ -391,7 +403,6 @@ const styles = {
     fontSize: '18px',
     color: '#64748b'
   },
-  // BEHAVIORAL MATRIX STYLES
   behavioralToggleContainer: {
     marginTop: '24px',
     textAlign: 'center'
@@ -456,13 +467,6 @@ const styles = {
     fontSize: '13px',
     color: '#94a3b8',
     marginTop: '8px'
-  },
-  cleanAssessment: {
-    padding: '16px 20px',
-    background: '#dcfce7',
-    borderRadius: '8px',
-    border: '1px solid #bbf7d0',
-    marginBottom: '16px'
   },
   riskBadge: {
     display: 'inline-block',
@@ -1093,7 +1097,7 @@ export default function NationalServiceReport({
       </div>
 
       {/* ============================================================
-          BEHAVIORAL MATRIX SECTION - WITH TIME TRACKING
+          BEHAVIORAL MATRIX SECTION - FIXED
           ============================================================ */}
       <div style={styles.behavioralToggleContainer}>
         <button onClick={toggleBehavioral} style={styles.behavioralToggleButton}>
@@ -1111,7 +1115,7 @@ export default function NationalServiceReport({
             </div>
           ) : behavioralMatrix && hasBehavioralData ? (
             <>
-              {/* BEHAVIORAL STATS - Shows all data from proctoring with time tracking */}
+              {/* BEHAVIORAL STATS */}
               <div style={styles.behavioralStats}>
                 <div style={styles.behavioralStat}>
                   <span style={styles.behavioralLabel}>Total Time</span>
