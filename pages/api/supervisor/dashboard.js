@@ -1,5 +1,5 @@
 // pages/api/supervisor/dashboard.js - FULLY CORRECTED
-// FIX: Uses candidate_supervisors junction table as primary source
+// FIX: Removed 'university' column from supervisor_profiles query
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -197,10 +197,11 @@ export default async function handler(req, res) {
 
     // ============================================================
     // STEP 1: GET SUPERVISOR PROFILE
+    // FIXED: Removed 'university' column
     // ============================================================
     const { data: supervisorProfile, error: supervisorError } = await supabase
       .from('supervisor_profiles')
-      .select('id, full_name, email, role, is_active, university')
+      .select('id, full_name, email, role, is_active')  // ← 'university' removed
       .eq('id', supervisorId)
       .maybeSingle();
 
@@ -212,7 +213,7 @@ export default async function handler(req, res) {
 
     // ============================================================
     // STEP 2: GET CANDIDATES ASSIGNED TO SUPERVISOR
-    // 🟢 PRIMARY SOURCE: candidate_supervisors junction table
+    // PRIMARY SOURCE: candidate_supervisors junction table
     // ============================================================
     let allCandidates = [];
     const candidateIdsSet = new Set();
