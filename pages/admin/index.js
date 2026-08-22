@@ -1,7 +1,8 @@
-// pages/admin/index.js - FINAL CORRECTED VERSION
+// pages/admin/index.js - FINAL DEPLOYMENT VERSION
+// FIXED: Shows both Total Reports and Unique Completed candidates
+// FIXED: Displays National Service and Stratavax report counts separately
 // FIXED: Uses hasResult (from assessment_results) for completed status
 // FIXED: Universal aggressive consolidation for ALL universities
-// FIXED: Correct status mapping for all candidates
 
 import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/router";
@@ -701,7 +702,9 @@ export default function AdminDashboard() {
     unblockedAssessments: 0,
     blockedAssessments: 0,
     inProgressSessions: 0,
-    totalResults: 0
+    totalResults: 0,
+    nationalServiceReports: 0,
+    stratavaxReports: 0
   });
 
   const [allCandidates, setAllCandidates] = useState([]);
@@ -759,7 +762,7 @@ export default function AdminDashboard() {
   const progGroup = useMemo(() => getUniqueMasterNames(rawPrograms, consolidateProgramName), [rawPrograms]);
 
   // ============================================================
-  // UNIVERSITY BREAKDOWN - FIXED: Uses hasResult for completed
+  // UNIVERSITY BREAKDOWN - Uses hasResult for completed
   // ============================================================
   const universityBreakdown = useMemo(() => {
     const map = {};
@@ -1040,6 +1043,9 @@ export default function AdminDashboard() {
     try {
       console.log("Fetching admin dashboard data...");
 
+      // National Service Assessment ID
+      const NATIONAL_SERVICE_ASSESSMENT_ID = 'bdb9d46e-9fac-4d00-8478-1f649e7ac600';
+
       const [
         supervisorCount,
         candidateCount,
@@ -1094,6 +1100,13 @@ export default function AdminDashboard() {
       const unblockedCount = accessRows.filter((item) => item.status === "unblocked").length;
       const blockedCount = accessRows.filter((item) => item.status === "blocked").length;
 
+      // Count National Service and Stratavax reports
+      const resultsData = resultsResponse?.data || [];
+      const nationalServiceCount = resultsData.filter(
+        r => r.assessment_id === NATIONAL_SERVICE_ASSESSMENT_ID
+      ).length;
+      const stratavaxCount = resultsData.length - nationalServiceCount;
+
       setStats({
         totalSupervisors: supervisorCount.count || 0,
         totalCandidates: candidateCount.count || 0,
@@ -1102,15 +1115,19 @@ export default function AdminDashboard() {
         unblockedAssessments: unblockedCount || 0,
         blockedAssessments: blockedCount || 0,
         inProgressSessions: inProgressCount.count || 0,
-        totalResults: resultCount.count || 0
+        totalResults: resultCount.count || 0,
+        nationalServiceReports: nationalServiceCount,
+        stratavaxReports: stratavaxCount
       });
 
       setAllCandidates(allCandidatesResponse?.data || []);
       setRecentCandidates(recentCandidatesResponse?.data || []);
-      setAllResults(resultsResponse?.data || []);
+      setAllResults(resultsData);
       setCandidateAssessmentsData(accessRows || []);
       
-      console.log("Fetched results count:", resultsResponse?.data?.length || 0);
+      console.log("Fetched results count:", resultsData.length || 0);
+      console.log("National Service:", nationalServiceCount);
+      console.log("Stratavax:", stratavaxCount);
       console.log("Candidates count:", allCandidatesResponse?.data?.length || 0);
     } catch (error) {
       console.error("Error fetching admin dashboard data:", error);
@@ -1171,15 +1188,15 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* STATS CARDS */}
+        {/* STATS CARDS - Updated to show both Total Reports and Unique Candidates */}
         <div style={styles.statsRow}>
           <StatCard icon="👥" label="Total Candidates" value={totalRegistered} />
-          <StatCard icon="✅" label="Completed" value={totalCompleted} />
+          <StatCard icon="📊" label="Total Reports" value={stats.totalResults || 0} />
+          <StatCard icon="✅" label="Unique Completed" value={totalCompleted} />
+          <StatCard icon="📋" label="National Service" value={stats.nationalServiceReports || 0} />
+          <StatCard icon="📄" label="Stratavax" value={stats.stratavaxReports || 0} />
           <StatCard icon="🔄" label="In Progress" value={totalInProgress} />
-          <StatCard icon="📅" label="Scheduled" value={totalScheduled} />
-          <StatCard icon="🔓" label="Unblocked" value={totalUnblocked} />
           <StatCard icon="🔒" label="Blocked" value={totalBlocked} />
-          <StatCard icon="⏳" label="Not Started" value={totalNotStarted} />
           <StatCard icon="📊" label="Avg Score" value={`${filteredGlobalAverageScore}%`} />
         </div>
 
