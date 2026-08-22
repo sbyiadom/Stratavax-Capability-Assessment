@@ -1,6 +1,7 @@
-// pages/admin/index.js - FINAL DEPLOYMENT VERSION
+// pages/admin/index.js - FINAL CORRECTED VERSION
+// FIXED: Uses hasResult (from assessment_results) for completed status
 // FIXED: Universal aggressive consolidation for ALL universities
-// FIXED: Handles ALL variations, typos, and case differences for every university
+// FIXED: Correct status mapping for all candidates
 
 import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/router";
@@ -77,10 +78,8 @@ function consolidateUniversityName(raw) {
   const cleaned = raw.replace(/\s+/g, ' ').trim();
   
   // ============================================================
-  // STEP 1: CHECK FOR KNUST VARIATIONS
+  // STEP 1: KNUST - Kwame Nkrumah University of Science and Technology
   // ============================================================
-  // Matches: KNUST, knust, K.N.U.S.T, Kwame Nkrumah, Kwame Nkrumah University,
-  // Kwame Nkrumah University of Science and Technology, etc.
   if (lower === 'knust' ||
       lower.includes('knust') ||
       lower.includes('k.n.u.s.t') ||
@@ -91,10 +90,8 @@ function consolidateUniversityName(raw) {
   }
   
   // ============================================================
-  // STEP 2: CHECK FOR UMaT VARIATIONS
+  // STEP 2: UMaT - University of Mines and Technology
   // ============================================================
-  // Matches: UMaT, umat, U.M.A.T, University of Mines and Technology,
-  // University of Mines and Technology Tarkwa, UMaT Tarkwa, all typos
   if (lower === 'umat' ||
       lower.includes('umat') ||
       lower.includes('u.m.a.t') ||
@@ -107,9 +104,8 @@ function consolidateUniversityName(raw) {
   }
   
   // ============================================================
-  // STEP 3: CHECK FOR UNIVERSITY OF GHANA VARIATIONS
+  // STEP 3: UG - University of Ghana
   // ============================================================
-  // Matches: UG, ug, U.G, University of Ghana, Legon, etc.
   if (lower === 'ug' ||
       lower.includes('ug ') ||
       lower.includes('u.g') ||
@@ -120,9 +116,8 @@ function consolidateUniversityName(raw) {
   }
   
   // ============================================================
-  // STEP 4: CHECK FOR UNIVERSITY OF CAPE COAST VARIATIONS
+  // STEP 4: UCC - University of Cape Coast
   // ============================================================
-  // Matches: UCC, ucc, U.C.C, University of Cape Coast, Cape Coast, Capecoast
   if (lower === 'ucc' ||
       lower.includes('ucc ') ||
       lower.includes('u.c.c') ||
@@ -133,9 +128,8 @@ function consolidateUniversityName(raw) {
   }
   
   // ============================================================
-  // STEP 5: CHECK FOR KUMASI TECHNICAL UNIVERSITY VARIATIONS
+  // STEP 5: KSTU - Kumasi Technical University
   // ============================================================
-  // Matches: KSTU, kstu, K.S.T.U, Kumasi Technical University, Kumasi Tech
   if (lower === 'kstu' ||
       lower.includes('kstu ') ||
       lower.includes('k.s.t.u') ||
@@ -145,21 +139,21 @@ function consolidateUniversityName(raw) {
   }
   
   // ============================================================
-  // STEP 6: CHECK FOR TAKORADI TECHNICAL UNIVERSITY
+  // STEP 6: Takoradi Technical University
   // ============================================================
   if (lower.includes('takoradi') && lower.includes('technical')) {
     return 'Takoradi Technical University';
   }
   
   // ============================================================
-  // STEP 7: CHECK FOR ACCRA TECHNICAL UNIVERSITY
+  // STEP 7: Accra Technical University
   // ============================================================
   if (lower.includes('accra') && lower.includes('technical')) {
     return 'Accra Technical University';
   }
   
   // ============================================================
-  // STEP 8: CHECK FOR KOFORIDUA TECHNICAL UNIVERSITY
+  // STEP 8: Koforidua Technical University
   // ============================================================
   if ((lower.includes('koforidua') || lower.includes('korforidua')) && 
       lower.includes('technical')) {
@@ -167,42 +161,42 @@ function consolidateUniversityName(raw) {
   }
   
   // ============================================================
-  // STEP 9: CHECK FOR SUNYANI TECHNICAL UNIVERSITY
+  // STEP 9: Sunyani Technical University
   // ============================================================
   if (lower.includes('sunyani') && lower.includes('technical')) {
     return 'Sunyani Technical University';
   }
   
   // ============================================================
-  // STEP 10: CHECK FOR CAPE COAST TECHNICAL UNIVERSITY
+  // STEP 10: Cape Coast Technical University
   // ============================================================
   if (lower.includes('cape coast') && lower.includes('technical')) {
     return 'Cape Coast Technical University';
   }
   
   // ============================================================
-  // STEP 11: CHECK FOR HO TECHNICAL UNIVERSITY
+  // STEP 11: Ho Technical University
   // ============================================================
   if ((lower.includes('ho') || lower.includes('ho ')) && lower.includes('technical')) {
     return 'Ho Technical University';
   }
   
   // ============================================================
-  // STEP 12: CHECK FOR TAMALE TECHNICAL UNIVERSITY
+  // STEP 12: Tamale Technical University
   // ============================================================
   if (lower.includes('tamale') && lower.includes('technical')) {
     return 'Tamale Technical University';
   }
   
   // ============================================================
-  // STEP 13: CHECK FOR UNIVERSITY OF ENERGY AND NATURAL RESOURCES
+  // STEP 13: University of Energy and Natural Resources
   // ============================================================
   if (lower.includes('energy') && lower.includes('natural resources')) {
     return 'University of Energy and Natural Resources';
   }
   
   // ============================================================
-  // STEP 14: CHECK FOR UNIVERSITY FOR DEVELOPMENT STUDIES
+  // STEP 14: UDS - University for Development Studies
   // ============================================================
   if (lower === 'uds' ||
       lower.includes('uds ') ||
@@ -213,21 +207,21 @@ function consolidateUniversityName(raw) {
   }
   
   // ============================================================
-  // STEP 15: CHECK FOR UNIVERSITY OF EDUCATION WINNEBA
+  // STEP 15: University of Education Winneba
   // ============================================================
   if (lower.includes('education') && lower.includes('winneba')) {
     return 'University of Education, Winneba';
   }
   
   // ============================================================
-  // STEP 16: CHECK FOR FEDERAL UNIVERSITY OF TECHNOLOGY
+  // STEP 16: Federal University of Technology
   // ============================================================
   if (lower.includes('federal') && lower.includes('technology')) {
     return 'Federal University of Technology';
   }
   
   // ============================================================
-  // STEP 17: CHECK FOR GHANA COMMUNICATION TECHNOLOGY UNIVERSITY
+  // STEP 17: GCTU - Ghana Communication Technology University
   // ============================================================
   if (lower === 'gctu' ||
       lower.includes('gctu ') ||
@@ -239,14 +233,14 @@ function consolidateUniversityName(raw) {
   }
   
   // ============================================================
-  // STEP 18: CHECK FOR PENTECOST UNIVERSITY
+  // STEP 18: Pentecost University
   // ============================================================
   if (lower.includes('pentecost')) {
     return 'Pentecost University';
   }
   
   // ============================================================
-  // STEP 19: CHECK FOR UNIVERSITY OF PROFESSIONAL STUDIES
+  // STEP 19: UPSA - University of Professional Studies
   // ============================================================
   if (lower === 'upsa' ||
       lower.includes('upsa ') ||
@@ -256,7 +250,7 @@ function consolidateUniversityName(raw) {
   }
   
   // ============================================================
-  // STEP 20: CHECK FOR REGIONAL MARITIME UNIVERSITY
+  // STEP 20: RMU - Regional Maritime University
   // ============================================================
   if (lower === 'rmu' ||
       lower.includes('rmu ') ||
@@ -266,7 +260,7 @@ function consolidateUniversityName(raw) {
   }
   
   // ============================================================
-  // STEP 21: CHECK FOR KOFORIDUA POLYTECHNIC
+  // STEP 21: KPoly - Koforidua Polytechnic
   // ============================================================
   if (lower === 'kpoly' ||
       lower.includes('kpoly ') ||
@@ -277,7 +271,7 @@ function consolidateUniversityName(raw) {
   }
   
   // ============================================================
-  // STEP 22: CHECK FOR UNIVERSITY OF SKILLS TRAINING
+  // STEP 22: University of Skills Training
   // ============================================================
   if (lower.includes('skills training') || 
       lower.includes('entrepreneurial')) {
@@ -285,28 +279,28 @@ function consolidateUniversityName(raw) {
   }
   
   // ============================================================
-  // STEP 23: CHECK FOR ASHESI UNIVERSITY
+  // STEP 23: Ashesi University
   // ============================================================
   if (lower.includes('ashesi')) {
     return 'Ashesi University';
   }
   
   // ============================================================
-  // STEP 24: CHECK FOR VALLEY VIEW UNIVERSITY
+  // STEP 24: Valley View University
   // ============================================================
   if (lower.includes('valley view')) {
     return 'Valley View University';
   }
   
   // ============================================================
-  // STEP 25: CHECK FOR CENTRAL UNIVERSITY
+  // STEP 25: Central University
   // ============================================================
   if (lower.includes('central university')) {
     return 'Central University';
   }
   
   // ============================================================
-  // STEP 26: CHECK FOR ALL NATIONS UNIVERSITY
+  // STEP 26: ANU - All Nations University
   // ============================================================
   if (lower === 'anu' ||
       lower.includes('anu ') ||
@@ -315,7 +309,7 @@ function consolidateUniversityName(raw) {
   }
   
   // ============================================================
-  // STEP 27: CHECK FOR ACCRA INSTITUTE OF TECHNOLOGY
+  // STEP 27: AIT - Accra Institute of Technology
   // ============================================================
   if (lower.includes('ait') ||
       lower.includes('a.i.t') ||
@@ -324,91 +318,91 @@ function consolidateUniversityName(raw) {
   }
   
   // ============================================================
-  // STEP 28: CHECK FOR WISCONSIN INTERNATIONAL UNIVERSITY
+  // STEP 28: Wisconsin International University
   // ============================================================
   if (lower.includes('wisconsin')) {
     return 'Wisconsin International University';
   }
   
   // ============================================================
-  // STEP 29: CHECK FOR CHRISTIAN SERVICE UNIVERSITY
+  // STEP 29: Christian Service University
   // ============================================================
   if (lower.includes('christian service')) {
     return 'Christian Service University';
   }
   
   // ============================================================
-  // STEP 30: CHECK FOR DATA LINK UNIVERSITY
+  // STEP 30: Data Link University
   // ============================================================
   if (lower.includes('data link')) {
     return 'Data Link University';
   }
   
   // ============================================================
-  // STEP 31: CHECK FOR BLUE CREST UNIVERSITY
+  // STEP 31: Blue Crest University
   // ============================================================
   if (lower.includes('blue crest')) {
     return 'Blue Crest University';
   }
   
   // ============================================================
-  // STEP 32: CHECK FOR GARDEN CITY UNIVERSITY
+  // STEP 32: Garden City University
   // ============================================================
   if (lower.includes('garden city')) {
     return 'Garden City University';
   }
   
   // ============================================================
-  // STEP 33: CHECK FOR METHODIST UNIVERSITY
+  // STEP 33: Methodist University
   // ============================================================
   if (lower.includes('methodist')) {
     return 'Methodist University';
   }
   
   // ============================================================
-  // STEP 34: CHECK FOR PRESBYTERIAN UNIVERSITY
+  // STEP 34: Presbyterian University
   // ============================================================
   if (lower.includes('presbyterian')) {
     return 'Presbyterian University';
   }
   
   // ============================================================
-  // STEP 35: CHECK FOR UNIVERSITY OF UYO
+  // STEP 35: University of Uyo
   // ============================================================
   if (lower.includes('uyo')) {
     return 'University of Uyo';
   }
   
   // ============================================================
-  // STEP 36: CHECK FOR MARWADI UNIVERSITY
+  // STEP 36: Marwadi University
   // ============================================================
   if (lower.includes('marwadi')) {
     return 'Marwadi University';
   }
   
   // ============================================================
-  // STEP 37: CHECK FOR UNIVERSITY OF TECHNOLOGY AND APPLIED SCIENCES
+  // STEP 37: University of Technology and Applied Sciences
   // ============================================================
   if (lower.includes('technology and applied sciences')) {
     return 'University of Technology and Applied Sciences';
   }
   
   // ============================================================
-  // STEP 38: CHECK FOR AAMUSTED
+  // STEP 38: AAMUSTED
   // ============================================================
   if (lower.includes('aamusted')) {
     return 'AAMUSTED';
   }
   
   // ============================================================
-  // STEP 39: CHECK FOR ANNOITED TECHNICAL TRAINING INSTITUTE
+  // STEP 39: Annoited Technical Training Institute
   // ============================================================
   if (lower.includes('annoited') || lower.includes('anointed')) {
     return 'Annoited Technical Training Institute';
   }
   
   // ============================================================
-  // STEP 40: DEFAULT - Clean up and return
+  // STEP 40: Default - Return cleaned or "Not Specified"
   // ============================================================
   if (!raw || raw.trim() === '') {
     return 'Not Specified';
@@ -436,7 +430,6 @@ function consolidateProgramName(raw) {
   
   const cleanLower = cleanForMatch(raw);
   
-  // Electrical/Electronic Engineering
   if (cleanLower.includes('electrical') || cleanLower.includes('electronic') || 
       cleanLower.includes('elect/electron') || cleanLower.includes('electrical/electronic') ||
       cleanLower.includes('electrical electronic') || cleanLower.includes('electrical and electronic') ||
@@ -444,220 +437,179 @@ function consolidateProgramName(raw) {
     return 'BSc Electrical/Electronic Engineering';
   }
   
-  // Mechanical Engineering
   if (cleanLower.includes('mechanical') || cleanLower.includes('mech') ||
       lower === 'me' || lower.includes('me ')) {
     return 'BSc Mechanical Engineering';
   }
   
-  // Chemical Engineering
   if (cleanLower.includes('chemical') || cleanLower.includes('chem') ||
       lower === 'che' || lower.includes('che ')) {
     return 'BSc Chemical Engineering';
   }
   
-  // Civil Engineering
   if (cleanLower.includes('civil') || lower === 'ce' || lower.includes('ce ')) {
     return 'BSc Civil Engineering';
   }
   
-  // Computer Engineering
   if (cleanLower.includes('computer') || lower === 'cpe' || lower.includes('cpe ')) {
     return 'BSc Computer Engineering';
   }
   
-  // Industrial Engineering
   if (cleanLower.includes('industrial') || lower === 'ie' || lower.includes('ie ')) {
     return 'BSc Industrial Engineering';
   }
   
-  // Agricultural Engineering
   if (cleanLower.includes('agricultural') || cleanLower.includes('agric') ||
       lower === 'age' || lower.includes('age ')) {
     return 'BSc Agricultural Engineering';
   }
   
-  // Petroleum Engineering
   if (cleanLower.includes('petroleum') || cleanLower.includes('petrol') ||
       lower === 'pe' || lower.includes('pe ')) {
     return 'BSc Petroleum Engineering';
   }
   
-  // Geological Engineering
   if (cleanLower.includes('geological') || cleanLower.includes('geo') ||
       lower === 'ge' || lower.includes('ge ')) {
     return 'BSc Geological Engineering';
   }
   
-  // Geomatic Engineering
   if (cleanLower.includes('geomatic')) {
     return 'BSc Geomatic Engineering';
   }
   
-  // Materials Engineering
   if (cleanLower.includes('materials') || cleanLower.includes('material') ||
       lower === 'mte' || lower.includes('mte ')) {
     return 'BSc Materials Engineering';
   }
   
-  // Telecommunications Engineering
   if (cleanLower.includes('telecommunications') || cleanLower.includes('telecom') ||
       cleanLower.includes('telecommunication') || lower === 'tele' || lower.includes('tele ')) {
     return 'BSc Telecommunications Engineering';
   }
   
-  // Renewable Energy Engineering
   if (cleanLower.includes('renewable') || cleanLower.includes('energy')) {
     return 'BSc Renewable Energy Engineering';
   }
   
-  // Automobile Engineering
   if (cleanLower.includes('automobile') || cleanLower.includes('auto')) {
     return 'BSc Automobile Engineering';
   }
   
-  // Information Technology
   if (cleanLower.includes('information technology') || cleanLower.includes('info tech') ||
       lower === 'it' || lower.includes('it ')) {
     return 'BSc Information Technology';
   }
   
-  // Information Systems
   if (cleanLower.includes('information systems') || cleanLower.includes('info systems')) {
     return 'BSc Information Systems';
   }
   
-  // Biomedical Engineering
   if (cleanLower.includes('biomedical') || cleanLower.includes('bio medical')) {
     return 'BSc Biomedical Engineering';
   }
   
-  // Minerals Engineering
   if (cleanLower.includes('minerals') || cleanLower.includes('mining')) {
     return 'BSc Minerals Engineering';
   }
   
-  // Psychology
   if (cleanLower.includes('psychology') || cleanLower.includes('psych')) {
     return 'BA Psychology';
   }
   
-  // Political Science
   if (cleanLower.includes('political science') || cleanLower.includes('politics') ||
       cleanLower.includes('political')) {
     return 'BA Political Science';
   }
   
-  // Laboratory Technology
   if (cleanLower.includes('laboratory') || cleanLower.includes('lab')) {
     return 'BSc Laboratory Technology';
   }
   
-  // Food Science
   if (cleanLower.includes('food science') || cleanLower.includes('food')) {
     return 'BSc Food Science and Postharvest Technology';
   }
   
-  // Statistics and Mathematics
   if ((cleanLower.includes('statistics') || cleanLower.includes('stat')) && 
       (cleanLower.includes('mathematics') || cleanLower.includes('math'))) {
     return 'BSc Statistics and Mathematics';
   }
   
-  // Mathematics
   if (cleanLower.includes('mathematics') || cleanLower.includes('math') ||
       lower === 'maths' || lower.includes('maths ')) {
     return 'BSc Mathematics';
   }
   
-  // Statistics
   if (cleanLower.includes('statistics') || cleanLower.includes('stat')) {
     return 'BSc Statistics';
   }
   
-  // Accounting
   if (cleanLower.includes('accounting')) {
     return 'BSc Accounting';
   }
   
-  // Accounting and Economics
   if (cleanLower.includes('accounting') && cleanLower.includes('economics')) {
     return 'BSc Accounting and Economics';
   }
   
-  // Economics
   if (cleanLower.includes('economics')) {
     return 'BSc Economics';
   }
   
-  // Business Administration
   if (cleanLower.includes('business administration') || cleanLower.includes('business admin') ||
       cleanLower.includes('management') || cleanLower.includes('admin') || 
       cleanLower.includes('secretariat') || cleanLower.includes('secretariatship')) {
     return 'Business Administration';
   }
   
-  // Marketing
   if (cleanLower.includes('marketing')) {
     return 'BSc Marketing';
   }
   
-  // Human Resource Management
   if (cleanLower.includes('human resource') || cleanLower.includes('hr')) {
     return 'BSc Human Resource Management';
   }
   
-  // Public Administration
   if (cleanLower.includes('public administration')) {
     return 'BSc Public Administration';
   }
   
-  // Public Health
   if (cleanLower.includes('public health')) {
     return 'BSc Public Health';
   }
   
-  // Nursing
   if (cleanLower.includes('nursing')) {
     return 'BSc Nursing';
   }
   
-  // Midwifery
   if (cleanLower.includes('midwifery')) {
     return 'BSc Midwifery';
   }
   
-  // Architecture
   if (cleanLower.includes('architecture')) {
     return 'BSc Architecture';
   }
   
-  // Estate Management
   if (cleanLower.includes('estate management') || cleanLower.includes('estate')) {
     return 'BSc Estate Management';
   }
   
-  // Quantity Surveying
   if (cleanLower.includes('quantity surveying') || cleanLower.includes('surveying')) {
     return 'BSc Quantity Surveying';
   }
   
-  // Arts
   if (cleanLower.includes('arts') || lower.includes('ba ') || lower.includes('b.a ')) {
     return 'BA Arts';
   }
   
-  // Biological Sciences
   if (cleanLower.includes('biological') || cleanLower.includes('biology')) {
     return 'BSc Biological Sciences';
   }
   
-  // Chemistry
   if (cleanLower.includes('chemistry')) {
     return 'BSc Chemistry';
   }
   
-  // Physics
   if (cleanLower.includes('physics')) {
     return 'BSc Physics';
   }
@@ -807,7 +759,7 @@ export default function AdminDashboard() {
   const progGroup = useMemo(() => getUniqueMasterNames(rawPrograms, consolidateProgramName), [rawPrograms]);
 
   // ============================================================
-  // UNIVERSITY BREAKDOWN
+  // UNIVERSITY BREAKDOWN - FIXED: Uses hasResult for completed
   // ============================================================
   const universityBreakdown = useMemo(() => {
     const map = {};
@@ -832,8 +784,9 @@ export default function AdminDashboard() {
       map[name].total += 1;
       map[name].candidates.push(c);
       
+      // 🔥 FIX: Use hasResult (from assessment_results) for completed
+      const hasCompleted = c.hasResult === true;
       const statuses = c.assessmentStatuses || ['not_started'];
-      const hasCompleted = statuses.some(s => s === 'completed');
       const hasInProgress = statuses.some(s => s === 'in_progress');
       const hasBlocked = statuses.some(s => s === 'blocked');
       const hasUnblocked = statuses.some(s => s === 'unblocked');
