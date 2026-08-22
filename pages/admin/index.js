@@ -1,5 +1,8 @@
-// pages/admin/index.js - COMPLETE FIXED FILE
-// FIXED: Includes "Not Specified" category, aggressive university consolidation
+// pages/admin/index.js - FINAL DEPLOYMENT VERSION
+// FIXED: Includes "Not Specified" category for candidates without university
+// FIXED: Aggressive university consolidation (KNUST, UMaT, etc.)
+// FIXED: Correct status mapping (completed, in_progress, scheduled, unblocked, blocked, not_started)
+// FIXED: Counts each candidate once (not duplicate assessments)
 
 import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/router";
@@ -68,7 +71,9 @@ function formatDate(value) {
 // ULTRA AGGRESSIVE UNIVERSITY CONSOLIDATION
 // ============================================================
 function consolidateUniversityName(raw) {
-  if (!raw || typeof raw !== 'string') return 'Not Specified';
+  if (!raw || typeof raw !== 'string' || raw.trim() === '') {
+    return 'Not Specified';
+  }
   
   const lower = raw.toLowerCase().trim();
   const cleaned = raw.replace(/\s+/g, ' ').trim();
@@ -83,7 +88,8 @@ function consolidateUniversityName(raw) {
       lower.includes('kwame nkrumah university') ||
       lower.includes('knust -') ||
       lower.includes('knust-') ||
-      lower.includes('kwame nkrumah university of science and technology')) {
+      lower.includes('kwame nkrumah university of science and technology') ||
+      lower.includes('k.n.u.s.t')) {
     return 'Kwame Nkrumah University of Science and Technology (KNUST)';
   }
   
@@ -98,7 +104,9 @@ function consolidateUniversityName(raw) {
       lower.includes('umat tarkwa') ||
       lower.includes('umat,') ||
       lower.includes('mines and technology') ||
-      lower.includes('university of mines and technology')) {
+      lower.includes('university of mines and technology') ||
+      lower.includes('umat tarkwa') ||
+      lower.includes('university of mines and technology tarkwa')) {
     return 'University of Mines and Technology (UMaT)';
   }
   
@@ -111,7 +119,8 @@ function consolidateUniversityName(raw) {
       lower === 'legon' ||
       lower.includes('legon') ||
       lower.includes('u.g') ||
-      lower.includes('university of ghana-')) {
+      lower.includes('university of ghana-') ||
+      lower.includes('university of ghana legon')) {
     return 'University of Ghana (UG)';
   }
   
@@ -332,13 +341,6 @@ function consolidateUniversityName(raw) {
   }
   
   // ============================================================
-  // KENTUCKY UNIVERSITY
-  // ============================================================
-  if (lower.includes('kentucky')) {
-    return 'Kentucky University';
-  }
-  
-  // ============================================================
   // If it's null or empty, return "Not Specified"
   // ============================================================
   if (!raw || raw.trim() === '') {
@@ -353,7 +355,7 @@ function consolidateUniversityName(raw) {
 // PROGRAM CONSOLIDATION
 // ============================================================
 function consolidateProgramName(raw) {
-  if (!raw || typeof raw !== 'string') return raw;
+  if (!raw || typeof raw !== 'string') return 'Unknown';
   
   const lower = raw.toLowerCase().trim();
   
@@ -561,7 +563,7 @@ function consolidateProgramName(raw) {
     word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
   ).join(' ');
   
-  return cleaned || raw;
+  return cleaned || 'Unknown';
 }
 
 function getUniqueMasterNames(rawItems, consolidateFn) {
@@ -682,7 +684,6 @@ export default function AdminDashboard() {
       hasResult: !!scoreMap[c.id],
       resultDetails: resultMap[c.id] || null,
       consolidatedProgram: consolidateProgramName(c.programme),
-      // 🔥 FIX: Use consolidateUniversityName which returns "Not Specified" for null
       consolidatedUniversity: consolidateUniversityName(c.university),
       assessmentStatuses: statusMap[c.id] || ['not_started']
     }));
@@ -704,7 +705,7 @@ export default function AdminDashboard() {
     const map = {};
     
     candidatesWithScores.forEach(c => {
-      // 🔥 FIX: Always use consolidated name (which handles null as "Not Specified")
+      // FIX: Always use consolidated name (handles null as "Not Specified")
       const name = c.consolidatedUniversity || 'Not Specified';
       
       if (!map[name]) {
@@ -731,6 +732,7 @@ export default function AdminDashboard() {
       const hasUnblocked = statuses.some(s => s === 'unblocked');
       const hasScheduled = statuses.some(s => s === 'scheduled');
       
+      // Priority: completed > in_progress > scheduled > unblocked > blocked > not_started
       if (hasCompleted) {
         map[name].completed += 1;
       } else if (hasInProgress) {
@@ -852,7 +854,7 @@ export default function AdminDashboard() {
   const filteredTotalCandidates = filteredCandidates.length;
 
   // ============================================================
-  // PIE CHARTS
+  // PIE CHARTS - SHOW ALL CATEGORIES
   // ============================================================
   const filteredUniversityPieData = useMemo(() => {
     const labels = filteredUniversityAnalytics.map(u => u.name);
