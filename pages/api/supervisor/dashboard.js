@@ -1,4 +1,4 @@
-// pages/api/supervisor/dashboard.js - FIXED (removed 'score' column)
+// pages/api/supervisor/dashboard.js - WITH WORKPLACE/INTELLECTUAL FIX
 import { createClient } from '@supabase/supabase-js';
 
 function extractBearerToken(req) {
@@ -24,7 +24,7 @@ function getReportData(result) {
 
 function normalizeCategoryScores(result) {
   const reportData = getReportData(result);
-  const raw = result?.category_scores || reportData?.category_scores || reportData?.categoryBreakdown || [];
+  const raw = result?.category_scores || reportData?.categoryScores || reportData?.categoryBreakdown || [];
   
   if (Array.isArray(raw)) {
     return raw.map(cat => ({
@@ -55,10 +55,88 @@ function calculateScore(result) {
 
 function getNationalServiceScores(result) {
   const reportData = getReportData(result);
+  
+  // First try to get from report_data
+  let workplace = safeNumber(
+    reportData?.workplaceReadiness || 
+    reportData?.dimensions?.workplaceReadiness ||
+    result?.workplace_readiness || 
+    0
+  );
+  
+  let intellectual = safeNumber(
+    reportData?.intellectualCapability || 
+    reportData?.dimensions?.intellectualCapability ||
+    result?.intellectual_capability || 
+    0
+  );
+  
+  // If both are 0, calculate from categoryScores
+  if (workplace === 0 && intellectual === 0) {
+    const categoryScores = reportData?.categoryScores || result?.category_scores || [];
+    
+    const workplaceCategories = [
+      'Communication & Teamwork', 
+      'Ownership & Integrity', 
+      'Safety & Risk Awareness', 
+      'Technical Fundamentals',
+      'Work Ethic',
+      'Professional Conduct'
+    ];
+    
+    const intellectualCategories = [
+      'Problem Solving & Troubleshooting',
+      'Logical Reasoning', 
+      'Numerical Reasoning', 
+      'Measurement & Engineering Units',
+      'Learning Agility',
+      'Cognitive Ability',
+      'Analytical Thinking'
+    ];
+    
+    let workplaceTotal = 0;
+    let workplaceCount = 0;
+    let intellectualTotal = 0;
+    let intellectualCount = 0;
+    
+    if (Array.isArray(categoryScores)) {
+      categoryScores.forEach(cat => {
+        const name = cat.category || '';
+        const percentage = safeNumber(cat.percentage || 0);
+        
+        const isWorkplace = workplaceCategories.some(c => name.includes(c));
+        const isIntellectual = intellectualCategories.some(c => name.includes(c));
+        
+        if (isWorkplace && percentage > 0) {
+          workplaceTotal += percentage;
+          workplaceCount++;
+        } else if (isIntellectual && percentage > 0) {
+          intellectualTotal += percentage;
+          intellectualCount++;
+        }
+      });
+    }
+    
+    workplace = workplaceCount > 0 ? Math.round(workplaceTotal / workplaceCount) : 0;
+    intellectual = intellectualCount > 0 ? Math.round(intellectualTotal / intellectualCount) : 0;
+    
+    // If still 0, use percentageScore as overall
+    if (workplace === 0 && intellectual === 0) {
+      const overall = safeNumber(reportData?.percentageScore || result?.percentage_score || 0);
+      workplace = overall;
+      intellectual = overall;
+    }
+  }
+  
   return {
-    workplace: safeNumber(result?.workplace_readiness || reportData?.dimensions?.workplaceReadiness || 0),
-    intellectual: safeNumber(result?.intellectual_capability || reportData?.dimensions?.intellectualCapability || 0),
-    overall: safeNumber(result?.percentage_score || reportData?.dimensions?.overallScore || 0)
+    workplaceReadiness: workplace,
+    intellectualCapability: intellectual,
+    overallScore: safeNumber(
+      reportData?.percentageScore || 
+      reportData?.overallScore || 
+      result?.percentage_score || 
+      0
+    )
   };
 }
 
@@ -68,21 +146,6 @@ function getRecommendation(workplace, intellectual, overall) {
   if (workplace >= 65 && intellectual >= 65) return 'Reserve Pool';
   if (workplace >= 50 || intellectual >= 50 || overall >= 50) return 'Consider for Development';
   return 'Not Recommended';
-}
-
-async function fetchAllRows(queryFn, pageSize = 1000) {
-  let all = [];
-  let from = 0;
-  while (true) {
-    const to = from + pageSize - 1;
-    const { data, error } = await queryFn().range(from, to);
-    if (error) throw error;
-    const rows = data || [];
-    all = all.concat(rows);
-    if (rows.length < pageSize) break;
-    from += pageSize;
-  }
-  return all;
 }
 
 export default async function handler(req, res) {
@@ -161,7 +224,7 @@ export default async function handler(req, res) {
       return res.status(500).json({ success: false, error: candError.message });
     }
 
-    // 🔴 FIX: Removed 'score' column - only use columns that exist
+    // Get assessment results
     const { data: results, error: resError } = await supabase
       .from('assessment_results')
       .select('id, user_id, assessment_id, percentage_score, completed_at, report_data, category_scores, workplace_readiness, intellectual_capability')
@@ -202,14 +265,17 @@ export default async function handler(req, res) {
       const isNS = r.assessment_id === NS_ASSESSMENT_ID;
       
       let score = calculateScore(r);
-      let workplace = safeNumber(r.workplace_readiness);
-      let intellectual = safeNumber(r.intellectual_capability);
+      let workplace = 0;
+      let intellectual = 0;
       
       if (isNS) {
         const ns = getNationalServiceScores(r);
-        workplace = ns.workplace || workplace;
-        intellectual = ns.intellectual || intellectual;
-        score = ns.overall || score;
+        workplace = ns.workplaceReadiness || 0;
+        intellectual = ns.intellectualCapability || 0;
+        score = ns.overallScore || score;
+      } else {
+        workplace = safeNumber(r.workplace_readiness || 0);
+        intellectual = safeNumber(r.intellectual_capability || 0);
       }
 
       const recommendation = getRecommendation(workplace, intellectual, score);
