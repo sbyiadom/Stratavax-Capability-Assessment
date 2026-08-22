@@ -1,4 +1,4 @@
-// pages/api/supervisor/dashboard.js - SIMPLIFIED WORKING VERSION
+// pages/api/supervisor/dashboard.js - FIXED (removed 'score' column)
 import { createClient } from '@supabase/supabase-js';
 
 function extractBearerToken(req) {
@@ -50,7 +50,7 @@ function calculateScore(result) {
     const sum = valid.reduce((a, c) => a + c.percentage, 0);
     return Math.round(sum / valid.length);
   }
-  return Math.round(safeNumber(result?.percentage_score || result?.score || 0));
+  return Math.round(safeNumber(result?.percentage_score || 0));
 }
 
 function getNationalServiceScores(result) {
@@ -161,10 +161,10 @@ export default async function handler(req, res) {
       return res.status(500).json({ success: false, error: candError.message });
     }
 
-    // Get assessment results - ONLY columns that exist
+    // 🔴 FIX: Removed 'score' column - only use columns that exist
     const { data: results, error: resError } = await supabase
       .from('assessment_results')
-      .select('id, user_id, assessment_id, percentage_score, score, completed_at, report_data, category_scores, workplace_readiness, intellectual_capability')
+      .select('id, user_id, assessment_id, percentage_score, completed_at, report_data, category_scores, workplace_readiness, intellectual_capability')
       .in('user_id', candidateIds);
 
     if (resError) {
