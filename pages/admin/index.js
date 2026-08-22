@@ -1,11 +1,12 @@
-// pages/admin/index.js - TRUE INFOGRAPHIC DASHBOARD (FIXED SCORES & BAR CHARTS)
-// FIXED: Correct import path for supabase client
+// pages/admin/index.js - FULLY CORRECTED WITH AGGRESSIVE CONSOLIDATION
+// FIXED: Uses service role key for admin operations, aggressive name consolidation
 
 import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import AppLayout from "../../components/AppLayout";
-import { supabase } from "../../supabase/client"; // ✅ CORRECTED: Using the original path
+import { supabase } from "../../supabase/client";
+import { createClient } from '@supabase/supabase-js';
 import AssessmentExpiration from "../../components/admin/AssessmentExpiration";
 
 // ============================================================
@@ -39,42 +40,72 @@ ChartJS.register(
 import Select from 'react-select';
 
 // ============================================================
-// 🟢 AGGRESSIVE CONSOLIDATION FUNCTIONS
+// HELPER FUNCTIONS
 // ============================================================
+function toNumber(value, fallback = 0) {
+  const numberValue = Number(value);
+  if (Number.isNaN(numberValue) || !Number.isFinite(numberValue)) return fallback;
+  return numberValue;
+}
 
-// Function to consolidate university names
+function safeArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function formatDate(value) {
+  if (!value) return "N/A";
+  try {
+    return new Date(value).toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric"
+    });
+  } catch (error) {
+    return "N/A";
+  }
+}
+
+// ============================================================
+// AGGRESSIVE UNIVERSITY CONSOLIDATION
+// ============================================================
 function consolidateUniversityName(raw) {
   if (!raw || typeof raw !== 'string') return raw;
   
-  const lower = raw.toLowerCase();
+  const lower = raw.toLowerCase().trim();
   
-  // Federal University of Technology - all variations
-  if (lower.includes('federal') && lower.includes('technology')) {
-    return 'Federal University of Technology';
-  }
-  
-  // University of Mines and Technology - all variations
-  if (lower.includes('mines') && lower.includes('technology')) {
+  // University of Mines and Technology - ALL variations
+  if (lower.includes('mines') && lower.includes('technology') || 
+      lower === 'umat' || 
+      lower.includes('umat') ||
+      lower.includes('university of mines')) {
     return 'University of Mines and Technology (UMaT)';
   }
   
-  // Kwame Nkrumah University of Science and Technology
-  if (lower.includes('kwame nkrumah') || lower.includes('knust')) {
+  // KNUST - ALL variations
+  if (lower.includes('kwame nkrumah') || 
+      lower === 'knust' ||
+      lower.includes('knust') ||
+      lower.includes('k.n.u.s.t')) {
     return 'Kwame Nkrumah University of Science and Technology (KNUST)';
   }
   
-  // University of Ghana
-  if (lower.includes('university of ghana') || lower.includes('ug') || lower.includes('legon')) {
+  // University of Ghana - ALL variations
+  if (lower.includes('university of ghana') || 
+      lower === 'ug' ||
+      lower === 'legon' ||
+      lower.includes('legon')) {
     return 'University of Ghana';
   }
   
   // University of Cape Coast
-  if (lower.includes('cape coast') || lower.includes('ucc')) {
+  if (lower.includes('cape coast') || 
+      lower === 'ucc' ||
+      lower.includes('ucc')) {
     return 'University of Cape Coast';
   }
   
   // Takoradi Technical University
-  if (lower.includes('takoradi')) {
+  if (lower.includes('takoradi') && lower.includes('technical')) {
     return 'Takoradi Technical University';
   }
   
@@ -114,7 +145,7 @@ function consolidateUniversityName(raw) {
   }
   
   // University for Development Studies
-  if (lower.includes('development studies') || lower.includes('uds')) {
+  if (lower.includes('development studies') || lower === 'uds' || lower.includes('uds')) {
     return 'University for Development Studies';
   }
   
@@ -124,45 +155,93 @@ function consolidateUniversityName(raw) {
   }
   
   // University of Professional Studies
-  if (lower.includes('professional studies') || lower.includes('upsa')) {
-    return 'University of Professional Studies';
-  }
-  
-  // Regional Maritime University
-  if (lower.includes('maritime')) {
-    return 'Regional Maritime University';
+  if (lower.includes('professional studies') || lower === 'upsa' || lower.includes('upsa')) {
+    return 'University of Professional Studies (UPSA)';
   }
   
   // Ghana Communication Technology University
-  if (lower.includes('communication technology') || lower.includes('gctu')) {
-    return 'Ghana Communication Technology University';
+  if (lower.includes('communication technology') || lower === 'gctu' || lower.includes('gctu')) {
+    return 'Ghana Communication Technology University (GCTU)';
   }
   
-  // Skills Training - multiple variations
+  // Regional Maritime University
+  if (lower.includes('maritime') || lower === 'rmu' || lower.includes('rmu')) {
+    return 'Regional Maritime University';
+  }
+  
+  // All Nations University
+  if (lower.includes('all nations') || lower === 'anu' || lower.includes('anu')) {
+    return 'All Nations University';
+  }
+  
+  // Accra Institute of Technology
+  if (lower.includes('accra institute') || lower.includes('ait')) {
+    return 'Accra Institute of Technology';
+  }
+  
+  // Koforidua Polytechnic / KPoly
+  if (lower.includes('koforidua poly') || lower === 'kpoly' || lower.includes('kpoly')) {
+    return 'Koforidua Polytechnic (KPoly)';
+  }
+  
+  // University of Skills Training
   if (lower.includes('skills training') || lower.includes('entrepreneurial')) {
     return 'University of Skills Training and Entrepreneurial Development';
   }
   
-  // Default - clean up common issues
-  let cleaned = raw
-    .replace(/\([^)]*\)/g, '') // Remove parentheses content
-    .replace(/\s+/g, ' ')
-    .trim();
+  // Central University
+  if (lower.includes('central university')) {
+    return 'Central University';
+  }
+  
+  // Wisconsin International University
+  if (lower.includes('wisconsin')) {
+    return 'Wisconsin International University';
+  }
+  
+  // Christian Service University
+  if (lower.includes('christian service')) {
+    return 'Christian Service University';
+  }
+  
+  // Data Link University
+  if (lower.includes('data link')) {
+    return 'Data Link University';
+  }
+  
+  // Blue Crest University
+  if (lower.includes('blue crest')) {
+    return 'Blue Crest University';
+  }
+  
+  // Remove parentheses content for matching
+  let cleaned = raw.replace(/\([^)]*\)/g, '').replace(/\s+/g, ' ').trim();
+  
+  // Check if cleaned matches any of the above patterns
+  const cleanedLower = cleaned.toLowerCase();
+  if (cleanedLower.includes('mines') || cleanedLower.includes('umat')) {
+    return 'University of Mines and Technology (UMaT)';
+  }
+  if (cleanedLower.includes('knust') || cleanedLower.includes('kwame nkrumah')) {
+    return 'Kwame Nkrumah University of Science and Technology (KNUST)';
+  }
   
   return cleaned || raw;
 }
 
-// Function to consolidate program names
+// ============================================================
+// AGGRESSIVE PROGRAM CONSOLIDATION
+// ============================================================
 function consolidateProgramName(raw) {
   if (!raw || typeof raw !== 'string') return raw;
   
-  const lower = raw.toLowerCase();
+  const lower = raw.toLowerCase().trim();
   
-  // Remove common prefixes/suffixes for better matching
+  // Remove common prefixes for better matching
   const cleanForMatch = (str) => {
     return str
       .toLowerCase()
-      .replace(/bsc|b\.sc|b sc|bachelor|ba|b\.a|b a|b-tech|btech|b\.tech/g, '')
+      .replace(/bsc|b\.sc|b sc|bachelor|ba|b\.a|b a|b-tech|btech|b\.tech|diploma|hnd/g, '')
       .replace(/[^a-z\s]/g, '')
       .replace(/\s+/g, ' ')
       .trim();
@@ -170,50 +249,70 @@ function consolidateProgramName(raw) {
   
   const cleanLower = cleanForMatch(raw);
   
-  // Electrical/Electronic Engineering - all variations
-  if (cleanLower.includes('electrical') || cleanLower.includes('electronic') || 
-      cleanLower.includes('elect/electron') || cleanLower.includes('electrical/electronic') ||
-      cleanLower.includes('electrical electronic') || cleanLower.includes('electrical and electronic')) {
+  // Electrical/Electronic Engineering - ALL variations
+  if (cleanLower.includes('electrical') || 
+      cleanLower.includes('electronic') || 
+      cleanLower.includes('elect/electron') || 
+      cleanLower.includes('electrical/electronic') ||
+      cleanLower.includes('electrical electronic') || 
+      cleanLower.includes('electrical and electronic') ||
+      lower === 'eee' ||
+      lower.includes('eee')) {
     return 'BSc Electrical/Electronic Engineering';
   }
   
-  // Mechanical Engineering
-  if (cleanLower.includes('mechanical') || cleanLower.includes('mech')) {
+  // Mechanical Engineering - ALL variations
+  if (cleanLower.includes('mechanical') || 
+      cleanLower.includes('mech') ||
+      lower === 'me' ||
+      lower.includes('me ')) {
     return 'BSc Mechanical Engineering';
   }
   
   // Chemical Engineering
-  if (cleanLower.includes('chemical') || cleanLower.includes('chem')) {
+  if (cleanLower.includes('chemical') || 
+      cleanLower.includes('chem') ||
+      lower === 'che' ||
+      lower.includes('che ')) {
     return 'BSc Chemical Engineering';
   }
   
   // Civil Engineering
-  if (cleanLower.includes('civil')) {
+  if (cleanLower.includes('civil') || lower === 'ce' || lower.includes('ce ')) {
     return 'BSc Civil Engineering';
   }
   
   // Computer Engineering
-  if (cleanLower.includes('computer')) {
+  if (cleanLower.includes('computer') || lower === 'cpe' || lower.includes('cpe ')) {
     return 'BSc Computer Engineering';
   }
   
   // Industrial Engineering
-  if (cleanLower.includes('industrial')) {
+  if (cleanLower.includes('industrial') || lower === 'ie' || lower.includes('ie ')) {
     return 'BSc Industrial Engineering';
   }
   
   // Agricultural Engineering
-  if (cleanLower.includes('agricultural') || cleanLower.includes('agric')) {
+  if (cleanLower.includes('agricultural') || 
+      cleanLower.includes('agric') ||
+      lower === 'age' ||
+      lower.includes('age ')) {
     return 'BSc Agricultural Engineering';
   }
   
   // Petroleum Engineering
-  if (cleanLower.includes('petroleum') || cleanLower.includes('petrol')) {
+  if (cleanLower.includes('petroleum') || 
+      cleanLower.includes('petrol') ||
+      lower === 'pe' ||
+      lower.includes('pe ')) {
     return 'BSc Petroleum Engineering';
   }
   
   // Geological Engineering
-  if (cleanLower.includes('geological') || cleanLower.includes('geo')) {
+  if (cleanLower.includes('geological') || 
+      cleanLower.includes('geo') ||
+      lower === 'ge' ||
+      lower.includes('ge ')) {
     return 'BSc Geological Engineering';
   }
   
@@ -223,49 +322,92 @@ function consolidateProgramName(raw) {
   }
   
   // Materials Engineering
-  if (cleanLower.includes('materials') || cleanLower.includes('material')) {
+  if (cleanLower.includes('materials') || 
+      cleanLower.includes('material') ||
+      lower === 'mte' ||
+      lower.includes('mte ')) {
     return 'BSc Materials Engineering';
   }
   
   // Telecommunications Engineering
-  if (cleanLower.includes('telecommunications') || cleanLower.includes('telecom')) {
+  if (cleanLower.includes('telecommunications') || 
+      cleanLower.includes('telecom') ||
+      lower === 'tele' ||
+      lower.includes('tele ')) {
     return 'BSc Telecommunications Engineering';
   }
   
   // Renewable Energy Engineering
-  if (cleanLower.includes('renewable') || cleanLower.includes('energy')) {
+  if (cleanLower.includes('renewable') || 
+      cleanLower.includes('energy')) {
     return 'BSc Renewable Energy Engineering';
   }
   
   // Automobile Engineering
-  if (cleanLower.includes('automobile') || cleanLower.includes('auto')) {
+  if (cleanLower.includes('automobile') || 
+      cleanLower.includes('auto')) {
     return 'BSc Automobile Engineering';
   }
   
+  // Information Technology
+  if (cleanLower.includes('information technology') || 
+      cleanLower.includes('info tech') ||
+      lower === 'it' ||
+      lower.includes('it ')) {
+    return 'BSc Information Technology';
+  }
+  
+  // Information Systems
+  if (cleanLower.includes('information systems') || 
+      cleanLower.includes('info systems')) {
+    return 'BSc Information Systems';
+  }
+  
+  // Biomedical Engineering
+  if (cleanLower.includes('biomedical') || 
+      cleanLower.includes('bio medical')) {
+    return 'BSc Biomedical Engineering';
+  }
+  
+  // Minerals Engineering
+  if (cleanLower.includes('minerals') || 
+      cleanLower.includes('mining')) {
+    return 'BSc Minerals Engineering';
+  }
+  
   // Psychology
-  if (cleanLower.includes('psychology') || cleanLower.includes('psych')) {
+  if (cleanLower.includes('psychology') || 
+      cleanLower.includes('psych')) {
     return 'BA Psychology';
   }
   
   // Political Science
-  if (cleanLower.includes('political science') || cleanLower.includes('politics')) {
+  if (cleanLower.includes('political science') || 
+      cleanLower.includes('politics')) {
     return 'BA Political Science';
   }
   
   // Laboratory Technology
-  if (cleanLower.includes('laboratory') || cleanLower.includes('lab')) {
+  if (cleanLower.includes('laboratory') || 
+      cleanLower.includes('lab')) {
     return 'BSc Laboratory Technology';
   }
   
   // Food Science
-  if (cleanLower.includes('food science') || cleanLower.includes('food')) {
+  if (cleanLower.includes('food science') || 
+      cleanLower.includes('food')) {
     return 'BSc Food Science and Postharvest Technology';
   }
   
   // Statistics and Mathematics
-  if (cleanLower.includes('statistics') || cleanLower.includes('mathematics') || 
-      cleanLower.includes('math') || (cleanLower.includes('stats') && cleanLower.includes('math'))) {
+  if (cleanLower.includes('statistics') && cleanLower.includes('mathematics') || 
+      cleanLower.includes('stat') && cleanLower.includes('math')) {
     return 'BSc Statistics and Mathematics';
+  }
+  
+  // Accounting
+  if (cleanLower.includes('accounting')) {
+    return 'BSc Accounting';
   }
   
   // Accounting and Economics
@@ -273,24 +415,82 @@ function consolidateProgramName(raw) {
     return 'BSc Accounting and Economics';
   }
   
-  // Management/Business/Administration
-  if (cleanLower.includes('management') || cleanLower.includes('business') || 
-      cleanLower.includes('admin') || cleanLower.includes('secretariat')) {
+  // Economics
+  if (cleanLower.includes('economics')) {
+    return 'BSc Economics';
+  }
+  
+  // Business Administration / Management
+  if (cleanLower.includes('business administration') || 
+      cleanLower.includes('business admin') ||
+      cleanLower.includes('management') ||
+      cleanLower.includes('admin') || 
+      cleanLower.includes('secretariat')) {
     return 'Business Administration';
   }
   
+  // Marketing
+  if (cleanLower.includes('marketing')) {
+    return 'BSc Marketing';
+  }
+  
+  // Human Resource Management
+  if (cleanLower.includes('human resource') || 
+      cleanLower.includes('hr')) {
+    return 'BSc Human Resource Management';
+  }
+  
+  // Public Administration
+  if (cleanLower.includes('public administration')) {
+    return 'BSc Public Administration';
+  }
+  
+  // Public Health
+  if (cleanLower.includes('public health')) {
+    return 'BSc Public Health';
+  }
+  
+  // Nursing
+  if (cleanLower.includes('nursing')) {
+    return 'BSc Nursing';
+  }
+  
+  // Midwifery
+  if (cleanLower.includes('midwifery')) {
+    return 'BSc Midwifery';
+  }
+  
+  // Architecture
+  if (cleanLower.includes('architecture')) {
+    return 'BSc Architecture';
+  }
+  
+  // Estate Management
+  if (cleanLower.includes('estate management') || 
+      cleanLower.includes('estate')) {
+    return 'BSc Estate Management';
+  }
+  
+  // Quantity Surveying
+  if (cleanLower.includes('quantity surveying') || 
+      cleanLower.includes('surveying')) {
+    return 'BSc Quantity Surveying';
+  }
+  
   // Arts
-  if (cleanLower.includes('arts') || cleanLower.includes('ba ')) {
+  if (cleanLower.includes('arts') || 
+      lower.includes('ba ') || 
+      lower.includes('b.a ')) {
     return 'BA Arts';
   }
   
-  // If we have "BSc" or "BA" in the original, try to clean it up
-  if (raw.includes('BSc') || raw.includes('B.Sc') || raw.includes('B sc')) {
+  // If we have "BSc" or "BA" in the original, clean it up
+  if (raw.includes('BSc') || raw.includes('B.Sc') || raw.includes('B sc') || raw.includes('Bachelor')) {
     let cleaned = raw.replace(/BSc|B\.Sc|B Sc|Bachelor/g, '').trim();
     cleaned = cleaned.split(' ').map(word => 
       word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
     ).join(' ');
-    if (cleaned) return `BSc ${cleaned}`;
+    if (cleaned && cleaned.length > 2) return `BSc ${cleaned}`;
   }
   
   if (raw.includes('BA') || raw.includes('B.A') || raw.includes('B A')) {
@@ -298,7 +498,7 @@ function consolidateProgramName(raw) {
     cleaned = cleaned.split(' ').map(word => 
       word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
     ).join(' ');
-    if (cleaned) return `BA ${cleaned}`;
+    if (cleaned && cleaned.length > 2) return `BA ${cleaned}`;
   }
   
   // Default - clean up and return
@@ -314,113 +514,127 @@ function consolidateProgramName(raw) {
   return cleaned || raw;
 }
 
+// ============================================================
+// GET UNIQUE MASTER NAMES WITH MERGING
+// ============================================================
 function getUniqueMasterNames(rawItems, consolidateFn) {
   if (!rawItems || rawItems.length === 0) return { groups: [], masterToRawMap: {} };
   
-  const groups = [];
-  const masterToRawMap = {};
-  const processed = new Set();
+  const map = {};
+  const rawToMasterMap = {};
   
-  const consolidatedMap = {};
+  // First pass: consolidate all items
   rawItems.forEach(raw => {
     const consolidated = consolidateFn(raw);
-    if (!consolidatedMap[consolidated]) {
-      consolidatedMap[consolidated] = [];
+    if (!map[consolidated]) {
+      map[consolidated] = [];
     }
-    consolidatedMap[consolidated].push(raw);
+    map[consolidated].push(raw);
+    rawToMasterMap[raw] = consolidated;
   });
   
-  const uniqueConsolidated = Object.keys(consolidatedMap);
+  // Second pass: merge similar master names (case insensitive)
+  const masterNames = Object.keys(map);
+  const mergedMap = {};
+  const processed = new Set();
   
-  uniqueConsolidated.forEach(name => {
-    if (!processed.has(name)) {
-      processed.add(name);
-      groups.push(name);
-      masterToRawMap[name] = consolidatedMap[name] || [];
-    }
-  });
-  
-  return { groups, masterToRawMap };
-}
-
-function toNumber(value, fallback = 0) {
-  const numberValue = Number(value);
-  if (Number.isNaN(numberValue) || !Number.isFinite(numberValue)) return fallback;
-  return numberValue;
-}
-
-function safeArray(value) {
-  return Array.isArray(value) ? value : [];
-}
-
-function formatDate(value) {
-  if (!value) return "N/A";
-  try {
-    return new Date(value).toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric"
-    });
-  } catch (error) {
-    return "N/A";
-  }
-}
-
-// ============================================================
-// 🟢 AUTH HELPER FUNCTIONS
-// ============================================================
-
-async function getSession() {
-  try {
-    const { data, error } = await supabase.auth.getSession();
-    if (error) {
-      console.error("Session error:", error);
-      return null;
-    }
-    return data?.session || null;
-  } catch (error) {
-    console.error("Error getting session:", error);
-    return null;
-  }
-}
-
-async function ensureValidSession() {
-  const session = await getSession();
-  if (!session) {
-    console.error("No valid session");
-    return null;
-  }
-  return session;
-}
-
-async function getExactCount(tableName, configureQuery) {
-  try {
-    const session = await ensureValidSession();
-    if (!session) {
-      console.error("No valid session for count query");
-      return 0;
-    }
-
-    let query = supabase.from(tableName).select("*", { count: "exact", head: true });
-    if (typeof configureQuery === "function") query = configureQuery(query);
-    const { count, error } = await query;
-    if (error) {
-      if (error.message?.includes("JWT") || error.message?.includes("token")) {
-        throw error;
+  masterNames.forEach(name1 => {
+    if (processed.has(name1)) return;
+    
+    const group = [name1];
+    processed.add(name1);
+    
+    masterNames.forEach(name2 => {
+      if (processed.has(name2)) return;
+      
+      // Check if names are similar (case insensitive)
+      const n1 = name1.toLowerCase();
+      const n2 = name2.toLowerCase();
+      
+      // If one contains the other or they share significant words
+      const words1 = n1.split(' ');
+      const words2 = n2.split(' ');
+      const commonWords = words1.filter(w => words2.includes(w) && w.length > 3);
+      
+      if (commonWords.length >= 2 || n1.includes(n2) || n2.includes(n1)) {
+        processed.add(name2);
+        group.push(name2);
       }
-      console.error("Count error for " + tableName + ":", error);
-      return 0;
-    }
-    return count || 0;
-  } catch (error) {
-    console.error("Count error for " + tableName + ":", error);
-    if (error.message?.includes("JWT") || error.message?.includes("token")) {
-      throw error;
-    }
-    return 0;
-  }
+    });
+    
+    // Use the longest name as master
+    const master = group.reduce((a, b) => a.length >= b.length ? a : b);
+    mergedMap[master] = [];
+    
+    group.forEach(name => {
+      // Merge all raw items from this group
+      map[name].forEach(raw => {
+        if (!mergedMap[master].includes(raw)) {
+          mergedMap[master].push(raw);
+        }
+      });
+    });
+  });
+  
+  return { 
+    groups: Object.keys(mergedMap), 
+    masterToRawMap: mergedMap 
+  };
 }
 
+// ============================================================
+// GET SERVICE ROLE CLIENT
+// ============================================================
+function getServiceClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  
+  if (!supabaseUrl || !supabaseKey) {
+    console.error('Missing Supabase credentials for service client');
+    return null;
+  }
+  
+  return createClient(supabaseUrl, supabaseKey, {
+    auth: { autoRefreshToken: false, persistSession: false }
+  });
+}
+
+// ============================================================
+// CUSTOM SELECT STYLES
+// ============================================================
+const customSelectStyles = {
+  control: (base, state) => ({
+    ...base,
+    minHeight: '38px',
+    borderColor: state.isFocused ? '#1a237e' : '#e2e8f0',
+    boxShadow: state.isFocused ? '0 0 0 1px #1a237e' : 'none',
+    '&:hover': { borderColor: '#1a237e' },
+  }),
+  option: (base, state) => ({
+    ...base,
+    backgroundColor: state.isSelected ? '#1a237e' : state.isFocused ? '#e3f2fd' : 'white',
+    color: state.isSelected ? 'white' : '#1a202c',
+    '&:active': { backgroundColor: '#1a237e' },
+  }),
+  multiValue: (base) => ({
+    ...base,
+    backgroundColor: '#e3f2fd',
+  }),
+  multiValueLabel: (base) => ({
+    ...base,
+    color: '#1a237e',
+    fontWeight: 600,
+  }),
+  multiValueRemove: (base) => ({
+    ...base,
+    color: '#1a237e',
+    '&:hover': { backgroundColor: '#1a237e', color: 'white' },
+  }),
+};
+
+// ============================================================
+// MAIN COMPONENT
+// ============================================================
 export default function AdminDashboard() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -448,7 +662,7 @@ export default function AdminDashboard() {
   const [allResults, setAllResults] = useState([]);
 
   // ============================================================
-  // 🟢 DATA PREPARATION - Join ALL Scores to Candidates
+  // DATA PREPARATION
   // ============================================================
   const candidatesWithScores = useMemo(() => {
     const scoreMap = {};
@@ -468,8 +682,6 @@ export default function AdminDashboard() {
       }
     });
 
-    console.log("Score map created with", Object.keys(scoreMap).length, "candidates with scores");
-
     return allCandidates.map(c => ({
       ...c,
       score: scoreMap[c.id] || 0,
@@ -481,7 +693,7 @@ export default function AdminDashboard() {
   }, [allCandidates, allResults]);
 
   // ============================================================
-  // 🟢 GROUP NORMALIZATION
+  // GROUP NORMALIZATION - USING AGGRESSIVE CONSOLIDATION
   // ============================================================
   const rawUniversities = useMemo(() => candidatesWithScores.map(c => c.university).filter(Boolean), [candidatesWithScores]);
   const rawPrograms = useMemo(() => candidatesWithScores.map(c => c.programme).filter(Boolean), [candidatesWithScores]);
@@ -490,7 +702,7 @@ export default function AdminDashboard() {
   const progGroup = useMemo(() => getUniqueMasterNames(rawPrograms, consolidateProgramName), [rawPrograms]);
 
   // ============================================================
-  // 🟢 FILTER LOGIC
+  // FILTER LOGIC
   // ============================================================
   const filteredCandidates = useMemo(() => {
     let filtered = candidatesWithScores;
@@ -522,16 +734,14 @@ export default function AdminDashboard() {
   }, [candidatesWithScores, selectedUniversityOption, selectedProgramOptions, minScore, maxScore]);
 
   // ============================================================
-  // 🟢 FILTERED ANALYTICS
+  // FILTERED ANALYTICS
   // ============================================================
-  
   const filteredUniversityAnalytics = useMemo(() => {
     const map = {};
     filteredCandidates.forEach(c => {
       if (!c.university) return;
-      
+      // Use consolidated name for grouping
       const name = c.consolidatedUniversity || c.university;
-      
       if (!map[name]) {
         map[name] = { 
           candidates: 0, 
@@ -543,7 +753,6 @@ export default function AdminDashboard() {
       map[name].scoreTotal += c.score;
       map[name].rawNames.add(c.university);
     });
-    
     return Object.entries(map).map(([name, data]) => ({
       name,
       candidates: data.candidates,
@@ -554,12 +763,10 @@ export default function AdminDashboard() {
 
   const filteredProgramAnalytics = useMemo(() => {
     const map = {};
-    
     filteredCandidates.forEach(c => {
       if (!c.programme) return;
-      
+      // Use consolidated name for grouping
       const name = c.consolidatedProgram || c.programme;
-      
       if (!map[name]) {
         map[name] = { 
           candidates: 0, 
@@ -571,7 +778,6 @@ export default function AdminDashboard() {
       map[name].scoreTotal += c.score;
       map[name].rawVariants.add(c.programme);
     });
-    
     return Object.entries(map).map(([name, data]) => ({
       name,
       candidates: data.candidates,
@@ -581,9 +787,7 @@ export default function AdminDashboard() {
   }, [filteredCandidates]);
 
   const filteredGlobalAverageScore = useMemo(() => {
-    const scores = filteredCandidates
-      .map(c => c.score)
-      .filter(s => s > 0);
+    const scores = filteredCandidates.map(c => c.score).filter(s => s > 0);
     if (scores.length === 0) return 0;
     return Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
   }, [filteredCandidates]);
@@ -618,7 +822,6 @@ export default function AdminDashboard() {
   const filteredScoreDistribution = useMemo(() => {
     const bins = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
     const counts = new Array(bins.length - 1).fill(0);
-    
     filteredCandidates.forEach(c => {
       const score = c.score;
       for (let i = 0; i < bins.length - 1; i++) {
@@ -634,36 +837,26 @@ export default function AdminDashboard() {
   const COLORS = ['#1a237e', '#2e7d32', '#f57c00', '#c62828', '#1565c0', '#4a148c', '#00695c', '#bf360c', '#78909c'];
 
   // ============================================================
-  // 🟢 FILTER DROPDOWN OPTIONS
+  // FILTER DROPDOWN OPTIONS
   // ============================================================
   const universityOptions = useMemo(() => {
-    return uniGroup.groups
-      .sort()
-      .map(name => ({ 
-        label: name, 
-        value: name,
-        rawVariants: uniGroup.masterToRawMap[name] || []
-      }));
+    return uniGroup.groups.sort().map(name => ({ 
+      label: name, 
+      value: name,
+      rawVariants: uniGroup.masterToRawMap[name] || []
+    }));
   }, [uniGroup]);
 
   const programOptions = useMemo(() => {
-    return progGroup.groups
-      .sort()
-      .map(name => ({ 
-        label: name, 
-        value: name,
-        rawVariants: progGroup.masterToRawMap[name] || []
-      }));
+    return progGroup.groups.sort().map(name => ({ 
+      label: name, 
+      value: name,
+      rawVariants: progGroup.masterToRawMap[name] || []
+    }));
   }, [progGroup]);
 
-  const handleSelectAllPrograms = () => {
-    setSelectedProgramOptions(programOptions);
-  };
-
-  const handleClearPrograms = () => {
-    setSelectedProgramOptions([]);
-  };
-
+  const handleSelectAllPrograms = () => setSelectedProgramOptions(programOptions);
+  const handleClearPrograms = () => setSelectedProgramOptions([]);
   const resetFilters = () => {
     setSelectedUniversityOption(null);
     setSelectedProgramOptions([]);
@@ -672,7 +865,7 @@ export default function AdminDashboard() {
   };
 
   // ============================================================
-  // 🟢 AUTH & FETCH - FIXED
+  // AUTH & FETCH
   // ============================================================
   useEffect(() => {
     checkAdminAuth();
@@ -683,8 +876,9 @@ export default function AdminDashboard() {
       setLoading(true);
       setAuthError(null);
 
-      const session = await ensureValidSession();
-      if (!session) {
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      
+      if (sessionError || !session) {
         router.push("/login");
         return;
       }
@@ -724,6 +918,7 @@ export default function AdminDashboard() {
         await supabase.auth.signOut();
         router.push("/login");
       }
+      setAuthError(error.message);
     } finally {
       setLoading(false);
     }
@@ -731,44 +926,50 @@ export default function AdminDashboard() {
 
   async function fetchDashboardData() {
     try {
-      const session = await ensureValidSession();
-      if (!session) {
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      
+      if (sessionError || !session) {
         router.push("/login");
         return;
       }
 
-      console.log("Fetching dashboard data...");
+      console.log("Fetching admin dashboard data...");
+
+      const serviceClient = getServiceClient();
+      if (!serviceClient) {
+        console.error("Failed to create service client");
+        return;
+      }
 
       const [
-        supervisorCount, 
-        candidateCount, 
-        assessmentCount, 
-        completedCount, 
-        resultCount, 
-        inProgressCount, 
-        accessResponse, 
-        allCandidatesResponse, 
-        recentCandidatesResponse, 
+        supervisorCount,
+        candidateCount,
+        assessmentCount,
+        completedCount,
+        resultCount,
+        inProgressCount,
+        accessResponse,
+        allCandidatesResponse,
+        recentCandidatesResponse,
         resultsResponse
       ] = await Promise.all([
-        getExactCount("supervisor_profiles"),
-        getExactCount("candidate_profiles"),
-        getExactCount("assessments", (query) => query.eq("is_active", true)),
-        getExactCount("candidate_assessments", (query) => query.eq("status", "completed")),
-        getExactCount("assessment_results"),
-        getExactCount("assessment_sessions", (query) => query.eq("status", "in_progress")),
-        supabase.from("candidate_assessments").select("status"),
-        supabase
+        serviceClient.from("supervisor_profiles").select("*", { count: "exact", head: true }),
+        serviceClient.from("candidate_profiles").select("*", { count: "exact", head: true }),
+        serviceClient.from("assessments").select("*", { count: "exact", head: true }).eq("is_active", true),
+        serviceClient.from("candidate_assessments").select("*", { count: "exact", head: true }).eq("status", "completed"),
+        serviceClient.from("assessment_results").select("*", { count: "exact", head: true }),
+        serviceClient.from("assessment_sessions").select("*", { count: "exact", head: true }).eq("status", "in_progress"),
+        serviceClient.from("candidate_assessments").select("status"),
+        serviceClient
           .from("candidate_profiles")
           .select("id, full_name, email, university, programme, created_at")
           .order("created_at", { ascending: false }),
-        supabase
+        serviceClient
           .from("candidate_profiles")
           .select("id, full_name, email, created_at")
           .order("created_at", { ascending: false })
           .limit(6),
-        // Get ALL results - no limit
-        supabase
+        serviceClient
           .from("assessment_results")
           .select(`
             id, 
@@ -783,37 +984,33 @@ export default function AdminDashboard() {
           .order("completed_at", { ascending: false })
       ]);
 
-      // Check for auth errors in any response
-      if (accessResponse?.error?.message?.includes("JWT") || 
-          accessResponse?.error?.message?.includes("token") ||
-          allCandidatesResponse?.error?.message?.includes("JWT") ||
-          resultsResponse?.error?.message?.includes("JWT")) {
-        console.error("Auth error in data fetch");
-        await supabase.auth.signOut();
-        router.push("/login");
-        return;
-      }
+      if (supervisorCount.error) console.error("Supervisor count error:", supervisorCount.error);
+      if (candidateCount.error) console.error("Candidate count error:", candidateCount.error);
+      if (assessmentCount.error) console.error("Assessment count error:", assessmentCount.error);
+      if (completedCount.error) console.error("Completed count error:", completedCount.error);
+      if (resultCount.error) console.error("Result count error:", resultCount.error);
+      if (inProgressCount.error) console.error("In progress count error:", inProgressCount.error);
 
       const accessRows = safeArray(accessResponse?.data || []);
       const unblockedCount = accessRows.filter((item) => item.status === "unblocked").length;
       const blockedCount = accessRows.filter((item) => item.status === "blocked").length;
 
       setStats({
-        totalSupervisors: supervisorCount || 0,
-        totalCandidates: candidateCount || 0,
-        totalAssessments: assessmentCount || 0,
-        completedAssessments: completedCount || 0,
+        totalSupervisors: supervisorCount.count || 0,
+        totalCandidates: candidateCount.count || 0,
+        totalAssessments: assessmentCount.count || 0,
+        completedAssessments: completedCount.count || 0,
         unblockedAssessments: unblockedCount || 0,
         blockedAssessments: blockedCount || 0,
-        inProgressSessions: inProgressCount || 0,
-        totalResults: resultCount || 0
+        inProgressSessions: inProgressCount.count || 0,
+        totalResults: resultCount.count || 0
       });
 
       setAllCandidates(allCandidatesResponse?.data || []);
       setRecentCandidates(recentCandidatesResponse?.data || []);
       setAllResults(resultsResponse?.data || []);
       
-      console.log("Fetched ALL results count:", resultsResponse?.data?.length || 0);
+      console.log("Fetched results count:", resultsResponse?.data?.length || 0);
       console.log("Candidates count:", allCandidatesResponse?.data?.length || 0);
     } catch (error) {
       console.error("Error fetching admin dashboard data:", error);
@@ -838,12 +1035,6 @@ export default function AdminDashboard() {
       <div style={styles.checkingContainer}>
         <div style={styles.spinner} />
         <p>Loading admin dashboard...</p>
-        <style jsx>{`
-          @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-          }
-        `}</style>
       </div>
     );
   }
@@ -1092,14 +1283,14 @@ export default function AdminDashboard() {
 
         {/* ACTION CARDS */}
         <div style={styles.actionCardsGrid}>
-          <ActionCard href="/admin/add-supervisor" icon="+" title="Add Supervisor" description="Create new supervisor accounts with dashboard access." />
+          <ActionCard href="/admin/add-supervisor" icon="➕" title="Add Supervisor" description="Create new supervisor accounts with dashboard access." />
           <ActionCard href="/admin/manage-supervisors" icon="👥" title="Manage Supervisors" description="View, activate, deactivate, or update supervisor accounts." />
           <ActionCard href="/admin/manage-candidates" icon="🎓" title="Manage Candidates" description="View candidate profiles, reset access, and review activity." />
           <ActionCard href="/admin/assign-candidates" icon="🔗" title="Assign Supervisors" description="Assign candidates to specific supervisors for management." />
           <ActionCard href="/admin/assign-assessments" icon="📋" title="Assign Assessments" description="Assign, unblock, or block candidate assessments." />
           <ActionCard href="/admin/batch-manage" icon="📦" title="Batch Manage" description="Perform bulk administrative actions and candidate updates." />
-          <ActionCard href="/admin/audit-logs" icon="▤" title="Audit Logs" description="View system activity, access events, and administrative actions." />
-          <ActionCard href="/admin/system-settings" icon="⚙" title="System Settings" description="Configure platform settings and assessment parameters." />
+          <ActionCard href="/admin/audit-logs" icon="📜" title="Audit Logs" description="View system activity, access events, and administrative actions." />
+          <ActionCard href="/admin/system-settings" icon="⚙️" title="System Settings" description="Configure platform settings and assessment parameters." />
           <ActionCard href="/admin/reports" icon="📄" title="Assessment Reports" description="View detailed assessment reports for all candidates." />
         </div>
 
@@ -1156,79 +1347,13 @@ export default function AdminDashboard() {
           </div>
         </div>
       </div>
-
-      <style jsx>{`
-        @keyframes spin {
-          0% { transform: rotate(0deg); }
-          100% { transform: rotate(360deg); }
-        }
-        
-        .action-card:hover {
-          transform: translateY(-2px);
-          box-shadow: 0 8px 24px rgba(0,0,0,0.12);
-        }
-      `}</style>
     </AppLayout>
   );
 }
 
-function StatCard({ icon, label, value, subValue }) {
-  return (
-    <div style={styles.statCard}>
-      <div style={styles.statIcon}>{icon}</div>
-      <div>
-        <div style={styles.statLabel}>{label}</div>
-        <div style={styles.statValue}>{value}</div>
-        {subValue && <div style={{ fontSize: '12px', color: '#64748b' }}>{subValue}</div>}
-      </div>
-    </div>
-  );
-}
-
-function ActionCard({ href, icon, title, description }) {
-  return (
-    <Link href={href} legacyBehavior>
-      <a style={styles.actionCard} className="action-card">
-        <span style={styles.actionCardIcon}>{icon}</span>
-        <div>
-          <h3 style={styles.actionCardTitle}>{title}</h3>
-          <p style={styles.actionCardDesc}>{description}</p>
-        </div>
-      </a>
-    </Link>
-  );
-}
-
-const customSelectStyles = {
-  control: (base, state) => ({
-    ...base,
-    minHeight: '38px',
-    borderColor: state.isFocused ? '#1a237e' : '#e2e8f0',
-    boxShadow: state.isFocused ? '0 0 0 1px #1a237e' : 'none',
-    '&:hover': { borderColor: '#1a237e' },
-  }),
-  option: (base, state) => ({
-    ...base,
-    backgroundColor: state.isSelected ? '#1a237e' : state.isFocused ? '#e3f2fd' : 'white',
-    color: state.isSelected ? 'white' : '#1a202c',
-    '&:active': { backgroundColor: '#1a237e' },
-  }),
-  multiValue: (base) => ({
-    ...base,
-    backgroundColor: '#e3f2fd',
-  }),
-  multiValueLabel: (base) => ({
-    ...base,
-    color: '#1a237e',
-    fontWeight: 600,
-  }),
-  multiValueRemove: (base) => ({
-    ...base,
-    color: '#1a237e',
-    '&:hover': { backgroundColor: '#1a237e', color: 'white' },
-  }),
-};
-
+// ============================================================
+// STYLES
+// ============================================================
 const styles = {
   checkingContainer: {
     minHeight: "100vh",
@@ -1261,7 +1386,6 @@ const styles = {
   headerActions: { display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" },
   refreshButton: { background: "#0a1929", color: "white", border: "none", padding: "10px 20px", borderRadius: "8px", cursor: "pointer", fontSize: "14px", fontWeight: 700 },
   logoutButton: { background: "#f44336", color: "white", border: "none", padding: "10px 20px", borderRadius: "8px", cursor: "pointer", fontSize: "14px", fontWeight: 700 },
-  
   statsRow: {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
@@ -1281,7 +1405,6 @@ const styles = {
   statIcon: { fontSize: '28px' },
   statLabel: { fontSize: '11px', color: '#718096', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' },
   statValue: { fontSize: '22px', fontWeight: 800, color: '#0a1929' },
-
   filtersBar: {
     background: 'white',
     borderRadius: '12px',
@@ -1356,21 +1479,18 @@ const styles = {
     color: '#334155',
     fontWeight: '600'
   },
-
   pieChartGrid: {
     display: 'grid',
     gridTemplateColumns: '1fr 1fr',
     gap: '20px',
     marginBottom: '24px'
   },
-
   barChartGrid: {
     display: 'grid',
     gridTemplateColumns: '1fr 1fr',
     gap: '20px',
     marginBottom: '24px'
   },
-
   chartCard: {
     background: 'white',
     padding: '20px',
@@ -1384,7 +1504,6 @@ const styles = {
     color: '#0a1929',
     margin: '0 0 12px 0'
   },
-
   actionCardsGrid: { 
     display: "grid", 
     gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", 
@@ -1419,14 +1538,34 @@ const styles = {
   listMeta: { fontSize: "12px", color: "#64748b", marginTop: "4px" },
   dateBadge: { fontSize: "12px", color: "#334155", background: "#e2e8f0", padding: "5px 10px", borderRadius: "999px", whiteSpace: "nowrap" },
   scoreBadge: { fontSize: "13px", color: "#166534", background: "#dcfce7", border: "1px solid #86efac", padding: "6px 12px", borderRadius: "999px", fontWeight: 800 },
-
-  '@media (max-width: 768px)': {
-    pieChartGrid: { gridTemplateColumns: '1fr' },
-    barChartGrid: { gridTemplateColumns: '1fr' },
-    statsRow: { gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))' },
-    filterGroup: { minWidth: '140px', maxWidth: '100%' },
-    scoreFilterGroup: { flexWrap: 'wrap' },
-    header: { flexDirection: 'column', alignItems: 'flex-start' },
-    headerActions: { width: '100%', justifyContent: 'flex-start' }
-  }
 };
+
+// ============================================================
+// SUB-COMPONENTS
+// ============================================================
+function StatCard({ icon, label, value, subValue }) {
+  return (
+    <div style={styles.statCard}>
+      <div style={styles.statIcon}>{icon}</div>
+      <div>
+        <div style={styles.statLabel}>{label}</div>
+        <div style={styles.statValue}>{value}</div>
+        {subValue && <div style={{ fontSize: '12px', color: '#64748b' }}>{subValue}</div>}
+      </div>
+    </div>
+  );
+}
+
+function ActionCard({ href, icon, title, description }) {
+  return (
+    <Link href={href} legacyBehavior>
+      <a style={styles.actionCard} className="action-card">
+        <span style={styles.actionCardIcon}>{icon}</span>
+        <div>
+          <h3 style={styles.actionCardTitle}>{title}</h3>
+          <p style={styles.actionCardDesc}>{description}</p>
+        </div>
+      </a>
+    </Link>
+  );
+}
