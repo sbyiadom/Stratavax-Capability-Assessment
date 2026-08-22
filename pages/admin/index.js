@@ -1,12 +1,11 @@
 // pages/admin/index.js - FULLY CORRECTED WITH AGGRESSIVE CONSOLIDATION
-// FIXED: Uses service role key for admin operations, aggressive name consolidation
+// FIXED: Uses regular supabase client instead of service role key
 
 import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import AppLayout from "../../components/AppLayout";
 import { supabase } from "../../supabase/client";
-import { createClient } from '@supabase/supabase-js';
 import AssessmentExpiration from "../../components/admin/AssessmentExpiration";
 
 // ============================================================
@@ -583,23 +582,6 @@ function getUniqueMasterNames(rawItems, consolidateFn) {
 }
 
 // ============================================================
-// GET SERVICE ROLE CLIENT
-// ============================================================
-function getServiceClient() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  
-  if (!supabaseUrl || !supabaseKey) {
-    console.error('Missing Supabase credentials for service client');
-    return null;
-  }
-  
-  return createClient(supabaseUrl, supabaseKey, {
-    auth: { autoRefreshToken: false, persistSession: false }
-  });
-}
-
-// ============================================================
 // CUSTOM SELECT STYLES
 // ============================================================
 const customSelectStyles = {
@@ -865,7 +847,7 @@ export default function AdminDashboard() {
   };
 
   // ============================================================
-  // AUTH & FETCH
+  // AUTH & FETCH - USING REGULAR SUPABASE CLIENT
   // ============================================================
   useEffect(() => {
     checkAdminAuth();
@@ -926,21 +908,9 @@ export default function AdminDashboard() {
 
   async function fetchDashboardData() {
     try {
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      
-      if (sessionError || !session) {
-        router.push("/login");
-        return;
-      }
-
       console.log("Fetching admin dashboard data...");
 
-      const serviceClient = getServiceClient();
-      if (!serviceClient) {
-        console.error("Failed to create service client");
-        return;
-      }
-
+      // 🟢 USE REGULAR SUPABASE CLIENT (not service role)
       const [
         supervisorCount,
         candidateCount,
@@ -953,23 +923,23 @@ export default function AdminDashboard() {
         recentCandidatesResponse,
         resultsResponse
       ] = await Promise.all([
-        serviceClient.from("supervisor_profiles").select("*", { count: "exact", head: true }),
-        serviceClient.from("candidate_profiles").select("*", { count: "exact", head: true }),
-        serviceClient.from("assessments").select("*", { count: "exact", head: true }).eq("is_active", true),
-        serviceClient.from("candidate_assessments").select("*", { count: "exact", head: true }).eq("status", "completed"),
-        serviceClient.from("assessment_results").select("*", { count: "exact", head: true }),
-        serviceClient.from("assessment_sessions").select("*", { count: "exact", head: true }).eq("status", "in_progress"),
-        serviceClient.from("candidate_assessments").select("status"),
-        serviceClient
+        supabase.from("supervisor_profiles").select("*", { count: "exact", head: true }),
+        supabase.from("candidate_profiles").select("*", { count: "exact", head: true }),
+        supabase.from("assessments").select("*", { count: "exact", head: true }).eq("is_active", true),
+        supabase.from("candidate_assessments").select("*", { count: "exact", head: true }).eq("status", "completed"),
+        supabase.from("assessment_results").select("*", { count: "exact", head: true }),
+        supabase.from("assessment_sessions").select("*", { count: "exact", head: true }).eq("status", "in_progress"),
+        supabase.from("candidate_assessments").select("status"),
+        supabase
           .from("candidate_profiles")
           .select("id, full_name, email, university, programme, created_at")
           .order("created_at", { ascending: false }),
-        serviceClient
+        supabase
           .from("candidate_profiles")
           .select("id, full_name, email, created_at")
           .order("created_at", { ascending: false })
           .limit(6),
-        serviceClient
+        supabase
           .from("assessment_results")
           .select(`
             id, 
@@ -984,6 +954,7 @@ export default function AdminDashboard() {
           .order("completed_at", { ascending: false })
       ]);
 
+      // Log any errors
       if (supervisorCount.error) console.error("Supervisor count error:", supervisorCount.error);
       if (candidateCount.error) console.error("Candidate count error:", candidateCount.error);
       if (assessmentCount.error) console.error("Assessment count error:", assessmentCount.error);
@@ -1014,10 +985,6 @@ export default function AdminDashboard() {
       console.log("Candidates count:", allCandidatesResponse?.data?.length || 0);
     } catch (error) {
       console.error("Error fetching admin dashboard data:", error);
-      if (error.message?.includes("JWT") || error.message?.includes("token")) {
-        await supabase.auth.signOut();
-        router.push("/login");
-      }
     }
   }
 
@@ -1347,6 +1314,18 @@ export default function AdminDashboard() {
           </div>
         </div>
       </div>
+
+      <style jsx>{`
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+        
+        .action-card:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+        }
+      `}</style>
     </AppLayout>
   );
 }
