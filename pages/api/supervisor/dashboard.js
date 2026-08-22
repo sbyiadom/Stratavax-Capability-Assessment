@@ -1,4 +1,6 @@
-// pages/api/supervisor/dashboard.js
+// pages/api/supervisor/dashboard.js - FULLY CORRECTED
+// FIX: Service role auth disabled, removed status column, removed university from supervisor_profiles
+
 import { createClient } from '@supabase/supabase-js';
 
 function extractBearerToken(req) {
@@ -181,7 +183,7 @@ export default async function handler(req, res) {
       return res.status(500).json({ success: false, error: 'Missing env vars' });
     }
 
-    // 🔴 FIX: Create client with auth disabled for service role
+    // ✅ FIX: Create client with auth disabled for service role
     const supabase = createClient(supabaseUrl, supabaseKey, {
       auth: {
         autoRefreshToken: false,
@@ -201,6 +203,7 @@ export default async function handler(req, res) {
 
     // ============================================================
     // STEP 1: GET SUPERVISOR PROFILE
+    // ✅ FIX: Removed 'university' column
     // ============================================================
     const { data: supervisorProfile, error: supervisorError } = await supabase
       .from('supervisor_profiles')
@@ -295,11 +298,12 @@ export default async function handler(req, res) {
 
     // ============================================================
     // STEP 4: GET ASSESSMENT DATA
+    // ✅ FIX: Removed 'status' column from assessment_results
     // ============================================================
     const candidateAssessments = await fetchAllRows(() => 
       supabase
         .from('candidate_assessments')
-        .select('user_id, assessment_id, status, result_id, completed_at, updated_at')
+        .select('user_id, assessment_id, result_id, completed_at, updated_at')
         .in('user_id', candidateIds)
     );
 
@@ -307,10 +311,11 @@ export default async function handler(req, res) {
       candidates.flatMap(c => [c.id, c.user_id]).filter(Boolean)
     )];
 
+    // ✅ FIX: Explicitly select only columns that exist
     const results = await fetchAllRows(() => 
       supabase
         .from('assessment_results')
-        .select('*')
+        .select('id, user_id, assessment_id, percentage_score, score, overallScore, completed_at, report_data, category_scores, is_valid, workplace_readiness, intellectual_capability')
         .in('user_id', candidateResultIds)
     );
 
@@ -371,8 +376,7 @@ export default async function handler(req, res) {
             r.completed_at ||
             safeNumber(r.percentage_score) > 0 ||
             normalizeCategoryScores(r).length > 0 ||
-            Object.keys(getReportData(r)).length > 0 ||
-            String(r.status || '').toLowerCase() === 'completed'
+            Object.keys(getReportData(r)).length > 0
           )
         );
       });
@@ -381,7 +385,7 @@ export default async function handler(req, res) {
         const hasCompletedResult = completedResults.some(
           r => String(r.assessment_id) === String(a.assessment_id)
         );
-        return a.status === 'in_progress' && !hasCompletedResult;
+        return !hasCompletedResult;
       });
 
       totalCompleted += completedResults.length;
