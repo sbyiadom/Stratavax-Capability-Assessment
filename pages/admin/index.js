@@ -1,16 +1,10 @@
-// pages/admin/index.js - MODERN DASHBOARD VERSION
-// IMPLEMENTATION: All recommendations from the Admin Dashboard Review
-// - Clean modern design without background image
-// - 6 primary KPI cards with meaningful metrics
-// - Completion funnel with conversion stages
-// - Activity trend with sparkline
-// - Attention Required queue
-// - Status distribution doughnut chart
-// - Top universities and programs with sample sizes
+// pages/admin/index.js - MODERN DASHBOARD WITH APP LAYOUT & NAVIGATION
+// FIXED: Wrapped with AppLayout to preserve navigation tabs
 
 import { useEffect, useState, useMemo, Fragment, useCallback } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
+import AppLayout from "../../components/AppLayout";
 import { supabase } from "../../supabase/client";
 import AssessmentExpiration from "../../components/admin/AssessmentExpiration";
 
@@ -51,6 +45,33 @@ ChartJS.register(
 import Select from 'react-select';
 
 // ============================================================
+// COLOR SYSTEM
+// ============================================================
+const COLORS = {
+  primary: '#0F2747',
+  primaryLight: '#1a3a6b',
+  accent: '#2563EB',
+  success: '#16A34A',
+  warning: '#F59E0B',
+  critical: '#DC2626',
+  muted: '#64748B',
+  background: '#F5F7FB',
+  cardBg: '#FFFFFF',
+  border: '#E2E8F0',
+  text: '#1A202C',
+  textMuted: '#64748B',
+};
+
+const STATUS_COLORS = {
+  completed: '#16A34A',
+  inProgress: '#F59E0B',
+  scheduled: '#2563EB',
+  unblocked: '#0D47A1',
+  blocked: '#DC2626',
+  notStarted: '#94A3B8',
+};
+
+// ============================================================
 // HELPER FUNCTIONS
 // ============================================================
 function toNumber(value, fallback = 0) {
@@ -88,33 +109,6 @@ function formatTimeAgo(date) {
   if (hours < 24) return `${hours}h ago`;
   return `${days}d ago`;
 }
-
-// ============================================================
-// COLOR SYSTEM
-// ============================================================
-const COLORS = {
-  primary: '#0F2747',
-  primaryLight: '#1a3a6b',
-  accent: '#2563EB',
-  success: '#16A34A',
-  warning: '#F59E0B',
-  critical: '#DC2626',
-  muted: '#64748B',
-  background: '#F5F7FB',
-  cardBg: '#FFFFFF',
-  border: '#E2E8F0',
-  text: '#1A202C',
-  textMuted: '#64748B',
-};
-
-const STATUS_COLORS = {
-  completed: '#16A34A',
-  inProgress: '#F59E0B',
-  scheduled: '#2563EB',
-  unblocked: '#0D47A1',
-  blocked: '#DC2626',
-  notStarted: '#94A3B8',
-};
 
 // ============================================================
 // UNIVERSITY CONSOLIDATION
@@ -566,7 +560,7 @@ const customSelectStyles = {
 };
 
 // ============================================================
-// MAIN COMPONENT
+// MAIN COMPONENT - WITH APP LAYOUT
 // ============================================================
 export default function AdminDashboard() {
   const router = useRouter();
@@ -679,7 +673,7 @@ export default function AdminDashboard() {
   }, [candidatesWithScores, selectedUniversityOption, selectedProgramOptions, minScore, maxScore]);
 
   // ============================================================
-  // METRICS - Only from candidates with valid results
+  // METRICS
   // ============================================================
   const completedFiltered = filteredCandidates.filter(c => c.hasResult && c.score !== null && Number.isFinite(c.score));
   const completionRate = filteredCandidates.length > 0 
@@ -762,7 +756,6 @@ export default function AdminDashboard() {
   const attentionRequired = useMemo(() => {
     const items = [];
     
-    // Blocked assessments
     candidatesWithScores.forEach(c => {
       if (c.assessmentStatuses.some(s => s === 'blocked')) {
         items.push({
@@ -778,7 +771,6 @@ export default function AdminDashboard() {
       }
     });
     
-    // Candidates with no assessment assigned (not_started and no result)
     candidatesWithScores.forEach(c => {
       if (!c.hasResult && c.assessmentStatuses.every(s => s === 'not_started' || s === 'unblocked')) {
         items.push({
@@ -794,7 +786,6 @@ export default function AdminDashboard() {
       }
     });
     
-    // Candidates with missing data
     candidatesWithScores.forEach(c => {
       if (!c.university && c.programme) {
         items.push({
@@ -822,7 +813,6 @@ export default function AdminDashboard() {
       }
     });
     
-    // Sort by severity (critical first)
     items.sort((a, b) => {
       const severityOrder = { critical: 0, warning: 1, info: 2 };
       return (severityOrder[a.severity] || 3) - (severityOrder[b.severity] || 3);
@@ -1106,21 +1096,25 @@ export default function AdminDashboard() {
   // ============================================================
   if (loading) {
     return (
-      <div style={stylesModern.loadingContainer}>
-        <div style={stylesModern.spinner} />
-        <p>Loading dashboard...</p>
-      </div>
+      <AppLayout background="/images/admin-bg.jpg">
+        <div style={stylesModern.loadingContainer}>
+          <div style={stylesModern.spinner} />
+          <p>Loading dashboard...</p>
+        </div>
+      </AppLayout>
     );
   }
 
   if (authError) {
     return (
-      <div style={stylesModern.errorContainer}>
-        <div style={stylesModern.errorIcon}>⚠️</div>
-        <h2>Authentication Error</h2>
-        <p>{authError}</p>
-        <button onClick={() => router.push("/login")} style={stylesModern.primaryButton}>Go to Login</button>
-      </div>
+      <AppLayout background="/images/admin-bg.jpg">
+        <div style={stylesModern.errorContainer}>
+          <div style={stylesModern.errorIcon}>⚠️</div>
+          <h2>Authentication Error</h2>
+          <p>{authError}</p>
+          <button onClick={() => router.push("/login")} style={stylesModern.primaryButton}>Go to Login</button>
+        </div>
+      </AppLayout>
     );
   }
 
@@ -1133,407 +1127,416 @@ export default function AdminDashboard() {
   const totalBlocked = universityBreakdown.reduce((sum, u) => sum + u.blocked, 0);
 
   // ============================================================
-  // MODERN DASHBOARD RENDER
+  // MODERN DASHBOARD RENDER WITH APP LAYOUT
   // ============================================================
   return (
-    <div style={stylesModern.container}>
-      {/* Header */}
-      <div style={stylesModern.header}>
-        <div>
-          <h1 style={stylesModern.title}>Admin Dashboard</h1>
-          <div style={stylesModern.headerMeta}>
-            <span style={stylesModern.lastUpdated}>
-              {lastUpdated ? `Last updated: ${formatTimeAgo(lastUpdated)}` : 'Updating...'}
-            </span>
-            {dashboardError && (
-              <span style={stylesModern.errorBadge}>⚠️ {dashboardError}</span>
-            )}
-          </div>
-        </div>
-        <div style={stylesModern.headerActions}>
-          <button 
-            onClick={() => fetchDashboardData(true)} 
-            style={stylesModern.refreshButton}
-            disabled={refreshing}
-          >
-            {refreshing ? '⟳ Refreshing...' : '⟳ Refresh'}
-          </button>
-          <button onClick={handleLogout} style={stylesModern.logoutButton}>Sign Out</button>
-        </div>
-      </div>
-
-      {/* Filters Bar */}
-      <div style={stylesModern.filtersBar}>
-        <div style={stylesModern.filtersRow}>
-          <div style={stylesModern.filterGroup}>
-            <label style={stylesModern.filterLabel}>University</label>
-            <Select
-              options={universityOptions}
-              value={selectedUniversityOption}
-              onChange={(option) => { setSelectedUniversityOption(option); if (option) setSelectedProgramOptions([]); }}
-              placeholder="All Universities"
-              isClearable
-              styles={customSelectStyles}
-            />
-          </div>
-          <div style={stylesModern.filterGroup}>
-            <label style={stylesModern.filterLabel}>Programs</label>
-            <div style={stylesModern.filterActions}>
-              <button onClick={handleSelectAllPrograms} style={stylesModern.smallButton}>Select All</button>
-              <button onClick={handleClearPrograms} style={stylesModern.smallButton}>Clear</button>
-            </div>
-            <Select
-              options={programOptions}
-              value={selectedProgramOptions}
-              onChange={(options) => setSelectedProgramOptions(options || [])}
-              placeholder="All Programs"
-              isMulti
-              isClearable
-              styles={customSelectStyles}
-            />
-          </div>
-          <div style={stylesModern.scoreFilterGroup}>
-            <div>
-              <label style={stylesModern.filterLabelSmall}>Min</label>
-              <input type="number" style={stylesModern.filterInputSmall} min="0" max="100" value={minScore} onChange={(e) => setMinScore(e.target.value)} />
-            </div>
-            <div>
-              <label style={stylesModern.filterLabelSmall}>Max</label>
-              <input type="number" style={stylesModern.filterInputSmall} min="0" max="100" value={maxScore} onChange={(e) => setMaxScore(e.target.value)} />
-            </div>
-          </div>
-          <button onClick={resetFilters} style={stylesModern.resetButton}>Reset</button>
-        </div>
-      </div>
-
-      {/* Primary KPI Cards */}
-      <div style={stylesModern.kpiGrid}>
-        <div style={stylesModern.kpiCard}>
-          <div style={stylesModern.kpiIcon}>👥</div>
+    <AppLayout background="/images/admin-bg.jpg">
+      <div style={stylesModern.container}>
+        {/* Dashboard Header */}
+        <div style={stylesModern.header}>
           <div>
-            <div style={stylesModern.kpiLabel}>Total Candidates</div>
-            <div style={stylesModern.kpiValue}>{totalRegistered.toLocaleString()}</div>
-          </div>
-        </div>
-        <div style={stylesModern.kpiCard}>
-          <div style={stylesModern.kpiIcon}>📊</div>
-          <div>
-            <div style={stylesModern.kpiLabel}>Completion Rate</div>
-            <div style={stylesModern.kpiValue}>{completionRate}%</div>
-            <div style={stylesModern.kpiSub}>{totalCompleted} completed</div>
-          </div>
-        </div>
-        <div style={stylesModern.kpiCard}>
-          <div style={stylesModern.kpiIcon}>🔄</div>
-          <div>
-            <div style={stylesModern.kpiLabel}>In Progress</div>
-            <div style={stylesModern.kpiValue}>{totalInProgress}</div>
-            <div style={stylesModern.kpiSub}>Active assessments</div>
-          </div>
-        </div>
-        <div style={stylesModern.kpiCard}>
-          <div style={stylesModern.kpiIcon}>⚠️</div>
-          <div>
-            <div style={stylesModern.kpiLabel}>Needs Action</div>
-            <div style={stylesModern.kpiValue}>{totalBlocked + attentionRequired.length}</div>
-            <div style={stylesModern.kpiSub}>{attentionRequired.length} exceptions</div>
-          </div>
-        </div>
-        <div style={stylesModern.kpiCard}>
-          <div style={stylesModern.kpiIcon}>📄</div>
-          <div>
-            <div style={stylesModern.kpiLabel}>Reports</div>
-            <div style={stylesModern.kpiValue}>{stats.totalResults || 0}</div>
-            <div style={stylesModern.kpiSub}>
-              <span style={{ color: COLORS.success }}>{stats.nationalServiceReports || 0} NS</span>
-              {' · '}
-              <span style={{ color: COLORS.accent }}>{stats.stratavaxReports || 0} SV</span>
-            </div>
-          </div>
-        </div>
-        <div style={stylesModern.kpiCard}>
-          <div style={stylesModern.kpiIcon}>🎯</div>
-          <div>
-            <div style={stylesModern.kpiLabel}>Average Score</div>
-            <div style={stylesModern.kpiValue}>{filteredGlobalAverageScore}%</div>
-            <div style={stylesModern.kpiSub}>Pass rate: {filteredGlobalPassRate}%</div>
-          </div>
-        </div>
-      </div>
-
-      {/* Status Distribution + Attention Required */}
-      <div style={stylesModern.twoColumnGrid}>
-        <div style={stylesModern.card}>
-          <h3 style={stylesModern.cardTitle}>Status Distribution</h3>
-          <div style={stylesModern.doughnutContainer}>
-            <Doughnut
-              data={{
-                labels: ['Completed', 'In Progress', 'Scheduled', 'Unblocked', 'Blocked', 'Not Started'],
-                datasets: [{
-                  data: [
-                    statusDistribution.completed,
-                    statusDistribution.inProgress,
-                    statusDistribution.scheduled,
-                    statusDistribution.unblocked,
-                    statusDistribution.blocked,
-                    statusDistribution.notStarted
-                  ],
-                  backgroundColor: [
-                    STATUS_COLORS.completed,
-                    STATUS_COLORS.inProgress,
-                    STATUS_COLORS.scheduled,
-                    STATUS_COLORS.unblocked,
-                    STATUS_COLORS.blocked,
-                    STATUS_COLORS.notStarted
-                  ],
-                  borderWidth: 2,
-                  borderColor: '#fff'
-                }]
-              }}
-              options={{
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                  legend: {
-                    position: 'right',
-                    labels: { boxWidth: 12, padding: 8, font: { size: 11 } }
-                  }
-                }
-              }}
-            />
-          </div>
-        </div>
-
-        <div style={stylesModern.card}>
-          <h3 style={stylesModern.cardTitle}>⚠️ Attention Required</h3>
-          {attentionRequired.length === 0 ? (
-            <div style={stylesModern.emptyState}>🎉 All clear! No issues to address.</div>
-          ) : (
-            <div style={stylesModern.attentionList}>
-              {attentionRequired.slice(0, 10).map((item) => (
-                <div key={item.id} style={stylesModern.attentionItem}>
-                  <div style={stylesModern.attentionBadge}>
-                    <span style={{
-                      ...stylesModern.attentionDot,
-                      backgroundColor: item.severity === 'critical' ? COLORS.critical : COLORS.warning
-                    }} />
-                    <span style={stylesModern.attentionType}>{item.type.replace('_', ' ')}</span>
-                  </div>
-                  <div style={stylesModern.attentionContent}>
-                    <div style={stylesModern.attentionName}>{item.candidate}</div>
-                    <div style={stylesModern.attentionMeta}>{item.university} • {item.message}</div>
-                  </div>
-                </div>
-              ))}
-              {attentionRequired.length > 10 && (
-                <div style={stylesModern.attentionMore}>+{attentionRequired.length - 10} more issues</div>
+            <h1 style={stylesModern.title}>Admin Dashboard</h1>
+            <div style={stylesModern.headerMeta}>
+              <span style={stylesModern.lastUpdated}>
+                {lastUpdated ? `Last updated: ${formatTimeAgo(lastUpdated)}` : 'Updating...'}
+              </span>
+              {dashboardError && (
+                <span style={stylesModern.errorBadge}>⚠️ {dashboardError}</span>
               )}
             </div>
-          )}
-        </div>
-      </div>
-
-      {/* Top Universities + Top Programs */}
-      <div style={stylesModern.twoColumnGrid}>
-        <div style={stylesModern.card}>
-          <h3 style={stylesModern.cardTitle}>Top Universities</h3>
-          <div style={stylesModern.barContainer}>
-            <Bar
-              data={{
-                labels: filteredUniversityAnalytics.slice(0, 10).map(u => 
-                  `${u.name} (${u.completedCandidates}/${u.totalCandidates})`
-                ),
-                datasets: [{
-                  label: 'Completion Rate %',
-                  data: filteredUniversityAnalytics.slice(0, 10).map(u => u.completionRate),
-                  backgroundColor: COLORS.primary,
-                  borderRadius: 4,
-                }]
-              }}
-              options={{
-                indexAxis: 'y',
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: { legend: { display: false } },
-                scales: { x: { beginAtZero: true, max: 100 } }
-              }}
-            />
+          </div>
+          <div style={stylesModern.headerActions}>
+            <button 
+              onClick={() => fetchDashboardData(true)} 
+              style={stylesModern.refreshButton}
+              disabled={refreshing}
+            >
+              {refreshing ? '⟳ Refreshing...' : '⟳ Refresh'}
+            </button>
           </div>
         </div>
 
-        <div style={stylesModern.card}>
-          <h3 style={stylesModern.cardTitle}>Top Programs</h3>
-          <div style={stylesModern.barContainer}>
-            <Bar
-              data={{
-                labels: filteredProgramAnalytics.slice(0, 10).map(p => 
-                  `${p.name} (${p.completedCandidates}/${p.totalCandidates})`
-                ),
-                datasets: [{
-                  label: 'Completion Rate %',
-                  data: filteredProgramAnalytics.slice(0, 10).map(p => p.completionRate),
-                  backgroundColor: COLORS.accent,
-                  borderRadius: 4,
-                }]
-              }}
-              options={{
-                indexAxis: 'y',
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: { legend: { display: false } },
-                scales: { x: { beginAtZero: true, max: 100 } }
-              }}
-            />
+        {/* Filters Bar */}
+        <div style={stylesModern.filtersBar}>
+          <div style={stylesModern.filtersRow}>
+            <div style={stylesModern.filterGroup}>
+              <label style={stylesModern.filterLabel}>University</label>
+              <Select
+                options={universityOptions}
+                value={selectedUniversityOption}
+                onChange={(option) => { setSelectedUniversityOption(option); if (option) setSelectedProgramOptions([]); }}
+                placeholder="All Universities"
+                isClearable
+                styles={customSelectStyles}
+              />
+            </div>
+            <div style={stylesModern.filterGroup}>
+              <label style={stylesModern.filterLabel}>Programs</label>
+              <div style={stylesModern.filterActions}>
+                <button onClick={handleSelectAllPrograms} style={stylesModern.smallButton}>Select All</button>
+                <button onClick={handleClearPrograms} style={stylesModern.smallButton}>Clear</button>
+              </div>
+              <Select
+                options={programOptions}
+                value={selectedProgramOptions}
+                onChange={(options) => setSelectedProgramOptions(options || [])}
+                placeholder="All Programs"
+                isMulti
+                isClearable
+                styles={customSelectStyles}
+              />
+            </div>
+            <div style={stylesModern.scoreFilterGroup}>
+              <div>
+                <label style={stylesModern.filterLabelSmall}>Min</label>
+                <input type="number" style={stylesModern.filterInputSmall} min="0" max="100" value={minScore} onChange={(e) => setMinScore(e.target.value)} />
+              </div>
+              <div>
+                <label style={stylesModern.filterLabelSmall}>Max</label>
+                <input type="number" style={stylesModern.filterInputSmall} min="0" max="100" value={maxScore} onChange={(e) => setMaxScore(e.target.value)} />
+              </div>
+            </div>
+            <button onClick={resetFilters} style={stylesModern.resetButton}>Reset</button>
           </div>
         </div>
-      </div>
 
-      {/* Toggle Detailed Analytics */}
-      <div style={stylesModern.toggleSection}>
-        <button onClick={toggleDetailedAnalytics} style={stylesModern.toggleButton}>
-          {showDetailedAnalytics ? 'Hide' : 'Show'} Detailed Analytics
-        </button>
-      </div>
+        {/* Primary KPI Cards */}
+        <div style={stylesModern.kpiGrid}>
+          <div style={stylesModern.kpiCard}>
+            <div style={stylesModern.kpiIcon}>👥</div>
+            <div>
+              <div style={stylesModern.kpiLabel}>Total Candidates</div>
+              <div style={stylesModern.kpiValue}>{totalRegistered.toLocaleString()}</div>
+            </div>
+          </div>
+          <div style={stylesModern.kpiCard}>
+            <div style={stylesModern.kpiIcon}>📊</div>
+            <div>
+              <div style={stylesModern.kpiLabel}>Completion Rate</div>
+              <div style={stylesModern.kpiValue}>{completionRate}%</div>
+              <div style={stylesModern.kpiSub}>{totalCompleted} completed</div>
+            </div>
+          </div>
+          <div style={stylesModern.kpiCard}>
+            <div style={stylesModern.kpiIcon}>🔄</div>
+            <div>
+              <div style={stylesModern.kpiLabel}>In Progress</div>
+              <div style={stylesModern.kpiValue}>{totalInProgress}</div>
+              <div style={stylesModern.kpiSub}>Active assessments</div>
+            </div>
+          </div>
+          <div style={stylesModern.kpiCard}>
+            <div style={stylesModern.kpiIcon}>⚠️</div>
+            <div>
+              <div style={stylesModern.kpiLabel}>Needs Action</div>
+              <div style={stylesModern.kpiValue}>{totalBlocked + attentionRequired.length}</div>
+              <div style={stylesModern.kpiSub}>{attentionRequired.length} exceptions</div>
+            </div>
+          </div>
+          <div style={stylesModern.kpiCard}>
+            <div style={stylesModern.kpiIcon}>📄</div>
+            <div>
+              <div style={stylesModern.kpiLabel}>Reports</div>
+              <div style={stylesModern.kpiValue}>{stats.totalResults || 0}</div>
+              <div style={stylesModern.kpiSub}>
+                <span style={{ color: COLORS.success }}>{stats.nationalServiceReports || 0} NS</span>
+                {' · '}
+                <span style={{ color: COLORS.accent }}>{stats.stratavaxReports || 0} SV</span>
+              </div>
+            </div>
+          </div>
+          <div style={stylesModern.kpiCard}>
+            <div style={stylesModern.kpiIcon}>🎯</div>
+            <div>
+              <div style={stylesModern.kpiLabel}>Average Score</div>
+              <div style={stylesModern.kpiValue}>{filteredGlobalAverageScore}%</div>
+              <div style={stylesModern.kpiSub}>Pass rate: {filteredGlobalPassRate}%</div>
+            </div>
+          </div>
+        </div>
 
-      {showDetailedAnalytics && (
-        <>
-          {/* Score Distribution */}
+        {/* Status Distribution + Attention Required */}
+        <div style={stylesModern.twoColumnGrid}>
           <div style={stylesModern.card}>
-            <h3 style={stylesModern.cardTitle}>Score Distribution</h3>
-            <div style={stylesModern.chartContainer}>
-              <Bar
+            <h3 style={stylesModern.cardTitle}>Status Distribution</h3>
+            <div style={stylesModern.doughnutContainer}>
+              <Doughnut
                 data={{
-                  labels: filteredScoreDistribution.bins.slice(0, -1).map((b, i) => 
-                    i === filteredScoreDistribution.bins.length - 2 
-                      ? `${b}-${filteredScoreDistribution.bins[i+1]}%` 
-                      : `${b}-${filteredScoreDistribution.bins[i+1]}%`
-                  ),
+                  labels: ['Completed', 'In Progress', 'Scheduled', 'Unblocked', 'Blocked', 'Not Started'],
                   datasets: [{
-                    label: 'Candidates',
-                    data: filteredScoreDistribution.counts,
-                    backgroundColor: COLORS.primary,
-                    borderRadius: 4,
+                    data: [
+                      statusDistribution.completed,
+                      statusDistribution.inProgress,
+                      statusDistribution.scheduled,
+                      statusDistribution.unblocked,
+                      statusDistribution.blocked,
+                      statusDistribution.notStarted
+                    ],
+                    backgroundColor: [
+                      STATUS_COLORS.completed,
+                      STATUS_COLORS.inProgress,
+                      STATUS_COLORS.scheduled,
+                      STATUS_COLORS.unblocked,
+                      STATUS_COLORS.blocked,
+                      STATUS_COLORS.notStarted
+                    ],
+                    borderWidth: 2,
+                    borderColor: '#fff'
                   }]
                 }}
                 options={{
                   responsive: true,
                   maintainAspectRatio: false,
-                  plugins: { legend: { display: false } },
-                  scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
+                  plugins: {
+                    legend: {
+                      position: 'right',
+                      labels: { boxWidth: 12, padding: 8, font: { size: 11 } }
+                    }
+                  }
                 }}
               />
             </div>
           </div>
 
-          {/* University Breakdown */}
           <div style={stylesModern.card}>
-            <h3 style={stylesModern.cardTitle}>University Breakdown</h3>
-            <div style={stylesModern.tableWrapper}>
-              <table style={stylesModern.table}>
-                <thead>
-                  <tr>
-                    <th style={stylesModern.th}>University</th>
-                    <th style={stylesModern.th}>Total</th>
-                    <th style={stylesModern.th}>✅ Completed</th>
-                    <th style={stylesModern.th}>🔄 In Progress</th>
-                    <th style={stylesModern.th}>🔒 Blocked</th>
-                    <th style={stylesModern.th}>⏳ Not Started</th>
-                    <th style={stylesModern.th}>Programs</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {universityBreakdown.slice(0, 15).map((uni) => (
-                    <Fragment key={uni.name}>
-                      <tr style={stylesModern.tr}>
-                        <td style={stylesModern.td}><strong>{uni.name}</strong></td>
-                        <td style={stylesModern.td}>{uni.totalCandidates}</td>
-                        <td style={{ ...stylesModern.td, color: COLORS.success, fontWeight: 600 }}>{uni.completedCandidates}</td>
-                        <td style={{ ...stylesModern.td, color: COLORS.warning, fontWeight: 600 }}>{uni.inProgress}</td>
-                        <td style={{ ...stylesModern.td, color: COLORS.critical, fontWeight: 600 }}>{uni.blocked}</td>
-                        <td style={{ ...stylesModern.td, color: COLORS.muted }}>{uni.notStarted}</td>
-                        <td style={stylesModern.td}>
-                          <button onClick={() => toggleUniversityExpand(uni.name)} style={stylesModern.expandButton}>
-                            {expandedUniversity === uni.name ? 'Hide' : `Show ${uni.programs.length}`}
-                          </button>
-                        </td>
-                      </tr>
-                      {expandedUniversity === uni.name && (
-                        <tr>
-                          <td colSpan="7" style={stylesModern.expandedRow}>
-                            <div style={stylesModern.programTags}>
-                              {uni.programs.map((prog, idx) => (
-                                <span key={idx} style={stylesModern.programTag}>
-                                  {prog.name}: <strong>{prog.count}</strong>
-                                </span>
-                              ))}
-                            </div>
-                          </td>
-                        </tr>
-                      )}
-                    </Fragment>
-                  ))}
-                </tbody>
-              </table>
+            <h3 style={stylesModern.cardTitle}>⚠️ Attention Required</h3>
+            {attentionRequired.length === 0 ? (
+              <div style={stylesModern.emptyState}>🎉 All clear! No issues to address.</div>
+            ) : (
+              <div style={stylesModern.attentionList}>
+                {attentionRequired.slice(0, 10).map((item) => (
+                  <div key={item.id} style={stylesModern.attentionItem}>
+                    <div style={stylesModern.attentionBadge}>
+                      <span style={{
+                        ...stylesModern.attentionDot,
+                        backgroundColor: item.severity === 'critical' ? COLORS.critical : COLORS.warning
+                      }} />
+                      <span style={stylesModern.attentionType}>{item.type.replace('_', ' ')}</span>
+                    </div>
+                    <div style={stylesModern.attentionContent}>
+                      <div style={stylesModern.attentionName}>{item.candidate}</div>
+                      <div style={stylesModern.attentionMeta}>{item.university} • {item.message}</div>
+                    </div>
+                  </div>
+                ))}
+                {attentionRequired.length > 10 && (
+                  <div style={stylesModern.attentionMore}>+{attentionRequired.length - 10} more issues</div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Top Universities + Top Programs */}
+        <div style={stylesModern.twoColumnGrid}>
+          <div style={stylesModern.card}>
+            <h3 style={stylesModern.cardTitle}>Top Universities</h3>
+            <div style={stylesModern.barContainer}>
+              <Bar
+                data={{
+                  labels: filteredUniversityAnalytics.slice(0, 10).map(u => 
+                    `${u.name} (${u.completedCandidates}/${u.totalCandidates})`
+                  ),
+                  datasets: [{
+                    label: 'Completion Rate %',
+                    data: filteredUniversityAnalytics.slice(0, 10).map(u => u.completionRate),
+                    backgroundColor: COLORS.primary,
+                    borderRadius: 4,
+                  }]
+                }}
+                options={{
+                  indexAxis: 'y',
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  plugins: { legend: { display: false } },
+                  scales: { x: { beginAtZero: true, max: 100 } }
+                }}
+              />
             </div>
           </div>
-        </>
-      )}
 
-      {/* Recent Activity */}
-      <div style={stylesModern.twoColumnGrid}>
-        <div style={stylesModern.card}>
-          <h3 style={stylesModern.cardTitle}>Recent Candidates</h3>
-          {recentCandidates.length === 0 ? (
-            <div style={stylesModern.emptyState}>No candidates found</div>
-          ) : (
-            <div style={stylesModern.activityList}>
-              {recentCandidates.map((c) => (
-                <div key={c.id} style={stylesModern.activityItem}>
-                  <div>
-                    <div style={stylesModern.activityName}>{c.full_name || c.email || 'Candidate'}</div>
-                    <div style={stylesModern.activityMeta}>{c.email || 'No email'}</div>
-                  </div>
-                  <div style={stylesModern.activityTime}>{formatTimeAgo(c.created_at)}</div>
-                </div>
-              ))}
+          <div style={stylesModern.card}>
+            <h3 style={stylesModern.cardTitle}>Top Programs</h3>
+            <div style={stylesModern.barContainer}>
+              <Bar
+                data={{
+                  labels: filteredProgramAnalytics.slice(0, 10).map(p => 
+                    `${p.name} (${p.completedCandidates}/${p.totalCandidates})`
+                  ),
+                  datasets: [{
+                    label: 'Completion Rate %',
+                    data: filteredProgramAnalytics.slice(0, 10).map(p => p.completionRate),
+                    backgroundColor: COLORS.accent,
+                    borderRadius: 4,
+                  }]
+                }}
+                options={{
+                  indexAxis: 'y',
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  plugins: { legend: { display: false } },
+                  scales: { x: { beginAtZero: true, max: 100 } }
+                }}
+              />
             </div>
-          )}
+          </div>
         </div>
 
-        <div style={stylesModern.card}>
-          <h3 style={stylesModern.cardTitle}>Recent Results</h3>
-          {allResults.length === 0 ? (
-            <div style={stylesModern.emptyState}>No results found</div>
-          ) : (
-            <div style={stylesModern.activityList}>
-              {allResults.slice(0, 6).map((result) => {
-                const candidate = allCandidates.find(c => c.id === result.user_id);
-                return (
-                  <div key={result.id} style={stylesModern.activityItem}>
+        {/* Toggle Detailed Analytics */}
+        <div style={stylesModern.toggleSection}>
+          <button onClick={toggleDetailedAnalytics} style={stylesModern.toggleButton}>
+            {showDetailedAnalytics ? 'Hide' : 'Show'} Detailed Analytics
+          </button>
+        </div>
+
+        {showDetailedAnalytics && (
+          <>
+            {/* Score Distribution */}
+            <div style={stylesModern.card}>
+              <h3 style={stylesModern.cardTitle}>Score Distribution</h3>
+              <div style={stylesModern.chartContainer}>
+                <Bar
+                  data={{
+                    labels: filteredScoreDistribution.bins.slice(0, -1).map((b, i) => 
+                      i === filteredScoreDistribution.bins.length - 2 
+                        ? `${b}-${filteredScoreDistribution.bins[i+1]}%` 
+                        : `${b}-${filteredScoreDistribution.bins[i+1]}%`
+                    ),
+                    datasets: [{
+                      label: 'Candidates',
+                      data: filteredScoreDistribution.counts,
+                      backgroundColor: COLORS.primary,
+                      borderRadius: 4,
+                    }]
+                  }}
+                  options={{
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* University Breakdown */}
+            <div style={stylesModern.card}>
+              <h3 style={stylesModern.cardTitle}>University Breakdown</h3>
+              <div style={stylesModern.tableWrapper}>
+                <table style={stylesModern.table}>
+                  <thead>
+                    <tr>
+                      <th style={stylesModern.th}>University</th>
+                      <th style={stylesModern.th}>Total</th>
+                      <th style={stylesModern.th}>✅ Completed</th>
+                      <th style={stylesModern.th}>🔄 In Progress</th>
+                      <th style={stylesModern.th}>🔒 Blocked</th>
+                      <th style={stylesModern.th}>⏳ Not Started</th>
+                      <th style={stylesModern.th}>Programs</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {universityBreakdown.slice(0, 15).map((uni) => (
+                      <Fragment key={uni.name}>
+                        <tr style={stylesModern.tr}>
+                          <td style={stylesModern.td}><strong>{uni.name}</strong></td>
+                          <td style={stylesModern.td}>{uni.totalCandidates}</td>
+                          <td style={{ ...stylesModern.td, color: COLORS.success, fontWeight: 600 }}>{uni.completedCandidates}</td>
+                          <td style={{ ...stylesModern.td, color: COLORS.warning, fontWeight: 600 }}>{uni.inProgress}</td>
+                          <td style={{ ...stylesModern.td, color: COLORS.critical, fontWeight: 600 }}>{uni.blocked}</td>
+                          <td style={{ ...stylesModern.td, color: COLORS.muted }}>{uni.notStarted}</td>
+                          <td style={stylesModern.td}>
+                            <button onClick={() => toggleUniversityExpand(uni.name)} style={stylesModern.expandButton}>
+                              {expandedUniversity === uni.name ? 'Hide' : `Show ${uni.programs.length}`}
+                            </button>
+                          </td>
+                        </tr>
+                        {expandedUniversity === uni.name && (
+                          <tr>
+                            <td colSpan="7" style={stylesModern.expandedRow}>
+                              <div style={stylesModern.programTags}>
+                                {uni.programs.map((prog, idx) => (
+                                  <span key={idx} style={stylesModern.programTag}>
+                                    {prog.name}: <strong>{prog.count}</strong>
+                                  </span>
+                                ))}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* Recent Activity */}
+        <div style={stylesModern.twoColumnGrid}>
+          <div style={stylesModern.card}>
+            <h3 style={stylesModern.cardTitle}>Recent Candidates</h3>
+            {recentCandidates.length === 0 ? (
+              <div style={stylesModern.emptyState}>No candidates found</div>
+            ) : (
+              <div style={stylesModern.activityList}>
+                {recentCandidates.map((c) => (
+                  <div key={c.id} style={stylesModern.activityItem}>
                     <div>
-                      <div style={stylesModern.activityName}>
-                        {candidate?.full_name || candidate?.email || 'Candidate'}
-                      </div>
-                      <div style={stylesModern.activityMeta}>
-                        Score: <strong>{Math.round(toNumber(result.percentage_score, 0))}%</strong>
-                      </div>
+                      <div style={stylesModern.activityName}>{c.full_name || c.email || 'Candidate'}</div>
+                      <div style={stylesModern.activityMeta}>{c.email || 'No email'}</div>
                     </div>
-                    <div style={stylesModern.activityTime}>{formatTimeAgo(result.completed_at)}</div>
+                    <div style={stylesModern.activityTime}>{formatTimeAgo(c.created_at)}</div>
                   </div>
-                );
-              })}
-            </div>
-          )}
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div style={stylesModern.card}>
+            <h3 style={stylesModern.cardTitle}>Recent Results</h3>
+            {allResults.length === 0 ? (
+              <div style={stylesModern.emptyState}>No results found</div>
+            ) : (
+              <div style={stylesModern.activityList}>
+                {allResults.slice(0, 6).map((result) => {
+                  const candidate = allCandidates.find(c => c.id === result.user_id);
+                  return (
+                    <div key={result.id} style={stylesModern.activityItem}>
+                      <div>
+                        <div style={stylesModern.activityName}>
+                          {candidate?.full_name || candidate?.email || 'Candidate'}
+                        </div>
+                        <div style={stylesModern.activityMeta}>
+                          Score: <strong>{Math.round(toNumber(result.percentage_score, 0))}%</strong>
+                        </div>
+                      </div>
+                      <div style={stylesModern.activityTime}>{formatTimeAgo(result.completed_at)}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
+
+        {/* Assessment Expiration */}
+        <AssessmentExpiration />
       </div>
 
-      <AssessmentExpiration />
-    </div>
+      <style jsx>{`
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+      `}</style>
+    </AppLayout>
   );
 }
 
 // ============================================================
-// MODERN STYLES
+// STYLES
 // ============================================================
 const stylesModern = {
   container: {
@@ -1544,12 +1547,11 @@ const stylesModern = {
     minHeight: '100vh',
   },
   loadingContainer: {
-    minHeight: '100vh',
+    minHeight: '400px',
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
-    background: COLORS.background,
     gap: '16px',
   },
   spinner: {
@@ -1628,16 +1630,6 @@ const stylesModern = {
     fontSize: '13px',
     fontWeight: 600,
     '&:disabled': { opacity: 0.6, cursor: 'not-allowed' },
-  },
-  logoutButton: {
-    padding: '8px 16px',
-    background: 'transparent',
-    color: COLORS.critical,
-    border: `1px solid ${COLORS.critical}`,
-    borderRadius: '8px',
-    cursor: 'pointer',
-    fontSize: '13px',
-    fontWeight: 600,
   },
   filtersBar: {
     background: COLORS.cardBg,
@@ -1936,15 +1928,3 @@ const stylesModern = {
     color: COLORS.muted,
   },
 };
-
-// Add spin animation
-if (typeof document !== 'undefined') {
-  const style = document.createElement('style');
-  style.textContent = `
-    @keyframes spin {
-      0% { transform: rotate(0deg); }
-      100% { transform: rotate(360deg); }
-    }
-  `;
-  document.head.appendChild(style);
-}
