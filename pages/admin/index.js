@@ -1,9 +1,5 @@
-// pages/admin/index.js - FINAL DEPLOYMENT VERSION
-// FIXED: Shows both Total Reports and Unique Completed candidates
-// FIXED: Displays National Service and Stratavax report counts separately
-// FIXED: Uses hasResult (from assessment_results) for completed status
-// FIXED: Universal aggressive consolidation for ALL universities
-// FIXED: Modern dashboard design with all navigation tabs intact
+// pages/admin/index.js - FULLY FILTER-AWARE DASHBOARD
+// FIXED: All charts, stats, and tables update based on filters
 
 import { useEffect, useState, useMemo, Fragment } from "react";
 import { useRouter } from "next/router";
@@ -115,7 +111,7 @@ const STATUS_COLORS = {
 };
 
 // ============================================================
-// UNIVERSITY CONSOLIDATION
+// CONSOLIDATION FUNCTIONS
 // ============================================================
 function consolidateUniversityName(raw) {
   if (!raw || typeof raw !== 'string' || raw.trim() === '') {
@@ -226,16 +222,6 @@ function consolidateUniversityName(raw) {
     return 'University for Development Studies (UDS)';
   }
   
-  // University of Education Winneba
-  if (lower.includes('education') && lower.includes('winneba')) {
-    return 'University of Education, Winneba';
-  }
-  
-  // Federal University of Technology
-  if (lower.includes('federal') && lower.includes('technology')) {
-    return 'Federal University of Technology';
-  }
-  
   // GCTU
   if (lower === 'gctu' ||
       lower.includes('gctu ') ||
@@ -244,11 +230,6 @@ function consolidateUniversityName(raw) {
       lower.includes('communications technology') ||
       lower.includes('ghana communication')) {
     return 'Ghana Communication Technology University (GCTU)';
-  }
-  
-  // Pentecost University
-  if (lower.includes('pentecost')) {
-    return 'Pentecost University';
   }
   
   // UPSA
@@ -282,6 +263,11 @@ function consolidateUniversityName(raw) {
     return 'University of Skills Training and Entrepreneurial Development';
   }
   
+  // Pentecost University
+  if (lower.includes('pentecost')) {
+    return 'Pentecost University';
+  }
+  
   // Ashesi University
   if (lower.includes('ashesi')) {
     return 'Ashesi University';
@@ -311,66 +297,6 @@ function consolidateUniversityName(raw) {
     return 'Accra Institute of Technology (AIT)';
   }
   
-  // Wisconsin International University
-  if (lower.includes('wisconsin')) {
-    return 'Wisconsin International University';
-  }
-  
-  // Christian Service University
-  if (lower.includes('christian service')) {
-    return 'Christian Service University';
-  }
-  
-  // Data Link University
-  if (lower.includes('data link')) {
-    return 'Data Link University';
-  }
-  
-  // Blue Crest University
-  if (lower.includes('blue crest')) {
-    return 'Blue Crest University';
-  }
-  
-  // Garden City University
-  if (lower.includes('garden city')) {
-    return 'Garden City University';
-  }
-  
-  // Methodist University
-  if (lower.includes('methodist')) {
-    return 'Methodist University';
-  }
-  
-  // Presbyterian University
-  if (lower.includes('presbyterian')) {
-    return 'Presbyterian University';
-  }
-  
-  // University of Uyo
-  if (lower.includes('uyo')) {
-    return 'University of Uyo';
-  }
-  
-  // Marwadi University
-  if (lower.includes('marwadi')) {
-    return 'Marwadi University';
-  }
-  
-  // University of Technology and Applied Sciences
-  if (lower.includes('technology and applied sciences')) {
-    return 'University of Technology and Applied Sciences';
-  }
-  
-  // AAMUSTED
-  if (lower.includes('aamusted')) {
-    return 'AAMUSTED';
-  }
-  
-  // Annoited Technical Training Institute
-  if (lower.includes('annoited') || lower.includes('anointed')) {
-    return 'Annoited Technical Training Institute';
-  }
-  
   // Default
   if (!raw || raw.trim() === '') {
     return 'Not Specified';
@@ -379,9 +305,6 @@ function consolidateUniversityName(raw) {
   return cleaned;
 }
 
-// ============================================================
-// PROGRAM CONSOLIDATION
-// ============================================================
 function consolidateProgramName(raw) {
   if (!raw || typeof raw !== 'string') return 'Unknown';
   
@@ -725,7 +648,7 @@ export default function AdminDashboard() {
   const [candidateAssessmentsData, setCandidateAssessmentsData] = useState([]);
 
   // ============================================================
-  // DATA PREPARATION - FIXED: No-result candidates are null
+  // DATA PREPARATION
   // ============================================================
   const candidatesWithScores = useMemo(() => {
     const scoreMap = {};
@@ -778,7 +701,7 @@ export default function AdminDashboard() {
   const progGroup = useMemo(() => getUniqueMasterNames(rawPrograms, consolidateProgramName), [rawPrograms]);
 
   // ============================================================
-  // FILTER LOGIC
+  // FILTER LOGIC - All data flows through this
   // ============================================================
   const filteredCandidates = useMemo(() => {
     let filtered = candidatesWithScores;
@@ -813,12 +736,15 @@ export default function AdminDashboard() {
   }, [candidatesWithScores, selectedUniversityOption, selectedProgramOptions, minScore, maxScore]);
 
   // ============================================================
-  // METRICS - Only from candidates with valid results
+  // FILTERED METRICS
   // ============================================================
   const completedFiltered = filteredCandidates.filter(c => c.hasResult && c.score !== null && Number.isFinite(c.score));
   const completionRate = filteredCandidates.length > 0 
     ? Math.round((completedFiltered.length / filteredCandidates.length) * 100) 
     : 0;
+
+  const filteredTotalCandidates = filteredCandidates.length;
+  const filteredTotalCompleted = completedFiltered.length;
 
   const filteredGlobalAverageScore = useMemo(() => {
     const scores = completedFiltered.map(c => c.score).filter(s => s !== null);
@@ -834,12 +760,42 @@ export default function AdminDashboard() {
   }, [completedFiltered]);
 
   // ============================================================
-  // UNIVERSITY BREAKDOWN
+  // FILTERED STATUS DISTRIBUTION
   // ============================================================
-  const universityBreakdown = useMemo(() => {
+  const filteredStatusDistribution = useMemo(() => {
+    const map = { completed: 0, inProgress: 0, scheduled: 0, unblocked: 0, blocked: 0, notStarted: 0 };
+    filteredCandidates.forEach(c => {
+      const statuses = c.assessmentStatuses || ['not_started'];
+      const hasCompleted = c.hasResult === true;
+      const hasInProgress = statuses.some(s => s === 'in_progress');
+      const hasBlocked = statuses.some(s => s === 'blocked');
+      const hasUnblocked = statuses.some(s => s === 'unblocked');
+      const hasScheduled = statuses.some(s => s === 'scheduled');
+      
+      if (hasCompleted) {
+        map.completed += 1;
+      } else if (hasInProgress) {
+        map.inProgress += 1;
+      } else if (hasScheduled) {
+        map.scheduled += 1;
+      } else if (hasUnblocked) {
+        map.unblocked += 1;
+      } else if (hasBlocked) {
+        map.blocked += 1;
+      } else {
+        map.notStarted += 1;
+      }
+    });
+    return map;
+  }, [filteredCandidates]);
+
+  // ============================================================
+  // FILTERED UNIVERSITY BREAKDOWN
+  // ============================================================
+  const filteredUniversityBreakdown = useMemo(() => {
     const map = {};
     
-    candidatesWithScores.forEach(c => {
+    filteredCandidates.forEach(c => {
       const name = c.consolidatedUniversity || 'Not Specified';
       
       if (!map[name]) {
@@ -903,15 +859,15 @@ export default function AdminDashboard() {
         ? Math.round((data.completedCandidates / data.totalCandidates) * 100) 
         : 0
     })).sort((a, b) => b.totalCandidates - a.totalCandidates);
-  }, [candidatesWithScores]);
+  }, [filteredCandidates]);
 
   // ============================================================
-  // ATTENTION REQUIRED
+  // FILTERED ATTENTION REQUIRED
   // ============================================================
-  const attentionRequired = useMemo(() => {
+  const filteredAttentionRequired = useMemo(() => {
     const items = [];
     
-    candidatesWithScores.forEach(c => {
+    filteredCandidates.forEach(c => {
       if (c.assessmentStatuses.some(s => s === 'blocked')) {
         items.push({
           id: c.id,
@@ -926,7 +882,7 @@ export default function AdminDashboard() {
       }
     });
     
-    candidatesWithScores.forEach(c => {
+    filteredCandidates.forEach(c => {
       if (!c.hasResult && c.assessmentStatuses.every(s => s === 'not_started' || s === 'unblocked')) {
         items.push({
           id: c.id,
@@ -947,7 +903,7 @@ export default function AdminDashboard() {
     });
     
     return items.slice(0, 15);
-  }, [candidatesWithScores]);
+  }, [filteredCandidates]);
 
   // ============================================================
   // FILTERED ANALYTICS
@@ -1027,7 +983,7 @@ export default function AdminDashboard() {
   }, [filteredCandidates]);
 
   // ============================================================
-  // SCORE DISTRIBUTION - FIXED: Includes 100%
+  // FILTERED SCORE DISTRIBUTION
   // ============================================================
   const filteredScoreDistribution = useMemo(() => {
     const bins = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
@@ -1049,36 +1005,6 @@ export default function AdminDashboard() {
     
     return { bins, counts };
   }, [filteredCandidates]);
-
-  // ============================================================
-  // STATUS DISTRIBUTION
-  // ============================================================
-  const statusDistribution = useMemo(() => {
-    const map = { completed: 0, inProgress: 0, scheduled: 0, unblocked: 0, blocked: 0, notStarted: 0 };
-    candidatesWithScores.forEach(c => {
-      const statuses = c.assessmentStatuses || ['not_started'];
-      const hasCompleted = c.hasResult === true;
-      const hasInProgress = statuses.some(s => s === 'in_progress');
-      const hasBlocked = statuses.some(s => s === 'blocked');
-      const hasUnblocked = statuses.some(s => s === 'unblocked');
-      const hasScheduled = statuses.some(s => s === 'scheduled');
-      
-      if (hasCompleted) {
-        map.completed += 1;
-      } else if (hasInProgress) {
-        map.inProgress += 1;
-      } else if (hasScheduled) {
-        map.scheduled += 1;
-      } else if (hasUnblocked) {
-        map.unblocked += 1;
-      } else if (hasBlocked) {
-        map.blocked += 1;
-      } else {
-        map.notStarted += 1;
-      }
-    });
-    return map;
-  }, [candidatesWithScores]);
 
   // ============================================================
   // FILTER OPTIONS
@@ -1301,11 +1227,25 @@ export default function AdminDashboard() {
 
   if (!isAdmin) return null;
 
-  // Calculate overall stats
-  const totalRegistered = universityBreakdown.reduce((sum, u) => sum + u.totalCandidates, 0);
-  const totalCompleted = universityBreakdown.reduce((sum, u) => sum + u.completedCandidates, 0);
-  const totalInProgress = universityBreakdown.reduce((sum, u) => sum + u.inProgress, 0);
-  const totalBlocked = universityBreakdown.reduce((sum, u) => sum + u.blocked, 0);
+  // Calculate overall stats from filtered data
+  const totalFilteredCandidates = filteredCandidates.length;
+  const totalFilteredCompleted = completedFiltered.length;
+  const totalFilteredInProgress = filteredStatusDistribution.inProgress;
+  const totalFilteredBlocked = filteredStatusDistribution.blocked;
+
+  // Get filter label for display
+  const getFilterLabel = () => {
+    if (selectedUniversityOption && selectedProgramOptions.length > 0) {
+      return `${selectedUniversityOption.label} + ${selectedProgramOptions.length} programs`;
+    }
+    if (selectedUniversityOption) {
+      return selectedUniversityOption.label;
+    }
+    if (selectedProgramOptions.length > 0) {
+      return `${selectedProgramOptions.length} programs selected`;
+    }
+    return 'All';
+  };
 
   return (
     <AppLayout background="/images/admin-bg.jpg">
@@ -1314,10 +1254,20 @@ export default function AdminDashboard() {
         <div style={styles.header}>
           <div>
             <h1 style={styles.title}>Admin Dashboard</h1>
-            <p style={styles.subtitle}>System administration, users, assessments, and platform activity.</p>
+            <p style={styles.subtitle}>
+              System administration, users, assessments, and platform activity.
+              {selectedUniversityOption || selectedProgramOptions.length > 0 ? (
+                <span style={styles.filterBadge}> Filter: {getFilterLabel()}</span>
+              ) : (
+                <span style={styles.filterBadge}> Showing all data</span>
+              )}
+            </p>
             <div style={styles.headerMeta}>
               <span style={styles.lastUpdated}>
                 {lastUpdated ? `Last updated: ${formatTimeAgo(lastUpdated)}` : 'Updating...'}
+              </span>
+              <span style={styles.filteredCount}>
+                {totalFilteredCandidates} candidates {selectedUniversityOption || selectedProgramOptions.length > 0 ? '(filtered)' : '(total)'}
               </span>
             </div>
           </div>
@@ -1333,16 +1283,16 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* STATS CARDS */}
+        {/* STATS CARDS - Filtered */}
         <div style={styles.statsRow}>
-          <StatCard icon="👥" label="Total Candidates" value={totalRegistered} />
-          <StatCard icon="📊" label="Total Reports" value={stats.totalResults || 0} />
-          <StatCard icon="✅" label="Unique Completed" value={totalCompleted} />
+          <StatCard icon="👥" label="Candidates" value={totalFilteredCandidates} />
+          <StatCard icon="📊" label="Completion Rate" value={`${completionRate}%`} subValue={`${totalFilteredCompleted} completed`} />
+          <StatCard icon="📊" label="Avg Score" value={`${filteredGlobalAverageScore}%`} subValue={`Pass rate: ${filteredGlobalPassRate}%`} />
+          <StatCard icon="✅" label="Unique Completed" value={totalFilteredCompleted} />
           <StatCard icon="📋" label="National Service" value={stats.nationalServiceReports || 0} />
           <StatCard icon="📄" label="Stratavax" value={stats.stratavaxReports || 0} />
-          <StatCard icon="🔄" label="In Progress" value={totalInProgress} />
-          <StatCard icon="🔒" label="Blocked" value={totalBlocked} />
-          <StatCard icon="📊" label="Avg Score" value={`${filteredGlobalAverageScore}%`} />
+          <StatCard icon="🔄" label="In Progress" value={totalFilteredInProgress} />
+          <StatCard icon="🔒" label="Blocked" value={totalFilteredBlocked} />
         </div>
 
         {/* FILTERS BAR */}
@@ -1413,22 +1363,22 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* Status Distribution + Attention Required */}
+        {/* Status Distribution + Attention Required - Filtered */}
         <div style={styles.twoColumnGrid}>
           <div style={styles.card}>
-            <h3 style={styles.cardTitle}>Status Distribution</h3>
+            <h3 style={styles.cardTitle}>Status Distribution {selectedUniversityOption ? `(${selectedUniversityOption.label})` : '(All)'}</h3>
             <div style={styles.doughnutContainer}>
               <Doughnut
                 data={{
                   labels: ['Completed', 'In Progress', 'Scheduled', 'Unblocked', 'Blocked', 'Not Started'],
                   datasets: [{
                     data: [
-                      statusDistribution.completed,
-                      statusDistribution.inProgress,
-                      statusDistribution.scheduled,
-                      statusDistribution.unblocked,
-                      statusDistribution.blocked,
-                      statusDistribution.notStarted
+                      filteredStatusDistribution.completed,
+                      filteredStatusDistribution.inProgress,
+                      filteredStatusDistribution.scheduled,
+                      filteredStatusDistribution.unblocked,
+                      filteredStatusDistribution.blocked,
+                      filteredStatusDistribution.notStarted
                     ],
                     backgroundColor: [
                       STATUS_COLORS.completed,
@@ -1457,12 +1407,12 @@ export default function AdminDashboard() {
           </div>
 
           <div style={styles.card}>
-            <h3 style={styles.cardTitle}>⚠️ Attention Required</h3>
-            {attentionRequired.length === 0 ? (
+            <h3 style={styles.cardTitle}>⚠️ Attention Required {selectedUniversityOption ? `(${selectedUniversityOption.label})` : ''}</h3>
+            {filteredAttentionRequired.length === 0 ? (
               <div style={styles.emptyState}>🎉 All clear! No issues to address.</div>
             ) : (
               <div style={styles.attentionList}>
-                {attentionRequired.slice(0, 10).map((item) => (
+                {filteredAttentionRequired.slice(0, 10).map((item) => (
                   <div key={item.id} style={styles.attentionItem}>
                     <div style={styles.attentionBadge}>
                       <span style={{
@@ -1477,18 +1427,18 @@ export default function AdminDashboard() {
                     </div>
                   </div>
                 ))}
-                {attentionRequired.length > 10 && (
-                  <div style={styles.attentionMore}>+{attentionRequired.length - 10} more issues</div>
+                {filteredAttentionRequired.length > 10 && (
+                  <div style={styles.attentionMore}>+{filteredAttentionRequired.length - 10} more issues</div>
                 )}
               </div>
             )}
           </div>
         </div>
 
-        {/* Top Universities + Top Programs */}
+        {/* Top Universities + Top Programs - Filtered */}
         <div style={styles.twoColumnGrid}>
           <div style={styles.card}>
-            <h3 style={styles.cardTitle}>Top Universities</h3>
+            <h3 style={styles.cardTitle}>Top Universities {selectedUniversityOption ? `(${selectedUniversityOption.label})` : '(All)'}</h3>
             <div style={styles.barContainer}>
               <Bar
                 data={{
@@ -1514,7 +1464,7 @@ export default function AdminDashboard() {
           </div>
 
           <div style={styles.card}>
-            <h3 style={styles.cardTitle}>Top Programs</h3>
+            <h3 style={styles.cardTitle}>Top Programs {selectedProgramOptions.length > 0 ? '(Filtered)' : '(All)'}</h3>
             <div style={styles.barContainer}>
               <Bar
                 data={{
@@ -1549,9 +1499,9 @@ export default function AdminDashboard() {
 
         {showDetailedAnalytics && (
           <>
-            {/* Score Distribution */}
+            {/* Score Distribution - Filtered */}
             <div style={styles.card}>
-              <h3 style={styles.cardTitle}>Score Distribution</h3>
+              <h3 style={styles.cardTitle}>Score Distribution {selectedUniversityOption ? `(${selectedUniversityOption.label})` : '(All)'}</h3>
               <div style={styles.chartContainer}>
                 <Bar
                   data={{
@@ -1577,9 +1527,9 @@ export default function AdminDashboard() {
               </div>
             </div>
 
-            {/* University Breakdown Table */}
+            {/* University Breakdown Table - Filtered */}
             <div style={styles.card}>
-              <h3 style={styles.cardTitle}>University Breakdown</h3>
+              <h3 style={styles.cardTitle}>University Breakdown {selectedUniversityOption ? `(${selectedUniversityOption.label})` : '(All)'}</h3>
               <div style={styles.tableWrapper}>
                 <table style={styles.table}>
                   <thead>
@@ -1594,7 +1544,7 @@ export default function AdminDashboard() {
                     </tr>
                   </thead>
                   <tbody>
-                    {universityBreakdown.slice(0, 15).map((uni) => (
+                    {filteredUniversityBreakdown.slice(0, 15).map((uni) => (
                       <Fragment key={uni.name}>
                         <tr style={styles.tr}>
                           <td style={styles.td}><strong>{uni.name}</strong></td>
@@ -1631,35 +1581,52 @@ export default function AdminDashboard() {
           </>
         )}
 
-        {/* Recent Activity */}
+        {/* Recent Activity - Filtered */}
         <div style={styles.twoColumnGrid}>
           <div style={styles.panel}>
-            <h2 style={styles.panelTitle}>Recent Candidates</h2>
+            <h2 style={styles.panelTitle}>Recent Candidates {selectedUniversityOption ? `(${selectedUniversityOption.label})` : ''}</h2>
             {recentCandidates.length === 0 ? (
               <div style={styles.emptyState}>No candidates found.</div>
             ) : (
               <div style={styles.list}>
-                {recentCandidates.map((candidate) => (
-                  <div key={candidate.id} style={styles.listItem}>
-                    <div>
-                      <div style={styles.listTitle}>{candidate.full_name || candidate.email || "Candidate"}</div>
-                      <div style={styles.listMeta}>{candidate.email || "No email"}</div>
+                {recentCandidates.map((candidate) => {
+                  // Check if candidate matches filter
+                  const matchesFilter = !selectedUniversityOption || 
+                    candidate.university === selectedUniversityOption.value ||
+                    (selectedUniversityOption.rawVariants || []).includes(candidate.university);
+                  
+                  if (!matchesFilter) return null;
+                  
+                  return (
+                    <div key={candidate.id} style={styles.listItem}>
+                      <div>
+                        <div style={styles.listTitle}>{candidate.full_name || candidate.email || "Candidate"}</div>
+                        <div style={styles.listMeta}>{candidate.email || "No email"} • {candidate.university || 'Not Specified'}</div>
+                      </div>
+                      <div style={styles.dateBadge}>{formatTimeAgo(candidate.created_at)}</div>
                     </div>
-                    <div style={styles.dateBadge}>{formatTimeAgo(candidate.created_at)}</div>
-                  </div>
-                ))}
+                  );
+                }).filter(Boolean)}
               </div>
             )}
           </div>
 
           <div style={styles.panel}>
-            <h2 style={styles.panelTitle}>Recent Results</h2>
+            <h2 style={styles.panelTitle}>Recent Results {selectedUniversityOption ? `(${selectedUniversityOption.label})` : ''}</h2>
             {allResults.length === 0 ? (
               <div style={styles.emptyState}>No results found.</div>
             ) : (
               <div style={styles.list}>
-                {allResults.slice(0, 6).map((result) => {
+                {allResults.slice(0, 10).map((result) => {
                   const candidate = allCandidates.find(c => c.id === result.user_id);
+                  
+                  // Check if candidate matches filter
+                  const matchesFilter = !selectedUniversityOption || 
+                    candidate?.university === selectedUniversityOption.value ||
+                    (selectedUniversityOption.rawVariants || []).includes(candidate?.university);
+                  
+                  if (!matchesFilter) return null;
+                  
                   return (
                     <div key={result.id} style={styles.listItem}>
                       <div>
@@ -1667,15 +1634,14 @@ export default function AdminDashboard() {
                           {candidate?.full_name || candidate?.email || "Candidate"}
                         </div>
                         <div style={styles.listMeta}>
-                          Assessment • {formatDate(result.completed_at)}
+                          Score: <strong>{Math.round(toNumber(result.percentage_score, 0))}%</strong>
+                          {candidate?.university && ` • ${candidate.university}`}
                         </div>
                       </div>
-                      <div style={styles.scoreBadge}>
-                        {Math.round(toNumber(result.percentage_score, 0))}%
-                      </div>
+                      <div style={styles.dateBadge}>{formatTimeAgo(result.completed_at)}</div>
                     </div>
                   );
-                })}
+                }).filter(Boolean)}
               </div>
             )}
           </div>
@@ -1718,7 +1684,6 @@ export default function AdminDashboard() {
 // STYLES
 // ============================================================
 const styles = {
-  // Existing styles...
   checkingContainer: {
     minHeight: "100vh",
     display: "flex",
@@ -1789,8 +1754,27 @@ const styles = {
     color: "#667085", 
     fontSize: "14px" 
   },
+  filterBadge: {
+    display: 'inline-block',
+    padding: '2px 12px',
+    background: '#e8eaf6',
+    borderRadius: '12px',
+    fontSize: '12px',
+    fontWeight: 600,
+    color: '#1a237e',
+    marginLeft: '8px',
+  },
+  filteredCount: {
+    fontSize: '12px',
+    color: '#64748b',
+    marginLeft: '12px',
+  },
   headerMeta: {
     marginTop: '4px',
+    display: 'flex',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: '8px',
   },
   lastUpdated: {
     fontSize: '13px',
