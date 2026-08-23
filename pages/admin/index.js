@@ -1,10 +1,12 @@
-// pages/admin/index.js - FINAL DEPLOYMENT VERSION
-// FIXED: Shows both Total Reports and Unique Completed candidates
-// FIXED: Displays National Service and Stratavax report counts separately
-// FIXED: Uses hasResult (from assessment_results) for completed status
-// FIXED: Universal aggressive consolidation for ALL universities
+// pages/admin/index.js - COMPLETE CORRECTED FILE
+// FIXED: No-result candidates treated as null (not zero)
+// FIXED: Pass rate only includes candidates with valid scores
+// FIXED: Score 100% included in histogram
+// FIXED: University and program averages only from completers
+// FIXED: Specific program rules before general rules
+// FIXED: Shows Total Reports, National Service, Stratavax counts
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, Fragment } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import AppLayout from "../../components/AppLayout";
@@ -78,9 +80,7 @@ function consolidateUniversityName(raw) {
   const lower = raw.toLowerCase().trim();
   const cleaned = raw.replace(/\s+/g, ' ').trim();
   
-  // ============================================================
-  // STEP 1: KNUST - Kwame Nkrumah University of Science and Technology
-  // ============================================================
+  // KNUST
   if (lower === 'knust' ||
       lower.includes('knust') ||
       lower.includes('k.n.u.s.t') ||
@@ -90,9 +90,7 @@ function consolidateUniversityName(raw) {
     return 'Kwame Nkrumah University of Science and Technology (KNUST)';
   }
   
-  // ============================================================
-  // STEP 2: UMaT - University of Mines and Technology
-  // ============================================================
+  // UMaT
   if (lower === 'umat' ||
       lower.includes('umat') ||
       lower.includes('u.m.a.t') ||
@@ -104,9 +102,7 @@ function consolidateUniversityName(raw) {
     return 'University of Mines and Technology (UMaT)';
   }
   
-  // ============================================================
-  // STEP 3: UG - University of Ghana
-  // ============================================================
+  // UG
   if (lower === 'ug' ||
       lower.includes('ug ') ||
       lower.includes('u.g') ||
@@ -116,9 +112,7 @@ function consolidateUniversityName(raw) {
     return 'University of Ghana (UG)';
   }
   
-  // ============================================================
-  // STEP 4: UCC - University of Cape Coast
-  // ============================================================
+  // UCC
   if (lower === 'ucc' ||
       lower.includes('ucc ') ||
       lower.includes('u.c.c') ||
@@ -128,9 +122,7 @@ function consolidateUniversityName(raw) {
     return 'University of Cape Coast (UCC)';
   }
   
-  // ============================================================
-  // STEP 5: KSTU - Kumasi Technical University
-  // ============================================================
+  // KSTU
   if (lower === 'kstu' ||
       lower.includes('kstu ') ||
       lower.includes('k.s.t.u') ||
@@ -139,66 +131,48 @@ function consolidateUniversityName(raw) {
     return 'Kumasi Technical University (KSTU)';
   }
   
-  // ============================================================
-  // STEP 6: Takoradi Technical University
-  // ============================================================
+  // Takoradi Technical University
   if (lower.includes('takoradi') && lower.includes('technical')) {
     return 'Takoradi Technical University';
   }
   
-  // ============================================================
-  // STEP 7: Accra Technical University
-  // ============================================================
+  // Accra Technical University
   if (lower.includes('accra') && lower.includes('technical')) {
     return 'Accra Technical University';
   }
   
-  // ============================================================
-  // STEP 8: Koforidua Technical University
-  // ============================================================
+  // Koforidua Technical University
   if ((lower.includes('koforidua') || lower.includes('korforidua')) && 
       lower.includes('technical')) {
     return 'Koforidua Technical University';
   }
   
-  // ============================================================
-  // STEP 9: Sunyani Technical University
-  // ============================================================
+  // Sunyani Technical University
   if (lower.includes('sunyani') && lower.includes('technical')) {
     return 'Sunyani Technical University';
   }
   
-  // ============================================================
-  // STEP 10: Cape Coast Technical University
-  // ============================================================
+  // Cape Coast Technical University
   if (lower.includes('cape coast') && lower.includes('technical')) {
     return 'Cape Coast Technical University';
   }
   
-  // ============================================================
-  // STEP 11: Ho Technical University
-  // ============================================================
+  // Ho Technical University
   if ((lower.includes('ho') || lower.includes('ho ')) && lower.includes('technical')) {
     return 'Ho Technical University';
   }
   
-  // ============================================================
-  // STEP 12: Tamale Technical University
-  // ============================================================
+  // Tamale Technical University
   if (lower.includes('tamale') && lower.includes('technical')) {
     return 'Tamale Technical University';
   }
   
-  // ============================================================
-  // STEP 13: University of Energy and Natural Resources
-  // ============================================================
+  // University of Energy and Natural Resources
   if (lower.includes('energy') && lower.includes('natural resources')) {
     return 'University of Energy and Natural Resources';
   }
   
-  // ============================================================
-  // STEP 14: UDS - University for Development Studies
-  // ============================================================
+  // UDS
   if (lower === 'uds' ||
       lower.includes('uds ') ||
       lower.includes('u.d.s') ||
@@ -207,23 +181,17 @@ function consolidateUniversityName(raw) {
     return 'University for Development Studies (UDS)';
   }
   
-  // ============================================================
-  // STEP 15: University of Education Winneba
-  // ============================================================
+  // University of Education Winneba
   if (lower.includes('education') && lower.includes('winneba')) {
     return 'University of Education, Winneba';
   }
   
-  // ============================================================
-  // STEP 16: Federal University of Technology
-  // ============================================================
+  // Federal University of Technology
   if (lower.includes('federal') && lower.includes('technology')) {
     return 'Federal University of Technology';
   }
   
-  // ============================================================
-  // STEP 17: GCTU - Ghana Communication Technology University
-  // ============================================================
+  // GCTU
   if (lower === 'gctu' ||
       lower.includes('gctu ') ||
       lower.includes('g.c.t.u') ||
@@ -233,16 +201,12 @@ function consolidateUniversityName(raw) {
     return 'Ghana Communication Technology University (GCTU)';
   }
   
-  // ============================================================
-  // STEP 18: Pentecost University
-  // ============================================================
+  // Pentecost University
   if (lower.includes('pentecost')) {
     return 'Pentecost University';
   }
   
-  // ============================================================
-  // STEP 19: UPSA - University of Professional Studies
-  // ============================================================
+  // UPSA
   if (lower === 'upsa' ||
       lower.includes('upsa ') ||
       lower.includes('u.p.s.a') ||
@@ -250,9 +214,7 @@ function consolidateUniversityName(raw) {
     return 'University of Professional Studies (UPSA)';
   }
   
-  // ============================================================
-  // STEP 20: RMU - Regional Maritime University
-  // ============================================================
+  // RMU
   if (lower === 'rmu' ||
       lower.includes('rmu ') ||
       lower.includes('regional maritime') ||
@@ -260,9 +222,7 @@ function consolidateUniversityName(raw) {
     return 'Regional Maritime University (RMU)';
   }
   
-  // ============================================================
-  // STEP 21: KPoly - Koforidua Polytechnic
-  // ============================================================
+  // KPoly
   if (lower === 'kpoly' ||
       lower.includes('kpoly ') ||
       lower.includes('k.poly') ||
@@ -271,140 +231,102 @@ function consolidateUniversityName(raw) {
     return 'Koforidua Polytechnic (KPoly)';
   }
   
-  // ============================================================
-  // STEP 22: University of Skills Training
-  // ============================================================
+  // University of Skills Training
   if (lower.includes('skills training') || 
       lower.includes('entrepreneurial')) {
     return 'University of Skills Training and Entrepreneurial Development';
   }
   
-  // ============================================================
-  // STEP 23: Ashesi University
-  // ============================================================
+  // Ashesi University
   if (lower.includes('ashesi')) {
     return 'Ashesi University';
   }
   
-  // ============================================================
-  // STEP 24: Valley View University
-  // ============================================================
+  // Valley View University
   if (lower.includes('valley view')) {
     return 'Valley View University';
   }
   
-  // ============================================================
-  // STEP 25: Central University
-  // ============================================================
+  // Central University
   if (lower.includes('central university')) {
     return 'Central University';
   }
   
-  // ============================================================
-  // STEP 26: ANU - All Nations University
-  // ============================================================
+  // ANU
   if (lower === 'anu' ||
       lower.includes('anu ') ||
       lower.includes('all nations')) {
     return 'All Nations University';
   }
   
-  // ============================================================
-  // STEP 27: AIT - Accra Institute of Technology
-  // ============================================================
+  // AIT
   if (lower.includes('ait') ||
       lower.includes('a.i.t') ||
       lower.includes('accra institute')) {
     return 'Accra Institute of Technology (AIT)';
   }
   
-  // ============================================================
-  // STEP 28: Wisconsin International University
-  // ============================================================
+  // Wisconsin International University
   if (lower.includes('wisconsin')) {
     return 'Wisconsin International University';
   }
   
-  // ============================================================
-  // STEP 29: Christian Service University
-  // ============================================================
+  // Christian Service University
   if (lower.includes('christian service')) {
     return 'Christian Service University';
   }
   
-  // ============================================================
-  // STEP 30: Data Link University
-  // ============================================================
+  // Data Link University
   if (lower.includes('data link')) {
     return 'Data Link University';
   }
   
-  // ============================================================
-  // STEP 31: Blue Crest University
-  // ============================================================
+  // Blue Crest University
   if (lower.includes('blue crest')) {
     return 'Blue Crest University';
   }
   
-  // ============================================================
-  // STEP 32: Garden City University
-  // ============================================================
+  // Garden City University
   if (lower.includes('garden city')) {
     return 'Garden City University';
   }
   
-  // ============================================================
-  // STEP 33: Methodist University
-  // ============================================================
+  // Methodist University
   if (lower.includes('methodist')) {
     return 'Methodist University';
   }
   
-  // ============================================================
-  // STEP 34: Presbyterian University
-  // ============================================================
+  // Presbyterian University
   if (lower.includes('presbyterian')) {
     return 'Presbyterian University';
   }
   
-  // ============================================================
-  // STEP 35: University of Uyo
-  // ============================================================
+  // University of Uyo
   if (lower.includes('uyo')) {
     return 'University of Uyo';
   }
   
-  // ============================================================
-  // STEP 36: Marwadi University
-  // ============================================================
+  // Marwadi University
   if (lower.includes('marwadi')) {
     return 'Marwadi University';
   }
   
-  // ============================================================
-  // STEP 37: University of Technology and Applied Sciences
-  // ============================================================
+  // University of Technology and Applied Sciences
   if (lower.includes('technology and applied sciences')) {
     return 'University of Technology and Applied Sciences';
   }
   
-  // ============================================================
-  // STEP 38: AAMUSTED
-  // ============================================================
+  // AAMUSTED
   if (lower.includes('aamusted')) {
     return 'AAMUSTED';
   }
   
-  // ============================================================
-  // STEP 39: Annoited Technical Training Institute
-  // ============================================================
+  // Annoited Technical Training Institute
   if (lower.includes('annoited') || lower.includes('anointed')) {
     return 'Annoited Technical Training Institute';
   }
   
-  // ============================================================
-  // STEP 40: Default - Return cleaned or "Not Specified"
-  // ============================================================
+  // Default
   if (!raw || raw.trim() === '') {
     return 'Not Specified';
   }
@@ -413,7 +335,7 @@ function consolidateUniversityName(raw) {
 }
 
 // ============================================================
-// PROGRAM CONSOLIDATION
+// PROGRAM CONSOLIDATION - WITH CORRECTED RULE ORDERING
 // ============================================================
 function consolidateProgramName(raw) {
   if (!raw || typeof raw !== 'string') return 'Unknown';
@@ -431,6 +353,7 @@ function consolidateProgramName(raw) {
   
   const cleanLower = cleanForMatch(raw);
   
+  // Electrical/Electronic Engineering
   if (cleanLower.includes('electrical') || cleanLower.includes('electronic') || 
       cleanLower.includes('elect/electron') || cleanLower.includes('electrical/electronic') ||
       cleanLower.includes('electrical electronic') || cleanLower.includes('electrical and electronic') ||
@@ -438,179 +361,219 @@ function consolidateProgramName(raw) {
     return 'BSc Electrical/Electronic Engineering';
   }
   
+  // Mechanical Engineering
   if (cleanLower.includes('mechanical') || cleanLower.includes('mech') ||
       lower === 'me' || lower.includes('me ')) {
     return 'BSc Mechanical Engineering';
   }
   
+  // Chemical Engineering
   if (cleanLower.includes('chemical') || cleanLower.includes('chem') ||
       lower === 'che' || lower.includes('che ')) {
     return 'BSc Chemical Engineering';
   }
   
+  // Civil Engineering
   if (cleanLower.includes('civil') || lower === 'ce' || lower.includes('ce ')) {
     return 'BSc Civil Engineering';
   }
   
+  // Computer Engineering
   if (cleanLower.includes('computer') || lower === 'cpe' || lower.includes('cpe ')) {
     return 'BSc Computer Engineering';
   }
   
+  // Industrial Engineering
   if (cleanLower.includes('industrial') || lower === 'ie' || lower.includes('ie ')) {
     return 'BSc Industrial Engineering';
   }
   
+  // Agricultural Engineering
   if (cleanLower.includes('agricultural') || cleanLower.includes('agric') ||
       lower === 'age' || lower.includes('age ')) {
     return 'BSc Agricultural Engineering';
   }
   
+  // Petroleum Engineering
   if (cleanLower.includes('petroleum') || cleanLower.includes('petrol') ||
       lower === 'pe' || lower.includes('pe ')) {
     return 'BSc Petroleum Engineering';
   }
   
+  // Geological Engineering
   if (cleanLower.includes('geological') || cleanLower.includes('geo') ||
       lower === 'ge' || lower.includes('ge ')) {
     return 'BSc Geological Engineering';
   }
   
+  // Geomatic Engineering
   if (cleanLower.includes('geomatic')) {
     return 'BSc Geomatic Engineering';
   }
   
+  // Materials Engineering
   if (cleanLower.includes('materials') || cleanLower.includes('material') ||
       lower === 'mte' || lower.includes('mte ')) {
     return 'BSc Materials Engineering';
   }
   
+  // Telecommunications Engineering
   if (cleanLower.includes('telecommunications') || cleanLower.includes('telecom') ||
       cleanLower.includes('telecommunication') || lower === 'tele' || lower.includes('tele ')) {
     return 'BSc Telecommunications Engineering';
   }
   
+  // Renewable Energy Engineering
   if (cleanLower.includes('renewable') || cleanLower.includes('energy')) {
     return 'BSc Renewable Energy Engineering';
   }
   
+  // Automobile Engineering
   if (cleanLower.includes('automobile') || cleanLower.includes('auto')) {
     return 'BSc Automobile Engineering';
   }
   
+  // Information Technology
   if (cleanLower.includes('information technology') || cleanLower.includes('info tech') ||
       lower === 'it' || lower.includes('it ')) {
     return 'BSc Information Technology';
   }
   
+  // Information Systems
   if (cleanLower.includes('information systems') || cleanLower.includes('info systems')) {
     return 'BSc Information Systems';
   }
   
+  // Biomedical Engineering
   if (cleanLower.includes('biomedical') || cleanLower.includes('bio medical')) {
     return 'BSc Biomedical Engineering';
   }
   
+  // Minerals Engineering
   if (cleanLower.includes('minerals') || cleanLower.includes('mining')) {
     return 'BSc Minerals Engineering';
   }
   
+  // Psychology
   if (cleanLower.includes('psychology') || cleanLower.includes('psych')) {
     return 'BA Psychology';
   }
   
+  // Political Science
   if (cleanLower.includes('political science') || cleanLower.includes('politics') ||
       cleanLower.includes('political')) {
     return 'BA Political Science';
   }
   
+  // Laboratory Technology
   if (cleanLower.includes('laboratory') || cleanLower.includes('lab')) {
     return 'BSc Laboratory Technology';
   }
   
+  // Food Science
   if (cleanLower.includes('food science') || cleanLower.includes('food')) {
     return 'BSc Food Science and Postharvest Technology';
   }
   
+  // Statistics and Mathematics
   if ((cleanLower.includes('statistics') || cleanLower.includes('stat')) && 
       (cleanLower.includes('mathematics') || cleanLower.includes('math'))) {
     return 'BSc Statistics and Mathematics';
   }
   
+  // Mathematics
   if (cleanLower.includes('mathematics') || cleanLower.includes('math') ||
       lower === 'maths' || lower.includes('maths ')) {
     return 'BSc Mathematics';
   }
   
+  // Statistics
   if (cleanLower.includes('statistics') || cleanLower.includes('stat')) {
     return 'BSc Statistics';
+  }
+  
+  // ✅ FIX: More specific Accounting and Economics rule BEFORE general Accounting
+  if (cleanLower.includes('accounting') && cleanLower.includes('economics')) {
+    return 'BSc Accounting and Economics';
   }
   
   if (cleanLower.includes('accounting')) {
     return 'BSc Accounting';
   }
   
-  if (cleanLower.includes('accounting') && cleanLower.includes('economics')) {
-    return 'BSc Accounting and Economics';
-  }
-  
+  // Economics
   if (cleanLower.includes('economics')) {
     return 'BSc Economics';
   }
   
+  // Business Administration
   if (cleanLower.includes('business administration') || cleanLower.includes('business admin') ||
       cleanLower.includes('management') || cleanLower.includes('admin') || 
       cleanLower.includes('secretariat') || cleanLower.includes('secretariatship')) {
     return 'Business Administration';
   }
   
+  // Marketing
   if (cleanLower.includes('marketing')) {
     return 'BSc Marketing';
   }
   
+  // Human Resource Management
   if (cleanLower.includes('human resource') || cleanLower.includes('hr')) {
     return 'BSc Human Resource Management';
   }
   
+  // Public Administration
   if (cleanLower.includes('public administration')) {
     return 'BSc Public Administration';
   }
   
+  // Public Health
   if (cleanLower.includes('public health')) {
     return 'BSc Public Health';
   }
   
+  // Nursing
   if (cleanLower.includes('nursing')) {
     return 'BSc Nursing';
   }
   
+  // Midwifery
   if (cleanLower.includes('midwifery')) {
     return 'BSc Midwifery';
   }
   
+  // Architecture
   if (cleanLower.includes('architecture')) {
     return 'BSc Architecture';
   }
   
+  // Estate Management
   if (cleanLower.includes('estate management') || cleanLower.includes('estate')) {
     return 'BSc Estate Management';
   }
   
+  // Quantity Surveying
   if (cleanLower.includes('quantity surveying') || cleanLower.includes('surveying')) {
     return 'BSc Quantity Surveying';
   }
   
+  // Arts
   if (cleanLower.includes('arts') || lower.includes('ba ') || lower.includes('b.a ')) {
     return 'BA Arts';
   }
   
+  // Biological Sciences
   if (cleanLower.includes('biological') || cleanLower.includes('biology')) {
     return 'BSc Biological Sciences';
   }
   
+  // Chemistry
   if (cleanLower.includes('chemistry')) {
     return 'BSc Chemistry';
   }
   
+  // Physics
   if (cleanLower.includes('physics')) {
     return 'BSc Physics';
   }
@@ -713,7 +676,7 @@ export default function AdminDashboard() {
   const [candidateAssessmentsData, setCandidateAssessmentsData] = useState([]);
 
   // ============================================================
-  // DATA PREPARATION
+  // DATA PREPARATION - ✅ FIXED: No-result candidates are null
   // ============================================================
   const candidatesWithScores = useMemo(() => {
     const scoreMap = {};
@@ -741,15 +704,20 @@ export default function AdminDashboard() {
       statusMap[ca.user_id].push(ca.status);
     });
 
-    return allCandidates.map(c => ({
-      ...c,
-      score: scoreMap[c.id] || 0,
-      hasResult: !!scoreMap[c.id],
-      resultDetails: resultMap[c.id] || null,
-      consolidatedProgram: consolidateProgramName(c.programme),
-      consolidatedUniversity: consolidateUniversityName(c.university),
-      assessmentStatuses: statusMap[c.id] || ['not_started']
-    }));
+    return allCandidates.map(c => {
+      // ✅ FIX: Use hasOwnProperty to check for existence (not truthiness)
+      const hasResult = Object.prototype.hasOwnProperty.call(scoreMap, c.id);
+      
+      return {
+        ...c,
+        score: hasResult ? scoreMap[c.id] : null, // null = no result
+        hasResult: hasResult,
+        resultDetails: hasResult ? resultMap[c.id] : null,
+        consolidatedProgram: consolidateProgramName(c.programme),
+        consolidatedUniversity: consolidateUniversityName(c.university),
+        assessmentStatuses: statusMap[c.id] || ['not_started']
+      };
+    });
   }, [allCandidates, allResults, candidateAssessmentsData]);
 
   // ============================================================
@@ -760,70 +728,6 @@ export default function AdminDashboard() {
 
   const uniGroup = useMemo(() => getUniqueMasterNames(rawUniversities, consolidateUniversityName), [rawUniversities]);
   const progGroup = useMemo(() => getUniqueMasterNames(rawPrograms, consolidateProgramName), [rawPrograms]);
-
-  // ============================================================
-  // UNIVERSITY BREAKDOWN - Uses hasResult for completed
-  // ============================================================
-  const universityBreakdown = useMemo(() => {
-    const map = {};
-    
-    candidatesWithScores.forEach(c => {
-      const name = c.consolidatedUniversity || 'Not Specified';
-      
-      if (!map[name]) {
-        map[name] = {
-          total: 0,
-          completed: 0,
-          inProgress: 0,
-          notStarted: 0,
-          blocked: 0,
-          unblocked: 0,
-          scheduled: 0,
-          programs: {},
-          candidates: []
-        };
-      }
-      
-      map[name].total += 1;
-      map[name].candidates.push(c);
-      
-      // 🔥 FIX: Use hasResult (from assessment_results) for completed
-      const hasCompleted = c.hasResult === true;
-      const statuses = c.assessmentStatuses || ['not_started'];
-      const hasInProgress = statuses.some(s => s === 'in_progress');
-      const hasBlocked = statuses.some(s => s === 'blocked');
-      const hasUnblocked = statuses.some(s => s === 'unblocked');
-      const hasScheduled = statuses.some(s => s === 'scheduled');
-      
-      if (hasCompleted) {
-        map[name].completed += 1;
-      } else if (hasInProgress) {
-        map[name].inProgress += 1;
-      } else if (hasScheduled) {
-        map[name].scheduled += 1;
-      } else if (hasUnblocked) {
-        map[name].unblocked += 1;
-      } else if (hasBlocked) {
-        map[name].blocked += 1;
-      } else {
-        map[name].notStarted += 1;
-      }
-      
-      const prog = c.consolidatedProgram || c.programme || 'Unknown';
-      if (!map[name].programs[prog]) {
-        map[name].programs[prog] = 0;
-      }
-      map[name].programs[prog] += 1;
-    });
-    
-    return Object.entries(map).map(([name, data]) => ({
-      name,
-      ...data,
-      programs: Object.entries(data.programs)
-        .sort((a, b) => b[1] - a[1])
-        .map(([prog, count]) => ({ name: prog, count }))
-    })).sort((a, b) => b.total - a.total);
-  }, [candidatesWithScores]);
 
   // ============================================================
   // FILTER LOGIC
@@ -850,100 +754,176 @@ export default function AdminDashboard() {
       });
     }
 
+    // ✅ FIX: Score filter only applies to candidates with results
     filtered = filtered.filter(c => {
-      return c.score >= Number(minScore) && c.score <= Number(maxScore);
+      if (c.hasResult && c.score !== null) {
+        return c.score >= Number(minScore) && c.score <= Number(maxScore);
+      }
+      return true; // Keep non-completers for status counts
     });
 
     return filtered;
   }, [candidatesWithScores, selectedUniversityOption, selectedProgramOptions, minScore, maxScore]);
 
   // ============================================================
-  // FILTERED ANALYTICS
+  // ✅ FIXED: Pass Rate - Only includes candidates with valid scores
+  // ============================================================
+  const filteredGlobalPassRate = useMemo(() => {
+    const scores = filteredCandidates
+      .filter(c => c.hasResult && c.score !== null && Number.isFinite(c.score))
+      .map(c => c.score)
+      .filter(s => s !== null);
+    
+    if (scores.length === 0) return 0;
+    
+    const passed = scores.filter(s => s >= 70).length;
+    return Math.round((passed / scores.length) * 100);
+  }, [filteredCandidates]);
+
+  // ============================================================
+  // ✅ FIXED: Average Score - Only includes candidates with valid scores
+  // ============================================================
+  const filteredGlobalAverageScore = useMemo(() => {
+    const scores = filteredCandidates
+      .filter(c => c.hasResult && c.score !== null && Number.isFinite(c.score))
+      .map(c => c.score)
+      .filter(s => s !== null);
+    
+    if (scores.length === 0) return 0;
+    
+    return Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
+  }, [filteredCandidates]);
+
+  const filteredTotalCandidates = filteredCandidates.length;
+  const filteredCompletedCandidates = filteredCandidates.filter(c => c.hasResult).length;
+
+  // ============================================================
+  // ✅ FIXED: University Analytics - Exclude non-completers from averages
   // ============================================================
   const filteredUniversityAnalytics = useMemo(() => {
     const map = {};
     filteredCandidates.forEach(c => {
       if (!c.university) return;
       const name = c.consolidatedUniversity || c.university;
+      
       if (!map[name]) {
-        map[name] = { candidates: 0, scoreTotal: 0, rawNames: new Set() };
+        map[name] = { 
+          totalCandidates: 0,
+          completedCandidates: 0,
+          scoreTotal: 0,
+          rawNames: new Set()
+        };
       }
-      map[name].candidates += 1;
-      map[name].scoreTotal += c.score;
+      
+      map[name].totalCandidates += 1;
       map[name].rawNames.add(c.university);
+      
+      if (c.hasResult && c.score !== null && Number.isFinite(c.score)) {
+        map[name].completedCandidates += 1;
+        map[name].scoreTotal += c.score;
+      }
     });
+    
     return Object.entries(map).map(([name, data]) => ({
       name,
-      candidates: data.candidates,
-      avgScore: data.candidates > 0 ? Math.round(data.scoreTotal / data.candidates) : 0,
+      totalCandidates: data.totalCandidates,
+      completedCandidates: data.completedCandidates,
+      completionRate: data.totalCandidates > 0 
+        ? Math.round((data.completedCandidates / data.totalCandidates) * 100) 
+        : 0,
+      avgScore: data.completedCandidates > 0 
+        ? Math.round(data.scoreTotal / data.completedCandidates) 
+        : null,
       rawVariants: Array.from(data.rawNames)
-    })).sort((a, b) => b.avgScore - a.avgScore);
+    })).sort((a, b) => {
+      if (a.completionRate !== b.completionRate) return b.completionRate - a.completionRate;
+      return (b.avgScore || 0) - (a.avgScore || 0);
+    });
   }, [filteredCandidates]);
 
+  // ============================================================
+  // ✅ FIXED: Program Analytics - Exclude non-completers from averages
+  // ============================================================
   const filteredProgramAnalytics = useMemo(() => {
     const map = {};
     filteredCandidates.forEach(c => {
       if (!c.programme) return;
       const name = c.consolidatedProgram || c.programme;
+      
       if (!map[name]) {
-        map[name] = { candidates: 0, scoreTotal: 0, rawVariants: new Set() };
+        map[name] = { 
+          totalCandidates: 0,
+          completedCandidates: 0,
+          scoreTotal: 0,
+          rawVariants: new Set()
+        };
       }
-      map[name].candidates += 1;
-      map[name].scoreTotal += c.score;
+      
+      map[name].totalCandidates += 1;
       map[name].rawVariants.add(c.programme);
+      
+      if (c.hasResult && c.score !== null && Number.isFinite(c.score)) {
+        map[name].completedCandidates += 1;
+        map[name].scoreTotal += c.score;
+      }
     });
+    
     return Object.entries(map).map(([name, data]) => ({
       name,
-      candidates: data.candidates,
-      avgScore: data.candidates > 0 ? Math.round(data.scoreTotal / data.candidates) : 0,
+      totalCandidates: data.totalCandidates,
+      completedCandidates: data.completedCandidates,
+      completionRate: data.totalCandidates > 0 
+        ? Math.round((data.completedCandidates / data.totalCandidates) * 100) 
+        : 0,
+      avgScore: data.completedCandidates > 0 
+        ? Math.round(data.scoreTotal / data.completedCandidates) 
+        : null,
       rawVariants: Array.from(data.rawVariants)
-    })).sort((a, b) => b.avgScore - a.avgScore);
+    })).sort((a, b) => {
+      if (a.completionRate !== b.completionRate) return b.completionRate - a.completionRate;
+      return (b.avgScore || 0) - (a.avgScore || 0);
+    });
   }, [filteredCandidates]);
 
-  const filteredGlobalAverageScore = useMemo(() => {
-    const scores = filteredCandidates.map(c => c.score).filter(s => s > 0);
-    if (scores.length === 0) return 0;
-    return Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
+  // ============================================================
+  // ✅ FIXED: Score Distribution - Include 100% in last bin
+  // ============================================================
+  const filteredScoreDistribution = useMemo(() => {
+    const bins = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
+    const counts = new Array(bins.length - 1).fill(0);
+    
+    filteredCandidates.forEach(c => {
+      if (!c.hasResult || c.score === null || !Number.isFinite(c.score)) return;
+      
+      const score = c.score;
+      
+      for (let i = 0; i < bins.length - 1; i++) {
+        const isLastBin = i === bins.length - 2;
+        // ✅ FIX: Include 100% in the last bin
+        if (score >= bins[i] && (score < bins[i + 1] || (isLastBin && score <= bins[i + 1]))) {
+          counts[i]++;
+          break;
+        }
+      }
+    });
+    
+    return { bins, counts };
   }, [filteredCandidates]);
-
-  const filteredGlobalPassRate = useMemo(() => {
-    const scores = filteredCandidates.map(c => c.score);
-    if (scores.length === 0) return 0;
-    const passed = scores.filter(s => s >= 70).length;
-    return Math.round((passed / scores.length) * 100);
-  }, [filteredCandidates]);
-
-  const filteredTotalCandidates = filteredCandidates.length;
 
   // ============================================================
   // PIE CHARTS
   // ============================================================
   const filteredUniversityPieData = useMemo(() => {
     const labels = filteredUniversityAnalytics.map(u => u.name);
-    const data = filteredUniversityAnalytics.map(u => u.candidates);
+    const data = filteredUniversityAnalytics.map(u => u.totalCandidates);
     return { labels, data };
   }, [filteredUniversityAnalytics]);
 
   const filteredProgramPieData = useMemo(() => {
     const labels = filteredProgramAnalytics.map(p => p.name);
-    const data = filteredProgramAnalytics.map(p => p.candidates);
+    const data = filteredProgramAnalytics.map(p => p.totalCandidates);
     return { labels, data };
   }, [filteredProgramAnalytics]);
-
-  const filteredScoreDistribution = useMemo(() => {
-    const bins = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
-    const counts = new Array(bins.length - 1).fill(0);
-    filteredCandidates.forEach(c => {
-      const score = c.score;
-      for (let i = 0; i < bins.length - 1; i++) {
-        if (score >= bins[i] && score < bins[i + 1]) {
-          counts[i]++;
-          break;
-        }
-      }
-    });
-    return { bins, counts };
-  }, [filteredCandidates]);
 
   const COLORS = ['#1a237e', '#2e7d32', '#f57c00', '#c62828', '#1565c0', '#4a148c', '#00695c', '#bf360c', '#78909c', '#8d6e63', '#4e342e', '#3e2723', '#4a148c', '#1a237e', '#0d47a1', '#00695c', '#2e7d32', '#827717', '#f57f17', '#e65100', '#bf360c', '#880e4f', '#4a148c', '#1a237e'];
 
@@ -1043,7 +1023,6 @@ export default function AdminDashboard() {
     try {
       console.log("Fetching admin dashboard data...");
 
-      // National Service Assessment ID
       const NATIONAL_SERVICE_ASSESSMENT_ID = 'bdb9d46e-9fac-4d00-8478-1f649e7ac600';
 
       const [
@@ -1100,7 +1079,6 @@ export default function AdminDashboard() {
       const unblockedCount = accessRows.filter((item) => item.status === "unblocked").length;
       const blockedCount = accessRows.filter((item) => item.status === "blocked").length;
 
-      // Count National Service and Stratavax reports
       const resultsData = resultsResponse?.data || [];
       const nationalServiceCount = resultsData.filter(
         r => r.assessment_id === NATIONAL_SERVICE_ASSESSMENT_ID
@@ -1166,13 +1144,86 @@ export default function AdminDashboard() {
   if (!isAdmin) return null;
 
   // Calculate overall stats
-  const totalRegistered = universityBreakdown.reduce((sum, u) => sum + u.total, 0);
-  const totalCompleted = universityBreakdown.reduce((sum, u) => sum + u.completed, 0);
-  const totalInProgress = universityBreakdown.reduce((sum, u) => sum + u.inProgress, 0);
-  const totalNotStarted = universityBreakdown.reduce((sum, u) => sum + u.notStarted, 0);
-  const totalBlocked = universityBreakdown.reduce((sum, u) => sum + u.blocked, 0);
-  const totalUnblocked = universityBreakdown.reduce((sum, u) => sum + u.unblocked, 0);
-  const totalScheduled = universityBreakdown.reduce((sum, u) => sum + u.scheduled, 0);
+  const totalRegistered = universityBreakdown?.reduce((sum, u) => sum + u.totalCandidates, 0) || 0;
+  const totalCompleted = universityBreakdown?.reduce((sum, u) => sum + u.completedCandidates, 0) || 0;
+  const totalInProgress = universityBreakdown?.reduce((sum, u) => sum + u.inProgress, 0) || 0;
+  const totalNotStarted = universityBreakdown?.reduce((sum, u) => sum + u.notStarted, 0) || 0;
+  const totalBlocked = universityBreakdown?.reduce((sum, u) => sum + u.blocked, 0) || 0;
+  const totalUnblocked = universityBreakdown?.reduce((sum, u) => sum + u.unblocked, 0) || 0;
+  const totalScheduled = universityBreakdown?.reduce((sum, u) => sum + u.scheduled, 0) || 0;
+
+  // ============================================================
+  // ✅ FIXED: University Breakdown - Uses hasResult for completed
+  // ============================================================
+  const universityBreakdown = useMemo(() => {
+    const map = {};
+    
+    candidatesWithScores.forEach(c => {
+      const name = c.consolidatedUniversity || 'Not Specified';
+      
+      if (!map[name]) {
+        map[name] = {
+          totalCandidates: 0,
+          completedCandidates: 0,
+          inProgress: 0,
+          notStarted: 0,
+          blocked: 0,
+          unblocked: 0,
+          scheduled: 0,
+          programs: {},
+          candidates: []
+        };
+      }
+      
+      map[name].totalCandidates += 1;
+      map[name].candidates.push(c);
+      
+      // ✅ FIX: Use hasResult (from assessment_results) for completed
+      const hasCompleted = c.hasResult === true;
+      const statuses = c.assessmentStatuses || ['not_started'];
+      const hasInProgress = statuses.some(s => s === 'in_progress');
+      const hasBlocked = statuses.some(s => s === 'blocked');
+      const hasUnblocked = statuses.some(s => s === 'unblocked');
+      const hasScheduled = statuses.some(s => s === 'scheduled');
+      
+      if (hasCompleted) {
+        map[name].completedCandidates += 1;
+      } else if (hasInProgress) {
+        map[name].inProgress += 1;
+      } else if (hasScheduled) {
+        map[name].scheduled += 1;
+      } else if (hasUnblocked) {
+        map[name].unblocked += 1;
+      } else if (hasBlocked) {
+        map[name].blocked += 1;
+      } else {
+        map[name].notStarted += 1;
+      }
+      
+      const prog = c.consolidatedProgram || c.programme || 'Unknown';
+      if (!map[name].programs[prog]) {
+        map[name].programs[prog] = 0;
+      }
+      map[name].programs[prog] += 1;
+    });
+    
+    return Object.entries(map).map(([name, data]) => ({
+      name,
+      totalCandidates: data.totalCandidates,
+      completedCandidates: data.completedCandidates,
+      inProgress: data.inProgress,
+      notStarted: data.notStarted,
+      blocked: data.blocked,
+      unblocked: data.unblocked,
+      scheduled: data.scheduled,
+      programs: Object.entries(data.programs)
+        .sort((a, b) => b[1] - a[1])
+        .map(([prog, count]) => ({ name: prog, count })),
+      completionRate: data.totalCandidates > 0 
+        ? Math.round((data.completedCandidates / data.totalCandidates) * 100) 
+        : 0
+    })).sort((a, b) => b.totalCandidates - a.totalCandidates);
+  }, [candidatesWithScores]);
 
   return (
     <AppLayout background="/images/admin-bg.jpg">
@@ -1188,7 +1239,7 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* STATS CARDS - Updated to show both Total Reports and Unique Candidates */}
+        {/* STATS CARDS */}
         <div style={styles.statsRow}>
           <StatCard icon="👥" label="Total Candidates" value={totalRegistered} />
           <StatCard icon="📊" label="Total Reports" value={stats.totalResults || 0} />
@@ -1268,9 +1319,7 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* ============================================================
-            UNIVERSITY BREAKDOWN TABLE
-            ============================================================ */}
+        {/* UNIVERSITY BREAKDOWN TABLE - ✅ FIXED: Expanded row below university */}
         <div style={styles.breakdownContainer}>
           <div style={styles.breakdownHeader}>
             <h2 style={styles.breakdownTitle}>University Breakdown</h2>
@@ -1299,52 +1348,53 @@ export default function AdminDashboard() {
               </thead>
               <tbody>
                 {universityBreakdown.map((uni) => (
-                  <tr key={uni.name} style={styles.breakdownTr}>
-                    <td style={styles.breakdownTd}>
-                      <strong>{uni.name}</strong>
-                      {uni.name === 'Not Specified' && (
-                        <span style={{ marginLeft: '8px', fontSize: '10px', color: '#f57c00', background: '#fff3e0', padding: '2px 8px', borderRadius: '4px' }}>
-                          No University
-                        </span>
-                      )}
-                    </td>
-                    <td style={styles.breakdownTd}>{uni.total}</td>
-                    <td style={{ ...styles.breakdownTd, color: '#2e7d32', fontWeight: 600 }}>{uni.completed}</td>
-                    <td style={{ ...styles.breakdownTd, color: '#f57c00', fontWeight: 600 }}>{uni.inProgress}</td>
-                    <td style={{ ...styles.breakdownTd, color: '#1565c0', fontWeight: 600 }}>{uni.scheduled}</td>
-                    <td style={{ ...styles.breakdownTd, color: '#0d47a1', fontWeight: 600 }}>{uni.unblocked}</td>
-                    <td style={{ ...styles.breakdownTd, color: '#c62828', fontWeight: 600 }}>{uni.blocked}</td>
-                    <td style={{ ...styles.breakdownTd, color: '#94a3b8' }}>{uni.notStarted}</td>
-                    <td style={styles.breakdownTd}>
-                      <button 
-                        onClick={() => toggleUniversityExpand(uni.name)}
-                        style={styles.expandButton}
-                      >
-                        {expandedUniversity === uni.name ? 'Hide' : `Show ${uni.programs.length}`}
-                      </button>
-                    </td>
-                  </tr>
+                  <Fragment key={uni.name}>
+                    <tr style={styles.breakdownTr}>
+                      <td style={styles.breakdownTd}>
+                        <strong>{uni.name}</strong>
+                        {uni.name === 'Not Specified' && (
+                          <span style={{ marginLeft: '8px', fontSize: '10px', color: '#f57c00', background: '#fff3e0', padding: '2px 8px', borderRadius: '4px' }}>
+                            No University
+                          </span>
+                        )}
+                      </td>
+                      <td style={styles.breakdownTd}>{uni.totalCandidates}</td>
+                      <td style={{ ...styles.breakdownTd, color: '#2e7d32', fontWeight: 600 }}>{uni.completedCandidates}</td>
+                      <td style={{ ...styles.breakdownTd, color: '#f57c00', fontWeight: 600 }}>{uni.inProgress}</td>
+                      <td style={{ ...styles.breakdownTd, color: '#1565c0', fontWeight: 600 }}>{uni.scheduled}</td>
+                      <td style={{ ...styles.breakdownTd, color: '#0d47a1', fontWeight: 600 }}>{uni.unblocked}</td>
+                      <td style={{ ...styles.breakdownTd, color: '#c62828', fontWeight: 600 }}>{uni.blocked}</td>
+                      <td style={{ ...styles.breakdownTd, color: '#94a3b8' }}>{uni.notStarted}</td>
+                      <td style={styles.breakdownTd}>
+                        <button 
+                          onClick={() => toggleUniversityExpand(uni.name)}
+                          style={styles.expandButton}
+                        >
+                          {expandedUniversity === uni.name ? 'Hide' : `Show ${uni.programs.length}`}
+                        </button>
+                      </td>
+                    </tr>
+                    {/* ✅ FIX: Expanded row rendered immediately below the university row */}
+                    {expandedUniversity === uni.name && (
+                      <tr>
+                        <td colSpan="9" style={styles.expandedRow}>
+                          <div style={styles.programBreakdown}>
+                            <h4 style={styles.programBreakdownTitle}>
+                              📚 Program Distribution for {uni.name}
+                            </h4>
+                            <div style={styles.programTags}>
+                              {uni.programs.map((prog, idx) => (
+                                <span key={idx} style={styles.programTag}>
+                                  {prog.name}: <strong>{prog.count}</strong>
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 ))}
-                {expandedUniversity && (
-                  <tr>
-                    <td colSpan="9" style={styles.expandedRow}>
-                      <div style={styles.programBreakdown}>
-                        <h4 style={styles.programBreakdownTitle}>
-                          📚 Program Distribution for {expandedUniversity}
-                        </h4>
-                        <div style={styles.programTags}>
-                          {universityBreakdown
-                            .find(u => u.name === expandedUniversity)
-                            ?.programs.map((prog, idx) => (
-                              <span key={idx} style={styles.programTag}>
-                                {prog.name}: <strong>{prog.count}</strong>
-                              </span>
-                            ))}
-                        </div>
-                      </div>
-                    </td>
-                  </tr>
-                )}
               </tbody>
             </table>
           </div>
@@ -1413,17 +1463,19 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* BAR CHARTS */}
+        {/* BAR CHARTS - ✅ FIXED: Show completion rate and sample size */}
         <div style={styles.barChartGrid}>
           <div style={styles.chartCard}>
-            <h4 style={styles.chartTitle}>Top Universities (By Avg Score)</h4>
+            <h4 style={styles.chartTitle}>Top Universities</h4>
             <div style={{ height: '400px' }}>
               <Bar
                 data={{
-                  labels: filteredUniversityAnalytics.slice(0, 15).map(u => u.name),
+                  labels: filteredUniversityAnalytics.slice(0, 15).map(u => 
+                    `${u.name} (${u.completedCandidates}/${u.totalCandidates})`
+                  ),
                   datasets: [{
-                    label: 'Avg Score %',
-                    data: filteredUniversityAnalytics.slice(0, 15).map(u => u.avgScore),
+                    label: 'Completion Rate %',
+                    data: filteredUniversityAnalytics.slice(0, 15).map(u => u.completionRate),
                     backgroundColor: '#1a237e',
                     borderRadius: 4,
                   }]
@@ -1439,14 +1491,16 @@ export default function AdminDashboard() {
           </div>
 
           <div style={styles.chartCard}>
-            <h4 style={styles.chartTitle}>Top Programs (By Avg Score)</h4>
+            <h4 style={styles.chartTitle}>Top Programs</h4>
             <div style={{ height: '400px' }}>
               <Bar
                 data={{
-                  labels: filteredProgramAnalytics.slice(0, 15).map(p => p.name),
+                  labels: filteredProgramAnalytics.slice(0, 15).map(p => 
+                    `${p.name} (${p.completedCandidates}/${p.totalCandidates})`
+                  ),
                   datasets: [{
-                    label: 'Avg Score %',
-                    data: filteredProgramAnalytics.slice(0, 15).map(p => p.avgScore),
+                    label: 'Completion Rate %',
+                    data: filteredProgramAnalytics.slice(0, 15).map(p => p.completionRate),
                     backgroundColor: '#2e7d32',
                     borderRadius: 4,
                   }]
@@ -1462,13 +1516,17 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* SCORE DISTRIBUTION */}
+        {/* SCORE DISTRIBUTION - ✅ FIXED: Shows 100% correctly */}
         <div style={{ ...styles.chartCard, marginBottom: '24px' }}>
           <h4 style={styles.chartTitle}>Score Distribution {selectedProgramOptions.length > 0 || selectedUniversityOption ? '(Filtered)' : '(All)'}</h4>
           <div style={{ height: '250px' }}>
             <Bar
               data={{
-                labels: filteredScoreDistribution.bins.slice(0, -1).map((b, i) => `${b}-${filteredScoreDistribution.bins[i+1]}%`),
+                labels: filteredScoreDistribution.bins.slice(0, -1).map((b, i) => 
+                  i === filteredScoreDistribution.bins.length - 2 
+                    ? `${b}-${filteredScoreDistribution.bins[i+1]}%` 
+                    : `${b}-${filteredScoreDistribution.bins[i+1]}%`
+                ),
                 datasets: [{
                   label: 'Number of Candidates',
                   data: filteredScoreDistribution.counts,
