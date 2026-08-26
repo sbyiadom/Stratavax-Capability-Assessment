@@ -1,5 +1,5 @@
-// pages/api/supervisor/reports.js - COMPLETE WORKING VERSION
-// FIX: Properly handles both list and single report requests
+// pages/api/supervisor/reports.js - RENAMED FROM report.js
+// FIX: Matches frontend request /api/supervisor/reports
 
 import { createClient } from '@supabase/supabase-js';
 
