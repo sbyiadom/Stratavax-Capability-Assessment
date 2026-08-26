@@ -1,5 +1,4 @@
-// pages/admin/index.js - MODERN DASHBOARD WITH ALL ACTION CARDS
-// FIXED: Preserves all action cards (Add Supervisor, Manage Candidates, etc.)
+// pages/admin/index.js - MODERN DASHBOARD WITH WORKING SIDEBAR NAVIGATION
 
 import { useEffect, useState, useMemo, Fragment } from "react";
 import { useRouter } from "next/router";
@@ -67,33 +66,6 @@ const Icons = {
   ),
   Search: () => (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-  ),
-  Add: () => (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-  ),
-  UsersIcon: () => (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
-  ),
-  Candidate: () => (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-  ),
-  Assign: () => (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
-  ),
-  AssessmentIcon: () => (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
-  ),
-  Batch: () => (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
-  ),
-  Audit: () => (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
-  ),
-  Gear: () => (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v2"/><path d="M12 21v2"/><path d="M4.22 4.22l1.42 1.42"/><path d="M18.36 18.36l1.42 1.42"/><path d="M1 12h2"/><path d="M21 12h2"/><path d="M4.22 19.78l1.42-1.42"/><path d="M18.36 5.64l1.42-1.42"/></svg>
-  ),
-  ReportIcon: () => (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
   ),
 };
 
@@ -482,16 +454,49 @@ const customSelectStyles = {
 };
 
 // ============================================================
-// SIDEBAR COMPONENT
+// SIDEBAR COMPONENT - WITH WORKING NAVIGATION
 // ============================================================
 function Sidebar({ isOpen, toggleSidebar, activePage, setActivePage, handleLogout }) {
+  const router = useRouter();
+  
   const menuItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: Icons.Dashboard() },
-    { id: 'candidates', label: 'Candidates', icon: Icons.Users() },
-    { id: 'reports', label: 'Reports', icon: Icons.Reports() },
-    { id: 'assessments', label: 'Assessments', icon: Icons.Assessment() },
-    { id: 'settings', label: 'Settings', icon: Icons.Settings() },
+    { 
+      id: 'dashboard', 
+      label: 'Dashboard', 
+      icon: Icons.Dashboard(),
+      href: '/admin'
+    },
+    { 
+      id: 'candidates', 
+      label: 'Candidates', 
+      icon: Icons.Users(),
+      href: '/admin/manage-candidates'
+    },
+    { 
+      id: 'reports', 
+      label: 'Reports', 
+      icon: Icons.Reports(),
+      href: '/admin/reports'
+    },
+    { 
+      id: 'assessments', 
+      label: 'Assessments', 
+      icon: Icons.Assessment(),
+      href: '/admin/assign-assessments'
+    },
+    { 
+      id: 'settings', 
+      label: 'Settings', 
+      icon: Icons.Settings(),
+      href: '/admin/system-settings'
+    },
   ];
+
+  const handleNavigation = (item) => {
+    setActivePage(item.id);
+    if (window.innerWidth < 768) toggleSidebar();
+    router.push(item.href);
+  };
 
   return (
     <div style={{
@@ -507,10 +512,7 @@ function Sidebar({ isOpen, toggleSidebar, activePage, setActivePage, handleLogou
         {menuItems.map((item) => (
           <button
             key={item.id}
-            onClick={() => {
-              setActivePage(item.id);
-              if (window.innerWidth < 768) toggleSidebar();
-            }}
+            onClick={() => handleNavigation(item)}
             style={{
               ...stylesSidebar.navItem,
               backgroundColor: activePage === item.id ? COLORS.sidebarHover : 'transparent',
@@ -1120,7 +1122,7 @@ export default function AdminDashboard() {
 
         {/* KPI Cards */}
         <div style={stylesModern.kpiGrid}>
-          <div style={stylesModern.kpiCard}>
+          <div style={{ ...stylesModern.kpiCard, ...stylesModern.kpiCardStyle }}>
             <div style={{ ...stylesModern.kpiIconWrapper, background: '#e8eaf6' }}>
               <span style={stylesModern.kpiIcon}>👥</span>
             </div>
@@ -1130,7 +1132,7 @@ export default function AdminDashboard() {
               <div style={stylesModern.kpiSub}>+{Math.round(totalFilteredCandidates * 0.12)} this month</div>
             </div>
           </div>
-          <div style={stylesModern.kpiCard}>
+          <div style={{ ...stylesModern.kpiCard, ...stylesModern.kpiCardStyle }}>
             <div style={{ ...stylesModern.kpiIconWrapper, background: '#dcfce7' }}>
               <span style={stylesModern.kpiIcon}>📊</span>
             </div>
@@ -1140,7 +1142,7 @@ export default function AdminDashboard() {
               <div style={stylesModern.kpiSub}>{totalFilteredCompleted} completed</div>
             </div>
           </div>
-          <div style={stylesModern.kpiCard}>
+          <div style={{ ...stylesModern.kpiCard, ...stylesModern.kpiCardStyle }}>
             <div style={{ ...stylesModern.kpiIconWrapper, background: '#fef3c7' }}>
               <span style={stylesModern.kpiIcon}>🔄</span>
             </div>
@@ -1150,7 +1152,7 @@ export default function AdminDashboard() {
               <div style={stylesModern.kpiSub}>Active assessments</div>
             </div>
           </div>
-          <div style={stylesModern.kpiCard}>
+          <div style={{ ...stylesModern.kpiCard, ...stylesModern.kpiCardStyle }}>
             <div style={{ ...stylesModern.kpiIconWrapper, background: '#fee2e2' }}>
               <span style={stylesModern.kpiIcon}>🔒</span>
             </div>
@@ -1160,7 +1162,7 @@ export default function AdminDashboard() {
               <div style={stylesModern.kpiSub}>Needs attention</div>
             </div>
           </div>
-          <div style={stylesModern.kpiCard}>
+          <div style={{ ...stylesModern.kpiCard, ...stylesModern.kpiCardStyle }}>
             <div style={{ ...stylesModern.kpiIconWrapper, background: '#e0f2fe' }}>
               <span style={stylesModern.kpiIcon}>📄</span>
             </div>
@@ -1174,7 +1176,7 @@ export default function AdminDashboard() {
               </div>
             </div>
           </div>
-          <div style={stylesModern.kpiCard}>
+          <div style={{ ...stylesModern.kpiCard, ...stylesModern.kpiCardStyle }}>
             <div style={{ ...stylesModern.kpiIconWrapper, background: '#f3e8ff' }}>
               <span style={stylesModern.kpiIcon}>🎯</span>
             </div>
