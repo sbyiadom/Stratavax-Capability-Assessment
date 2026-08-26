@@ -1,5 +1,6 @@
 // pages/supervisor/[user_id].js - COMPLETE FIXED FILE
-// FIXED: Added Authorization header to report API calls
+// FIXED: Correct API endpoint (/api/supervisor/reports)
+// FIXED: Proper authentication with Authorization header
 
 import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
@@ -228,50 +229,11 @@ export default function SupervisorUserReportPage() {
   const [pdfLoading, setPdfLoading] = useState(false);
   const [pdfError, setPdfError] = useState("");
 
-  // Load report when userId and assessmentId are available
+  // Load report when userId is available
   useEffect(() => {
     if (!router.isReady || !userId) return;
-    
-    if (assessmentId) {
-      loadReport();
-    } else {
-      findAndLoadLatestAssessment();
-    }
+    loadReport();
   }, [router.isReady, userId, assessmentId]);
-
-  async function findAndLoadLatestAssessment() {
-    try {
-      setLoading(true);
-      setErrorMessage("");
-      
-      const { data, error } = await supabase
-        .from('assessment_results')
-        .select('assessment_id')
-        .eq('user_id', userId)
-        .order('completed_at', { ascending: false })
-        .limit(1);
-      
-      if (error) {
-        console.error("Error fetching latest assessment:", error);
-        setErrorMessage("Failed to find completed assessments for this candidate.");
-        setLoading(false);
-        return;
-      }
-      
-      if (!data || data.length === 0) {
-        setErrorMessage("No completed assessments found for this candidate.");
-        setLoading(false);
-        return;
-      }
-      
-      const latestAssessmentId = data[0].assessment_id;
-      router.replace(`/supervisor/${userId}?assessment=${latestAssessmentId}`, undefined, { shallow: true });
-    } catch (error) {
-      console.error("Error finding latest assessment:", error);
-      setErrorMessage("Failed to load assessment data.");
-      setLoading(false);
-    }
-  }
 
   async function loadReport() {
     setLoading(true);
@@ -292,17 +254,16 @@ export default function SupervisorUserReportPage() {
 
       const token = session.access_token;
 
-      // Step 2: Validate token exists
       if (!token) {
         setErrorMessage('Unauthorized: No valid access token found. Please sign in again.');
         setLoading(false);
         return;
       }
 
-      const url = `/api/supervisor/report?user_id=${userId}&assessment_id=${assessmentId}`;
-      console.log("Fetching report from:", url);
+      // ✅ FIX: Use the correct API endpoint with Authorization header
+      const url = `/api/supervisor/reports?user_id=${userId}${assessmentId ? `&assessment_id=${assessmentId}` : ''}`;
+      console.log("[Supervisor Report] Fetching from URL:", url);
 
-      // ✅ FIXED: Added Authorization header
       const response = await fetch(url, {
         method: 'GET',
         headers: {
@@ -311,63 +272,156 @@ export default function SupervisorUserReportPage() {
         },
       });
 
-      // Safe JSON parsing
       let data;
       try {
         data = await response.json();
       } catch (parseError) {
-        console.error('[Supervisor Report] Invalid API response:', parseError);
+        console.error("[Supervisor Report] Invalid API response:", parseError);
         setErrorMessage(`The report server returned an invalid response. HTTP status: ${response.status}`);
         setLoading(false);
         return;
       }
 
-      // Validate response
+      console.log("[Supervisor Report] Response data:", data);
+
       if (!response.ok || !data.success) {
         if (response.status === 401) {
           setErrorMessage(data?.error || 'Your session is invalid or has expired. Please sign in again.');
           setLoading(false);
           return;
         }
-
         if (response.status === 403) {
           setErrorMessage(data?.error || 'You do not have permission to view this report.');
           setLoading(false);
           return;
         }
-
-        if (response.status === 404) {
-          setErrorMessage(data?.error || 'The requested report could not be found.');
-          setLoading(false);
-          return;
-        }
-
         setErrorMessage(data?.error || data?.message || `Failed to load report. HTTP status: ${response.status}`);
         setLoading(false);
         return;
       }
 
-      // Extract data from API response
-      const loadedCandidate = data.candidate || null;
-      const loadedAssessment = data.assessment || null;
-      const loadedReport = data.generatedReport || data.report || data.result || null;
+      // Check if we got a single report (when assessment_id is provided)
+      if (assessmentId && data.generatedReport) {
+        // Single report format
+        const loadedReport = data.generatedReport;
+        const loadedCandidate = data.candidate || null;
+        const loadedAssessment = data.assessment || null;
 
-      if (!loadedReport) {
-        setErrorMessage("No report data found in the API response.");
+        console.log("[Supervisor Report] Single report found:", loadedReport);
+
+        if (!loadedReport) {
+          setErrorMessage("No report data found for this assessment.");
+          setLoading(false);
+          return;
+        }
+
+        setCandidate(decodeDeep(loadedCandidate));
+        setAssessment(decodeDeep(loadedAssessment));
+        setReport(decodeDeep(loadedReport));
         setLoading(false);
         return;
       }
+
+      // List format - find the specific report
+      const reports = data.reports || [];
+      const candidates = data.candidates || [];
+
+      const loadedCandidate = candidates.find(c => c.id === userId) || null;
+
+      let loadedReport = null;
+      if (assessmentId) {
+        loadedReport = reports.find(r => r.assessment_id === assessmentId) || null;
+      }
+
+      if (!loadedReport && reports.length > 0) {
+        loadedReport = reports[0];
+      }
+
+      console.log("[Supervisor Report] Found candidate:", loadedCandidate);
+      console.log("[Supervisor Report] Found report:", loadedReport);
+
+      if (!loadedReport) {
+        setErrorMessage("No report data found for this candidate.");
+        setLoading(false);
+        return;
+      }
+
+      const loadedAssessment = {
+        id: loadedReport.assessment_id,
+        title: loadedReport.assessment_title || 'Assessment',
+      };
 
       setCandidate(decodeDeep(loadedCandidate));
       setAssessment(decodeDeep(loadedAssessment));
       setReport(decodeDeep(loadedReport));
       setLoading(false);
     } catch (error) {
-      console.error("Load report error:", error);
+      console.error("[Supervisor Report] Load error:", error);
       setErrorMessage(error?.message || "Something went wrong while loading the report.");
       setLoading(false);
     }
   }
+
+  async function downloadPdfReport() {
+    if (!userId || !assessmentId) {
+      setPdfError("Cannot generate PDF because candidate ID or assessment ID is missing.");
+      return;
+    }
+
+    setPdfLoading(true);
+    setPdfError("");
+
+    try {
+      const session = await ensureValidSession();
+      if (!session) {
+        setPdfError("Please sign in to download the report.");
+        setPdfLoading(false);
+        return;
+      }
+
+      const token = session.access_token;
+
+      const response = await fetch("/api/generate-pdf-report", {
+        method: "POST",
+        headers: { 
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ userId, assessmentId })
+      });
+
+      if (!response.ok) {
+        let errorData = null;
+        try {
+          errorData = await response.json();
+        } catch (e) {
+          errorData = null;
+        }
+        setPdfError(errorData?.message || errorData?.error || "PDF generation failed. Please try again.");
+        setPdfLoading(false);
+        return;
+      }
+
+      const blob = await response.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      const fileName = safeText(report?.candidateName || candidate?.full_name || "Candidate", "Candidate").replace(/[^a-zA-Z0-9_-]+/g, "_");
+      link.href = downloadUrl;
+      link.download = fileName + "_supervisor_report.pdf";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(downloadUrl);
+      setPdfLoading(false);
+    } catch (error) {
+      setPdfError(error?.message || "PDF generation failed. Please try again.");
+      setPdfLoading(false);
+    }
+  }
+
+  // ============================================================
+  // RENDER FUNCTIONS
+  // ============================================================
 
   const cleanReport = safeObject(decodeDeep(report));
   const categoryScores = safeArray(cleanReport.categoryScores || cleanReport.category_scores || []);
@@ -403,64 +457,6 @@ export default function SupervisorUserReportPage() {
 
   function toggleRow(key) {
     setExpandedRows((previous) => ({ ...previous, [key]: !previous[key] }));
-  }
-
-  async function downloadPdfReport() {
-    if (!userId || !assessmentId) {
-      setPdfError("Cannot generate PDF because candidate ID or assessment ID is missing.");
-      return;
-    }
-
-    setPdfLoading(true);
-    setPdfError("");
-
-    try {
-      // Get session for PDF download
-      const session = await ensureValidSession();
-      if (!session) {
-        setPdfError("Please sign in to download the report.");
-        setPdfLoading(false);
-        return;
-      }
-
-      const token = session.access_token;
-
-      const response = await fetch("/api/generate-pdf-report", {
-        method: "POST",
-        headers: { 
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`, // ✅ FIXED: Added Authorization header
-        },
-        body: JSON.stringify({ userId, assessmentId })
-      });
-
-      if (!response.ok) {
-        let errorData = null;
-        try {
-          errorData = await response.json();
-        } catch (e) {
-          errorData = null;
-        }
-        setPdfError(errorData?.message || errorData?.error || "PDF generation failed. Please try again.");
-        setPdfLoading(false);
-        return;
-      }
-
-      const blob = await response.blob();
-      const downloadUrl = window.URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      const fileName = safeText(candidateName, "Candidate").replace(/[^a-zA-Z0-9_-]+/g, "_");
-      link.href = downloadUrl;
-      link.download = fileName + "_supervisor_report.pdf";
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(downloadUrl);
-      setPdfLoading(false);
-    } catch (error) {
-      setPdfError(error?.message || "PDF generation failed. Please try again.");
-      setPdfLoading(false);
-    }
   }
 
   function renderOverview() {
@@ -695,6 +691,10 @@ export default function SupervisorUserReportPage() {
     return renderOverview();
   }
 
+  // ============================================================
+  // RENDER STATES
+  // ============================================================
+
   if (loading) {
     return (
       <div style={styles.page}>
@@ -726,6 +726,26 @@ export default function SupervisorUserReportPage() {
       </div>
     );
   }
+
+  if (!report) {
+    return (
+      <div style={styles.page}>
+        <div style={styles.backgroundBlobOne} />
+        <div style={styles.backgroundBlobTwo} />
+        <div style={styles.container}>
+          <section style={styles.errorCard}>
+            <h2 style={styles.sectionTitle}>No Report Found</h2>
+            <p style={styles.errorText}>No assessment report found for this candidate.</p>
+            <button onClick={() => router.push("/supervisor")} style={styles.backButton}>Back to Dashboard</button>
+          </section>
+        </div>
+      </div>
+    );
+  }
+
+  // ============================================================
+  // SUCCESS RENDER
+  // ============================================================
 
   return (
     <div style={styles.page}>
@@ -790,6 +810,9 @@ export default function SupervisorUserReportPage() {
   );
 }
 
+// ============================================================
+// STYLES
+// ============================================================
 const styles = {
   page: { minHeight: "100vh", background: "#f3f6fb", padding: "28px 16px 48px", color: "#172033", position: "relative", overflow: "hidden", fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif' },
   backgroundBlobOne: { position: "absolute", width: "420px", height: "420px", borderRadius: "999px", background: "rgba(20, 184, 166, 0.18)", top: "-160px", right: "-120px", filter: "blur(10px)" },
