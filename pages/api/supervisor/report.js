@@ -1,5 +1,7 @@
 // pages/api/supervisor/reports.js - FULLY CORRECTED DEPLOYMENT VERSION
-// FIX: Properly extracts type from Supabase array, adds broader NS detection.
+// FIX: Supports both list and single report requests
+// FIX: Properly extracts type from Supabase array
+// FIX: Broader NS detection
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -90,6 +92,9 @@ export default async function handler(req, res) {
 
     console.log('[Supervisor Reports] Supervisor ID:', supervisorId);
 
+    // Get query parameters
+    const { user_id, assessment_id } = req.query;
+
     // ============================================================
     // GET ASSIGNED CANDIDATES - MERGING BOTH LEGACY AND JUNCTION TABLE
     // ============================================================
@@ -155,12 +160,24 @@ export default async function handler(req, res) {
       });
     }
 
-    const candidateIds = assignedCandidates.map(c => c.id);
+    // If specific user_id is requested, filter candidates
+    let targetCandidates = assignedCandidates;
+    if (user_id) {
+      targetCandidates = assignedCandidates.filter(c => c.id === user_id);
+      if (targetCandidates.length === 0) {
+        return res.status(404).json({
+          success: false,
+          error: 'Candidate not found or not assigned to you'
+        });
+      }
+    }
+
+    const candidateIds = targetCandidates.map(c => c.id);
 
     // ============================================================
     // GET ASSESSMENT RESULTS FOR THESE CANDIDATES
     // ============================================================
-    const { data: results, error: resultsError } = await supabase
+    let query = supabase
       .from('assessment_results')
       .select(`
         id,
@@ -193,6 +210,13 @@ export default async function handler(req, res) {
       .in('user_id', candidateIds)
       .order('completed_at', { ascending: false });
 
+    // If specific assessment_id is requested, filter by it
+    if (assessment_id) {
+      query = query.eq('assessment_id', assessment_id);
+    }
+
+    const { data: results, error: resultsError } = await query;
+
     if (resultsError) {
       console.error('[Supervisor Reports] Results error:', resultsError);
       return res.status(500).json({ success: false, error: resultsError.message });
@@ -223,7 +247,7 @@ export default async function handler(req, res) {
         assessmentTitle.includes('nationalservice') ||
         assessmentTitle.includes('service recruitment');
 
-      const candidate = assignedCandidates.find(c => c.id === result.user_id) || {};
+      const candidate = targetCandidates.find(c => c.id === result.user_id) || {};
 
       // Get scores - prefer report_data for National Service
       let overallScore = safeNumber(result.percentage_score);
@@ -257,11 +281,53 @@ export default async function handler(req, res) {
         is_auto_submitted: result.is_auto_submitted || false,
         completed_at: result.completed_at,
         category_scores: result.category_scores || [],
-        report_data: result.report_data || {}
+        report_data: result.report_data || {},
+        // Include full result for detailed view
+        _result: result
       };
     });
 
-    // Split reports
+    // If specific assessment_id was requested, return single report format
+    if (assessment_id && reports.length === 1) {
+      const report = reports[0];
+      const candidate = targetCandidates.find(c => c.id === report.candidate_id) || {};
+      const assessment = report._result?.assessments || {};
+
+      return res.status(200).json({
+        success: true,
+        result: report._result,
+        candidate: {
+          id: candidate.id,
+          full_name: candidate.full_name,
+          email: candidate.email,
+          university: candidate.university,
+          programme: candidate.programme,
+        },
+        assessment: {
+          id: assessment.id,
+          title: assessment.title,
+        },
+        generatedReport: {
+          ...report,
+          candidateName: candidate.full_name || 'Candidate',
+          assessmentName: assessment.title || 'Assessment',
+          percentage_score: report.score,
+          overallScore: report.score,
+          category_scores: report.category_scores || [],
+          recommendation: report.recommendation,
+          completed_at: report.completed_at,
+        },
+        reports: reports,
+        candidates: targetCandidates,
+        stats: {
+          total: reports.length,
+          completed: reports.filter(r => r.is_completed).length,
+          inProgress: reports.filter(r => !r.is_completed && r.session_id).length
+        }
+      });
+    }
+
+    // Otherwise return list format
     const nationalServiceReports = reports.filter(r => r.is_national_service === true);
     const otherReports = reports.filter(r => r.is_national_service === false);
 
@@ -276,7 +342,7 @@ export default async function handler(req, res) {
       reports: reports,
       nationalServiceReports,
       otherReports,
-      candidates: assignedCandidates,
+      candidates: targetCandidates,
       stats
     });
 
