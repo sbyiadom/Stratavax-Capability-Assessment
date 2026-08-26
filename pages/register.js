@@ -1,4 +1,4 @@
-// pages/register.js - COMPLETE WORKING VERSION
+// pages/register.js - COMPLETE WORKING VERSION WITH DUPLICATE CHECKS
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -11,6 +11,10 @@ export default function Register() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(false);
+  const [checkingName, setCheckingName] = useState(false);
+  const [checkingEmail, setCheckingEmail] = useState(false);
+  const [nameAvailable, setNameAvailable] = useState(null);
+  const [emailAvailable, setEmailAvailable] = useState(null);
   const [formData, setFormData] = useState({
     fullName: '',
     email: '',
@@ -34,10 +38,96 @@ export default function Register() {
   }, [router]);
 
   const handleChange = (e) => {
+    const { name, value } = e.target;
     setFormData({
       ...formData,
-      [e.target.name]: e.target.value
+      [name]: value
     });
+    
+    // Clear availability status when user types
+    if (name === 'fullName') {
+      setNameAvailable(null);
+    }
+    if (name === 'email') {
+      setEmailAvailable(null);
+    }
+  };
+
+  // Check if name is available (debounced)
+  useEffect(() => {
+    const timer = setTimeout(async () => {
+      if (formData.fullName.trim().length >= 3) {
+        await checkNameAvailability(formData.fullName.trim());
+      } else {
+        setNameAvailable(null);
+      }
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [formData.fullName]);
+
+  // Check if email is available (debounced)
+  useEffect(() => {
+    const timer = setTimeout(async () => {
+      if (formData.email.trim().length >= 5 && formData.email.includes('@')) {
+        await checkEmailAvailability(formData.email.trim());
+      } else {
+        setEmailAvailable(null);
+      }
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [formData.email]);
+
+  const checkNameAvailability = async (name) => {
+    if (!name || name.length < 3) return;
+    
+    setCheckingName(true);
+    try {
+      const { data, error } = await supabase
+        .from('candidate_profiles')
+        .select('id, full_name')
+        .ilike('full_name', name);
+
+      if (error) {
+        console.error('Name check error:', error);
+        return;
+      }
+
+      // Check for exact match (case insensitive)
+      const exactMatch = data?.some(
+        item => item.full_name.toLowerCase() === name.toLowerCase()
+      );
+      
+      setNameAvailable(!exactMatch);
+    } catch (err) {
+      console.error('Name check failed:', err);
+    } finally {
+      setCheckingName(false);
+    }
+  };
+
+  const checkEmailAvailability = async (email) => {
+    if (!email || !email.includes('@')) return;
+    
+    setCheckingEmail(true);
+    try {
+      const { data, error } = await supabase
+        .from('candidate_profiles')
+        .select('id, email')
+        .eq('email', email);
+
+      if (error) {
+        console.error('Email check error:', error);
+        return;
+      }
+
+      setEmailAvailable(data?.length === 0);
+    } catch (err) {
+      console.error('Email check failed:', err);
+    } finally {
+      setCheckingEmail(false);
+    }
   };
 
   const handleRegister = async (e) => {
@@ -55,6 +145,20 @@ export default function Register() {
 
     if (!formData.email.trim()) {
       setError('Email is required');
+      setLoading(false);
+      return;
+    }
+
+    // Check if name is already taken
+    if (nameAvailable === false) {
+      setError('This name is already registered. Please use a different name.');
+      setLoading(false);
+      return;
+    }
+
+    // Check if email is already taken
+    if (emailAvailable === false) {
+      setError('This email is already registered. Please login instead.');
       setLoading(false);
       return;
     }
@@ -152,7 +256,6 @@ export default function Register() {
 
         if (insertError) {
           console.error('Direct insert error:', insertError);
-          // Don't fail - the user is created, profile can be fixed later
         } else {
           console.log('Profile created via direct insert');
         }
@@ -244,30 +347,62 @@ export default function Register() {
           <form onSubmit={handleRegister} style={styles.form}>
             <div style={styles.field}>
               <label style={styles.label}>Full Name *</label>
-              <input
-                type="text"
-                name="fullName"
-                value={formData.fullName}
-                onChange={handleChange}
-                style={styles.input}
-                placeholder="Enter your full name"
-                required
-                disabled={loading}
-              />
+              <div style={styles.inputWrapper}>
+                <input
+                  type="text"
+                  name="fullName"
+                  value={formData.fullName}
+                  onChange={handleChange}
+                  style={{
+                    ...styles.input,
+                    borderColor: nameAvailable === false ? '#dc2626' : 
+                                nameAvailable === true ? '#16a34a' : '#e2e8f0'
+                  }}
+                  placeholder="Enter your full name"
+                  required
+                  disabled={loading}
+                />
+                {checkingName && <span style={styles.checkingIndicator}>⏳</span>}
+                {nameAvailable === true && formData.fullName.length >= 3 && (
+                  <span style={styles.availableIndicator}>✅ Available</span>
+                )}
+                {nameAvailable === false && formData.fullName.length >= 3 && (
+                  <span style={styles.takenIndicator}>❌ Taken</span>
+                )}
+              </div>
+              {nameAvailable === false && (
+                <span style={styles.errorHint}>This name is already registered</span>
+              )}
             </div>
 
             <div style={styles.field}>
               <label style={styles.label}>Email Address *</label>
-              <input
-                type="email"
-                name="email"
-                value={formData.email}
-                onChange={handleChange}
-                style={styles.input}
-                placeholder="Enter your email"
-                required
-                disabled={loading}
-              />
+              <div style={styles.inputWrapper}>
+                <input
+                  type="email"
+                  name="email"
+                  value={formData.email}
+                  onChange={handleChange}
+                  style={{
+                    ...styles.input,
+                    borderColor: emailAvailable === false ? '#dc2626' : 
+                                emailAvailable === true ? '#16a34a' : '#e2e8f0'
+                  }}
+                  placeholder="Enter your email"
+                  required
+                  disabled={loading}
+                />
+                {checkingEmail && <span style={styles.checkingIndicator}>⏳</span>}
+                {emailAvailable === true && formData.email.length >= 5 && formData.email.includes('@') && (
+                  <span style={styles.availableIndicator}>✅ Available</span>
+                )}
+                {emailAvailable === false && formData.email.length >= 5 && formData.email.includes('@') && (
+                  <span style={styles.takenIndicator}>❌ Taken</span>
+                )}
+              </div>
+              {emailAvailable === false && (
+                <span style={styles.errorHint}>This email is already registered</span>
+              )}
             </div>
 
             <div style={styles.field}>
@@ -367,11 +502,11 @@ export default function Register() {
 
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || nameAvailable === false || emailAvailable === false}
               style={{
                 ...styles.registerButton,
-                opacity: loading ? 0.7 : 1,
-                cursor: loading ? 'not-allowed' : 'pointer'
+                opacity: (loading || nameAvailable === false || emailAvailable === false) ? 0.7 : 1,
+                cursor: (loading || nameAvailable === false || emailAvailable === false) ? 'not-allowed' : 'pointer'
               }}
             >
               {loading ? (
@@ -514,6 +649,11 @@ const styles = {
     fontWeight: '500',
     color: '#475569'
   },
+  inputWrapper: {
+    position: 'relative',
+    display: 'flex',
+    alignItems: 'center'
+  },
   input: {
     padding: '10px 14px',
     borderRadius: '10px',
@@ -522,7 +662,33 @@ const styles = {
     transition: 'all 0.2s',
     outline: 'none',
     fontFamily: 'inherit',
-    background: '#f8fafc'
+    background: '#f8fafc',
+    width: '100%',
+    paddingRight: '80px'
+  },
+  checkingIndicator: {
+    position: 'absolute',
+    right: '10px',
+    fontSize: '16px'
+  },
+  availableIndicator: {
+    position: 'absolute',
+    right: '10px',
+    fontSize: '13px',
+    color: '#16a34a',
+    fontWeight: '600'
+  },
+  takenIndicator: {
+    position: 'absolute',
+    right: '10px',
+    fontSize: '13px',
+    color: '#dc2626',
+    fontWeight: '600'
+  },
+  errorHint: {
+    fontSize: '12px',
+    color: '#dc2626',
+    marginTop: '2px'
   },
   hint: {
     fontSize: '11px',
