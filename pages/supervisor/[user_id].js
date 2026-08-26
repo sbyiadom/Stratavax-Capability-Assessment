@@ -1,4 +1,5 @@
-// pages/supervisor/[user_id].js
+// pages/supervisor/[user_id].js - COMPLETE FIXED FILE
+// FIXED: Added Authorization header to report API calls
 
 import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
@@ -200,6 +201,18 @@ function renderSubCategories(title, subCategories, icon, mainScore) {
   );
 }
 
+// ============================================================
+// AUTH HELPER
+// ============================================================
+async function ensureValidSession() {
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+  if (sessionError || !sessionData?.session) {
+    console.error('[Supervisor Report] No valid session');
+    return null;
+  }
+  return sessionData.session;
+}
+
 export default function SupervisorUserReportPage() {
   const router = useRouter();
   const userId = router.query.user_id;
@@ -219,11 +232,9 @@ export default function SupervisorUserReportPage() {
   useEffect(() => {
     if (!router.isReady || !userId) return;
     
-    // If assessmentId is provided in URL, load report directly
     if (assessmentId) {
       loadReport();
     } else {
-      // If no assessmentId, try to find the most recent one
       findAndLoadLatestAssessment();
     }
   }, [router.isReady, userId, assessmentId]);
@@ -233,7 +244,6 @@ export default function SupervisorUserReportPage() {
       setLoading(true);
       setErrorMessage("");
       
-      // Fetch the most recent completed assessment for this candidate
       const { data, error } = await supabase
         .from('assessment_results')
         .select('assessment_id')
@@ -254,10 +264,8 @@ export default function SupervisorUserReportPage() {
         return;
       }
       
-      // Update URL with the assessment_id and reload
       const latestAssessmentId = data[0].assessment_id;
       router.replace(`/supervisor/${userId}?assessment=${latestAssessmentId}`, undefined, { shallow: true });
-      // The useEffect will trigger again with the new assessmentId
     } catch (error) {
       console.error("Error finding latest assessment:", error);
       setErrorMessage("Failed to load assessment data.");
@@ -274,22 +282,67 @@ export default function SupervisorUserReportPage() {
     setPdfError("");
 
     try {
-      const url = `/api/supervisor/report?user_id=${userId}&assessment_id=${assessmentId}`;
-      console.log("Fetching report from:", url);
-      
-      const response = await fetch(url);
-      const data = await response.json();
-
-      console.log("API Response:", data);
-
-      if (!response.ok) {
-        setErrorMessage(data?.error || data?.message || "Request failed with status " + response.status);
+      // Step 1: Validate session
+      const session = await ensureValidSession();
+      if (!session) {
+        setErrorMessage('Please sign in to view this report.');
         setLoading(false);
         return;
       }
 
-      if (!data || !data.success) {
-        setErrorMessage(data?.error || "The API returned no report data.");
+      const token = session.access_token;
+
+      // Step 2: Validate token exists
+      if (!token) {
+        setErrorMessage('Unauthorized: No valid access token found. Please sign in again.');
+        setLoading(false);
+        return;
+      }
+
+      const url = `/api/supervisor/report?user_id=${userId}&assessment_id=${assessmentId}`;
+      console.log("Fetching report from:", url);
+
+      // ✅ FIXED: Added Authorization header
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      // Safe JSON parsing
+      let data;
+      try {
+        data = await response.json();
+      } catch (parseError) {
+        console.error('[Supervisor Report] Invalid API response:', parseError);
+        setErrorMessage(`The report server returned an invalid response. HTTP status: ${response.status}`);
+        setLoading(false);
+        return;
+      }
+
+      // Validate response
+      if (!response.ok || !data.success) {
+        if (response.status === 401) {
+          setErrorMessage(data?.error || 'Your session is invalid or has expired. Please sign in again.');
+          setLoading(false);
+          return;
+        }
+
+        if (response.status === 403) {
+          setErrorMessage(data?.error || 'You do not have permission to view this report.');
+          setLoading(false);
+          return;
+        }
+
+        if (response.status === 404) {
+          setErrorMessage(data?.error || 'The requested report could not be found.');
+          setLoading(false);
+          return;
+        }
+
+        setErrorMessage(data?.error || data?.message || `Failed to load report. HTTP status: ${response.status}`);
         setLoading(false);
         return;
       }
@@ -323,7 +376,6 @@ export default function SupervisorUserReportPage() {
   const recommendations = safeArray(cleanReport.recommendations || []);
   const followUpQuestions = safeArray(cleanReport.followUpQuestions || cleanReport.follow_up_questions || []);
   
-  // Get sub-categories from the report
   const workplaceSubCategories = safeArray(cleanReport.workplaceSubCategories || []);
   const intellectualSubCategories = safeArray(cleanReport.intellectualSubCategories || []);
   
@@ -363,9 +415,22 @@ export default function SupervisorUserReportPage() {
     setPdfError("");
 
     try {
+      // Get session for PDF download
+      const session = await ensureValidSession();
+      if (!session) {
+        setPdfError("Please sign in to download the report.");
+        setPdfLoading(false);
+        return;
+      }
+
+      const token = session.access_token;
+
       const response = await fetch("/api/generate-pdf-report", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`, // ✅ FIXED: Added Authorization header
+        },
         body: JSON.stringify({ userId, assessmentId })
       });
 
@@ -417,19 +482,15 @@ export default function SupervisorUserReportPage() {
   }
 
   function renderCategories() {
-    // Get sub-categories from the report
     const workplaceSubCats = safeArray(cleanReport.workplaceSubCategories || []);
     const intellectualSubCats = safeArray(cleanReport.intellectualSubCategories || []);
     
-    // Get main scores
     const workplaceScore = cleanReport.workplace_readiness || cleanReport.workplaceReadiness || overallScore || 0;
     const intellectualScore = cleanReport.intellectual_capability || cleanReport.intellectualCapability || overallScore || 0;
     
-    // If we have sub-categories, display them grouped
     if (workplaceSubCats.length > 0 || intellectualSubCats.length > 0) {
       return (
         <React.Fragment>
-          {/* Workplace Readiness Sub-Categories */}
           {workplaceSubCats.length > 0 && renderSubCategories(
             "Workplace Readiness",
             workplaceSubCats,
@@ -437,7 +498,6 @@ export default function SupervisorUserReportPage() {
             workplaceScore
           )}
           
-          {/* Intellectual Capability Sub-Categories */}
           {intellectualSubCats.length > 0 && renderSubCategories(
             "Intellectual Capability",
             intellectualSubCats,
@@ -445,7 +505,6 @@ export default function SupervisorUserReportPage() {
             intellectualScore
           )}
           
-          {/* If no sub-categories were found but we have category scores, show fallback */}
           {categoryScores.length > 0 && workplaceSubCats.length === 0 && intellectualSubCats.length === 0 && (
             <SectionShell title="Category Scores" eyebrow="Performance breakdown" badge={categoryScores.length}>
               <div style={styles.categoryDeck}>
@@ -486,7 +545,6 @@ export default function SupervisorUserReportPage() {
       );
     }
 
-    // Fallback: Show original category scores if no sub-categories found
     if (categoryScores.length === 0) {
       return <EmptyState title="No category scores found" message="No category or competency scores were found in the generated report." icon="▦" />;
     }
