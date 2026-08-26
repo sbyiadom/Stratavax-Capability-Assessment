@@ -1,7 +1,5 @@
-// pages/api/supervisor/reports.js - FULLY CORRECTED DEPLOYMENT VERSION
-// FIX: Supports both list and single report requests
-// FIX: Properly extracts type from Supabase array
-// FIX: Broader NS detection
+// pages/api/supervisor/reports.js - COMPLETE WORKING VERSION
+// FIX: Properly handles both list and single report requests
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -67,21 +65,24 @@ function calculateRecommendation(workplaceReadiness, intellectualCapability, ove
 }
 
 export default async function handler(req, res) {
+  // Only allow GET requests
   if (req.method !== "GET") {
     return res.status(405).json({ success: false, error: "Method not allowed" });
   }
 
   try {
+    // Step 1: Extract and validate token
     const token = extractBearerToken(req);
     if (!token) {
       return res.status(401).json({ success: false, error: "Missing token" });
     }
 
+    // Step 2: Create Supabase client
     const supabase = createClient(supabaseUrl, supabaseKey, {
       auth: { persistSession: false }
     });
 
-    // Verify user
+    // Step 3: Verify user
     const { data: userData, error: userError } = await supabase.auth.getUser(token);
     if (userError || !userData?.user) {
       return res.status(401).json({ success: false, error: "Invalid token" });
@@ -92,65 +93,74 @@ export default async function handler(req, res) {
 
     console.log('[Supervisor Reports] Supervisor ID:', supervisorId);
 
-    // Get query parameters
+    // Step 4: Get query parameters
     const { user_id, assessment_id } = req.query;
 
-    // ============================================================
-    // GET ASSIGNED CANDIDATES - MERGING BOTH LEGACY AND JUNCTION TABLE
-    // ============================================================
-    let assignedCandidates = [];
-    const candidateMap = {};
+    // Step 5: Get assigned candidates
+    let targetCandidates = [];
+    let allCandidates = [];
     const candidateIdsSet = new Set();
 
-    // Method 1: Legacy candidate_profiles fields
+    // Method 1: Legacy fields
     const { data: candidatesByField, error: candidateError } = await supabase
       .from('candidate_profiles')
-      .select('id, full_name, email, university, programme, supervisor_id, assigned_supervisor_id, supervisor_email, created_at')
-      .or(`supervisor_id.eq.${supervisorId},assigned_supervisor_id.eq.${supervisorId},supervisor_email.eq.${supervisorEmail}`);
+      .select('id, full_name, email, university, programme, supervisor_id, created_at')
+      .or(`supervisor_id.eq.${supervisorId}`);
 
     if (!candidateError && candidatesByField) {
       candidatesByField.forEach(candidate => {
         if (!candidateIdsSet.has(candidate.id)) {
           candidateIdsSet.add(candidate.id);
-          candidateMap[candidate.id] = candidate;
+          allCandidates.push(candidate);
         }
       });
       console.log('[Supervisor Reports] Found candidates by legacy fields:', candidatesByField.length);
     }
 
-    // Method 2: NEW candidate_supervisors junction table
+    // Method 2: Junction table
     const { data: junctionAssignments, error: junctionError } = await supabase
       .from('candidate_supervisors')
       .select('candidate_id')
       .eq('supervisor_id', supervisorId);
 
     if (!junctionError && junctionAssignments && junctionAssignments.length > 0) {
-      const junctionCandidateIds = [...new Set(junctionAssignments.map(item => item.candidate_id).filter(Boolean))];
-      const missingCandidateIds = junctionCandidateIds.filter(id => !candidateIdsSet.has(id));
+      const junctionCandidateIds = junctionAssignments.map(item => item.candidate_id).filter(Boolean);
+      const missingIds = junctionCandidateIds.filter(id => !candidateIdsSet.has(id));
 
-      if (missingCandidateIds.length > 0) {
+      if (missingIds.length > 0) {
         const { data: junctionCandidates, error: junctionCandidatesError } = await supabase
           .from('candidate_profiles')
-          .select('id, full_name, email, university, programme, supervisor_id, assigned_supervisor_id, supervisor_email, created_at')
-          .in('id', missingCandidateIds);
+          .select('id, full_name, email, university, programme, supervisor_id, created_at')
+          .in('id', missingIds);
 
         if (!junctionCandidatesError && junctionCandidates) {
           junctionCandidates.forEach(candidate => {
             if (!candidateIdsSet.has(candidate.id)) {
               candidateIdsSet.add(candidate.id);
-              candidateMap[candidate.id] = candidate;
+              allCandidates.push(candidate);
             }
           });
-          console.log('[Supervisor Reports] Found candidates via candidate_supervisors:', junctionCandidates.length);
+          console.log('[Supervisor Reports] Found candidates via junction table:', junctionCandidates.length);
         }
       }
     }
 
-    assignedCandidates = Object.values(candidateMap);
+    console.log('[Supervisor Reports] Total assigned candidates:', allCandidates.length);
 
-    console.log('[Supervisor Reports] Total assigned candidates:', assignedCandidates.length);
+    // If specific user_id is requested, filter
+    if (user_id) {
+      targetCandidates = allCandidates.filter(c => c.id === user_id);
+      if (targetCandidates.length === 0) {
+        return res.status(404).json({
+          success: false,
+          error: 'Candidate not found or not assigned to you'
+        });
+      }
+    } else {
+      targetCandidates = allCandidates;
+    }
 
-    if (assignedCandidates.length === 0) {
+    if (targetCandidates.length === 0) {
       return res.status(200).json({
         success: true,
         reports: [],
@@ -160,23 +170,9 @@ export default async function handler(req, res) {
       });
     }
 
-    // If specific user_id is requested, filter candidates
-    let targetCandidates = assignedCandidates;
-    if (user_id) {
-      targetCandidates = assignedCandidates.filter(c => c.id === user_id);
-      if (targetCandidates.length === 0) {
-        return res.status(404).json({
-          success: false,
-          error: 'Candidate not found or not assigned to you'
-        });
-      }
-    }
-
     const candidateIds = targetCandidates.map(c => c.id);
 
-    // ============================================================
-    // GET ASSESSMENT RESULTS FOR THESE CANDIDATES
-    // ============================================================
+    // Step 6: Get assessment results
     let query = supabase
       .from('assessment_results')
       .select(`
@@ -224,17 +220,13 @@ export default async function handler(req, res) {
 
     console.log('[Supervisor Reports] Results found:', results?.length || 0);
 
-    // ============================================================
-    // PROCESS REPORTS
-    // ============================================================
+    // Step 7: Process reports
     const reports = (results || []).map(result => {
       const assessment = result.assessments || {};
       
-      // 🟢 CRITICAL FIX: Correctly extract the type from the Supabase Array
       const typeArray = assessment.assessment_types || assessment.assessment_type || [];
       const type = Array.isArray(typeArray) && typeArray.length > 0 ? typeArray[0] : {};
 
-      // 🟢 BROADER NATIONAL SERVICE DETECTION
       const assessmentTitle = String(assessment?.title || '').toLowerCase().trim();
       const assessmentCode = String(type?.code || '').toLowerCase().trim();
       const assessmentTypeName = String(type?.name || '').toLowerCase().trim();
@@ -249,7 +241,6 @@ export default async function handler(req, res) {
 
       const candidate = targetCandidates.find(c => c.id === result.user_id) || {};
 
-      // Get scores - prefer report_data for National Service
       let overallScore = safeNumber(result.percentage_score);
       if (isNationalService) {
         overallScore = getNationalServiceOverallScore(result);
@@ -258,7 +249,6 @@ export default async function handler(req, res) {
       const workplaceReadiness = safeNumber(result.workplace_readiness || 0);
       const intellectualCapability = safeNumber(result.intellectual_capability || 0);
       const recommendation = calculateRecommendation(workplaceReadiness, intellectualCapability, overallScore);
-
       const isCompleted = !!result.completed_at;
 
       return {
@@ -282,12 +272,12 @@ export default async function handler(req, res) {
         completed_at: result.completed_at,
         category_scores: result.category_scores || [],
         report_data: result.report_data || {},
-        // Include full result for detailed view
         _result: result
       };
     });
 
-    // If specific assessment_id was requested, return single report format
+    // Step 8: Return response
+    // If specific assessment_id was requested and we have exactly one report, return single format
     if (assessment_id && reports.length === 1) {
       const report = reports[0];
       const candidate = targetCandidates.find(c => c.id === report.candidate_id) || {};
