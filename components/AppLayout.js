@@ -1,4 +1,4 @@
-// components/AppLayout.js - WITH PERSISTENT SIDEBAR AND TOP NAV
+// components/AppLayout.js - FIXED (No Blur)
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
@@ -76,9 +76,20 @@ function isActiveRoute(pathname, href) {
 }
 
 // ============================================================
-// SIDEBAR COMPONENT
+// SIDEBAR COMPONENT - FIXED (No Blur)
 // ============================================================
 function Sidebar({ isOpen, toggleSidebar, currentPath, handleLogout, userRole }) {
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: Icons.Dashboard(), href: '/admin' },
     { id: 'candidates', label: 'Candidates', icon: Icons.Users(), href: '/admin/manage-candidates' },
@@ -95,8 +106,8 @@ function Sidebar({ isOpen, toggleSidebar, currentPath, handleLogout, userRole })
 
   return (
     <>
-      {/* Overlay */}
-      {isOpen && (
+      {/* Overlay - Only on mobile, NO BLUR */}
+      {isOpen && isMobile && (
         <div 
           onClick={toggleSidebar}
           style={stylesSidebar.overlay}
@@ -162,9 +173,9 @@ const stylesSidebar = {
     left: 0,
     right: 0,
     bottom: 0,
-    background: 'rgba(0,0,0,0.5)',
+    background: 'rgba(0,0,0,0.4)',
     zIndex: 999,
-    backdropFilter: 'blur(4px)',
+    // ✅ REMOVED: backdropFilter: 'blur(4px)',
   },
   sidebar: {
     position: 'fixed',
