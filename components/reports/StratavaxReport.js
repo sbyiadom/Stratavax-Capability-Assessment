@@ -1,5 +1,5 @@
 // components/reports/StratavaxReport.js - FULLY CORRECTED WITH BEHAVIORAL MATRIX FIX
-// FIX: Properly extracts proctoring data from proctoring_data.summary
+// FIX: Properly extracts proctoring data from report_data.proctoring
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../supabase/client';
@@ -33,36 +33,30 @@ function formatAvgTime(seconds) {
 }
 
 // ============================================================
-// EXTRACT BEHAVIORAL MATRIX - FIXED FOR CORRECT DATA STRUCTURE
+// EXTRACT BEHAVIORAL MATRIX - FIXED
 // ============================================================
 function extractBehavioralMatrix(report) {
   if (!report) return null;
 
-  // Get the report_data
   const reportData = report.report_data || report || {};
   
-  // ✅ FIX: Correctly access proctoring_data from the report
-  let proctoringData = report.proctoring_data || reportData.proctoring || null;
+  // 🔥 FIX: Check proctoring in report_data first (this is where the data actually is)
+  let proctoringData = reportData.proctoring || report.proctoring_data || null;
   
   if (!proctoringData) {
     console.log('[Behavioral Matrix] No proctoring data found');
     return null;
   }
 
-  // ✅ FIX: Extract summary data from proctoring_data
   const summary = proctoringData.summary || proctoringData;
   
   console.log('[Behavioral Matrix] Extracted summary:', summary);
 
-  // Get duration from summary
   const totalSeconds = summary.duration || 0;
   const totalDurationFormatted = formatTime(totalSeconds);
-  
-  // Calculate avg time per question
   const totalQuestions = reportData.totalQuestions || report.totalQuestions || 10;
   const avgTimePerQuestion = totalSeconds > 0 ? formatAvgTime(totalSeconds / totalQuestions) : '0s';
 
-  // Extract all values from summary
   const matrix = {
     totalTime: totalDurationFormatted,
     avgTimePerQuestion: avgTimePerQuestion,
@@ -643,127 +637,6 @@ const styles = {
     textAlign: 'center',
     padding: '20px',
     color: '#64748b'
-  },
-  externalUrlsSection: {
-    marginTop: '16px',
-    padding: '16px',
-    background: 'white',
-    borderRadius: '8px',
-    border: '1px solid #e2e8f0',
-    overflowX: 'auto'
-  },
-  externalUrlsTitle: {
-    fontSize: '14px',
-    fontWeight: '600',
-    color: '#0a1929',
-    margin: '0 0 12px 0'
-  },
-  externalUrlsTable: {
-    overflowX: 'auto'
-  },
-  urlTable: {
-    width: '100%',
-    borderCollapse: 'collapse',
-    fontSize: '13px',
-    minWidth: '600px'
-  },
-  urlTableHeader: {
-    background: '#f8fafc',
-    borderBottom: '2px solid #e2e8f0'
-  },
-  urlTableHeaderCell: {
-    padding: '8px 12px',
-    textAlign: 'left',
-    fontWeight: '600',
-    color: '#64748b',
-    fontSize: '11px',
-    textTransform: 'uppercase',
-    letterSpacing: '0.5px'
-  },
-  urlTableRow: {
-    borderBottom: '1px solid #f1f5f9'
-  },
-  urlTableCell: {
-    padding: '8px 12px',
-    verticalAlign: 'middle',
-    fontSize: '13px'
-  },
-  domainBadge: {
-    display: 'inline-block',
-    padding: '2px 8px',
-    background: '#f1f5f9',
-    borderRadius: '4px',
-    fontSize: '12px',
-    fontWeight: '600',
-    color: '#1a202c'
-  },
-  categoryBadge: {
-    display: 'inline-block',
-    padding: '2px 8px',
-    borderRadius: '4px',
-    fontSize: '11px',
-    fontWeight: '500',
-    color: '#1a202c'
-  },
-  urlLink: {
-    color: '#2563eb',
-    textDecoration: 'none',
-    fontSize: '12px',
-    wordBreak: 'break-all'
-  },
-  moreUrlsNote: {
-    padding: '8px 12px',
-    fontSize: '12px',
-    color: '#64748b',
-    textAlign: 'center',
-    fontStyle: 'italic'
-  },
-  domainSummary: {
-    marginTop: '12px',
-    padding: '12px',
-    background: '#f8fafc',
-    borderRadius: '8px'
-  },
-  domainSummaryTitle: {
-    fontSize: '13px',
-    fontWeight: '600',
-    color: '#0a1929',
-    margin: '0 0 8px 0'
-  },
-  domainTags: {
-    display: 'flex',
-    flexWrap: 'wrap',
-    gap: '8px'
-  },
-  domainTag: {
-    padding: '4px 12px',
-    background: 'white',
-    borderRadius: '4px',
-    border: '1px solid #e2e8f0',
-    fontSize: '12px',
-    color: '#475569'
-  },
-  flaggedQuestions: {
-    marginTop: '12px'
-  },
-  flaggedTitle: {
-    fontSize: '14px',
-    fontWeight: '600',
-    color: '#0a1929',
-    marginBottom: '8px'
-  },
-  flaggedList: {
-    listStyle: 'none',
-    padding: '0',
-    margin: '0'
-  },
-  flaggedItem: {
-    padding: '6px 12px',
-    background: 'white',
-    borderRadius: '4px',
-    borderBottom: '1px solid #f1f5f9',
-    fontSize: '13px',
-    color: '#475569'
   }
 };
 
@@ -780,7 +653,7 @@ export default function StratavaxReport({
 }) {
   const [localBehavioralMatrix, setLocalBehavioralMatrix] = useState(null);
   const [localLoadingBehavioral, setLocalLoadingBehavioral] = useState(false);
-  const [showBehavioral, setShowBehavioral] = useState(false);
+  const [showBehavioral, setShowBehavioral] = false;
 
   // Extract report data
   const reportData = result?.report_data || result || {};
