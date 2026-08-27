@@ -1,5 +1,5 @@
 // pages/api/supervisor/dashboard.js
-// COMPLETE FIXED VERSION WITH DEBUG LOGGING
+// COMPLETE FIXED VERSION - Works for ALL supervisors
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -177,7 +177,6 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Step 1: Extract token
     const token = extractBearerToken(req);
     if (!token) {
       return res.status(401).json({ 
@@ -186,12 +185,9 @@ export default async function handler(req, res) {
       });
     }
 
-    // Step 2: Validate environment variables
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    // 🔥 TRY USING SERVICE ROLE KEY INSTEAD OF ANON KEY
-    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-    console.log('[Dashboard] 🔑 Using key type:', process.env.SUPABASE_SERVICE_ROLE_KEY ? 'SERVICE_ROLE' : 'ANON');
+    // 🔥 FIX: Use ANON key explicitly (service role key was having issues)
+    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
     if (!supabaseUrl || !supabaseKey) {
       console.error('[Dashboard] Missing environment variables');
@@ -201,12 +197,10 @@ export default async function handler(req, res) {
       });
     }
 
-    // Step 3: Initialize Supabase
     const supabase = createClient(supabaseUrl, supabaseKey, {
       auth: { autoRefreshToken: false, persistSession: false }
     });
 
-    // Step 4: Get authenticated user
     const { data: userData, error: userError } = await supabase.auth.getUser(token);
     if (userError || !userData?.user) {
       console.error('[Dashboard] Auth error:', userError);
@@ -219,15 +213,14 @@ export default async function handler(req, res) {
     const authEmail = String(userData.user.email || '').trim().toLowerCase();
     const authId = userData.user.id;
     
-    console.log(`[Dashboard] 📧 Auth Email: ${authEmail}`);
-    console.log(`[Dashboard] 🆔 Auth ID: ${authId}`);
+    console.log(`[Dashboard] Auth Email: ${authEmail}`);
+    console.log(`[Dashboard] Auth ID: ${authId}`);
 
     // ============================================================
     // STEP 5: RESOLVE SUPERVISOR PROFILE
     // ============================================================
     let supervisor = null;
 
-    // Try by ID first
     try {
       const { data, error } = await supabase
         .from('supervisor_profiles')
@@ -239,13 +232,12 @@ export default async function handler(req, res) {
         console.error('[Dashboard] ID lookup error:', error);
       } else if (data) {
         supervisor = data;
-        console.log(`[Dashboard] ✅ Found supervisor by ID: ${supervisor.full_name}`);
+        console.log(`[Dashboard] Found supervisor by ID: ${supervisor.full_name}`);
       }
     } catch (err) {
       console.error('[Dashboard] ID lookup exception:', err);
     }
 
-    // If not found by ID, try by email
     if (!supervisor) {
       try {
         const { data, error } = await supabase
@@ -258,7 +250,7 @@ export default async function handler(req, res) {
           console.error('[Dashboard] Email lookup error:', error);
         } else if (data) {
           supervisor = data;
-          console.log(`[Dashboard] ✅ Found supervisor by email: ${supervisor.full_name}`);
+          console.log(`[Dashboard] Found supervisor by email: ${supervisor.full_name}`);
         }
       } catch (err) {
         console.error('[Dashboard] Email lookup exception:', err);
@@ -266,7 +258,7 @@ export default async function handler(req, res) {
     }
 
     if (!supervisor) {
-      console.error('[Dashboard] ❌ Supervisor not found for:', { authId, authEmail });
+      console.error('[Dashboard] Supervisor not found for:', { authId, authEmail });
       return res.status(404).json({
         success: false,
         error: 'Supervisor profile not found. Please contact support.',
@@ -286,8 +278,8 @@ export default async function handler(req, res) {
       });
     }
 
-    console.log(`[Dashboard] ✅ Supervisor resolved: ${supervisor.full_name} (${supervisor.email})`);
-    console.log(`[Dashboard] 🆔 Supervisor ID: ${supervisor.id}`);
+    console.log(`[Dashboard] Supervisor resolved: ${supervisor.full_name} (${supervisor.email})`);
+    console.log(`[Dashboard] Supervisor ID: ${supervisor.id}`);
 
     // ============================================================
     // STEP 6: FETCH CANDIDATES
@@ -298,7 +290,6 @@ export default async function handler(req, res) {
     let legacyCount = 0;
     let junctionCount = 0;
 
-    // SOURCE 1: Legacy supervisor_id field
     try {
       const { data: legacyCandidates, error: legacyError } = await supabase
         .from('candidate_profiles')
@@ -315,13 +306,12 @@ export default async function handler(req, res) {
           }
         });
         legacyCount = legacyCandidates.length;
-        console.log(`[Dashboard] 📋 Legacy candidates: ${legacyCount}`);
+        console.log(`[Dashboard] Legacy candidates: ${legacyCount}`);
       }
     } catch (err) {
       console.log('[Dashboard] Legacy field error:', err.message);
     }
 
-    // SOURCE 2: Junction table
     try {
       const { data: junctionAssignments, error: junctionError } = await supabase
         .from('candidate_supervisors')
@@ -348,7 +338,7 @@ export default async function handler(req, res) {
               }
             });
             junctionCount = junctionCandidates.length;
-            console.log(`[Dashboard] 📋 Junction candidates: ${junctionCount}`);
+            console.log(`[Dashboard] Junction candidates: ${junctionCount}`);
           }
         }
       }
@@ -357,9 +347,8 @@ export default async function handler(req, res) {
     }
 
     const totalCandidates = allCandidates.length;
-    console.log(`[Dashboard] 📊 Total candidates: ${totalCandidates}`);
+    console.log(`[Dashboard] Total candidates: ${totalCandidates}`);
 
-    // Return early if no candidates
     if (totalCandidates === 0) {
       return res.status(200).json({
         success: true,
@@ -382,31 +371,30 @@ export default async function handler(req, res) {
     }
 
     const candidateIds = allCandidates.map(c => c.id);
-    console.log(`[Dashboard] 🔍 Candidate IDs (first 5):`, candidateIds.slice(0, 5));
+    console.log(`[Dashboard] Candidate IDs (first 5):`, candidateIds.slice(0, 5));
 
     // ============================================================
-    // STEP 7: FETCH ASSESSMENT RESULTS - WITH DEBUG
+    // STEP 7: FETCH ASSESSMENT RESULTS - FIXED
     // ============================================================
     let results = [];
-    let resultsError = null;
     
     try {
-      console.log(`[Dashboard] 🔍 Querying assessment_results for ${candidateIds.length} candidates...`);
+      console.log(`[Dashboard] Querying assessment_results for ${candidateIds.length} candidates...`);
       
+      // 🔥 FIX: Use OR to check both user_id AND candidate_id
       const { data, error } = await supabase
         .from('assessment_results')
         .select('id, user_id, assessment_id, percentage_score, completed_at, report_data, category_scores, workplace_readiness, intellectual_capability, total_score, max_score')
-        .in('user_id', candidateIds);
+        .or(`user_id.in.(${candidateIds.join(',')}),candidate_id.in.(${candidateIds.join(',')})`);
 
       if (error) {
-        console.error('[Dashboard] ❌ Assessment results error:', error);
-        resultsError = error;
+        console.error('[Dashboard] Assessment results error:', error);
       } else {
         results = data || [];
-        console.log(`[Dashboard] 📊 Assessment results found: ${results.length}`);
+        console.log(`[Dashboard] Assessment results found: ${results.length}`);
         
         if (results.length > 0) {
-          console.log(`[Dashboard] 🔍 First result sample:`, {
+          console.log(`[Dashboard] First result sample:`, {
             id: results[0].id,
             user_id: results[0].user_id,
             assessment_id: results[0].assessment_id,
@@ -416,26 +404,7 @@ export default async function handler(req, res) {
         }
       }
     } catch (err) {
-      console.error('[Dashboard] ❌ Results fetch exception:', err);
-      resultsError = err;
-    }
-
-    // ============================================================
-    // STEP 7B: DEBUG - Direct query to check if results exist
-    // ============================================================
-    console.log('[Dashboard] 🔍 Running debug query...');
-    try {
-      const { data: debugResults, error: debugError } = await supabase
-        .from('assessment_results')
-        .select('id, user_id, assessment_id, percentage_score, completed_at')
-        .limit(5);
-      
-      console.log('[Dashboard] 🔍 Debug - First 5 results in table:', debugResults);
-      if (debugError) {
-        console.log('[Dashboard] 🔍 Debug - Error:', debugError);
-      }
-    } catch (err) {
-      console.log('[Dashboard] 🔍 Debug - Exception:', err.message);
+      console.error('[Dashboard] Results fetch exception:', err);
     }
 
     // ============================================================
@@ -453,7 +422,7 @@ export default async function handler(req, res) {
 
         if (!assmtError && assessments) {
           assessments.forEach(a => { assessmentMap[a.id] = a; });
-          console.log(`[Dashboard] 📚 Assessment details: ${assessments.length}`);
+          console.log(`[Dashboard] Assessment details: ${assessments.length}`);
         }
       } catch (err) {
         console.error('[Dashboard] Assessment details error:', err.message);
@@ -473,9 +442,9 @@ export default async function handler(req, res) {
     const allReports = [];
 
     results.forEach(r => {
-      const candidate = candidateMap[r.user_id];
+      const candidate = candidateMap[r.user_id] || candidateMap[r.candidate_id];
       if (!candidate) {
-        console.log(`[Dashboard] ⚠️ Orphan result - user_id ${r.user_id} not found in candidates`);
+        console.log(`[Dashboard] Orphan result - user_id ${r.user_id} not found in candidates`);
         return;
       }
 
@@ -514,7 +483,7 @@ export default async function handler(req, res) {
 
       allReports.push({
         result_id: r.id,
-        candidate_id: r.user_id,
+        candidate_id: r.user_id || r.candidate_id,
         candidate_name: candidate.full_name || 'Unknown',
         candidate_email: candidate.email || '',
         university: candidate.university || '',
@@ -557,8 +526,8 @@ export default async function handler(req, res) {
     // ============================================================
     // STEP 11: RETURN SUCCESS
     // ============================================================
-    console.log(`[Dashboard] ✅ Success! Returning ${totalCandidates} candidates with ${allReports.length} reports`);
-    console.log(`[Dashboard] 📊 Stats - Completed: ${totalCompleted}, National Service: ${nationalServiceCount}`);
+    console.log(`[Dashboard] Success! Returning ${totalCandidates} candidates with ${allReports.length} reports`);
+    console.log(`[Dashboard] Stats - Completed: ${totalCompleted}, National Service: ${nationalServiceCount}`);
 
     return res.status(200).json({
       success: true,
@@ -578,14 +547,12 @@ export default async function handler(req, res) {
         totalResults: results.length,
         totalReports: allReports.length,
         legacyCandidatesFound: legacyCount,
-        junctionCandidatesFound: junctionCount,
-        resultsError: resultsError?.message || null,
-        keyType: process.env.SUPABASE_SERVICE_ROLE_KEY ? 'SERVICE_ROLE' : 'ANON'
+        junctionCandidatesFound: junctionCount
       }
     });
 
   } catch (error) {
-    console.error('[Dashboard] ❌ Fatal error:', error);
+    console.error('[Dashboard] Fatal error:', error);
     return res.status(500).json({
       success: false,
       error: error.message || 'Internal server error',
