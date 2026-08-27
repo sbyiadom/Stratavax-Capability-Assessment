@@ -1,7 +1,5 @@
 // pages/api/supervisor/dashboard.js
-// COMPLETE PRODUCTION-READY VERSION
-// Works for ALL supervisors - ID-first, email-fallback lookup
-// Counts ALL completed assessments correctly including National Service
+// COMPLETE FIXED VERSION WITH DEBUG LOGGING
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -190,7 +188,10 @@ export default async function handler(req, res) {
 
     // Step 2: Validate environment variables
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    // 🔥 TRY USING SERVICE ROLE KEY INSTEAD OF ANON KEY
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+    console.log('[Dashboard] 🔑 Using key type:', process.env.SUPABASE_SERVICE_ROLE_KEY ? 'SERVICE_ROLE' : 'ANON');
 
     if (!supabaseUrl || !supabaseKey) {
       console.error('[Dashboard] Missing environment variables');
@@ -218,8 +219,8 @@ export default async function handler(req, res) {
     const authEmail = String(userData.user.email || '').trim().toLowerCase();
     const authId = userData.user.id;
     
-    console.log(`[Dashboard] Auth Email: ${authEmail}`);
-    console.log(`[Dashboard] Auth ID: ${authId}`);
+    console.log(`[Dashboard] 📧 Auth Email: ${authEmail}`);
+    console.log(`[Dashboard] 🆔 Auth ID: ${authId}`);
 
     // ============================================================
     // STEP 5: RESOLVE SUPERVISOR PROFILE
@@ -286,7 +287,7 @@ export default async function handler(req, res) {
     }
 
     console.log(`[Dashboard] ✅ Supervisor resolved: ${supervisor.full_name} (${supervisor.email})`);
-    console.log(`[Dashboard] Supervisor ID: ${supervisor.id}`);
+    console.log(`[Dashboard] 🆔 Supervisor ID: ${supervisor.id}`);
 
     // ============================================================
     // STEP 6: FETCH CANDIDATES
@@ -314,7 +315,7 @@ export default async function handler(req, res) {
           }
         });
         legacyCount = legacyCandidates.length;
-        console.log(`[Dashboard] Legacy candidates: ${legacyCount}`);
+        console.log(`[Dashboard] 📋 Legacy candidates: ${legacyCount}`);
       }
     } catch (err) {
       console.log('[Dashboard] Legacy field error:', err.message);
@@ -347,7 +348,7 @@ export default async function handler(req, res) {
               }
             });
             junctionCount = junctionCandidates.length;
-            console.log(`[Dashboard] Junction candidates: ${junctionCount}`);
+            console.log(`[Dashboard] 📋 Junction candidates: ${junctionCount}`);
           }
         }
       }
@@ -356,7 +357,7 @@ export default async function handler(req, res) {
     }
 
     const totalCandidates = allCandidates.length;
-    console.log(`[Dashboard] Total candidates: ${totalCandidates}`);
+    console.log(`[Dashboard] 📊 Total candidates: ${totalCandidates}`);
 
     // Return early if no candidates
     if (totalCandidates === 0) {
@@ -381,25 +382,60 @@ export default async function handler(req, res) {
     }
 
     const candidateIds = allCandidates.map(c => c.id);
+    console.log(`[Dashboard] 🔍 Candidate IDs (first 5):`, candidateIds.slice(0, 5));
 
     // ============================================================
-    // STEP 7: FETCH ASSESSMENT RESULTS
+    // STEP 7: FETCH ASSESSMENT RESULTS - WITH DEBUG
     // ============================================================
     let results = [];
+    let resultsError = null;
+    
     try {
+      console.log(`[Dashboard] 🔍 Querying assessment_results for ${candidateIds.length} candidates...`);
+      
       const { data, error } = await supabase
         .from('assessment_results')
         .select('id, user_id, assessment_id, percentage_score, completed_at, report_data, category_scores, workplace_readiness, intellectual_capability, total_score, max_score')
         .in('user_id', candidateIds);
 
       if (error) {
-        console.error('[Dashboard] Assessment results error:', error);
+        console.error('[Dashboard] ❌ Assessment results error:', error);
+        resultsError = error;
       } else {
         results = data || [];
-        console.log(`[Dashboard] Assessment results: ${results.length}`);
+        console.log(`[Dashboard] 📊 Assessment results found: ${results.length}`);
+        
+        if (results.length > 0) {
+          console.log(`[Dashboard] 🔍 First result sample:`, {
+            id: results[0].id,
+            user_id: results[0].user_id,
+            assessment_id: results[0].assessment_id,
+            percentage_score: results[0].percentage_score,
+            completed_at: results[0].completed_at
+          });
+        }
       }
     } catch (err) {
-      console.error('[Dashboard] Results fetch error:', err.message);
+      console.error('[Dashboard] ❌ Results fetch exception:', err);
+      resultsError = err;
+    }
+
+    // ============================================================
+    // STEP 7B: DEBUG - Direct query to check if results exist
+    // ============================================================
+    console.log('[Dashboard] 🔍 Running debug query...');
+    try {
+      const { data: debugResults, error: debugError } = await supabase
+        .from('assessment_results')
+        .select('id, user_id, assessment_id, percentage_score, completed_at')
+        .limit(5);
+      
+      console.log('[Dashboard] 🔍 Debug - First 5 results in table:', debugResults);
+      if (debugError) {
+        console.log('[Dashboard] 🔍 Debug - Error:', debugError);
+      }
+    } catch (err) {
+      console.log('[Dashboard] 🔍 Debug - Exception:', err.message);
     }
 
     // ============================================================
@@ -417,7 +453,7 @@ export default async function handler(req, res) {
 
         if (!assmtError && assessments) {
           assessments.forEach(a => { assessmentMap[a.id] = a; });
-          console.log(`[Dashboard] Assessment details: ${assessments.length}`);
+          console.log(`[Dashboard] 📚 Assessment details: ${assessments.length}`);
         }
       } catch (err) {
         console.error('[Dashboard] Assessment details error:', err.message);
@@ -425,7 +461,7 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 9: PROCESS RESULTS - FIXED COMPLETION COUNTING
+    // STEP 9: PROCESS RESULTS
     // ============================================================
     const candidateMap = {};
     allCandidates.forEach(c => { candidateMap[c.id] = c; });
@@ -438,7 +474,10 @@ export default async function handler(req, res) {
 
     results.forEach(r => {
       const candidate = candidateMap[r.user_id];
-      if (!candidate) return;
+      if (!candidate) {
+        console.log(`[Dashboard] ⚠️ Orphan result - user_id ${r.user_id} not found in candidates`);
+        return;
+      }
 
       const assessment = assessmentMap[r.assessment_id];
       const isNS = r.assessment_id === NS_ASSESSMENT_ID;
@@ -452,33 +491,26 @@ export default async function handler(req, res) {
         workplace = nsScores.workplaceReadiness || 0;
         intellectual = nsScores.intellectualCapability || 0;
         score = nsScores.overallScore || score;
-        
-        // Count NS as completed if it has a completion date OR has scores
-        const hasCompletionDate = !!r.completed_at;
-        const hasScores = workplace > 0 || intellectual > 0 || score > 0;
-        if (hasCompletionDate || hasScores) {
-          totalCompleted++;
-        }
       } else {
         workplace = safeNumber(r.workplace_readiness || 0);
         intellectual = safeNumber(r.intellectual_capability || 0);
-        
-        // Count non-NS as completed if it has a completion date OR has a percentage score (even if 0)
-        const hasCompletionDate = !!r.completed_at;
-        const hasPercentageScore = r.percentage_score !== null && r.percentage_score !== undefined;
-        if (hasCompletionDate || hasPercentageScore) {
-          totalCompleted++;
-        }
       }
 
-      // If still no score, use percentage_score as fallback
       if (score === 0 && r.percentage_score) {
         score = safeNumber(r.percentage_score);
       }
 
-      const recommendation = getRecommendation(workplace, intellectual, score);
-      
+      const hasCompletionDate = !!r.completed_at;
+      const hasPercentageScore = r.percentage_score !== null && r.percentage_score !== undefined && r.percentage_score !== '';
+      const hasScore = score > 0;
+
+      if (hasCompletionDate || hasPercentageScore || hasScore) {
+        totalCompleted++;
+      }
+
       if (isNS) nationalServiceCount++;
+
+      const recommendation = getRecommendation(workplace, intellectual, score);
 
       allReports.push({
         result_id: r.id,
@@ -526,7 +558,7 @@ export default async function handler(req, res) {
     // STEP 11: RETURN SUCCESS
     // ============================================================
     console.log(`[Dashboard] ✅ Success! Returning ${totalCandidates} candidates with ${allReports.length} reports`);
-    console.log(`[Dashboard] 📊 Completed: ${totalCompleted}, National Service: ${nationalServiceCount}`);
+    console.log(`[Dashboard] 📊 Stats - Completed: ${totalCompleted}, National Service: ${nationalServiceCount}`);
 
     return res.status(200).json({
       success: true,
@@ -546,7 +578,9 @@ export default async function handler(req, res) {
         totalResults: results.length,
         totalReports: allReports.length,
         legacyCandidatesFound: legacyCount,
-        junctionCandidatesFound: junctionCount
+        junctionCandidatesFound: junctionCount,
+        resultsError: resultsError?.message || null,
+        keyType: process.env.SUPABASE_SERVICE_ROLE_KEY ? 'SERVICE_ROLE' : 'ANON'
       }
     });
 
