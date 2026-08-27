@@ -1,72 +1,80 @@
 import { createClient } from '@supabase/supabase-js';
 
 export default async function handler(req, res) {
-  // Enable CORS
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  console.log('[Test] Service Role Test Started');
   
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-  const results = {
-    env: {
-      supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL ? '✓ Set' : '✗ Missing',
-      serviceKey: process.env.SUPABASE_SERVICE_ROLE_KEY ? '✓ Set' : '✗ Missing',
-      serviceKeyLength: process.env.SUPABASE_SERVICE_ROLE_KEY?.length || 0
+  console.log('[Test] URL present:', !!supabaseUrl);
+  console.log('[Test] Key present:', !!supabaseKey);
+  console.log('[Test] Key prefix:', supabaseKey?.substring(0, 20) + '...');
+
+  const supabase = createClient(supabaseUrl, supabaseKey, {
+    auth: { autoRefreshToken: false, persistSession: false }
+  });
+
+  // Test 1: Query supervisor_profiles
+  const { data: supervisors, error: supError } = await supabase
+    .from('supervisor_profiles')
+    .select('id, email, full_name')
+    .limit(3);
+
+  console.log('[Test] Supervisors found:', supervisors?.length || 0);
+  if (supError) console.log('[Test] Sup Error:', supError);
+
+  // Test 2: Query candidate_profiles (RLS ON)
+  const { data: candidates, error: candError } = await supabase
+    .from('candidate_profiles')
+    .select('id, full_name, supervisor_id')
+    .limit(3);
+
+  console.log('[Test] Candidates found:', candidates?.length || 0);
+  if (candError) console.log('[Test] Cand Error:', candError);
+
+  // Test 3: Query assessment_results (RLS ON)
+  const { data: assessments, error: assError } = await supabase
+    .from('assessment_results')
+    .select('id, user_id, percentage_score')
+    .limit(3);
+
+  console.log('[Test] Assessments found:', assessments?.length || 0);
+  if (assError) console.log('[Test] Ass Error:', assError);
+
+  // Test 4: Count Fofie's candidates
+  const { data: fofieCandidates, error: fofieError } = await supabase
+    .from('candidate_profiles')
+    .select('id, full_name')
+    .eq('supervisor_id', 'f4b541af-f765-46f0-8f1a-955ad1847930')
+    .limit(5);
+
+  console.log('[Test] Fofie candidates found:', fofieCandidates?.length || 0);
+  if (fofieError) console.log('[Test] Fofie Error:', fofieError);
+
+  return res.status(200).json({
+    success: true,
+    environment: {
+      supabaseUrl: !!supabaseUrl,
+      supabaseKey: !!supabaseKey,
+      keyPrefix: supabaseKey?.substring(0, 20) + '...'
+    },
+    tests: {
+      supervisors: {
+        count: supervisors?.length || 0,
+        error: supError?.message || null
+      },
+      candidates: {
+        count: candidates?.length || 0,
+        error: candError?.message || null
+      },
+      assessments: {
+        count: assessments?.length || 0,
+        error: assError?.message || null
+      },
+      fofieCandidates: {
+        count: fofieCandidates?.length || 0,
+        error: fofieError?.message || null
+      }
     }
-  };
-
-  try {
-    // Create service client
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL,
-      process.env.SUPABASE_SERVICE_ROLE_KEY
-    );
-
-    // Test 1: Simple query on a public table
-    const { data: typeData, error: typeError } = await supabase
-      .from('assessment_types')
-      .select('count', { count: 'exact', head: true });
-
-    results.test1_public_table = {
-      success: !typeError,
-      error: typeError?.message,
-      hasData: !!typeData
-    };
-
-    // Test 2: Query responses table
-    const { data: responseData, error: responseError } = await supabase
-      .from('responses')
-      .select('count', { count: 'exact', head: true });
-
-    results.test2_responses_table = {
-      success: !responseError,
-      error: responseError?.message,
-      hasData: !!responseData
-    };
-
-    // Test 3: Query with the specific user
-    const testUserId = '22754b0a-a68f-462c-ab80-0af41fff70f1';
-    const { data: userData, error: userError } = await supabase
-      .from('responses')
-      .select('id')
-      .eq('user_id', testUserId)
-      .limit(1);
-
-    results.test3_specific_user = {
-      success: !userError,
-      error: userError?.message,
-      found: userData && userData.length > 0
-    };
-
-    return res.status(200).json(results);
-
-  } catch (error) {
-    return res.status(500).json({
-      error: 'Test failed',
-      message: error.message,
-      results
-    });
-  }
+  });
 }
