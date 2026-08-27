@@ -1,13 +1,7 @@
 // pages/api/supervisor/dashboard.js
-// COMPLETE FIXED VERSION
-// Works for ALL supervisors - ID-first, email-fallback lookup
-// Also handles both legacy AND junction table assignments
+// COMPLETE FIXED VERSION - Works for ALL supervisors
 
 import { createClient } from '@supabase/supabase-js';
-
-// ============================================================
-// UTILITY FUNCTIONS
-// ============================================================
 
 function extractBearerToken(req) {
   const authHeader = req.headers.authorization || req.headers.Authorization || '';
@@ -174,10 +168,6 @@ function getRecommendation(workplace, intellectual, overall) {
   return 'Not Recommended';
 }
 
-// ============================================================
-// MAIN HANDLER
-// ============================================================
-
 export default async function handler(req, res) {
   if (req.method !== 'GET') {
     return res.status(405).json({ 
@@ -187,7 +177,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Step 1: Extract and validate token
+    // Step 1: Extract token
     const token = extractBearerToken(req);
     if (!token) {
       return res.status(401).json({ 
@@ -208,7 +198,7 @@ export default async function handler(req, res) {
       });
     }
 
-    // Step 3: Initialize Supabase client
+    // Step 3: Initialize Supabase
     const supabase = createClient(supabaseUrl, supabaseKey, {
       auth: { autoRefreshToken: false, persistSession: false }
     });
@@ -216,87 +206,90 @@ export default async function handler(req, res) {
     // Step 4: Get authenticated user
     const { data: userData, error: userError } = await supabase.auth.getUser(token);
     if (userError || !userData?.user) {
+      console.error('[Dashboard] Auth error:', userError);
       return res.status(401).json({ 
         success: false, 
         error: 'Invalid or expired token' 
       });
     }
 
-    const authUser = userData.user;
-    const authUserId = authUser.id;
-    const authEmail = String(authUser.email || '').trim().toLowerCase();
-
-    console.log(`[Dashboard] Auth User ID: ${authUserId}`);
-    console.log(`[Dashboard] Auth User Email: ${authEmail}`);
+    const authEmail = String(userData.user.email || '').trim().toLowerCase();
+    console.log(`[Dashboard] Looking up supervisor by email: ${authEmail}`);
 
     // ============================================================
-    // STEP 5: RESOLVE SUPERVISOR PROFILE (ID-first, email-fallback)
+    // STEP 5: RESOLVE SUPERVISOR PROFILE BY EMAIL
     // ============================================================
     let supervisor = null;
+    let lookupError = null;
 
-    // Preferred lookup: profile UUID equals auth UUID
-    const { data: supervisorById, error: idLookupError } = await supabase
-      .from('supervisor_profiles')
-      .select('id, full_name, email, role, is_active')
-      .eq('id', authUserId)
-      .maybeSingle();
-
-    if (idLookupError) {
-      console.error('[Dashboard] Supervisor ID lookup error:', idLookupError);
-      return res.status(500).json({
-        success: false,
-        error: 'Failed to retrieve supervisor profile'
-      });
-    }
-
-    supervisor = supervisorById;
-
-    // Compatibility fallback: match the authenticated email
-    if (!supervisor && authEmail) {
-      const { data: supervisorByEmail, error: emailLookupError } = await supabase
+    // Try case-insensitive email lookup
+    try {
+      const { data, error } = await supabase
         .from('supervisor_profiles')
         .select('id, full_name, email, role, is_active')
         .ilike('email', authEmail)
         .maybeSingle();
 
-      if (emailLookupError) {
-        console.error('[Dashboard] Supervisor email lookup error:', emailLookupError);
-        return res.status(500).json({
-          success: false,
-          error: 'Failed to retrieve supervisor profile'
-        });
+      if (error) {
+        lookupError = error;
+        console.error('[Dashboard] Email lookup error:', error);
+      } else if (data) {
+        supervisor = data;
+        console.log(`[Dashboard] ✅ Found supervisor by email: ${supervisor.full_name}`);
       }
+    } catch (err) {
+      console.error('[Dashboard] Email lookup exception:', err);
+      lookupError = err;
+    }
 
-      supervisor = supervisorByEmail;
+    // If not found by email, try by ID (fallback)
+    if (!supervisor) {
+      try {
+        const { data, error } = await supabase
+          .from('supervisor_profiles')
+          .select('id, full_name, email, role, is_active')
+          .eq('id', userData.user.id)
+          .maybeSingle();
+
+        if (error) {
+          console.error('[Dashboard] ID lookup error:', error);
+        } else if (data) {
+          supervisor = data;
+          console.log(`[Dashboard] ✅ Found supervisor by ID: ${supervisor.full_name}`);
+        }
+      } catch (err) {
+        console.error('[Dashboard] ID lookup exception:', err);
+      }
     }
 
     if (!supervisor) {
+      console.error('[Dashboard] ❌ Supervisor not found for email:', authEmail);
       return res.status(404).json({
         success: false,
-        error: 'Supervisor profile not found',
-        code: 'SUPERVISOR_PROFILE_NOT_LINKED'
+        error: 'Supervisor profile not found. Please contact support.',
+        code: 'SUPERVISOR_PROFILE_NOT_FOUND',
+        debug: {
+          email: authEmail,
+          userId: userData.user.id
+        }
       });
     }
 
     if (supervisor.is_active === false) {
       return res.status(403).json({
         success: false,
-        error: 'Supervisor account is inactive',
+        error: 'Supervisor account is inactive. Please contact support.',
         code: 'SUPERVISOR_INACTIVE'
       });
     }
 
-    console.log(`[Dashboard] Supervisor resolved: ${supervisor.full_name} (${supervisor.email})`);
+    console.log(`[Dashboard] ✅ Supervisor resolved: ${supervisor.full_name} (${supervisor.email})`);
+    console.log(`[Dashboard] Supervisor ID: ${supervisor.id}`);
 
     // ============================================================
-    // STEP 6: FETCH CANDIDATES FROM BOTH SOURCES
-    // Use both supervisor.id AND authUserId for compatibility
+    // STEP 6: FETCH CANDIDATES
     // ============================================================
-    const supervisorIdentifiers = [supervisor.id, authUserId].filter(Boolean);
-    const uniqueSupervisorIdentifiers = [...new Set(supervisorIdentifiers)];
-
-    console.log(`[Dashboard] Looking for candidates with supervisor IDs:`, uniqueSupervisorIdentifiers);
-
+    const supervisorId = supervisor.id;
     let allCandidates = [];
     const candidateIdsSet = new Set();
     let legacyCount = 0;
@@ -307,7 +300,7 @@ export default async function handler(req, res) {
       const { data: legacyCandidates, error: legacyError } = await supabase
         .from('candidate_profiles')
         .select('id, full_name, email, university, programme, supervisor_id, created_at')
-        .in('supervisor_id', uniqueSupervisorIdentifiers);
+        .eq('supervisor_id', supervisorId);
 
       if (legacyError) {
         console.log('[Dashboard] Legacy field query error:', legacyError.message);
@@ -330,7 +323,7 @@ export default async function handler(req, res) {
       const { data: junctionAssignments, error: junctionError } = await supabase
         .from('candidate_supervisors')
         .select('candidate_id, supervisor_id')
-        .in('supervisor_id', uniqueSupervisorIdentifiers);
+        .eq('supervisor_id', supervisorId);
 
       if (junctionError) {
         console.log('[Dashboard] Junction table query error:', junctionError.message);
@@ -363,7 +356,7 @@ export default async function handler(req, res) {
     const totalCandidates = allCandidates.length;
     console.log(`[Dashboard] Total candidates: ${totalCandidates}`);
 
-    // If no candidates, return empty with debug info
+    // Return early if no candidates
     if (totalCandidates === 0) {
       return res.status(200).json({
         success: true,
@@ -379,10 +372,7 @@ export default async function handler(req, res) {
         debug: {
           supervisorId: supervisor.id,
           supervisorName: supervisor.full_name,
-          authUserId: authUserId,
-          legacyCandidatesFound: legacyCount,
-          junctionCandidatesFound: junctionCount,
-          uniqueSupervisorIdentifiers: uniqueSupervisorIdentifiers,
+          email: supervisor.email,
           message: 'No candidates assigned to this supervisor'
         }
       });
@@ -517,7 +507,7 @@ export default async function handler(req, res) {
     });
 
     // ============================================================
-    // STEP 11: RETURN SUCCESS RESPONSE
+    // STEP 11: RETURN SUCCESS
     // ============================================================
     console.log(`[Dashboard] ✅ Success! Returning ${totalCandidates} candidates with ${allReports.length} reports`);
 
@@ -535,15 +525,11 @@ export default async function handler(req, res) {
       debug: {
         supervisorId: supervisor.id,
         supervisorName: supervisor.full_name,
-        authUserId: authUserId,
         totalCandidates: totalCandidates,
         totalResults: results.length,
         totalReports: allReports.length,
         legacyCandidatesFound: legacyCount,
-        junctionCandidatesFound: junctionCount,
-        assessmentTypesFound: assessmentIds.length,
-        uniqueSupervisorIdentifiers: uniqueSupervisorIdentifiers,
-        source: 'unified_legacy_and_junction'
+        junctionCandidatesFound: junctionCount
       }
     });
 
