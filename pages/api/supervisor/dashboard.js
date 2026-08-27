@@ -1,6 +1,7 @@
 // pages/api/supervisor/dashboard.js
-// COMPLETE PRODUCTION-READY VERSION
-// Works for ALL supervisors - NO hardcoded IDs, NO specific supervisor logic
+// COMPLETE FIXED VERSION
+// Works for ALL supervisors - ID-first, email-fallback lookup
+// Also handles both legacy AND junction table assignments
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -8,27 +9,18 @@ import { createClient } from '@supabase/supabase-js';
 // UTILITY FUNCTIONS
 // ============================================================
 
-/**
- * Extract Bearer token from request headers
- */
 function extractBearerToken(req) {
   const authHeader = req.headers.authorization || req.headers.Authorization || '';
   if (!authHeader || !authHeader.toLowerCase().startsWith('bearer ')) return null;
   return authHeader.slice(7).trim();
 }
 
-/**
- * Safely convert any value to a number
- */
 function safeNumber(value, fallback = 0) {
   if (value === null || value === undefined) return fallback;
   const num = Number(value);
   return Number.isFinite(num) ? num : fallback;
 }
 
-/**
- * Safely parse report_data from various formats
- */
 function getReportData(result) {
   if (!result) return {};
   if (result.report_data && typeof result.report_data === 'object') return result.report_data;
@@ -39,9 +31,6 @@ function getReportData(result) {
   return {};
 }
 
-/**
- * Normalize category scores from various formats
- */
 function normalizeCategoryScores(result) {
   const reportData = getReportData(result);
   const raw = result?.category_scores || reportData?.categoryScores || reportData?.categoryBreakdown || [];
@@ -63,16 +52,11 @@ function normalizeCategoryScores(result) {
   return [];
 }
 
-/**
- * Calculate overall score from result data
- */
 function calculateScore(result) {
-  // Try percentage_score first
   if (result?.percentage_score) {
     return Math.round(safeNumber(result.percentage_score));
   }
   
-  // Try category scores average
   const categories = normalizeCategoryScores(result);
   const valid = categories.filter(c => c.percentage > 0);
   if (valid.length > 0) {
@@ -80,7 +64,6 @@ function calculateScore(result) {
     return Math.round(sum / valid.length);
   }
   
-  // Try report_data percentageScore
   const reportData = getReportData(result);
   if (reportData?.percentageScore) {
     return Math.round(safeNumber(reportData.percentageScore));
@@ -89,13 +72,9 @@ function calculateScore(result) {
   return 0;
 }
 
-/**
- * Get National Service specific scores
- */
 function getNationalServiceScores(result) {
   const reportData = getReportData(result);
   
-  // Try direct fields first
   let workplace = safeNumber(
     reportData?.workplaceReadiness || 
     reportData?.dimensions?.workplaceReadiness ||
@@ -112,7 +91,6 @@ function getNationalServiceScores(result) {
     0
   );
   
-  // If direct fields not found, calculate from categories
   if (workplace === 0 && intellectual === 0) {
     const categoryScores = reportData?.categoryScores || reportData?.category_scores || result?.category_scores || [];
     
@@ -170,7 +148,6 @@ function getNationalServiceScores(result) {
     0
   );
   
-  // If workplace and intellectual are 0 but overall exists, use overall
   if (workplace === 0 && intellectual === 0 && overall > 0) {
     workplace = overall;
     intellectual = overall;
@@ -183,15 +160,11 @@ function getNationalServiceScores(result) {
   };
 }
 
-/**
- * Generate recommendation based on scores
- */
 function getRecommendation(workplace, intellectual, overall) {
   const w = safeNumber(workplace);
   const i = safeNumber(intellectual);
   const o = safeNumber(overall);
   
-  // Use the best available score for recommendation
   const bestScore = Math.max(w, i, o);
   
   if (bestScore >= 85) return 'Highly Recommended';
@@ -206,7 +179,6 @@ function getRecommendation(workplace, intellectual, overall) {
 // ============================================================
 
 export default async function handler(req, res) {
-  // Only allow GET requests
   if (req.method !== 'GET') {
     return res.status(405).json({ 
       success: false, 
@@ -250,34 +222,81 @@ export default async function handler(req, res) {
       });
     }
 
-    const supervisorId = userData.user.id;
-    console.log(`[Dashboard] Processing request for supervisor: ${supervisorId}`);
+    const authUser = userData.user;
+    const authUserId = authUser.id;
+    const authEmail = String(authUser.email || '').trim().toLowerCase();
+
+    console.log(`[Dashboard] Auth User ID: ${authUserId}`);
+    console.log(`[Dashboard] Auth User Email: ${authEmail}`);
 
     // ============================================================
-    // STEP 5: GET SUPERVISOR PROFILE
+    // STEP 5: RESOLVE SUPERVISOR PROFILE (ID-first, email-fallback)
     // ============================================================
-    const { data: supervisor, error: supervisorError } = await supabase
+    let supervisor = null;
+
+    // Preferred lookup: profile UUID equals auth UUID
+    const { data: supervisorById, error: idLookupError } = await supabase
       .from('supervisor_profiles')
       .select('id, full_name, email, role, is_active')
-      .eq('id', supervisorId)
+      .eq('id', authUserId)
       .maybeSingle();
 
-    if (supervisorError) {
-      console.error('[Dashboard] Supervisor profile error:', supervisorError);
+    if (idLookupError) {
+      console.error('[Dashboard] Supervisor ID lookup error:', idLookupError);
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to retrieve supervisor profile'
+      });
+    }
+
+    supervisor = supervisorById;
+
+    // Compatibility fallback: match the authenticated email
+    if (!supervisor && authEmail) {
+      const { data: supervisorByEmail, error: emailLookupError } = await supabase
+        .from('supervisor_profiles')
+        .select('id, full_name, email, role, is_active')
+        .ilike('email', authEmail)
+        .maybeSingle();
+
+      if (emailLookupError) {
+        console.error('[Dashboard] Supervisor email lookup error:', emailLookupError);
+        return res.status(500).json({
+          success: false,
+          error: 'Failed to retrieve supervisor profile'
+        });
+      }
+
+      supervisor = supervisorByEmail;
     }
 
     if (!supervisor) {
       return res.status(404).json({
         success: false,
-        error: 'Supervisor profile not found'
+        error: 'Supervisor profile not found',
+        code: 'SUPERVISOR_PROFILE_NOT_LINKED'
       });
     }
 
-    console.log(`[Dashboard] Supervisor: ${supervisor.full_name} (${supervisor.email})`);
+    if (supervisor.is_active === false) {
+      return res.status(403).json({
+        success: false,
+        error: 'Supervisor account is inactive',
+        code: 'SUPERVISOR_INACTIVE'
+      });
+    }
+
+    console.log(`[Dashboard] Supervisor resolved: ${supervisor.full_name} (${supervisor.email})`);
 
     // ============================================================
     // STEP 6: FETCH CANDIDATES FROM BOTH SOURCES
+    // Use both supervisor.id AND authUserId for compatibility
     // ============================================================
+    const supervisorIdentifiers = [supervisor.id, authUserId].filter(Boolean);
+    const uniqueSupervisorIdentifiers = [...new Set(supervisorIdentifiers)];
+
+    console.log(`[Dashboard] Looking for candidates with supervisor IDs:`, uniqueSupervisorIdentifiers);
+
     let allCandidates = [];
     const candidateIdsSet = new Set();
     let legacyCount = 0;
@@ -287,8 +306,8 @@ export default async function handler(req, res) {
     try {
       const { data: legacyCandidates, error: legacyError } = await supabase
         .from('candidate_profiles')
-        .select('id, full_name, email, university, programme, created_at')
-        .eq('supervisor_id', supervisorId);
+        .select('id, full_name, email, university, programme, supervisor_id, created_at')
+        .in('supervisor_id', uniqueSupervisorIdentifiers);
 
       if (legacyError) {
         console.log('[Dashboard] Legacy field query error:', legacyError.message);
@@ -310,8 +329,8 @@ export default async function handler(req, res) {
     try {
       const { data: junctionAssignments, error: junctionError } = await supabase
         .from('candidate_supervisors')
-        .select('candidate_id')
-        .eq('supervisor_id', supervisorId);
+        .select('candidate_id, supervisor_id')
+        .in('supervisor_id', uniqueSupervisorIdentifiers);
 
       if (junctionError) {
         console.log('[Dashboard] Junction table query error:', junctionError.message);
@@ -322,7 +341,7 @@ export default async function handler(req, res) {
         if (missingIds.length > 0) {
           const { data: junctionCandidates, error: junctionCandError } = await supabase
             .from('candidate_profiles')
-            .select('id, full_name, email, university, programme, created_at')
+            .select('id, full_name, email, university, programme, supervisor_id, created_at')
             .in('id', missingIds);
           
           if (!junctionCandError && junctionCandidates) {
@@ -358,10 +377,12 @@ export default async function handler(req, res) {
         nationalServiceReports: [],
         otherReports: [],
         debug: {
-          supervisorId: supervisorId,
+          supervisorId: supervisor.id,
           supervisorName: supervisor.full_name,
+          authUserId: authUserId,
           legacyCandidatesFound: legacyCount,
           junctionCandidatesFound: junctionCount,
+          uniqueSupervisorIdentifiers: uniqueSupervisorIdentifiers,
           message: 'No candidates assigned to this supervisor'
         }
       });
@@ -417,7 +438,6 @@ export default async function handler(req, res) {
     const candidateMap = {};
     allCandidates.forEach(c => { candidateMap[c.id] = c; });
 
-    // National Service assessment ID (only constant needed)
     const NS_ASSESSMENT_ID = 'bdb9d46e-9fac-4d00-8478-1f649e7ac600';
 
     let totalCompleted = 0;
@@ -445,7 +465,6 @@ export default async function handler(req, res) {
         intellectual = safeNumber(r.intellectual_capability || 0);
       }
 
-      // If still no score, use percentage_score as fallback
       if (score === 0 && r.percentage_score) {
         score = safeNumber(r.percentage_score);
       }
@@ -514,14 +533,16 @@ export default async function handler(req, res) {
       nationalServiceReports: nsReports,
       otherReports: otherReports,
       debug: {
-        supervisorId: supervisorId,
+        supervisorId: supervisor.id,
         supervisorName: supervisor.full_name,
+        authUserId: authUserId,
         totalCandidates: totalCandidates,
         totalResults: results.length,
         totalReports: allReports.length,
         legacyCandidatesFound: legacyCount,
         junctionCandidatesFound: junctionCount,
         assessmentTypesFound: assessmentIds.length,
+        uniqueSupervisorIdentifiers: uniqueSupervisorIdentifiers,
         source: 'unified_legacy_and_junction'
       }
     });
