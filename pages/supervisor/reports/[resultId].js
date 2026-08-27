@@ -1,5 +1,5 @@
 // pages/supervisor/reports/[resultId].js - FULLY CORRECTED
-// FIX: Normalizes behavioral matrix API response (nested → flat schema)
+// FIX: Extracts behavioral matrix from report_data.proctoring directly
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -46,14 +46,38 @@ function formatDuration(seconds) {
   return `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
 }
 
+// ============================================================
+// 🟢 FIXED: NORMALIZE BEHAVIORAL MATRIX FROM PROCTORING DATA
+// ============================================================
+
 function normalizeBehavioralMatrix(matrix) {
   if (!matrix) return null;
 
-  // Check if we have nested structure (timing, behavior, riskAssessment)
+  // 🔥 Handle proctoring data from report_data (the actual data source)
+  if (matrix.tabSwitches !== undefined || matrix.totalViolations !== undefined || matrix.riskLevel !== undefined) {
+    return {
+      totalTime: matrix.totalTime || '00:00:00',
+      avgTimePerQuestion: matrix.avgTimePerQuestion || 0,
+      answerChanges: matrix.answerChanges || 0,
+      tabSwitches: matrix.tabSwitches || 0,
+      violations: matrix.totalViolations || 0,
+      copyPasteAttempts: matrix.externalUrlsVisited || 0,
+      rightClickAttempts: 0,
+      riskLevel: matrix.riskLevel || 'Low Risk',
+      riskScore: matrix.riskScore || 0,
+      riskFactors: matrix.riskFactors || [],
+      flags: {
+        violations: matrix.totalViolations || 0,
+        tabSwitches: matrix.tabSwitches || 0,
+        answerChanges: matrix.answerChanges || 0
+      }
+    };
+  }
+
+  // Handle nested schema (from API fallback)
   const isNested = matrix.timing || matrix.behavior || matrix.riskAssessment;
 
   if (isNested) {
-    // 🟢 Nested schema (from API) - Normalize to flat
     return {
       totalTime: matrix.timing?.formattedTotalTime || formatDuration(matrix.timing?.totalTimeSeconds),
       avgTimePerQuestion: matrix.timing?.averageTimePerQuestion || 0,
@@ -73,8 +97,38 @@ function normalizeBehavioralMatrix(matrix) {
     };
   }
 
-  // 🟢 Flat schema - return as-is
+  // Flat schema - return as-is
   return matrix;
+}
+
+// ============================================================
+// 🟢 FIXED: GET BEHAVIORAL MATRIX FROM REPORT_DATA
+// ============================================================
+
+function getBehavioralMatrixFromReport(result) {
+  const reportData = getReportDataObject(result?.report_data);
+  
+  // Try proctoring data first
+  const proctoring = reportData?.proctoring || {};
+  
+  if (Object.keys(proctoring).length > 0) {
+    return normalizeBehavioralMatrix(proctoring);
+  }
+  
+  // Try behavioral data
+  const behavioral = reportData?.behavioral || {};
+  if (Object.keys(behavioral).length > 0) {
+    return normalizeBehavioralMatrix(behavioral);
+  }
+  
+  // Try direct proctoring_data column
+  const proctoringData = result?.proctoring_data || {};
+  if (Object.keys(proctoringData).length > 0) {
+    return normalizeBehavioralMatrix(proctoringData);
+  }
+  
+  // If no data found, return null
+  return null;
 }
 
 function getAuthoritativeNationalServiceScores(data, result, report) {
@@ -183,7 +237,7 @@ export default function SupervisorReportView() {
   }, [resultId]);
 
   // ============================================================
-  // FETCH REPORT
+  // 🟢 FIXED: FETCH REPORT - NO SEPARATE API CALL FOR BEHAVIORAL
   // ============================================================
 
   const fetchReport = async () => {
@@ -191,7 +245,6 @@ export default function SupervisorReportView() {
       setLoading(true);
       setError(null);
 
-      // Get session
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData?.session?.access_token;
 
@@ -201,7 +254,6 @@ export default function SupervisorReportView() {
         return;
       }
 
-      // Fetch report with authentication
       const response = await fetch(`/api/assessment-report/${resultId}`, {
         method: 'GET',
         headers: {
@@ -233,6 +285,11 @@ export default function SupervisorReportView() {
 
       const result = data.result || {};
       const parsedResultReportData = getReportDataObject(result.report_data);
+
+      // 🟢 FIX: Get behavioral matrix from report_data directly
+      const matrix = getBehavioralMatrixFromReport(result);
+      console.log('[Report View] Behavioral Matrix:', matrix);
+
       let report = data.report || {};
 
       if (parsedResultReportData && Object.keys(parsedResultReportData).length > 0) {
@@ -261,9 +318,6 @@ export default function SupervisorReportView() {
       const candidateInfo = getCandidateInfo(data, result, report);
       const candidateName = candidateInfo.fullName || 'Candidate';
       const categoryScores = getCategoryScores(data, result, report);
-
-      // 🟢 FETCH AND NORMALIZE BEHAVIORAL MATRIX
-      const matrix = await fetchBehavioralMatrix(resultId, token);
 
       if (isNS) {
         const authoritativeScores = getAuthoritativeNationalServiceScores(data, result, report);
@@ -340,51 +394,6 @@ export default function SupervisorReportView() {
       console.error('[Report View] Error:', err);
       setError(err.message || 'Failed to load report');
       setLoading(false);
-    }
-  };
-
-  // ============================================================
-  // FETCH BEHAVIORAL MATRIX - WITH NORMALIZATION
-  // ============================================================
-
-  const fetchBehavioralMatrix = async (id, token) => {
-    try {
-      setLoadingBehavioral(true);
-
-      if (!token) {
-        console.warn('[Behavioral Matrix] No token');
-        return null;
-      }
-
-      const response = await fetch(`/api/assessment/behavioral-matrix?resultId=${id}`, {
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        }
-      });
-
-      if (!response.ok) {
-        console.warn('[Behavioral Matrix] API returned:', response.status);
-        return null;
-      }
-
-      const data = await response.json();
-
-      if (data.success) {
-        const matrix = data.behavioralMatrix || data.matrixData || data.matrix || data.data || data.result || null;
-        if (matrix) {
-          // 🟢 NORMALIZE THE SCHEMA (nested → flat)
-          const normalized = normalizeBehavioralMatrix(matrix);
-          console.log('[Behavioral Matrix] Normalized:', normalized);
-          return normalized;
-        }
-      }
-      return null;
-    } catch (error) {
-      console.error('[Behavioral Matrix] Error fetching:', error);
-      return null;
-    } finally {
-      setLoadingBehavioral(false);
     }
   };
 
