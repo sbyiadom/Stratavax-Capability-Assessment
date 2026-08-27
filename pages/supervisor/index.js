@@ -1,5 +1,5 @@
-// pages/supervisor/index.js - FINAL FILTER SYNC
-// Filters now perfectly apply to the National Service and Other Assessments tabs.
+// pages/supervisor/index.js
+// COMPLETE PRODUCTION-READY VERSION
 
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/router';
@@ -7,9 +7,6 @@ import { supabase } from '../../supabase/client';
 import { useRequireAuth } from '../../utils/requireAuth';
 import AppLayout from '../../components/AppLayout';
 
-// ============================================================
-// CHART.JS IMPORTS
-// ============================================================
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -32,14 +29,8 @@ ChartJS.register(
   ArcElement
 );
 
-// ============================================================
-// REACT-SELECT IMPORTS
-// ============================================================
 import Select from 'react-select';
 
-// ============================================================
-// 🟢 RECOMMENDATION HELPER
-// ============================================================
 function calculateNationalServiceRecommendation(workplace, intellectual, overall) {
   if (workplace >= 85 && intellectual >= 85) return 'Highly Recommended';
   if (workplace >= 75 && intellectual >= 75) return 'Recommended';
@@ -48,9 +39,6 @@ function calculateNationalServiceRecommendation(workplace, intellectual, overall
   return 'Not Recommended';
 }
 
-// ============================================================
-// 🟢 SHARED SCORE CALCULATION ENGINE
-// ============================================================
 function calculateTrueScore(report) {
   if (report.is_national_service || report.isNationalService) {
     const workplace = Number(report.workplace_readiness || 0);
@@ -87,9 +75,6 @@ function calculateTrueScore(report) {
   return Math.round(Number(report.score || report.percentage_score || report.overallScore || 0));
 }
 
-// ============================================================
-// 🟢 THE PROGRAM NORMALIZATION ENGINE
-// ============================================================
 const ABBREVIATIONS = {
   'bsc': 'BSc', 'b.sc': 'BSc', 'b. sc': 'BSc', 'b.s.c': 'BSc',
   'bachelor': 'Bachelor', 'btech': 'B-Tech', 'b.tech': 'B-Tech',
@@ -151,10 +136,6 @@ function getUniqueMasterNames(rawPrograms) {
   return { groups, masterToRawMap };
 }
 
-// ============================================================
-// MAIN COMPONENT
-// ============================================================
-
 export default function SupervisorDashboard() {
   const router = useRouter();
   const { session, loading: authLoading } = useRequireAuth();
@@ -176,7 +157,6 @@ export default function SupervisorDashboard() {
     nationalServiceReports: 0
   });
 
-  // 🟢 FILTER STATE
   const [selectedUniversityOption, setSelectedUniversityOption] = useState(null);
   const [selectedProgramOptions, setSelectedProgramOptions] = useState([]);
   const [minScore, setMinScore] = useState(0);
@@ -225,13 +205,6 @@ export default function SupervisorDashboard() {
         nationalServiceReports: Number(dashboardStats.nationalServiceReports || 0)
       });
       setDebugInfo(payload.debug || null);
-
-      const initialSelected = {};
-      candidateRows.forEach((candidate) => {
-        const completed = Array.isArray(candidate.completedAssessments) ? candidate.completedAssessments : [];
-        if (completed.length > 0) initialSelected[candidate.id] = completed[0].assessment_id;
-      });
-      setSelectedAssessments(initialSelected);
     } catch (error) {
       console.error('[Supervisor Dashboard] Load error:', error);
       setErrorMessage(error?.message || 'Unable to load dashboard data.');
@@ -282,17 +255,6 @@ export default function SupervisorDashboard() {
     router.push(`/supervisor/reports/${resultId}`);
   };
 
-  const handleAssessmentSelect = (candidateId, assessmentId) => {
-    if (!assessmentId) { alert('Please select an assessment first.'); return; }
-    const candidate = candidates.find((item) => String(item.id) === String(candidateId));
-    if (!candidate) { alert('Candidate not found.'); return; }
-    const completedAssessments = Array.isArray(candidate.completedAssessments) ? candidate.completedAssessments : [];
-    const assessment = completedAssessments.find((item) => String(item.assessment_id) === String(assessmentId));
-    if (!assessment) { alert('Assessment not found.'); return; }
-    if (assessment.result_id) handleViewReport(assessment.result_id);
-    else alert('This assessment does not have a result available yet.');
-  };
-
   const handleAssessmentChange = (candidateId, assessmentId) => {
     setSelectedAssessments((prev) => ({ ...prev, [candidateId]: assessmentId }));
   };
@@ -305,12 +267,14 @@ export default function SupervisorDashboard() {
     };
     return colors[recommendation] || '#64748b';
   };
+
   const getScoreColor = (score) => {
     const value = Number(score || 0);
     if (value >= 70) return '#dcfce7';
     if (value >= 50) return '#fef3c7';
     return '#fee2e2';
   };
+
   const getScoreTextColor = (score) => {
     const value = Number(score || 0);
     if (value >= 70) return '#166534';
@@ -318,9 +282,6 @@ export default function SupervisorDashboard() {
     return '#991b1b';
   };
 
-  // ============================================================
-  // DATA PROCESSING FOR FILTERS & CHARTS
-  // ============================================================
   const universityStats = useMemo(() => {
     const map = {};
     allReports.forEach(r => {
@@ -338,7 +299,6 @@ export default function SupervisorDashboard() {
     return getUniqueMasterNames(rawPrograms);
   }, [rawPrograms]);
 
-  // 🟢 UNIVERSAL FILTER LOGIC (Applies to All Tabs)
   const filterReports = (reportsToFilter) => {
     let filtered = reportsToFilter;
 
@@ -446,7 +406,6 @@ export default function SupervisorDashboard() {
           <div style={styles.errorBox}><strong>Dashboard loading issue:</strong> {errorMessage}</div>
         )}
 
-        {/* STATS CARDS */}
         <div style={styles.statsRow}>
           <StatCard icon="👥" label="Total Candidates" value={stats.totalCandidates} />
           <StatCard icon="✓" label="Completed" value={stats.completedAssessments} />
@@ -460,7 +419,6 @@ export default function SupervisorDashboard() {
           </div>
         </div>
 
-        {/* 🟢 BEAUTIFUL FILTERS BAR */}
         <div style={styles.filtersBar}>
           <div style={styles.filtersRow}>
             <div style={styles.filterGroup}>
@@ -507,7 +465,6 @@ export default function SupervisorDashboard() {
           </div>
         </div>
 
-        {/* CHARTS GRID */}
         <div style={styles.chartGrid}>
           <div style={styles.chartCard}>
             <h4 style={styles.chartTitle}>
@@ -547,7 +504,7 @@ export default function SupervisorDashboard() {
             </div>
             <div style={styles.statRow}>
               <span style={styles.statRowLabel}>Average Score</span>
-              <span style={styles.statRowValue} style={{color: filteredAverageScore >= 70 ? '#2e7d32' : '#c62828'}}>
+              <span style={{...styles.statRowValue, color: filteredAverageScore >= 70 ? '#2e7d32' : '#c62828'}}>
                 {filteredAverageScore > 0 ? `${filteredAverageScore}%` : 'N/A'}
               </span>
             </div>
@@ -564,7 +521,6 @@ export default function SupervisorDashboard() {
           </div>
         </div>
 
-        {/* TABS */}
         <div style={styles.tabsContainer}>
           <TabButton active={activeTab === 'assessments'} onClick={() => setActiveTab('assessments')} label={`Assessment View (${allReports.length})`} />
           <TabButton active={activeTab === 'national_service'} onClick={() => setActiveTab('national_service')} label={`National Service (${nationalServiceReports.length})`} />
@@ -599,7 +555,7 @@ export default function SupervisorDashboard() {
 }
 
 // ============================================================
-// SUB-COMPONENTS & HELPERS
+// SUB-COMPONENTS
 // ============================================================
 
 function StatCard({ icon, label, value }) {
@@ -622,7 +578,6 @@ function TabButton({ active, onClick, label }) {
   );
 }
 
-// 🟢 Assessment Tab
 function AssessmentTab({ reports, getScoreColor, getScoreTextColor, onViewReport }) {
   return (
     <div style={styles.tabPanel}>
@@ -643,7 +598,6 @@ function AssessmentTab({ reports, getScoreColor, getScoreTextColor, onViewReport
             <tbody>
               {reports.map((report) => {
                 const trueScore = calculateTrueScore(report);
-
                 return (
                   <tr key={report.result_id || `${report.candidate_id}-${report.assessment_id}`} style={styles.tr}>
                     <td style={styles.td}>
@@ -699,7 +653,7 @@ function NationalServiceTab({ reports, getScoreColor, getScoreTextColor, getReco
                 const overallScore = Number(report.score || report.overallScore || report.percentage_score || 0);
                 const workplaceScore = Number(report.workplace_readiness || 0);
                 const intellectualScore = Number(report.intellectual_capability || 0);
-                const isCompleted = report.status === 'completed' || report.result_id !== null;
+                const isCompleted = report.status === 'completed' || report.result_id !== null || (report.percentage_score !== null && report.percentage_score !== undefined);
                 const hasScores = workplaceScore > 0 || intellectualScore > 0 || overallScore > 0;
 
                 const displayRecommendation = calculateNationalServiceRecommendation(workplaceScore, intellectualScore, overallScore);
@@ -773,7 +727,6 @@ function OtherAssessmentsTab({ reports, onViewReport }) {
             <tbody>
               {reports.map((report) => {
                 const trueScore = calculateTrueScore(report);
-
                 return (
                   <tr key={report.result_id || `${report.candidate_id}-${report.assessment_id}`} style={styles.tr}>
                     <td style={styles.td}>
@@ -782,9 +735,7 @@ function OtherAssessmentsTab({ reports, onViewReport }) {
                     </td>
                     <td style={styles.td}>{report.assessment_title}</td>
                     <td style={styles.td}>
-                      <span style={styles.scoreBadge}>
-                        {trueScore}%
-                      </span>
+                      <span style={styles.scoreBadge}>{trueScore}%</span>
                     </td>
                     <td style={styles.td}>
                       {report.result_id ? (
@@ -840,7 +791,6 @@ const customSelectStyles = {
 // ============================================================
 // STYLES
 // ============================================================
-
 const styles = {
   loadingContainer: {
     display: 'flex',
@@ -913,15 +863,6 @@ const styles = {
     marginBottom: '16px',
     fontSize: '14px'
   },
-  debugBox: {
-    background: '#f8fafc',
-    border: '1px solid #e2e8f0',
-    color: '#475569',
-    borderRadius: '8px',
-    padding: '8px 12px',
-    marginBottom: '16px',
-    fontSize: '12px'
-  },
   statsRow: {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
@@ -941,8 +882,6 @@ const styles = {
   statIcon: { fontSize: '28px' },
   statLabel: { fontSize: '11px', color: '#718096', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' },
   statValue: { fontSize: '22px', fontWeight: 800, color: '#0a1929' },
-
-  // 🟢 FILTERS BAR STYLES
   filtersBar: {
     background: 'white',
     borderRadius: '12px',
@@ -1007,8 +946,6 @@ const styles = {
     height: '38px',
     alignSelf: 'flex-end'
   },
-
-  // CHART GRID STYLES
   chartGrid: {
     display: 'grid',
     gridTemplateColumns: '1fr 1fr',
@@ -1075,8 +1012,6 @@ const styles = {
     color: '#0a1929',
     marginTop: '2px'
   },
-
-  // TABS & TABLES
   tabsContainer: {
     display: 'flex',
     gap: '8px',
@@ -1122,11 +1057,7 @@ const styles = {
   scoreBadge: { padding: '4px 12px', borderRadius: '20px', fontSize: '13px', fontWeight: '600', display: 'inline-block', background: '#f1f5f9' },
   recommendationBadge: { padding: '4px 12px', borderRadius: '20px', fontSize: '13px', fontWeight: '600', display: 'inline-block', background: 'white', border: '1px solid #e2e8f0' },
   viewButton: { padding: '6px 12px', background: '#1a237e', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: '500', whiteSpace: 'nowrap' },
-  viewReportButtonSmall: { padding: '4px 12px', background: '#1a237e', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: '500', whiteSpace: 'nowrap' },
   pendingText: { color: '#94a3b8', fontSize: '13px' },
-  assessmentDropdown: { padding: '6px 10px', borderRadius: '6px', border: '1px solid #e2e8f0', fontSize: '12px', background: 'white', minWidth: '140px', maxWidth: '220px' },
-  statBadgeCompleted: { padding: '2px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: '600', background: '#dcfce7', color: '#166534' },
-  statBadgeProgress: { padding: '2px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: '600', background: '#dbeafe', color: '#1e40af' },
   emptyState: { textAlign: 'center', padding: '30px', color: '#64748b', background: '#f8fafc', borderRadius: '8px' }
 };
 
