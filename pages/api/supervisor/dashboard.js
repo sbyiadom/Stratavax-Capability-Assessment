@@ -1,6 +1,5 @@
-// pages/api/supervisor/dashboard.js - COMPLETE FIXED FILE
-// FIX: Properly handles both junction table and legacy supervisor_id field
-// FIX: Correctly calculates National Service scores from report_data
+// pages/api/supervisor/dashboard.js - COMPLETE WORKING FILE
+// FIX: Properly fetches candidates from legacy supervisor_id field
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -99,8 +98,7 @@ function getNationalServiceScores(result) {
       'Safety & Risk Awareness', 
       'Technical Fundamentals',
       'Work Ethic',
-      'Professional Conduct',
-      'Safety and Risk Awareness'
+      'Professional Conduct'
     ];
     
     const intellectualCategories = [
@@ -110,8 +108,7 @@ function getNationalServiceScores(result) {
       'Measurement & Engineering Units',
       'Learning Agility',
       'Cognitive Ability',
-      'Analytical Thinking',
-      'Problem Solving'
+      'Analytical Thinking'
     ];
     
     let workplaceTotal = 0;
@@ -209,57 +206,64 @@ export default async function handler(req, res) {
     console.log('[Dashboard] Supervisor ID:', supervisorId);
 
     // ============================================================
-    // GET CANDIDATES - USING BOTH METHODS
+    // STEP 1: GET CANDIDATES - PRIMARY: Legacy supervisor_id field
     // ============================================================
     let allCandidates = [];
     const candidateIdsSet = new Set();
 
-    // Method 1: Legacy field (candidate_profiles.supervisor_id)
+    // PRIMARY: Get candidates from candidate_profiles.supervisor_id
+    console.log('[Dashboard] Fetching candidates from legacy supervisor_id field...');
     const { data: legacyCandidates, error: legacyError } = await supabase
       .from('candidate_profiles')
       .select('id, full_name, email, university, programme, created_at')
       .eq('supervisor_id', supervisorId);
 
-    if (!legacyError && legacyCandidates) {
+    if (legacyError) {
+      console.error('[Dashboard] Legacy field error:', legacyError);
+    } else if (legacyCandidates) {
       legacyCandidates.forEach(c => {
         if (!candidateIdsSet.has(c.id)) {
           candidateIdsSet.add(c.id);
           allCandidates.push(c);
         }
       });
-      console.log('[Dashboard] Legacy candidates found:', legacyCandidates.length);
+      console.log('[Dashboard] ✅ Legacy candidates found:', legacyCandidates.length);
     }
 
-    // Method 2: Junction table (candidate_supervisors)
-    const { data: assignments, error: assError } = await supabase
+    // SECONDARY: Also check junction table (for any candidates added there)
+    console.log('[Dashboard] Also checking junction table...');
+    const { data: junctionAssignments, error: junctionError } = await supabase
       .from('candidate_supervisors')
       .select('candidate_id')
       .eq('supervisor_id', supervisorId);
 
-    if (!assError && assignments) {
-      const junctionIds = assignments.map(a => a.candidate_id).filter(Boolean);
+    if (!junctionError && junctionAssignments && junctionAssignments.length > 0) {
+      const junctionIds = junctionAssignments.map(a => a.candidate_id).filter(Boolean);
       const missingIds = junctionIds.filter(id => !candidateIdsSet.has(id));
       
       if (missingIds.length > 0) {
-        const { data: junctionCandidates, error: junctionError } = await supabase
+        const { data: junctionCandidates, error: junctionCandError } = await supabase
           .from('candidate_profiles')
           .select('id, full_name, email, university, programme, created_at')
           .in('id', missingIds);
         
-        if (!junctionError && junctionCandidates) {
+        if (!junctionCandError && junctionCandidates) {
           junctionCandidates.forEach(c => {
             if (!candidateIdsSet.has(c.id)) {
               candidateIdsSet.add(c.id);
               allCandidates.push(c);
             }
           });
-          console.log('[Dashboard] Junction candidates found:', junctionCandidates.length);
+          console.log('[Dashboard] ✅ Junction candidates found:', junctionCandidates.length);
         }
       }
+    } else if (junctionError) {
+      console.log('[Dashboard] Junction table check (may not exist):', junctionError.message);
     }
 
-    console.log('[Dashboard] Total candidates found:', allCandidates.length);
+    console.log('[Dashboard] 📊 Total candidates found:', allCandidates.length);
 
+    // If no candidates found, return empty response
     if (allCandidates.length === 0) {
       return res.status(200).json({
         success: true,
@@ -271,14 +275,18 @@ export default async function handler(req, res) {
         },
         candidates: [],
         nationalServiceReports: [],
-        otherReports: []
+        otherReports: [],
+        debug: {
+          supervisorId: supervisorId,
+          message: 'No candidates assigned to this supervisor yet'
+        }
       });
     }
 
     const candidateIds = allCandidates.map(c => c.id);
 
     // ============================================================
-    // GET ASSESSMENT RESULTS
+    // STEP 2: GET ASSESSMENT RESULTS
     // ============================================================
     const { data: results, error: resError } = await supabase
       .from('assessment_results')
@@ -290,24 +298,28 @@ export default async function handler(req, res) {
       return res.status(500).json({ success: false, error: resError.message });
     }
 
-    console.log('[Dashboard] Results found:', results?.length || 0);
+    console.log('[Dashboard] 📊 Results found:', results?.length || 0);
 
     // ============================================================
-    // GET ASSESSMENTS
+    // STEP 3: GET ASSESSMENT DETAILS
     // ============================================================
     const assessmentIds = [...new Set((results || []).map(r => r.assessment_id).filter(Boolean))];
-    const { data: assessments, error: assmtError } = await supabase
-      .from('assessments')
-      .select('id, title, assessment_type_id')
-      .in('id', assessmentIds);
+    let assessmentMap = {};
+    
+    if (assessmentIds.length > 0) {
+      const { data: assessments, error: assmtError } = await supabase
+        .from('assessments')
+        .select('id, title, assessment_type_id')
+        .in('id', assessmentIds);
 
-    if (assmtError) console.error('[Dashboard] Assessments error:', assmtError);
-
-    const assessmentMap = {};
-    (assessments || []).forEach(a => { assessmentMap[a.id] = a; });
+      if (!assmtError && assessments) {
+        assessments.forEach(a => { assessmentMap[a.id] = a; });
+        console.log('[Dashboard] 📚 Assessments found:', assessments.length);
+      }
+    }
 
     // ============================================================
-    // PROCESS RESULTS
+    // STEP 4: PROCESS RESULTS
     // ============================================================
     const candidateMap = {};
     allCandidates.forEach(c => { candidateMap[c.id] = c; });
@@ -367,22 +379,25 @@ export default async function handler(req, res) {
     const otherReports = allReports.filter(r => !r.is_national_service);
 
     // ============================================================
-    // BUILD CANDIDATE ROWS
+    // STEP 5: BUILD CANDIDATE ROWS
     // ============================================================
-    const candidateRows = allCandidates.map(c => ({
-      ...c,
-      completedAssessments: allReports.filter(r => r.candidate_id === c.id),
-      stats: {
-        completed: allReports.filter(r => r.candidate_id === c.id && r.completed_at).length,
-        inProgress: 0,
-        unblocked: 0,
-        blocked: 0,
-        notStarted: 0
-      }
-    }));
+    const candidateRows = allCandidates.map(c => {
+      const candidateReports = allReports.filter(r => r.candidate_id === c.id);
+      return {
+        ...c,
+        completedAssessments: candidateReports,
+        stats: {
+          completed: candidateReports.filter(r => r.completed_at).length,
+          inProgress: 0,
+          unblocked: 0,
+          blocked: 0,
+          notStarted: 0
+        }
+      };
+    });
 
     // ============================================================
-    // RETURN RESPONSE
+    // STEP 6: RETURN RESPONSE
     // ============================================================
     return res.status(200).json({
       success: true,
@@ -400,7 +415,9 @@ export default async function handler(req, res) {
         totalResults: results?.length || 0,
         totalReports: allReports.length,
         nsReports: nsReports.length,
-        otherReports: otherReports.length
+        otherReports: otherReports.length,
+        supervisorId: supervisorId,
+        source: 'legacy_supervisor_id'
       }
     });
 
