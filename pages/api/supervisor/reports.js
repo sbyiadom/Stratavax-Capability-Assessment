@@ -1,5 +1,6 @@
 // pages/api/supervisor/reports.js
-// COMPLETE FIXED VERSION
+// FIXED: Removed candidate_id references, uses user_id only
+// FIXED: Proper error handling
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -76,6 +77,11 @@ export default async function handler(req, res) {
     }
 
     const supabase = createClient(supabaseUrl, supabaseKey, {
+      global: {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      },
       auth: { persistSession: false }
     });
 
@@ -163,13 +169,12 @@ export default async function handler(req, res) {
 
     const candidateIds = targetCandidates.map(c => c.id);
 
-    // Get assessment results
+    // Get assessment results - uses user_id only
     let query = supabase
       .from('assessment_results')
       .select(`
         id,
         user_id,
-        candidate_id,
         assessment_id,
         session_id,
         percentage_score,
@@ -195,7 +200,7 @@ export default async function handler(req, res) {
           )
         )
       `)
-      .or(`user_id.in.(${candidateIds.join(',')}),candidate_id.in.(${candidateIds.join(',')})`)
+      .in('user_id', candidateIds)
       .order('completed_at', { ascending: false });
 
     if (assessment_id) {
@@ -206,7 +211,10 @@ export default async function handler(req, res) {
 
     if (resultsError) {
       console.error('[Supervisor Reports] Results error:', resultsError);
-      return res.status(500).json({ success: false, error: resultsError.message });
+      return res.status(500).json({ 
+        success: false, 
+        error: resultsError.message 
+      });
     }
 
     console.log('[Supervisor Reports] Results found:', results?.length || 0);
@@ -230,7 +238,7 @@ export default async function handler(req, res) {
         assessmentTitle.includes('nationalservice') ||
         assessmentTitle.includes('service recruitment');
 
-      const candidate = targetCandidates.find(c => c.id === (result.user_id || result.candidate_id)) || {};
+      const candidate = targetCandidates.find(c => c.id === result.user_id) || {};
 
       let overallScore = safeNumber(result.percentage_score);
       if (isNationalService) {
@@ -244,7 +252,7 @@ export default async function handler(req, res) {
 
       return {
         result_id: result.id,
-        candidate_id: result.user_id || result.candidate_id,
+        candidate_id: result.user_id,
         candidate_name: candidate.full_name || 'Unknown',
         candidate_email: candidate.email || '',
         university: candidate.university || '',
