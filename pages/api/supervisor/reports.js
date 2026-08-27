@@ -1,10 +1,11 @@
-// pages/api/supervisor/reports.js - RENAMED FROM report.js
-// FIX: Matches frontend request /api/supervisor/reports
+// pages/api/supervisor/reports.js
+// COMPLETE PRODUCTION-READY VERSION
+// Works for ALL supervisors - Returns candidate reports
 
 import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
 function extractBearerToken(req) {
   const authHeader = req.headers.authorization || req.headers.Authorization || '';
@@ -65,39 +66,31 @@ function calculateRecommendation(workplaceReadiness, intellectualCapability, ove
 }
 
 export default async function handler(req, res) {
-  // Only allow GET requests
   if (req.method !== "GET") {
     return res.status(405).json({ success: false, error: "Method not allowed" });
   }
 
   try {
-    // Step 1: Extract and validate token
     const token = extractBearerToken(req);
     if (!token) {
       return res.status(401).json({ success: false, error: "Missing token" });
     }
 
-    // Step 2: Create Supabase client
     const supabase = createClient(supabaseUrl, supabaseKey, {
       auth: { persistSession: false }
     });
 
-    // Step 3: Verify user
     const { data: userData, error: userError } = await supabase.auth.getUser(token);
     if (userError || !userData?.user) {
       return res.status(401).json({ success: false, error: "Invalid token" });
     }
 
     const supervisorId = userData.user.id;
-    const supervisorEmail = userData.user.email;
+    const { user_id, assessment_id } = req.query;
 
     console.log('[Supervisor Reports] Supervisor ID:', supervisorId);
 
-    // Step 4: Get query parameters
-    const { user_id, assessment_id } = req.query;
-
-    // Step 5: Get assigned candidates
-    let targetCandidates = [];
+    // Get assigned candidates
     let allCandidates = [];
     const candidateIdsSet = new Set();
 
@@ -105,7 +98,7 @@ export default async function handler(req, res) {
     const { data: candidatesByField, error: candidateError } = await supabase
       .from('candidate_profiles')
       .select('id, full_name, email, university, programme, supervisor_id, created_at')
-      .or(`supervisor_id.eq.${supervisorId}`);
+      .eq('supervisor_id', supervisorId);
 
     if (!candidateError && candidatesByField) {
       candidatesByField.forEach(candidate => {
@@ -147,7 +140,8 @@ export default async function handler(req, res) {
 
     console.log('[Supervisor Reports] Total assigned candidates:', allCandidates.length);
 
-    // If specific user_id is requested, filter
+    // Filter by specific user if requested
+    let targetCandidates = allCandidates;
     if (user_id) {
       targetCandidates = allCandidates.filter(c => c.id === user_id);
       if (targetCandidates.length === 0) {
@@ -156,8 +150,6 @@ export default async function handler(req, res) {
           error: 'Candidate not found or not assigned to you'
         });
       }
-    } else {
-      targetCandidates = allCandidates;
     }
 
     if (targetCandidates.length === 0) {
@@ -172,7 +164,7 @@ export default async function handler(req, res) {
 
     const candidateIds = targetCandidates.map(c => c.id);
 
-    // Step 6: Get assessment results
+    // Get assessment results
     let query = supabase
       .from('assessment_results')
       .select(`
@@ -206,7 +198,6 @@ export default async function handler(req, res) {
       .in('user_id', candidateIds)
       .order('completed_at', { ascending: false });
 
-    // If specific assessment_id is requested, filter by it
     if (assessment_id) {
       query = query.eq('assessment_id', assessment_id);
     }
@@ -220,7 +211,7 @@ export default async function handler(req, res) {
 
     console.log('[Supervisor Reports] Results found:', results?.length || 0);
 
-    // Step 7: Process reports
+    // Process reports
     const reports = (results || []).map(result => {
       const assessment = result.assessments || {};
       
@@ -249,7 +240,7 @@ export default async function handler(req, res) {
       const workplaceReadiness = safeNumber(result.workplace_readiness || 0);
       const intellectualCapability = safeNumber(result.intellectual_capability || 0);
       const recommendation = calculateRecommendation(workplaceReadiness, intellectualCapability, overallScore);
-      const isCompleted = !!result.completed_at;
+      const isCompleted = !!result.completed_at || (result.percentage_score !== null && result.percentage_score !== undefined);
 
       return {
         result_id: result.id,
@@ -276,8 +267,7 @@ export default async function handler(req, res) {
       };
     });
 
-    // Step 8: Return response
-    // If specific assessment_id was requested and we have exactly one report, return single format
+    // Return response
     if (assessment_id && reports.length === 1) {
       const report = reports[0];
       const candidate = targetCandidates.find(c => c.id === report.candidate_id) || {};
@@ -317,15 +307,8 @@ export default async function handler(req, res) {
       });
     }
 
-    // Otherwise return list format
     const nationalServiceReports = reports.filter(r => r.is_national_service === true);
     const otherReports = reports.filter(r => r.is_national_service === false);
-
-    const stats = {
-      total: reports.length,
-      completed: reports.filter(r => r.is_completed).length,
-      inProgress: reports.filter(r => !r.is_completed && r.session_id).length
-    };
 
     return res.status(200).json({
       success: true,
@@ -333,7 +316,11 @@ export default async function handler(req, res) {
       nationalServiceReports,
       otherReports,
       candidates: targetCandidates,
-      stats
+      stats: {
+        total: reports.length,
+        completed: reports.filter(r => r.is_completed).length,
+        inProgress: reports.filter(r => !r.is_completed && r.session_id).length
+      }
     });
 
   } catch (error) {
