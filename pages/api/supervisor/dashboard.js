@@ -1,5 +1,5 @@
 // pages/api/supervisor/dashboard.js
-// COMPLETE FIXED VERSION - Works for ALL supervisors
+// FIXED: Using anon key instead of service role key
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -188,7 +188,8 @@ export default async function handler(req, res) {
 
     // Step 2: Validate environment variables
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    // 🔥 FIX: Use anon key instead of service role key
+    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
     if (!supabaseUrl || !supabaseKey) {
       console.error('[Dashboard] Missing environment variables');
@@ -214,63 +215,63 @@ export default async function handler(req, res) {
     }
 
     const authEmail = String(userData.user.email || '').trim().toLowerCase();
-    console.log(`[Dashboard] Looking up supervisor by email: ${authEmail}`);
+    const authId = userData.user.id;
+    
+    console.log(`[Dashboard] Auth Email: ${authEmail}`);
+    console.log(`[Dashboard] Auth ID: ${authId}`);
 
     // ============================================================
-    // STEP 5: RESOLVE SUPERVISOR PROFILE BY EMAIL
+    // STEP 5: RESOLVE SUPERVISOR PROFILE
     // ============================================================
     let supervisor = null;
-    let lookupError = null;
 
-    // Try case-insensitive email lookup
+    // Try by ID first (since we know they match)
     try {
       const { data, error } = await supabase
         .from('supervisor_profiles')
         .select('id, full_name, email, role, is_active')
-        .ilike('email', authEmail)
+        .eq('id', authId)
         .maybeSingle();
 
       if (error) {
-        lookupError = error;
-        console.error('[Dashboard] Email lookup error:', error);
+        console.error('[Dashboard] ID lookup error:', error);
       } else if (data) {
         supervisor = data;
-        console.log(`[Dashboard] ✅ Found supervisor by email: ${supervisor.full_name}`);
+        console.log(`[Dashboard] ✅ Found supervisor by ID: ${supervisor.full_name}`);
       }
     } catch (err) {
-      console.error('[Dashboard] Email lookup exception:', err);
-      lookupError = err;
+      console.error('[Dashboard] ID lookup exception:', err);
     }
 
-    // If not found by email, try by ID (fallback)
+    // If not found by ID, try by email
     if (!supervisor) {
       try {
         const { data, error } = await supabase
           .from('supervisor_profiles')
           .select('id, full_name, email, role, is_active')
-          .eq('id', userData.user.id)
+          .ilike('email', authEmail)
           .maybeSingle();
 
         if (error) {
-          console.error('[Dashboard] ID lookup error:', error);
+          console.error('[Dashboard] Email lookup error:', error);
         } else if (data) {
           supervisor = data;
-          console.log(`[Dashboard] ✅ Found supervisor by ID: ${supervisor.full_name}`);
+          console.log(`[Dashboard] ✅ Found supervisor by email: ${supervisor.full_name}`);
         }
       } catch (err) {
-        console.error('[Dashboard] ID lookup exception:', err);
+        console.error('[Dashboard] Email lookup exception:', err);
       }
     }
 
     if (!supervisor) {
-      console.error('[Dashboard] ❌ Supervisor not found for email:', authEmail);
+      console.error('[Dashboard] ❌ Supervisor not found for:', { authId, authEmail });
       return res.status(404).json({
         success: false,
         error: 'Supervisor profile not found. Please contact support.',
         code: 'SUPERVISOR_PROFILE_NOT_FOUND',
         debug: {
           email: authEmail,
-          userId: userData.user.id
+          userId: authId
         }
       });
     }
