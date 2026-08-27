@@ -1,5 +1,5 @@
-// pages/api/supervisor/dashboard.js - COMPLETE FIXED FILE
-// FIX: Properly fetches candidates from legacy supervisor_id field
+// pages/api/supervisor/dashboard.js - UNIFIED FIX FOR ALL SUPERVISORS
+// FIX: Checks BOTH legacy supervisor_id AND junction table for ALL supervisors
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -196,23 +196,23 @@ export default async function handler(req, res) {
     const supervisorId = userData.user.id;
     const NS_ASSESSMENT_ID = 'bdb9d46e-9fac-4d00-8478-1f649e7ac600';
 
-    console.log('[Dashboard] Supervisor ID:', supervisorId);
+    console.log('[Dashboard] 👤 Supervisor ID:', supervisorId);
 
     // ============================================================
-    // STEP 1: GET CANDIDATES FROM LEGACY supervisor_id FIELD
+    // STEP 1: GET CANDIDATES FROM BOTH SOURCES
     // ============================================================
     let allCandidates = [];
     const candidateIdsSet = new Set();
 
-    // PRIMARY: Get candidates from candidate_profiles.supervisor_id
-    console.log('[Dashboard] Fetching candidates from legacy supervisor_id field...');
+    // SOURCE 1: Legacy supervisor_id field in candidate_profiles
+    console.log('[Dashboard] 📋 Checking legacy supervisor_id field...');
     const { data: legacyCandidates, error: legacyError } = await supabase
       .from('candidate_profiles')
       .select('id, full_name, email, university, programme, created_at')
       .eq('supervisor_id', supervisorId);
 
     if (legacyError) {
-      console.error('[Dashboard] Legacy field error:', legacyError);
+      console.error('[Dashboard] ❌ Legacy field error:', legacyError);
     } else if (legacyCandidates) {
       legacyCandidates.forEach(c => {
         if (!candidateIdsSet.has(c.id)) {
@@ -223,15 +223,17 @@ export default async function handler(req, res) {
       console.log('[Dashboard] ✅ Legacy candidates found:', legacyCandidates.length);
     }
 
-    // SECONDARY: Also check junction table
-    console.log('[Dashboard] Also checking junction table...');
+    // SOURCE 2: Junction table (candidate_supervisors)
+    console.log('[Dashboard] 📋 Checking candidate_supervisors junction table...');
     try {
       const { data: junctionAssignments, error: junctionError } = await supabase
         .from('candidate_supervisors')
         .select('candidate_id')
         .eq('supervisor_id', supervisorId);
 
-      if (!junctionError && junctionAssignments && junctionAssignments.length > 0) {
+      if (junctionError) {
+        console.log('[Dashboard] ⚠️ Junction table error (may not exist):', junctionError.message);
+      } else if (junctionAssignments && junctionAssignments.length > 0) {
         const junctionIds = junctionAssignments.map(a => a.candidate_id).filter(Boolean);
         const missingIds = junctionIds.filter(id => !candidateIdsSet.has(id));
         
@@ -253,13 +255,20 @@ export default async function handler(req, res) {
         }
       }
     } catch (junctionError) {
-      console.log('[Dashboard] Junction table check:', junctionError.message);
+      console.log('[Dashboard] ⚠️ Junction table error:', junctionError.message);
     }
 
     console.log('[Dashboard] 📊 Total candidates found:', allCandidates.length);
 
-    // If no candidates found, return empty response
+    // If no candidates found, return empty response with debug info
     if (allCandidates.length === 0) {
+      // Check if supervisor exists
+      const { data: supervisorCheck, error: supCheckError } = await supabase
+        .from('supervisor_profiles')
+        .select('id, full_name, email, role, is_active')
+        .eq('id', supervisorId)
+        .maybeSingle();
+
       return res.status(200).json({
         success: true,
         stats: {
@@ -273,7 +282,11 @@ export default async function handler(req, res) {
         otherReports: [],
         debug: {
           supervisorId: supervisorId,
-          message: 'No candidates assigned to this supervisor yet'
+          supervisorExists: !!supervisorCheck,
+          supervisorName: supervisorCheck?.full_name || 'Unknown',
+          legacyCandidatesFound: legacyCandidates?.length || 0,
+          junctionAssignmentsFound: 0,
+          message: supervisorCheck ? 'No candidates assigned to this supervisor yet' : 'Supervisor profile not found'
         }
       });
     }
@@ -283,13 +296,14 @@ export default async function handler(req, res) {
     // ============================================================
     // STEP 2: GET ASSESSMENT RESULTS
     // ============================================================
+    console.log('[Dashboard] 📊 Fetching assessment results...');
     const { data: results, error: resError } = await supabase
       .from('assessment_results')
       .select('id, user_id, assessment_id, percentage_score, completed_at, report_data, category_scores, workplace_readiness, intellectual_capability, total_score, max_score')
       .in('user_id', candidateIds);
 
     if (resError) {
-      console.error('[Dashboard] Results error:', resError);
+      console.error('[Dashboard] ❌ Results error:', resError);
       return res.status(500).json({ success: false, error: resError.message });
     }
 
@@ -394,6 +408,8 @@ export default async function handler(req, res) {
     // ============================================================
     // STEP 6: RETURN RESPONSE
     // ============================================================
+    console.log('[Dashboard] ✅ Success! Returning', allCandidates.length, 'candidates');
+    
     return res.status(200).json({
       success: true,
       stats: {
@@ -412,12 +428,13 @@ export default async function handler(req, res) {
         nsReports: nsReports.length,
         otherReports: otherReports.length,
         supervisorId: supervisorId,
-        source: 'legacy_supervisor_id'
+        legacyCandidatesFound: legacyCandidates?.length || 0,
+        source: 'unified_legacy_and_junction'
       }
     });
 
   } catch (error) {
-    console.error('[Dashboard] Error:', error);
+    console.error('[Dashboard] ❌ Error:', error);
     return res.status(500).json({ 
       success: false, 
       error: error.message || 'Internal server error',
