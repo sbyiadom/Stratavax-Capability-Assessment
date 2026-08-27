@@ -1,4 +1,7 @@
-// pages/api/supervisor/dashboard.js - WITH WORKPLACE/INTELLECTUAL FIX
+// pages/api/supervisor/dashboard.js - COMPLETE FIXED FILE
+// FIX: Properly handles both junction table and legacy supervisor_id field
+// FIX: Correctly calculates National Service scores from report_data
+
 import { createClient } from '@supabase/supabase-js';
 
 function extractBearerToken(req) {
@@ -44,22 +47,36 @@ function normalizeCategoryScores(result) {
 }
 
 function calculateScore(result) {
+  // First try percentage_score
+  if (result?.percentage_score) {
+    return Math.round(safeNumber(result.percentage_score));
+  }
+  
+  // Then try category scores
   const categories = normalizeCategoryScores(result);
   const valid = categories.filter(c => c.percentage > 0);
   if (valid.length > 0) {
     const sum = valid.reduce((a, c) => a + c.percentage, 0);
     return Math.round(sum / valid.length);
   }
-  return Math.round(safeNumber(result?.percentage_score || 0));
+  
+  // Then try report_data
+  const reportData = getReportData(result);
+  if (reportData?.percentageScore) {
+    return Math.round(safeNumber(reportData.percentageScore));
+  }
+  
+  return 0;
 }
 
 function getNationalServiceScores(result) {
   const reportData = getReportData(result);
   
-  // First try to get from report_data
+  // Try to get from report_data first
   let workplace = safeNumber(
     reportData?.workplaceReadiness || 
     reportData?.dimensions?.workplaceReadiness ||
+    reportData?.workplace_readiness ||
     result?.workplace_readiness || 
     0
   );
@@ -67,13 +84,14 @@ function getNationalServiceScores(result) {
   let intellectual = safeNumber(
     reportData?.intellectualCapability || 
     reportData?.dimensions?.intellectualCapability ||
+    reportData?.intellectual_capability ||
     result?.intellectual_capability || 
     0
   );
   
   // If both are 0, calculate from categoryScores
   if (workplace === 0 && intellectual === 0) {
-    const categoryScores = reportData?.categoryScores || result?.category_scores || [];
+    const categoryScores = reportData?.categoryScores || reportData?.category_scores || result?.category_scores || [];
     
     const workplaceCategories = [
       'Communication & Teamwork', 
@@ -81,7 +99,8 @@ function getNationalServiceScores(result) {
       'Safety & Risk Awareness', 
       'Technical Fundamentals',
       'Work Ethic',
-      'Professional Conduct'
+      'Professional Conduct',
+      'Safety and Risk Awareness'
     ];
     
     const intellectualCategories = [
@@ -91,7 +110,8 @@ function getNationalServiceScores(result) {
       'Measurement & Engineering Units',
       'Learning Agility',
       'Cognitive Ability',
-      'Analytical Thinking'
+      'Analytical Thinking',
+      'Problem Solving'
     ];
     
     let workplaceTotal = 0;
@@ -99,13 +119,13 @@ function getNationalServiceScores(result) {
     let intellectualTotal = 0;
     let intellectualCount = 0;
     
-    if (Array.isArray(categoryScores)) {
+    if (Array.isArray(categoryScores) && categoryScores.length > 0) {
       categoryScores.forEach(cat => {
-        const name = cat.category || '';
-        const percentage = safeNumber(cat.percentage || 0);
+        const name = (cat.category || cat.name || '').toLowerCase();
+        const percentage = safeNumber(cat.percentage || cat.score || 0);
         
-        const isWorkplace = workplaceCategories.some(c => name.includes(c));
-        const isIntellectual = intellectualCategories.some(c => name.includes(c));
+        const isWorkplace = workplaceCategories.some(c => name.includes(c.toLowerCase()));
+        const isIntellectual = intellectualCategories.some(c => name.includes(c.toLowerCase()));
         
         if (isWorkplace && percentage > 0) {
           workplaceTotal += percentage;
@@ -119,32 +139,39 @@ function getNationalServiceScores(result) {
     
     workplace = workplaceCount > 0 ? Math.round(workplaceTotal / workplaceCount) : 0;
     intellectual = intellectualCount > 0 ? Math.round(intellectualTotal / intellectualCount) : 0;
-    
-    // If still 0, use percentageScore as overall
-    if (workplace === 0 && intellectual === 0) {
-      const overall = safeNumber(reportData?.percentageScore || result?.percentage_score || 0);
-      workplace = overall;
-      intellectual = overall;
-    }
+  }
+  
+  // Get overall score
+  const overall = safeNumber(
+    reportData?.percentageScore || 
+    reportData?.overallScore || 
+    reportData?.percentage_score ||
+    result?.percentage_score || 
+    0
+  );
+  
+  // If workplace and intellectual are 0 but overall > 0, use overall for both
+  if (workplace === 0 && intellectual === 0 && overall > 0) {
+    workplace = overall;
+    intellectual = overall;
   }
   
   return {
     workplaceReadiness: workplace,
     intellectualCapability: intellectual,
-    overallScore: safeNumber(
-      reportData?.percentageScore || 
-      reportData?.overallScore || 
-      result?.percentage_score || 
-      0
-    )
+    overallScore: overall
   };
 }
 
 function getRecommendation(workplace, intellectual, overall) {
-  if (workplace >= 85 && intellectual >= 85) return 'Highly Recommended';
-  if (workplace >= 75 && intellectual >= 75) return 'Recommended';
-  if (workplace >= 65 && intellectual >= 65) return 'Reserve Pool';
-  if (workplace >= 50 || intellectual >= 50 || overall >= 50) return 'Consider for Development';
+  const w = safeNumber(workplace);
+  const i = safeNumber(intellectual);
+  const o = safeNumber(overall);
+  
+  if (w >= 85 && i >= 85) return 'Highly Recommended';
+  if (w >= 75 && i >= 75) return 'Recommended';
+  if (w >= 65 && i >= 65) return 'Reserve Pool';
+  if (w >= 50 || i >= 50 || o >= 50) return 'Consider for Development';
   return 'Not Recommended';
 }
 
@@ -154,7 +181,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const token = req.headers.authorization?.replace('Bearer ', '');
+    const token = extractBearerToken(req);
     if (!token) {
       return res.status(401).json({ success: false, error: 'Missing token' });
     }
@@ -163,6 +190,7 @@ export default async function handler(req, res) {
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
     if (!supabaseUrl || !supabaseKey) {
+      console.error('[Dashboard] Missing env vars');
       return res.status(500).json({ success: false, error: 'Missing env vars' });
     }
 
@@ -178,56 +206,83 @@ export default async function handler(req, res) {
     const supervisorId = userData.user.id;
     const NS_ASSESSMENT_ID = 'bdb9d46e-9fac-4d00-8478-1f649e7ac600';
 
-    console.log('[Dashboard] Supervisor:', supervisorId);
+    console.log('[Dashboard] Supervisor ID:', supervisorId);
 
-    // Get supervisor profile
-    const { data: supervisor, error: supError } = await supabase
-      .from('supervisor_profiles')
-      .select('id, full_name, email, role, is_active')
-      .eq('id', supervisorId)
-      .maybeSingle();
+    // ============================================================
+    // GET CANDIDATES - USING BOTH METHODS
+    // ============================================================
+    let allCandidates = [];
+    const candidateIdsSet = new Set();
 
-    if (supError) console.error('[Dashboard] Supervisor error:', supError);
+    // Method 1: Legacy field (candidate_profiles.supervisor_id)
+    const { data: legacyCandidates, error: legacyError } = await supabase
+      .from('candidate_profiles')
+      .select('id, full_name, email, university, programme, created_at')
+      .eq('supervisor_id', supervisorId);
 
-    // Get candidates from junction table
+    if (!legacyError && legacyCandidates) {
+      legacyCandidates.forEach(c => {
+        if (!candidateIdsSet.has(c.id)) {
+          candidateIdsSet.add(c.id);
+          allCandidates.push(c);
+        }
+      });
+      console.log('[Dashboard] Legacy candidates found:', legacyCandidates.length);
+    }
+
+    // Method 2: Junction table (candidate_supervisors)
     const { data: assignments, error: assError } = await supabase
       .from('candidate_supervisors')
       .select('candidate_id')
       .eq('supervisor_id', supervisorId);
 
-    if (assError) {
-      console.error('[Dashboard] Assignment error:', assError);
-      return res.status(500).json({ success: false, error: assError.message });
+    if (!assError && assignments) {
+      const junctionIds = assignments.map(a => a.candidate_id).filter(Boolean);
+      const missingIds = junctionIds.filter(id => !candidateIdsSet.has(id));
+      
+      if (missingIds.length > 0) {
+        const { data: junctionCandidates, error: junctionError } = await supabase
+          .from('candidate_profiles')
+          .select('id, full_name, email, university, programme, created_at')
+          .in('id', missingIds);
+        
+        if (!junctionError && junctionCandidates) {
+          junctionCandidates.forEach(c => {
+            if (!candidateIdsSet.has(c.id)) {
+              candidateIdsSet.add(c.id);
+              allCandidates.push(c);
+            }
+          });
+          console.log('[Dashboard] Junction candidates found:', junctionCandidates.length);
+        }
+      }
     }
 
-    const candidateIds = (assignments || []).map(a => a.candidate_id).filter(Boolean);
-    console.log('[Dashboard] Candidates found:', candidateIds.length);
+    console.log('[Dashboard] Total candidates found:', allCandidates.length);
 
-    if (candidateIds.length === 0) {
+    if (allCandidates.length === 0) {
       return res.status(200).json({
         success: true,
-        stats: { totalCandidates: 0, completedAssessments: 0, pendingReviews: 0, nationalServiceReports: 0 },
+        stats: {
+          totalCandidates: 0,
+          completedAssessments: 0,
+          pendingReviews: 0,
+          nationalServiceReports: 0
+        },
         candidates: [],
         nationalServiceReports: [],
         otherReports: []
       });
     }
 
-    // Get candidate profiles
-    const { data: candidates, error: candError } = await supabase
-      .from('candidate_profiles')
-      .select('id, full_name, email, university, programme')
-      .in('id', candidateIds);
+    const candidateIds = allCandidates.map(c => c.id);
 
-    if (candError) {
-      console.error('[Dashboard] Candidates error:', candError);
-      return res.status(500).json({ success: false, error: candError.message });
-    }
-
-    // Get assessment results
+    // ============================================================
+    // GET ASSESSMENT RESULTS
+    // ============================================================
     const { data: results, error: resError } = await supabase
       .from('assessment_results')
-      .select('id, user_id, assessment_id, percentage_score, completed_at, report_data, category_scores, workplace_readiness, intellectual_capability')
+      .select('id, user_id, assessment_id, percentage_score, completed_at, report_data, category_scores, workplace_readiness, intellectual_capability, total_score, max_score')
       .in('user_id', candidateIds);
 
     if (resError) {
@@ -237,7 +292,9 @@ export default async function handler(req, res) {
 
     console.log('[Dashboard] Results found:', results?.length || 0);
 
-    // Get assessments
+    // ============================================================
+    // GET ASSESSMENTS
+    // ============================================================
     const assessmentIds = [...new Set((results || []).map(r => r.assessment_id).filter(Boolean))];
     const { data: assessments, error: assmtError } = await supabase
       .from('assessments')
@@ -249,13 +306,15 @@ export default async function handler(req, res) {
     const assessmentMap = {};
     (assessments || []).forEach(a => { assessmentMap[a.id] = a; });
 
-    // Process results
-    const allReports = [];
+    // ============================================================
+    // PROCESS RESULTS
+    // ============================================================
     const candidateMap = {};
-    (candidates || []).forEach(c => { candidateMap[c.id] = c; });
+    allCandidates.forEach(c => { candidateMap[c.id] = c; });
 
     let totalCompleted = 0;
     let nationalServiceCount = 0;
+    const allReports = [];
 
     (results || []).forEach(r => {
       const candidate = candidateMap[r.user_id];
@@ -269,10 +328,10 @@ export default async function handler(req, res) {
       let intellectual = 0;
       
       if (isNS) {
-        const ns = getNationalServiceScores(r);
-        workplace = ns.workplaceReadiness || 0;
-        intellectual = ns.intellectualCapability || 0;
-        score = ns.overallScore || score;
+        const nsScores = getNationalServiceScores(r);
+        workplace = nsScores.workplaceReadiness || 0;
+        intellectual = nsScores.intellectualCapability || 0;
+        score = nsScores.overallScore || score;
       } else {
         workplace = safeNumber(r.workplace_readiness || 0);
         intellectual = safeNumber(r.intellectual_capability || 0);
@@ -307,28 +366,50 @@ export default async function handler(req, res) {
     const nsReports = allReports.filter(r => r.is_national_service);
     const otherReports = allReports.filter(r => !r.is_national_service);
 
+    // ============================================================
+    // BUILD CANDIDATE ROWS
+    // ============================================================
+    const candidateRows = allCandidates.map(c => ({
+      ...c,
+      completedAssessments: allReports.filter(r => r.candidate_id === c.id),
+      stats: {
+        completed: allReports.filter(r => r.candidate_id === c.id && r.completed_at).length,
+        inProgress: 0,
+        unblocked: 0,
+        blocked: 0,
+        notStarted: 0
+      }
+    }));
+
+    // ============================================================
+    // RETURN RESPONSE
+    // ============================================================
     return res.status(200).json({
       success: true,
       stats: {
-        totalCandidates: candidates.length,
+        totalCandidates: allCandidates.length,
         completedAssessments: totalCompleted,
         pendingReviews: 0,
         nationalServiceReports: nationalServiceCount
       },
-      candidates: candidates.map(c => ({
-        ...c,
-        completedAssessments: allReports.filter(r => r.candidate_id === c.id),
-        stats: { completed: allReports.filter(r => r.candidate_id === c.id).length }
-      })),
+      candidates: candidateRows,
       nationalServiceReports: nsReports,
-      otherReports: otherReports
+      otherReports: otherReports,
+      debug: {
+        totalCandidates: allCandidates.length,
+        totalResults: results?.length || 0,
+        totalReports: allReports.length,
+        nsReports: nsReports.length,
+        otherReports: otherReports.length
+      }
     });
 
   } catch (error) {
     console.error('[Dashboard] Error:', error);
     return res.status(500).json({ 
       success: false, 
-      error: error.message || 'Internal server error'
+      error: error.message || 'Internal server error',
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 }
