@@ -1,5 +1,7 @@
 // pages/api/supervisor/dashboard.js
-// COMPLETE FIXED VERSION - Works for ALL supervisors
+// FIXED: Removed candidate_id references, uses user_id only
+// FIXED: Proper error handling - returns 500 on query failure
+// FIXED: Forwards JWT token for RLS
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -177,6 +179,7 @@ export default async function handler(req, res) {
   }
 
   try {
+    // Step 1: Extract token
     const token = extractBearerToken(req);
     if (!token) {
       return res.status(401).json({ 
@@ -185,8 +188,8 @@ export default async function handler(req, res) {
       });
     }
 
+    // Step 2: Validate environment variables
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    // 🔥 FIX: Use ANON key explicitly (service role key was having issues)
     const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
     if (!supabaseUrl || !supabaseKey) {
@@ -197,10 +200,20 @@ export default async function handler(req, res) {
       });
     }
 
+    // Step 3: Initialize Supabase with token forwarding for RLS
     const supabase = createClient(supabaseUrl, supabaseKey, {
-      auth: { autoRefreshToken: false, persistSession: false }
+      global: {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      },
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false
+      }
     });
 
+    // Step 4: Get authenticated user
     const { data: userData, error: userError } = await supabase.auth.getUser(token);
     if (userError || !userData?.user) {
       console.error('[Dashboard] Auth error:', userError);
@@ -375,36 +388,47 @@ export default async function handler(req, res) {
 
     // ============================================================
     // STEP 7: FETCH ASSESSMENT RESULTS - FIXED
+    // Uses user_id only (candidate_id does not exist in the table)
     // ============================================================
     let results = [];
     
     try {
       console.log(`[Dashboard] Querying assessment_results for ${candidateIds.length} candidates...`);
       
-      // 🔥 FIX: Use OR to check both user_id AND candidate_id
       const { data, error } = await supabase
         .from('assessment_results')
         .select('id, user_id, assessment_id, percentage_score, completed_at, report_data, category_scores, workplace_readiness, intellectual_capability, total_score, max_score')
-        .or(`user_id.in.(${candidateIds.join(',')}),candidate_id.in.(${candidateIds.join(',')})`);
+        .in('user_id', candidateIds);
 
+      // 🔥 CRITICAL: Fail loudly on database errors
       if (error) {
         console.error('[Dashboard] Assessment results error:', error);
-      } else {
-        results = data || [];
-        console.log(`[Dashboard] Assessment results found: ${results.length}`);
-        
-        if (results.length > 0) {
-          console.log(`[Dashboard] First result sample:`, {
-            id: results[0].id,
-            user_id: results[0].user_id,
-            assessment_id: results[0].assessment_id,
-            percentage_score: results[0].percentage_score,
-            completed_at: results[0].completed_at
-          });
-        }
+        return res.status(500).json({
+          success: false,
+          error: 'Unable to retrieve assessment reports',
+          code: 'ASSESSMENT_RESULTS_QUERY_FAILED'
+        });
+      }
+
+      results = data || [];
+      console.log(`[Dashboard] Assessment results found: ${results.length}`);
+      
+      if (results.length > 0) {
+        console.log(`[Dashboard] First result sample:`, {
+          id: results[0].id,
+          user_id: results[0].user_id,
+          assessment_id: results[0].assessment_id,
+          percentage_score: results[0].percentage_score,
+          completed_at: results[0].completed_at
+        });
       }
     } catch (err) {
       console.error('[Dashboard] Results fetch exception:', err);
+      return res.status(500).json({
+        success: false,
+        error: 'Unable to retrieve assessment reports',
+        code: 'ASSESSMENT_RESULTS_FETCH_EXCEPTION'
+      });
     }
 
     // ============================================================
@@ -442,7 +466,7 @@ export default async function handler(req, res) {
     const allReports = [];
 
     results.forEach(r => {
-      const candidate = candidateMap[r.user_id] || candidateMap[r.candidate_id];
+      const candidate = candidateMap[r.user_id];
       if (!candidate) {
         console.log(`[Dashboard] Orphan result - user_id ${r.user_id} not found in candidates`);
         return;
@@ -483,7 +507,7 @@ export default async function handler(req, res) {
 
       allReports.push({
         result_id: r.id,
-        candidate_id: r.user_id || r.candidate_id,
+        candidate_id: r.user_id,
         candidate_name: candidate.full_name || 'Unknown',
         candidate_email: candidate.email || '',
         university: candidate.university || '',
@@ -540,14 +564,11 @@ export default async function handler(req, res) {
       candidates: candidateRows,
       nationalServiceReports: nsReports,
       otherReports: otherReports,
-      debug: {
-        supervisorId: supervisor.id,
-        supervisorName: supervisor.full_name,
-        totalCandidates: totalCandidates,
-        totalResults: results.length,
-        totalReports: allReports.length,
-        legacyCandidatesFound: legacyCount,
-        junctionCandidatesFound: junctionCount
+      diagnostics: {
+        assignedCandidateCount: totalCandidates,
+        resultCount: results.length,
+        reportCount: allReports.length,
+        orphanResultCount: results.filter(r => !candidateMap[r.user_id]).length
       }
     });
 
