@@ -1,5 +1,5 @@
 // components/reports/NationalServiceReport.js - FULLY CORRECTED WITH BEHAVIORAL MATRIX FIX
-// FIX: Properly extracts proctoring data from proctoring_data.summary
+// FIX: Properly extracts proctoring data from report_data.proctoring
 
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../../supabase/client';
@@ -24,39 +24,31 @@ function formatAvgTime(seconds) {
 }
 
 // ============================================================
-// EXTRACT BEHAVIORAL MATRIX - FIXED FOR CORRECT DATA STRUCTURE
+// EXTRACT BEHAVIORAL MATRIX - FIXED
 // ============================================================
 function extractBehavioralMatrix(report) {
   if (!report) return null;
 
-  // Get the report_data
   const reportData = report.report_data || report || {};
   
-  // ✅ FIX: Correctly access proctoring_data from the report
-  // Priority 1: report.proctoring_data (top level)
-  // Priority 2: reportData.proctoring (inside report_data)
-  
-  let proctoringData = report.proctoring_data || reportData.proctoring || null;
+  // 🔥 FIX: Check proctoring in report_data first (this is where the data actually is)
+  let proctoringData = reportData.proctoring || report.proctoring_data || null;
   
   if (!proctoringData) {
     console.log('[Behavioral Matrix] No proctoring data found');
     return null;
   }
 
-  // ✅ FIX: Extract summary data from proctoring_data
+  // If proctoringData has a summary property, use it, otherwise use the data directly
   const summary = proctoringData.summary || proctoringData;
   
   console.log('[Behavioral Matrix] Extracted summary:', summary);
 
-  // Get duration from summary
   const totalSeconds = summary.duration || 0;
   const totalDurationFormatted = formatTime(totalSeconds);
-  
-  // Calculate avg time per question (use totalQuestions from report or default to 10)
   const totalQuestions = reportData.totalQuestions || report.totalQuestions || 10;
   const avgTimePerQuestion = totalSeconds > 0 ? formatAvgTime(totalSeconds / totalQuestions) : '0s';
 
-  // Extract all values from summary
   const matrix = {
     totalTime: totalDurationFormatted,
     avgTimePerQuestion: avgTimePerQuestion,
@@ -74,7 +66,6 @@ function extractBehavioralMatrix(report) {
       tabSwitches: summary.tabSwitches || 0,
       answerChanges: summary.answerChanges || 0
     },
-    // Store raw data for debugging
     _raw: proctoringData
   };
 
@@ -527,6 +518,34 @@ const styles = {
     textAlign: 'center',
     padding: '20px',
     color: '#64748b'
+  },
+  recommendationBox: {
+    marginTop: '12px',
+    padding: '12px 16px',
+    background: '#fef3c7',
+    borderRadius: '8px',
+    border: '1px solid #fcd34d'
+  },
+  recommendationTitle: {
+    fontSize: '13px',
+    fontWeight: '600',
+    color: '#92400e',
+    margin: '0 0 6px 0'
+  },
+  recommendationList: {
+    margin: '0',
+    paddingLeft: '20px',
+    fontSize: '13px',
+    color: '#78350f'
+  },
+  cleanCommentary: {
+    marginTop: '12px',
+    padding: '12px 16px',
+    background: '#dcfce7',
+    borderRadius: '8px',
+    border: '1px solid #bbf7d0',
+    fontSize: '13px',
+    color: '#166534'
   }
 };
 
