@@ -1,5 +1,7 @@
 // pages/api/supervisor/dashboard.js
-// FIXED: Using anon key instead of service role key
+// COMPLETE PRODUCTION-READY VERSION
+// Works for ALL supervisors - ID-first, email-fallback lookup
+// Counts ALL completed assessments correctly including National Service
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -188,7 +190,6 @@ export default async function handler(req, res) {
 
     // Step 2: Validate environment variables
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    // 🔥 FIX: Use anon key instead of service role key
     const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
     if (!supabaseUrl || !supabaseKey) {
@@ -225,7 +226,7 @@ export default async function handler(req, res) {
     // ============================================================
     let supervisor = null;
 
-    // Try by ID first (since we know they match)
+    // Try by ID first
     try {
       const { data, error } = await supabase
         .from('supervisor_profiles')
@@ -424,7 +425,7 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 9: PROCESS RESULTS
+    // STEP 9: PROCESS RESULTS - FIXED COMPLETION COUNTING
     // ============================================================
     const candidateMap = {};
     allCandidates.forEach(c => { candidateMap[c.id] = c; });
@@ -451,11 +452,26 @@ export default async function handler(req, res) {
         workplace = nsScores.workplaceReadiness || 0;
         intellectual = nsScores.intellectualCapability || 0;
         score = nsScores.overallScore || score;
+        
+        // Count NS as completed if it has a completion date OR has scores
+        const hasCompletionDate = !!r.completed_at;
+        const hasScores = workplace > 0 || intellectual > 0 || score > 0;
+        if (hasCompletionDate || hasScores) {
+          totalCompleted++;
+        }
       } else {
         workplace = safeNumber(r.workplace_readiness || 0);
         intellectual = safeNumber(r.intellectual_capability || 0);
+        
+        // Count non-NS as completed if it has a completion date OR has a percentage score (even if 0)
+        const hasCompletionDate = !!r.completed_at;
+        const hasPercentageScore = r.percentage_score !== null && r.percentage_score !== undefined;
+        if (hasCompletionDate || hasPercentageScore) {
+          totalCompleted++;
+        }
       }
 
+      // If still no score, use percentage_score as fallback
       if (score === 0 && r.percentage_score) {
         score = safeNumber(r.percentage_score);
       }
@@ -463,7 +479,6 @@ export default async function handler(req, res) {
       const recommendation = getRecommendation(workplace, intellectual, score);
       
       if (isNS) nationalServiceCount++;
-      if (r.completed_at || score > 0) totalCompleted++;
 
       allReports.push({
         result_id: r.id,
@@ -511,6 +526,7 @@ export default async function handler(req, res) {
     // STEP 11: RETURN SUCCESS
     // ============================================================
     console.log(`[Dashboard] ✅ Success! Returning ${totalCandidates} candidates with ${allReports.length} reports`);
+    console.log(`[Dashboard] 📊 Completed: ${totalCompleted}, National Service: ${nationalServiceCount}`);
 
     return res.status(200).json({
       success: true,
