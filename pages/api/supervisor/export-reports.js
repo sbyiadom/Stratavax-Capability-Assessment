@@ -1,5 +1,6 @@
 // pages/api/supervisor/export-reports.js - FULLY CORRECTED VERSION
-// FIXED: Uses candidate_supervisors, normalizes scores from report_data, and recalculates recommendations dynamically.
+// FIXED: Uses ANON key consistently with dashboard API
+// FIXED: Forwards JWT token for RLS
 
 import { createClient } from '@supabase/supabase-js';
 import XLSX from 'xlsx';
@@ -13,7 +14,7 @@ function extractBearerToken(req) {
 }
 
 // ============================================================
-// HELPER FUNCTIONS (5.1)
+// HELPER FUNCTIONS
 // ============================================================
 function safeNumber(value, fallback = 0) {
   const num = Number(value);
@@ -88,7 +89,7 @@ function calculateNationalServiceRecommendation(workplaceReadiness, intellectual
 }
 
 // ============================================================
-// EXPORT HANDLER (5.3 - 5.5)
+// EXPORT HANDLER
 // ============================================================
 export default async function handler(req, res) {
   if (req.method !== 'GET') {
@@ -102,13 +103,20 @@ export default async function handler(req, res) {
     }
 
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    // 🔥 FIX: Use ANON key consistently with dashboard API
+    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
     if (!supabaseUrl || !supabaseKey) {
       return res.status(500).json({ success: false, error: 'Missing env vars' });
     }
 
+    // 🔥 FIX: Forward token for RLS
     const serviceClient = createClient(supabaseUrl, supabaseKey, {
+      global: {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      },
       auth: { persistSession: false }
     });
 
@@ -122,7 +130,7 @@ export default async function handler(req, res) {
     const { type } = req.query;
 
     // ============================================================
-    // 5.3 FETCH CANDIDATES (MERGED LOOKUP)
+    // FETCH CANDIDATES (MERGED LOOKUP)
     // ============================================================
     const candidateMap = {};
     const candidateIdsSet = new Set();
@@ -177,46 +185,57 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // FETCH ASSESSMENT RESULTS
+    // FETCH ASSESSMENT RESULTS - BATCH PROCESSING
     // ============================================================
-    const { data: results, error: resultsError } = await serviceClient
-      .from('assessment_results')
-      .select(`
-        id,
-        user_id,
-        assessment_id,
-        percentage_score,
-        total_score,
-        max_score,
-        workplace_readiness,
-        intellectual_capability,
-        recommendation,
-        completed_at,
-        category_scores,
-        report_data,
-        assessments:assessment_id (
-          id,
-          title,
-          assessment_type_id,
-          assessment_types:assessment_type_id (
-            id,
-            code,
-            name
-          )
-        )
-      `)
-      .in('user_id', candidateIds)
-      .order('completed_at', { ascending: false });
+    let allResults = [];
+    const BATCH_SIZE = 100;
 
-    if (resultsError) {
-      console.error('[Export] Results error:', resultsError);
-      return res.status(500).json({ success: false, error: resultsError.message });
+    for (let i = 0; i < candidateIds.length; i += BATCH_SIZE) {
+      const batch = candidateIds.slice(i, i + BATCH_SIZE);
+      
+      const { data: results, error: resultsError } = await serviceClient
+        .from('assessment_results')
+        .select(`
+          id,
+          user_id,
+          assessment_id,
+          percentage_score,
+          total_score,
+          max_score,
+          workplace_readiness,
+          intellectual_capability,
+          recommendation,
+          completed_at,
+          category_scores,
+          report_data,
+          assessments:assessment_id (
+            id,
+            title,
+            assessment_type_id,
+            assessment_types:assessment_type_id (
+              id,
+              code,
+              name
+            )
+          )
+        `)
+        .in('user_id', batch)
+        .order('completed_at', { ascending: false });
+
+      if (resultsError) {
+        console.error('[Export] Results error for batch:', resultsError);
+        continue;
+      }
+      
+      if (results) {
+        allResults = allResults.concat(results);
+      }
     }
 
     // ============================================================
-    // 5.4 PROCESS & NORMALIZE ROWS
+    // PROCESS & NORMALIZE ROWS
     // ============================================================
-    let processedResults = results.map(result => {
+    let processedResults = allResults.map(result => {
       const candidate = candidateMap[result.user_id] || {};
       const assessment = result.assessments || {};
       const type = assessment.assessment_types || {};
@@ -260,21 +279,6 @@ export default async function handler(req, res) {
           .map(cat => `${cat.category || cat.name}: ${cat.percentage || cat.score || 0}%`)
           .join('; ');
       }
-
-      // 🟢 6.0 DEBUG LOGGING
-      console.log('[EXPORT SCORE CHECK]', {
-        resultId: result.id,
-        candidate: candidate.full_name,
-        isNationalService,
-        db_percentage_score: result.percentage_score,
-        total_score: result.total_score,
-        max_score: result.max_score,
-        workplaceReadiness,
-        intellectualCapability,
-        overallScore,
-        storedRecommendation: result.recommendation,
-        exportedRecommendation: recommendation
-      });
 
       return {
         'Candidate Name': candidate.full_name || 'Unknown',
