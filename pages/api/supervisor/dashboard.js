@@ -1,4 +1,4 @@
-// pages/api/supervisor/dashboard.js - COMPLETE WORKING FILE
+// pages/api/supervisor/dashboard.js - COMPLETE FIXED FILE
 // FIX: Properly fetches candidates from legacy supervisor_id field
 
 import { createClient } from '@supabase/supabase-js';
@@ -46,12 +46,10 @@ function normalizeCategoryScores(result) {
 }
 
 function calculateScore(result) {
-  // First try percentage_score
   if (result?.percentage_score) {
     return Math.round(safeNumber(result.percentage_score));
   }
   
-  // Then try category scores
   const categories = normalizeCategoryScores(result);
   const valid = categories.filter(c => c.percentage > 0);
   if (valid.length > 0) {
@@ -59,7 +57,6 @@ function calculateScore(result) {
     return Math.round(sum / valid.length);
   }
   
-  // Then try report_data
   const reportData = getReportData(result);
   if (reportData?.percentageScore) {
     return Math.round(safeNumber(reportData.percentageScore));
@@ -71,7 +68,6 @@ function calculateScore(result) {
 function getNationalServiceScores(result) {
   const reportData = getReportData(result);
   
-  // Try to get from report_data first
   let workplace = safeNumber(
     reportData?.workplaceReadiness || 
     reportData?.dimensions?.workplaceReadiness ||
@@ -88,7 +84,6 @@ function getNationalServiceScores(result) {
     0
   );
   
-  // If both are 0, calculate from categoryScores
   if (workplace === 0 && intellectual === 0) {
     const categoryScores = reportData?.categoryScores || reportData?.category_scores || result?.category_scores || [];
     
@@ -138,7 +133,6 @@ function getNationalServiceScores(result) {
     intellectual = intellectualCount > 0 ? Math.round(intellectualTotal / intellectualCount) : 0;
   }
   
-  // Get overall score
   const overall = safeNumber(
     reportData?.percentageScore || 
     reportData?.overallScore || 
@@ -147,7 +141,6 @@ function getNationalServiceScores(result) {
     0
   );
   
-  // If workplace and intellectual are 0 but overall > 0, use overall for both
   if (workplace === 0 && intellectual === 0 && overall > 0) {
     workplace = overall;
     intellectual = overall;
@@ -206,7 +199,7 @@ export default async function handler(req, res) {
     console.log('[Dashboard] Supervisor ID:', supervisorId);
 
     // ============================================================
-    // STEP 1: GET CANDIDATES - PRIMARY: Legacy supervisor_id field
+    // STEP 1: GET CANDIDATES FROM LEGACY supervisor_id FIELD
     // ============================================================
     let allCandidates = [];
     const candidateIdsSet = new Set();
@@ -230,35 +223,37 @@ export default async function handler(req, res) {
       console.log('[Dashboard] ✅ Legacy candidates found:', legacyCandidates.length);
     }
 
-    // SECONDARY: Also check junction table (for any candidates added there)
+    // SECONDARY: Also check junction table
     console.log('[Dashboard] Also checking junction table...');
-    const { data: junctionAssignments, error: junctionError } = await supabase
-      .from('candidate_supervisors')
-      .select('candidate_id')
-      .eq('supervisor_id', supervisorId);
+    try {
+      const { data: junctionAssignments, error: junctionError } = await supabase
+        .from('candidate_supervisors')
+        .select('candidate_id')
+        .eq('supervisor_id', supervisorId);
 
-    if (!junctionError && junctionAssignments && junctionAssignments.length > 0) {
-      const junctionIds = junctionAssignments.map(a => a.candidate_id).filter(Boolean);
-      const missingIds = junctionIds.filter(id => !candidateIdsSet.has(id));
-      
-      if (missingIds.length > 0) {
-        const { data: junctionCandidates, error: junctionCandError } = await supabase
-          .from('candidate_profiles')
-          .select('id, full_name, email, university, programme, created_at')
-          .in('id', missingIds);
+      if (!junctionError && junctionAssignments && junctionAssignments.length > 0) {
+        const junctionIds = junctionAssignments.map(a => a.candidate_id).filter(Boolean);
+        const missingIds = junctionIds.filter(id => !candidateIdsSet.has(id));
         
-        if (!junctionCandError && junctionCandidates) {
-          junctionCandidates.forEach(c => {
-            if (!candidateIdsSet.has(c.id)) {
-              candidateIdsSet.add(c.id);
-              allCandidates.push(c);
-            }
-          });
-          console.log('[Dashboard] ✅ Junction candidates found:', junctionCandidates.length);
+        if (missingIds.length > 0) {
+          const { data: junctionCandidates, error: junctionCandError } = await supabase
+            .from('candidate_profiles')
+            .select('id, full_name, email, university, programme, created_at')
+            .in('id', missingIds);
+          
+          if (!junctionCandError && junctionCandidates) {
+            junctionCandidates.forEach(c => {
+              if (!candidateIdsSet.has(c.id)) {
+                candidateIdsSet.add(c.id);
+                allCandidates.push(c);
+              }
+            });
+            console.log('[Dashboard] ✅ Junction candidates found:', junctionCandidates.length);
+          }
         }
       }
-    } else if (junctionError) {
-      console.log('[Dashboard] Junction table check (may not exist):', junctionError.message);
+    } catch (junctionError) {
+      console.log('[Dashboard] Junction table check:', junctionError.message);
     }
 
     console.log('[Dashboard] 📊 Total candidates found:', allCandidates.length);
