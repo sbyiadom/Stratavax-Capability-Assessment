@@ -1,6 +1,5 @@
 // pages/api/supervisor/reports.js
-// COMPLETE PRODUCTION-READY VERSION
-// Works for ALL supervisors - Returns candidate reports
+// COMPLETE FIXED VERSION
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -170,6 +169,7 @@ export default async function handler(req, res) {
       .select(`
         id,
         user_id,
+        candidate_id,
         assessment_id,
         session_id,
         percentage_score,
@@ -195,7 +195,7 @@ export default async function handler(req, res) {
           )
         )
       `)
-      .in('user_id', candidateIds)
+      .or(`user_id.in.(${candidateIds.join(',')}),candidate_id.in.(${candidateIds.join(',')})`)
       .order('completed_at', { ascending: false });
 
     if (assessment_id) {
@@ -230,7 +230,7 @@ export default async function handler(req, res) {
         assessmentTitle.includes('nationalservice') ||
         assessmentTitle.includes('service recruitment');
 
-      const candidate = targetCandidates.find(c => c.id === result.user_id) || {};
+      const candidate = targetCandidates.find(c => c.id === (result.user_id || result.candidate_id)) || {};
 
       let overallScore = safeNumber(result.percentage_score);
       if (isNationalService) {
@@ -244,7 +244,7 @@ export default async function handler(req, res) {
 
       return {
         result_id: result.id,
-        candidate_id: result.user_id,
+        candidate_id: result.user_id || result.candidate_id,
         candidate_name: candidate.full_name || 'Unknown',
         candidate_email: candidate.email || '',
         university: candidate.university || '',
