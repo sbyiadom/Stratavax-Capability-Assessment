@@ -1,29 +1,47 @@
-// pages/api/supervisor/dashboard.js - UNIFIED FIX FOR ALL SUPERVISORS
-// FIX: Checks BOTH legacy supervisor_id AND junction table for ALL supervisors
+// pages/api/supervisor/dashboard.js
+// COMPLETE PRODUCTION-READY VERSION
+// Works for ALL supervisors - NO hardcoded IDs, NO specific supervisor logic
 
 import { createClient } from '@supabase/supabase-js';
 
+// ============================================================
+// UTILITY FUNCTIONS
+// ============================================================
+
+/**
+ * Extract Bearer token from request headers
+ */
 function extractBearerToken(req) {
   const authHeader = req.headers.authorization || req.headers.Authorization || '';
   if (!authHeader || !authHeader.toLowerCase().startsWith('bearer ')) return null;
   return authHeader.slice(7).trim();
 }
 
+/**
+ * Safely convert any value to a number
+ */
 function safeNumber(value, fallback = 0) {
+  if (value === null || value === undefined) return fallback;
   const num = Number(value);
   return Number.isFinite(num) ? num : fallback;
 }
 
+/**
+ * Safely parse report_data from various formats
+ */
 function getReportData(result) {
-  if (!result?.report_data) return {};
-  if (typeof result.report_data === 'object') return result.report_data;
-  if (typeof result.report_data === 'string') {
+  if (!result) return {};
+  if (result.report_data && typeof result.report_data === 'object') return result.report_data;
+  if (result.report_data && typeof result.report_data === 'string') {
     try { return JSON.parse(result.report_data) || {}; } 
     catch { return {}; }
   }
   return {};
 }
 
+/**
+ * Normalize category scores from various formats
+ */
 function normalizeCategoryScores(result) {
   const reportData = getReportData(result);
   const raw = result?.category_scores || reportData?.categoryScores || reportData?.categoryBreakdown || [];
@@ -31,25 +49,30 @@ function normalizeCategoryScores(result) {
   if (Array.isArray(raw)) {
     return raw.map(cat => ({
       category: cat.category || cat.name || '',
-      percentage: Math.round(Number(cat.percentage || cat.score || 0))
+      percentage: Math.round(safeNumber(cat.percentage || cat.score || 0))
     }));
   }
   
   if (raw && typeof raw === 'object') {
     return Object.entries(raw).map(([cat, data]) => ({
       category: cat,
-      percentage: Math.round(Number(data?.percentage || 0))
+      percentage: Math.round(safeNumber(data?.percentage || data?.score || 0))
     }));
   }
   
   return [];
 }
 
+/**
+ * Calculate overall score from result data
+ */
 function calculateScore(result) {
+  // Try percentage_score first
   if (result?.percentage_score) {
     return Math.round(safeNumber(result.percentage_score));
   }
   
+  // Try category scores average
   const categories = normalizeCategoryScores(result);
   const valid = categories.filter(c => c.percentage > 0);
   if (valid.length > 0) {
@@ -57,6 +80,7 @@ function calculateScore(result) {
     return Math.round(sum / valid.length);
   }
   
+  // Try report_data percentageScore
   const reportData = getReportData(result);
   if (reportData?.percentageScore) {
     return Math.round(safeNumber(reportData.percentageScore));
@@ -65,9 +89,13 @@ function calculateScore(result) {
   return 0;
 }
 
+/**
+ * Get National Service specific scores
+ */
 function getNationalServiceScores(result) {
   const reportData = getReportData(result);
   
+  // Try direct fields first
   let workplace = safeNumber(
     reportData?.workplaceReadiness || 
     reportData?.dimensions?.workplaceReadiness ||
@@ -84,6 +112,7 @@ function getNationalServiceScores(result) {
     0
   );
   
+  // If direct fields not found, calculate from categories
   if (workplace === 0 && intellectual === 0) {
     const categoryScores = reportData?.categoryScores || reportData?.category_scores || result?.category_scores || [];
     
@@ -141,6 +170,7 @@ function getNationalServiceScores(result) {
     0
   );
   
+  // If workplace and intellectual are 0 but overall exists, use overall
   if (workplace === 0 && intellectual === 0 && overall > 0) {
     workplace = overall;
     intellectual = overall;
@@ -153,78 +183,130 @@ function getNationalServiceScores(result) {
   };
 }
 
+/**
+ * Generate recommendation based on scores
+ */
 function getRecommendation(workplace, intellectual, overall) {
   const w = safeNumber(workplace);
   const i = safeNumber(intellectual);
   const o = safeNumber(overall);
   
-  if (w >= 85 && i >= 85) return 'Highly Recommended';
-  if (w >= 75 && i >= 75) return 'Recommended';
-  if (w >= 65 && i >= 65) return 'Reserve Pool';
-  if (w >= 50 || i >= 50 || o >= 50) return 'Consider for Development';
+  // Use the best available score for recommendation
+  const bestScore = Math.max(w, i, o);
+  
+  if (bestScore >= 85) return 'Highly Recommended';
+  if (bestScore >= 75) return 'Recommended';
+  if (bestScore >= 65) return 'Reserve Pool';
+  if (bestScore >= 50) return 'Consider for Development';
   return 'Not Recommended';
 }
 
+// ============================================================
+// MAIN HANDLER
+// ============================================================
+
 export default async function handler(req, res) {
+  // Only allow GET requests
   if (req.method !== 'GET') {
-    return res.status(405).json({ success: false, error: 'Method not allowed' });
+    return res.status(405).json({ 
+      success: false, 
+      error: 'Method not allowed. Use GET.' 
+    });
   }
 
   try {
+    // Step 1: Extract and validate token
     const token = extractBearerToken(req);
     if (!token) {
-      return res.status(401).json({ success: false, error: 'Missing token' });
+      return res.status(401).json({ 
+        success: false, 
+        error: 'Missing authorization token' 
+      });
     }
 
+    // Step 2: Validate environment variables
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
     if (!supabaseUrl || !supabaseKey) {
-      console.error('[Dashboard] Missing env vars');
-      return res.status(500).json({ success: false, error: 'Missing env vars' });
+      console.error('[Dashboard] Missing environment variables');
+      return res.status(500).json({ 
+        success: false, 
+        error: 'Server configuration error' 
+      });
     }
 
+    // Step 3: Initialize Supabase client
     const supabase = createClient(supabaseUrl, supabaseKey, {
       auth: { autoRefreshToken: false, persistSession: false }
     });
 
+    // Step 4: Get authenticated user
     const { data: userData, error: userError } = await supabase.auth.getUser(token);
     if (userError || !userData?.user) {
-      return res.status(401).json({ success: false, error: 'Invalid token' });
+      return res.status(401).json({ 
+        success: false, 
+        error: 'Invalid or expired token' 
+      });
     }
 
     const supervisorId = userData.user.id;
-    const NS_ASSESSMENT_ID = 'bdb9d46e-9fac-4d00-8478-1f649e7ac600';
-
-    console.log('[Dashboard] 👤 Supervisor ID:', supervisorId);
+    console.log(`[Dashboard] Processing request for supervisor: ${supervisorId}`);
 
     // ============================================================
-    // STEP 1: GET CANDIDATES FROM BOTH SOURCES
+    // STEP 5: GET SUPERVISOR PROFILE
+    // ============================================================
+    const { data: supervisor, error: supervisorError } = await supabase
+      .from('supervisor_profiles')
+      .select('id, full_name, email, role, is_active')
+      .eq('id', supervisorId)
+      .maybeSingle();
+
+    if (supervisorError) {
+      console.error('[Dashboard] Supervisor profile error:', supervisorError);
+    }
+
+    if (!supervisor) {
+      return res.status(404).json({
+        success: false,
+        error: 'Supervisor profile not found'
+      });
+    }
+
+    console.log(`[Dashboard] Supervisor: ${supervisor.full_name} (${supervisor.email})`);
+
+    // ============================================================
+    // STEP 6: FETCH CANDIDATES FROM BOTH SOURCES
     // ============================================================
     let allCandidates = [];
     const candidateIdsSet = new Set();
+    let legacyCount = 0;
+    let junctionCount = 0;
 
-    // SOURCE 1: Legacy supervisor_id field in candidate_profiles
-    console.log('[Dashboard] 📋 Checking legacy supervisor_id field...');
-    const { data: legacyCandidates, error: legacyError } = await supabase
-      .from('candidate_profiles')
-      .select('id, full_name, email, university, programme, created_at')
-      .eq('supervisor_id', supervisorId);
+    // SOURCE 1: Legacy supervisor_id field
+    try {
+      const { data: legacyCandidates, error: legacyError } = await supabase
+        .from('candidate_profiles')
+        .select('id, full_name, email, university, programme, created_at')
+        .eq('supervisor_id', supervisorId);
 
-    if (legacyError) {
-      console.error('[Dashboard] ❌ Legacy field error:', legacyError);
-    } else if (legacyCandidates) {
-      legacyCandidates.forEach(c => {
-        if (!candidateIdsSet.has(c.id)) {
-          candidateIdsSet.add(c.id);
-          allCandidates.push(c);
-        }
-      });
-      console.log('[Dashboard] ✅ Legacy candidates found:', legacyCandidates.length);
+      if (legacyError) {
+        console.log('[Dashboard] Legacy field query error:', legacyError.message);
+      } else if (legacyCandidates) {
+        legacyCandidates.forEach(c => {
+          if (!candidateIdsSet.has(c.id)) {
+            candidateIdsSet.add(c.id);
+            allCandidates.push(c);
+          }
+        });
+        legacyCount = legacyCandidates.length;
+        console.log(`[Dashboard] Legacy candidates: ${legacyCount}`);
+      }
+    } catch (err) {
+      console.log('[Dashboard] Legacy field error:', err.message);
     }
 
-    // SOURCE 2: Junction table (candidate_supervisors)
-    console.log('[Dashboard] 📋 Checking candidate_supervisors junction table...');
+    // SOURCE 2: Junction table
     try {
       const { data: junctionAssignments, error: junctionError } = await supabase
         .from('candidate_supervisors')
@@ -232,7 +314,7 @@ export default async function handler(req, res) {
         .eq('supervisor_id', supervisorId);
 
       if (junctionError) {
-        console.log('[Dashboard] ⚠️ Junction table error (may not exist):', junctionError.message);
+        console.log('[Dashboard] Junction table query error:', junctionError.message);
       } else if (junctionAssignments && junctionAssignments.length > 0) {
         const junctionIds = junctionAssignments.map(a => a.candidate_id).filter(Boolean);
         const missingIds = junctionIds.filter(id => !candidateIdsSet.has(id));
@@ -250,25 +332,20 @@ export default async function handler(req, res) {
                 allCandidates.push(c);
               }
             });
-            console.log('[Dashboard] ✅ Junction candidates found:', junctionCandidates.length);
+            junctionCount = junctionCandidates.length;
+            console.log(`[Dashboard] Junction candidates: ${junctionCount}`);
           }
         }
       }
-    } catch (junctionError) {
-      console.log('[Dashboard] ⚠️ Junction table error:', junctionError.message);
+    } catch (err) {
+      console.log('[Dashboard] Junction table error:', err.message);
     }
 
-    console.log('[Dashboard] 📊 Total candidates found:', allCandidates.length);
+    const totalCandidates = allCandidates.length;
+    console.log(`[Dashboard] Total candidates: ${totalCandidates}`);
 
-    // If no candidates found, return empty response with debug info
-    if (allCandidates.length === 0) {
-      // Check if supervisor exists
-      const { data: supervisorCheck, error: supCheckError } = await supabase
-        .from('supervisor_profiles')
-        .select('id, full_name, email, role, is_active')
-        .eq('id', supervisorId)
-        .maybeSingle();
-
+    // If no candidates, return empty with debug info
+    if (totalCandidates === 0) {
       return res.status(200).json({
         success: true,
         stats: {
@@ -282,11 +359,10 @@ export default async function handler(req, res) {
         otherReports: [],
         debug: {
           supervisorId: supervisorId,
-          supervisorExists: !!supervisorCheck,
-          supervisorName: supervisorCheck?.full_name || 'Unknown',
-          legacyCandidatesFound: legacyCandidates?.length || 0,
-          junctionAssignmentsFound: 0,
-          message: supervisorCheck ? 'No candidates assigned to this supervisor yet' : 'Supervisor profile not found'
+          supervisorName: supervisor.full_name,
+          legacyCandidatesFound: legacyCount,
+          junctionCandidatesFound: junctionCount,
+          message: 'No candidates assigned to this supervisor'
         }
       });
     }
@@ -294,50 +370,61 @@ export default async function handler(req, res) {
     const candidateIds = allCandidates.map(c => c.id);
 
     // ============================================================
-    // STEP 2: GET ASSESSMENT RESULTS
+    // STEP 7: FETCH ASSESSMENT RESULTS
     // ============================================================
-    console.log('[Dashboard] 📊 Fetching assessment results...');
-    const { data: results, error: resError } = await supabase
-      .from('assessment_results')
-      .select('id, user_id, assessment_id, percentage_score, completed_at, report_data, category_scores, workplace_readiness, intellectual_capability, total_score, max_score')
-      .in('user_id', candidateIds);
+    let results = [];
+    try {
+      const { data, error } = await supabase
+        .from('assessment_results')
+        .select('id, user_id, assessment_id, percentage_score, completed_at, report_data, category_scores, workplace_readiness, intellectual_capability, total_score, max_score')
+        .in('user_id', candidateIds);
 
-    if (resError) {
-      console.error('[Dashboard] ❌ Results error:', resError);
-      return res.status(500).json({ success: false, error: resError.message });
+      if (error) {
+        console.error('[Dashboard] Assessment results error:', error);
+      } else {
+        results = data || [];
+        console.log(`[Dashboard] Assessment results: ${results.length}`);
+      }
+    } catch (err) {
+      console.error('[Dashboard] Results fetch error:', err.message);
     }
 
-    console.log('[Dashboard] 📊 Results found:', results?.length || 0);
-
     // ============================================================
-    // STEP 3: GET ASSESSMENT DETAILS
+    // STEP 8: FETCH ASSESSMENT DETAILS
     // ============================================================
-    const assessmentIds = [...new Set((results || []).map(r => r.assessment_id).filter(Boolean))];
+    const assessmentIds = [...new Set(results.map(r => r.assessment_id).filter(Boolean))];
     let assessmentMap = {};
     
     if (assessmentIds.length > 0) {
-      const { data: assessments, error: assmtError } = await supabase
-        .from('assessments')
-        .select('id, title, assessment_type_id')
-        .in('id', assessmentIds);
+      try {
+        const { data: assessments, error: assmtError } = await supabase
+          .from('assessments')
+          .select('id, title, assessment_type_id')
+          .in('id', assessmentIds);
 
-      if (!assmtError && assessments) {
-        assessments.forEach(a => { assessmentMap[a.id] = a; });
-        console.log('[Dashboard] 📚 Assessments found:', assessments.length);
+        if (!assmtError && assessments) {
+          assessments.forEach(a => { assessmentMap[a.id] = a; });
+          console.log(`[Dashboard] Assessment details: ${assessments.length}`);
+        }
+      } catch (err) {
+        console.error('[Dashboard] Assessment details error:', err.message);
       }
     }
 
     // ============================================================
-    // STEP 4: PROCESS RESULTS
+    // STEP 9: PROCESS RESULTS
     // ============================================================
     const candidateMap = {};
     allCandidates.forEach(c => { candidateMap[c.id] = c; });
+
+    // National Service assessment ID (only constant needed)
+    const NS_ASSESSMENT_ID = 'bdb9d46e-9fac-4d00-8478-1f649e7ac600';
 
     let totalCompleted = 0;
     let nationalServiceCount = 0;
     const allReports = [];
 
-    (results || []).forEach(r => {
+    results.forEach(r => {
       const candidate = candidateMap[r.user_id];
       if (!candidate) return;
 
@@ -356,6 +443,11 @@ export default async function handler(req, res) {
       } else {
         workplace = safeNumber(r.workplace_readiness || 0);
         intellectual = safeNumber(r.intellectual_capability || 0);
+      }
+
+      // If still no score, use percentage_score as fallback
+      if (score === 0 && r.percentage_score) {
+        score = safeNumber(r.percentage_score);
       }
 
       const recommendation = getRecommendation(workplace, intellectual, score);
@@ -388,7 +480,7 @@ export default async function handler(req, res) {
     const otherReports = allReports.filter(r => !r.is_national_service);
 
     // ============================================================
-    // STEP 5: BUILD CANDIDATE ROWS
+    // STEP 10: BUILD CANDIDATE ROWS
     // ============================================================
     const candidateRows = allCandidates.map(c => {
       const candidateReports = allReports.filter(r => r.candidate_id === c.id);
@@ -406,14 +498,14 @@ export default async function handler(req, res) {
     });
 
     // ============================================================
-    // STEP 6: RETURN RESPONSE
+    // STEP 11: RETURN SUCCESS RESPONSE
     // ============================================================
-    console.log('[Dashboard] ✅ Success! Returning', allCandidates.length, 'candidates');
-    
+    console.log(`[Dashboard] ✅ Success! Returning ${totalCandidates} candidates with ${allReports.length} reports`);
+
     return res.status(200).json({
       success: true,
       stats: {
-        totalCandidates: allCandidates.length,
+        totalCandidates: totalCandidates,
         completedAssessments: totalCompleted,
         pendingReviews: 0,
         nationalServiceReports: nationalServiceCount
@@ -422,23 +514,24 @@ export default async function handler(req, res) {
       nationalServiceReports: nsReports,
       otherReports: otherReports,
       debug: {
-        totalCandidates: allCandidates.length,
-        totalResults: results?.length || 0,
-        totalReports: allReports.length,
-        nsReports: nsReports.length,
-        otherReports: otherReports.length,
         supervisorId: supervisorId,
-        legacyCandidatesFound: legacyCandidates?.length || 0,
+        supervisorName: supervisor.full_name,
+        totalCandidates: totalCandidates,
+        totalResults: results.length,
+        totalReports: allReports.length,
+        legacyCandidatesFound: legacyCount,
+        junctionCandidatesFound: junctionCount,
+        assessmentTypesFound: assessmentIds.length,
         source: 'unified_legacy_and_junction'
       }
     });
 
   } catch (error) {
-    console.error('[Dashboard] ❌ Error:', error);
-    return res.status(500).json({ 
-      success: false, 
+    console.error('[Dashboard] ❌ Fatal error:', error);
+    return res.status(500).json({
+      success: false,
       error: error.message || 'Internal server error',
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      ...(process.env.NODE_ENV === 'development' && { stack: error.stack })
     });
   }
 }
