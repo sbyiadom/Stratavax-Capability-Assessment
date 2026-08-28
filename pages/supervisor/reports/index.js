@@ -1,4 +1,4 @@
-// pages/supervisor/reports/index.js - COMPLETE FIXED WITH PROPER SCORES
+// pages/supervisor/reports/index.js - COMPLETE FIXED WITH CORRECT SCORES
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -8,43 +8,34 @@ import AppLayout from '../../../components/AppLayout';
 const NATIONAL_SERVICE_ASSESSMENT_ID = 'bdb9d46e-9fac-4d00-8478-1f649e7ac600';
 
 function safeNumber(value, fallback = 0) {
+  if (value === null || value === undefined || value === '') return fallback;
   const num = Number(value);
   return Number.isFinite(num) ? num : fallback;
 }
 
-// 🟢 FIXED: Extract score from ANY possible location in the data
-function extractScore(result) {
-  // First, log the full result to see what we're working with
-  console.log('[extractScore] Full result:', JSON.stringify(result, null, 2));
+// 🟢 FIXED: Calculate score from total_score/max_score
+function calculateScore(result) {
+  // First try to get percentage_score
+  if (result.percentage_score !== undefined && result.percentage_score !== null) {
+    const val = safeNumber(result.percentage_score);
+    // If percentage_score is 0 but there's a total_score, calculate from total/max
+    if (val === 0 && result.total_score !== undefined && result.max_score !== undefined) {
+      const total = safeNumber(result.total_score);
+      const max = safeNumber(result.max_score);
+      if (max > 0) {
+        return Math.round((total / max) * 100);
+      }
+    }
+    if (val > 0) return val;
+  }
   
-  // Check direct fields on the result
-  if (result.score !== undefined && result.score !== null && result.score !== 0) {
-    console.log('[extractScore] Found score directly:', result.score);
-    return safeNumber(result.score);
-  }
-  if (result.percentage_score !== undefined && result.percentage_score !== null && result.percentage_score !== 0) {
-    console.log('[extractScore] Found percentage_score:', result.percentage_score);
-    return safeNumber(result.percentage_score);
-  }
-  if (result.overallScore !== undefined && result.overallScore !== null && result.overallScore !== 0) {
-    console.log('[extractScore] Found overallScore:', result.overallScore);
-    return safeNumber(result.overallScore);
-  }
-  if (result.overall_score !== undefined && result.overall_score !== null && result.overall_score !== 0) {
-    console.log('[extractScore] Found overall_score:', result.overall_score);
-    return safeNumber(result.overall_score);
-  }
-  if (result.total_score !== undefined && result.total_score !== null && result.total_score !== 0) {
-    console.log('[extractScore] Found total_score:', result.total_score);
-    return safeNumber(result.total_score);
-  }
-  if (result.final_score !== undefined && result.final_score !== null && result.final_score !== 0) {
-    console.log('[extractScore] Found final_score:', result.final_score);
-    return safeNumber(result.final_score);
-  }
-  if (result.result !== undefined && result.result !== null && result.result !== 0) {
-    console.log('[extractScore] Found result:', result.result);
-    return safeNumber(result.result);
+  // Calculate from total_score and max_score
+  if (result.total_score !== undefined && result.max_score !== undefined) {
+    const total = safeNumber(result.total_score);
+    const max = safeNumber(result.max_score);
+    if (max > 0) {
+      return Math.round((total / max) * 100);
+    }
   }
   
   // Check in report_data
@@ -55,173 +46,47 @@ function extractScore(result) {
         reportData = JSON.parse(reportData);
       }
       
-      console.log('[extractScore] report_data parsed:', JSON.stringify(reportData, null, 2));
-      
-      // Check all possible score locations in report_data
-      if (reportData.score !== undefined && reportData.score !== null && reportData.score !== 0) {
-        console.log('[extractScore] Found score in report_data:', reportData.score);
-        return safeNumber(reportData.score);
-      }
-      if (reportData.percentage_score !== undefined && reportData.percentage_score !== null && reportData.percentage_score !== 0) {
-        console.log('[extractScore] Found percentage_score in report_data:', reportData.percentage_score);
-        return safeNumber(reportData.percentage_score);
-      }
-      if (reportData.overallScore !== undefined && reportData.overallScore !== null && reportData.overallScore !== 0) {
-        console.log('[extractScore] Found overallScore in report_data:', reportData.overallScore);
-        return safeNumber(reportData.overallScore);
-      }
-      if (reportData.overall_score !== undefined && reportData.overall_score !== null && reportData.overall_score !== 0) {
-        console.log('[extractScore] Found overall_score in report_data:', reportData.overall_score);
-        return safeNumber(reportData.overall_score);
-      }
-      if (reportData.totalScore !== undefined && reportData.totalScore !== null && reportData.totalScore !== 0) {
-        console.log('[extractScore] Found totalScore in report_data:', reportData.totalScore);
-        return safeNumber(reportData.totalScore);
-      }
-      if (reportData.total_score !== undefined && reportData.total_score !== null && reportData.total_score !== 0) {
-        console.log('[extractScore] Found total_score in report_data:', reportData.total_score);
-        return safeNumber(reportData.total_score);
-      }
-      if (reportData.finalScore !== undefined && reportData.finalScore !== null && reportData.finalScore !== 0) {
-        console.log('[extractScore] Found finalScore in report_data:', reportData.finalScore);
-        return safeNumber(reportData.finalScore);
-      }
-      if (reportData.final_score !== undefined && reportData.final_score !== null && reportData.final_score !== 0) {
-        console.log('[extractScore] Found final_score in report_data:', reportData.final_score);
-        return safeNumber(reportData.final_score);
-      }
-      if (reportData.result !== undefined && reportData.result !== null && reportData.result !== 0) {
-        console.log('[extractScore] Found result in report_data:', reportData.result);
-        return safeNumber(reportData.result);
-      }
-      if (reportData.percentage !== undefined && reportData.percentage !== null && reportData.percentage !== 0) {
-        console.log('[extractScore] Found percentage in report_data:', reportData.percentage);
-        return safeNumber(reportData.percentage);
-      }
-      if (reportData.total !== undefined && reportData.total !== null && reportData.total !== 0) {
-        console.log('[extractScore] Found total in report_data:', reportData.total);
-        return safeNumber(reportData.total);
-      }
-      
-      // Check in dimensions
-      if (reportData.dimensions) {
-        if (reportData.dimensions.overallScore !== undefined && reportData.dimensions.overallScore !== 0) {
-          console.log('[extractScore] Found dimensions.overallScore:', reportData.dimensions.overallScore);
-          return safeNumber(reportData.dimensions.overallScore);
-        }
-        if (reportData.dimensions.overall_score !== undefined && reportData.dimensions.overall_score !== 0) {
-          console.log('[extractScore] Found dimensions.overall_score:', reportData.dimensions.overall_score);
-          return safeNumber(reportData.dimensions.overall_score);
-        }
-        if (reportData.dimensions.percentage_score !== undefined && reportData.dimensions.percentage_score !== 0) {
-          console.log('[extractScore] Found dimensions.percentage_score:', reportData.dimensions.percentage_score);
-          return safeNumber(reportData.dimensions.percentage_score);
-        }
-        if (reportData.dimensions.score !== undefined && reportData.dimensions.score !== 0) {
-          console.log('[extractScore] Found dimensions.score:', reportData.dimensions.score);
-          return safeNumber(reportData.dimensions.score);
-        }
-        if (reportData.dimensions.total !== undefined && reportData.dimensions.total !== 0) {
-          console.log('[extractScore] Found dimensions.total:', reportData.dimensions.total);
-          return safeNumber(reportData.dimensions.total);
+      // Check for scores in report_data
+      if (reportData.totalEarned !== undefined && reportData.totalMax !== undefined) {
+        const earned = safeNumber(reportData.totalEarned);
+        const max = safeNumber(reportData.totalMax);
+        if (max > 0) {
+          return Math.round((earned / max) * 100);
         }
       }
       
-      // Check in scores object
-      if (reportData.scores) {
-        if (reportData.scores.overall !== undefined && reportData.scores.overall !== 0) {
-          console.log('[extractScore] Found scores.overall:', reportData.scores.overall);
-          return safeNumber(reportData.scores.overall);
-        }
-        if (reportData.scores.total !== undefined && reportData.scores.total !== 0) {
-          console.log('[extractScore] Found scores.total:', reportData.scores.total);
-          return safeNumber(reportData.scores.total);
-        }
-        if (reportData.scores.percentage !== undefined && reportData.scores.percentage !== 0) {
-          console.log('[extractScore] Found scores.percentage:', reportData.scores.percentage);
-          return safeNumber(reportData.scores.percentage);
-        }
-        if (reportData.scores.score !== undefined && reportData.scores.score !== 0) {
-          console.log('[extractScore] Found scores.score:', reportData.scores.score);
-          return safeNumber(reportData.scores.score);
-        }
-        if (reportData.scores.result !== undefined && reportData.scores.result !== 0) {
-          console.log('[extractScore] Found scores.result:', reportData.scores.result);
-          return safeNumber(reportData.scores.result);
-        }
+      if (reportData.percentageScore !== undefined) {
+        const val = safeNumber(reportData.percentageScore);
+        if (val > 0) return val;
       }
-      
-      // Check in results object
-      if (reportData.results) {
-        if (reportData.results.overall !== undefined && reportData.results.overall !== 0) {
-          console.log('[extractScore] Found results.overall:', reportData.results.overall);
-          return safeNumber(reportData.results.overall);
-        }
-        if (reportData.results.total !== undefined && reportData.results.total !== 0) {
-          console.log('[extractScore] Found results.total:', reportData.results.total);
-          return safeNumber(reportData.results.total);
-        }
-        if (reportData.results.score !== undefined && reportData.results.score !== 0) {
-          console.log('[extractScore] Found results.score:', reportData.results.score);
-          return safeNumber(reportData.results.score);
-        }
-        if (reportData.results.percentage !== undefined && reportData.results.percentage !== 0) {
-          console.log('[extractScore] Found results.percentage:', reportData.results.percentage);
-          return safeNumber(reportData.results.percentage);
-        }
-      }
-      
-      // Check in data object
-      if (reportData.data) {
-        if (reportData.data.score !== undefined && reportData.data.score !== 0) {
-          console.log('[extractScore] Found data.score:', reportData.data.score);
-          return safeNumber(reportData.data.score);
-        }
-        if (reportData.data.overallScore !== undefined && reportData.data.overallScore !== 0) {
-          console.log('[extractScore] Found data.overallScore:', reportData.data.overallScore);
-          return safeNumber(reportData.data.overallScore);
-        }
-        if (reportData.data.percentage !== undefined && reportData.data.percentage !== 0) {
-          console.log('[extractScore] Found data.percentage:', reportData.data.percentage);
-          return safeNumber(reportData.data.percentage);
-        }
-        if (reportData.data.result !== undefined && reportData.data.result !== 0) {
-          console.log('[extractScore] Found data.result:', reportData.data.result);
-          return safeNumber(reportData.data.result);
-        }
-      }
-    } catch (e) {
-      console.log('Error parsing report_data:', e);
-    }
+    } catch (e) {}
   }
   
-  console.log('[extractScore] No score found, returning 0');
   return 0;
 }
 
 function extractRecommendation(result) {
-  const possibleFields = ['recommendation', 'classification', 'status', 'result_status'];
-  
-  for (const field of possibleFields) {
-    if (result[field]) {
-      const val = String(result[field]);
-      if (val && val !== 'Pending' && val !== 'pending') {
-        return val;
-      }
+  // First check recommendation field
+  if (result.recommendation) {
+    const val = String(result.recommendation);
+    if (val && val !== 'Pending' && val !== 'pending') {
+      return val;
     }
   }
   
+  // Check report_data
   if (result.report_data) {
     try {
       let reportData = result.report_data;
       if (typeof reportData === 'string') {
         reportData = JSON.parse(reportData);
       }
-      if (reportData.recommendation) return reportData.recommendation;
-      if (reportData.classification) return reportData.classification;
-      if (reportData.result) return reportData.result;
-      if (reportData.overallResult) return reportData.overallResult;
-      if (reportData.status) return reportData.status;
+      if (reportData.recommendation) {
+        const val = String(reportData.recommendation);
+        if (val && val !== 'Pending' && val !== 'pending') {
+          return val;
+        }
+      }
     } catch (e) {}
   }
   
@@ -253,16 +118,23 @@ function calculateNationalServiceScores(reportData, categoryScores, result) {
     overallScore = safeNumber(result.percentage_score);
   }
 
+  // If still 0, calculate from total_score/max_score
+  if (overallScore === 0 && result.total_score !== undefined && result.max_score !== undefined) {
+    const total = safeNumber(result.total_score);
+    const max = safeNumber(result.max_score);
+    if (max > 0) {
+      overallScore = Math.round((total / max) * 100);
+    }
+  }
+
   return { workplaceReadiness, intellectualCapability, overallScore };
 }
 
-function calculateNationalServiceRecommendation(workplaceReadiness, intellectualCapability) {
-  const workplace = Number(workplaceReadiness || 0);
-  const intellectual = Number(intellectualCapability || 0);
-
-  if (workplace >= 85 && intellectual >= 85) return 'Highly Recommended';
-  if (workplace >= 75 && intellectual >= 75) return 'Recommended';
-  if (workplace >= 65 && intellectual >= 65) return 'Reserve Pool';
+function calculateNationalServiceRecommendation(score) {
+  const s = Number(score || 0);
+  if (s >= 85) return 'Highly Recommended';
+  if (s >= 75) return 'Recommended';
+  if (s >= 65) return 'Reserve Pool';
   return 'Not Recommended';
 }
 
@@ -361,8 +233,6 @@ export default function ReportsIndex() {
         if (!error && data && data.length > 0) {
           assessmentResults = data;
           console.log('📊 Total assessment results found:', data.length);
-        } else if (error) {
-          console.error('Error fetching assessment_results:', error);
         }
       } catch (e) {
         console.error('Error fetching assessment_results:', e);
@@ -381,20 +251,13 @@ export default function ReportsIndex() {
         return;
       }
 
-      // Process all reports
       const processedReports = [];
 
-      assessmentResults.forEach((result, index) => {
+      assessmentResults.forEach((result) => {
         const candidate = candidates.find(c => c.id === result.user_id);
         const assessment = result.assessments || {};
         const assessmentTitle = assessment?.title || 'Untitled Assessment';
         const assessmentId = result.assessment_id;
-
-        console.log(`\n📝 Processing report ${index + 1}:`);
-        console.log(`  - Candidate: ${candidate?.full_name}`);
-        console.log(`  - Assessment ID: ${assessmentId}`);
-        console.log(`  - Assessment Title: ${assessmentTitle}`);
-        console.log(`  - Result ID: ${result.id}`);
 
         const isNationalService = 
           assessmentId === NATIONAL_SERVICE_ASSESSMENT_ID ||
@@ -409,27 +272,26 @@ export default function ReportsIndex() {
           reportData = {};
         }
 
-        const categoryScores = reportData.categoryScores || 
-                               reportData.category_scores || 
-                               result.category_scores || [];
-
+        // 🟢 FIX: Calculate score properly
         let displayScore = 0;
-        let workplaceReadiness = 0;
-        let intellectualCapability = 0;
         let recommendation = 'N/A';
 
         if (isNationalService) {
-          const calculated = calculateNationalServiceScores(reportData, categoryScores, result);
-          displayScore = calculated.overallScore;
-          workplaceReadiness = calculated.workplaceReadiness;
-          intellectualCapability = calculated.intellectualCapability;
-          recommendation = calculateNationalServiceRecommendation(workplaceReadiness, intellectualCapability);
-          console.log(`  - National Service - Score: ${displayScore}%`);
+          // For National Service, use calculateScore which handles total/max
+          displayScore = calculateScore(result);
+          recommendation = calculateNationalServiceRecommendation(displayScore);
         } else {
-          displayScore = extractScore(result);
+          // For Other assessments, calculate from total/max
+          displayScore = calculateScore(result);
           recommendation = extractRecommendation(result);
-          console.log(`  - Other Assessment - Score: ${displayScore}%`);
+          
+          // If recommendation is N/A but score is high, set a default
+          if (recommendation === 'N/A' && displayScore >= 75) {
+            recommendation = 'Recommended';
+          }
         }
+
+        console.log(`[${candidate?.full_name}] Score: ${displayScore}%, Type: ${isNationalService ? 'National Service' : 'Other'}`);
 
         processedReports.push({
           id: result.id,
@@ -442,13 +304,13 @@ export default function ReportsIndex() {
           assessment_title: assessmentTitle,
           isNationalService: isNationalService,
           displayScore: displayScore,
-          workplaceReadiness: workplaceReadiness,
-          intellectualCapability: intellectualCapability,
           recommendation: recommendation,
           status: result.status || 'Pending',
           completed_at: result.completed_at,
           created_at: result.created_at,
-          raw_result: result
+          total_score: result.total_score,
+          max_score: result.max_score,
+          percentage_score: result.percentage_score
         });
       });
 
