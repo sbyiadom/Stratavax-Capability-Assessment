@@ -1,3 +1,4 @@
+// pages/supervisor/add-candidate.js
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
@@ -12,7 +13,9 @@ export default function AddCandidate() {
   const [formData, setFormData] = useState({
     full_name: "",
     email: "",
-    phone: ""
+    phone: "",
+    university: "",
+    program: ""
   });
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -87,7 +90,9 @@ export default function AddCandidate() {
           data: {
             full_name: formData.full_name,
             role: 'candidate',
-            is_supervisor: false
+            is_supervisor: false,
+            university: formData.university,
+            program: formData.program
           }
         }
       });
@@ -101,6 +106,8 @@ export default function AddCandidate() {
           full_name: formData.full_name,
           email: formData.email.toLowerCase().trim(),
           phone: formData.phone || null,
+          university: formData.university || null,
+          program: formData.program || null,
           supervisor_id: currentSupervisor.id,
           created_at: new Date().toISOString()
         });
@@ -112,8 +119,15 @@ export default function AddCandidate() {
       setFormData({
         full_name: "",
         email: "",
-        phone: ""
+        phone: "",
+        university: "",
+        program: ""
       });
+
+      // Redirect after 3 seconds
+      setTimeout(() => {
+        router.push('/supervisor/manage-candidate');
+      }, 3000);
 
     } catch (err) {
       console.error('Error adding candidate:', err);
@@ -133,12 +147,15 @@ export default function AddCandidate() {
   }
 
   return (
-    <AppLayout background="/images/supervisor-bg.jpg">
+    <AppLayout>
       <div style={styles.container}>
         <div style={styles.header}>
-          <Link href="/supervisor" legacyBehavior>
-            <a style={styles.backButton}>← Back to Dashboard</a>
-          </Link>
+          <button
+            onClick={() => router.push('/supervisor/manage-candidate')}
+            style={styles.backButton}
+          >
+            ← Back to Candidates
+          </button>
           <h1 style={styles.title}>Add New Candidate</h1>
           <div style={styles.headerRight}>
             <span style={styles.supervisorBadge}>
@@ -159,6 +176,7 @@ export default function AddCandidate() {
             <div style={styles.successMessage}>
               <span style={styles.successIcon}>✅</span>
               <pre style={styles.successPre}>{success}</pre>
+              <p style={styles.redirectingText}>Redirecting to candidate list...</p>
             </div>
           )}
 
@@ -191,6 +209,39 @@ export default function AddCandidate() {
             </div>
 
             <div style={styles.formGroup}>
+              <label style={styles.label}>University *</label>
+              <select
+                name="university"
+                value={formData.university}
+                onChange={handleChange}
+                required
+                style={styles.input}
+              >
+                <option value="">Select University</option>
+                <option value="KNUST">KNUST</option>
+                <option value="University of Mines and Technology">University of Mines and Technology</option>
+                <option value="Kumasi Technical University">Kumasi Technical University</option>
+                <option value="Accra Technical University">Accra Technical University</option>
+                <option value="Koforidua Technical University">Koforidua Technical University</option>
+                <option value="Regional Maritime University">Regional Maritime University</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+
+            <div style={styles.formGroup}>
+              <label style={styles.label}>Program of Study *</label>
+              <input
+                type="text"
+                name="program"
+                value={formData.program}
+                onChange={handleChange}
+                required
+                placeholder="e.g., BSc Mechanical Engineering"
+                style={styles.input}
+              />
+            </div>
+
+            <div style={styles.formGroup}>
               <label style={styles.label}>Phone Number (Optional)</label>
               <input
                 type="tel"
@@ -214,9 +265,13 @@ export default function AddCandidate() {
             </div>
 
             <div style={styles.buttonGroup}>
-              <Link href="/supervisor" legacyBehavior>
-                <a style={styles.cancelButton}>Cancel</a>
-              </Link>
+              <button
+                type="button"
+                onClick={() => router.push('/supervisor/manage-candidate')}
+                style={styles.cancelButton}
+              >
+                Cancel
+              </button>
               <button
                 type="submit"
                 disabled={submitting}
@@ -286,11 +341,9 @@ const styles = {
     padding: '8px 16px',
     borderRadius: '20px',
     border: '1px solid #0A1929',
-    transition: 'all 0.2s ease',
-    ':hover': {
-      background: '#0A1929',
-      color: 'white'
-    }
+    background: 'transparent',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease'
   },
   title: {
     margin: 0,
@@ -350,6 +403,13 @@ const styles = {
     fontSize: '14px',
     lineHeight: '1.6'
   },
+  redirectingText: {
+    marginTop: '10px',
+    fontSize: '13px',
+    color: '#2E7D32',
+    fontWeight: 500,
+    animation: 'pulse 1.5s ease-in-out infinite'
+  },
   form: {
     display: 'flex',
     flexDirection: 'column',
@@ -372,9 +432,8 @@ const styles = {
     fontSize: '15px',
     transition: 'all 0.2s ease',
     outline: 'none',
-    ':focus': {
-      borderColor: '#0A1929'
-    }
+    background: 'white',
+    width: '100%'
   },
   hint: {
     margin: '4px 0 0 0',
@@ -417,10 +476,7 @@ const styles = {
     cursor: 'pointer',
     textDecoration: 'none',
     textAlign: 'center',
-    transition: 'all 0.2s ease',
-    ':hover': {
-      background: '#CBD5E0'
-    }
+    transition: 'all 0.2s ease'
   },
   submitButton: {
     flex: 1,
@@ -432,11 +488,6 @@ const styles = {
     fontSize: '16px',
     fontWeight: 600,
     cursor: 'pointer',
-    transition: 'all 0.2s ease',
-    ':hover': {
-      background: '#1A2A3A',
-      transform: 'translateY(-1px)',
-      boxShadow: '0 4px 12px rgba(10,25,41,0.3)'
-    }
+    transition: 'all 0.2s ease'
   }
 };
