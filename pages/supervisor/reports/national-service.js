@@ -18,11 +18,14 @@ export default function NationalServiceReports() {
   const [currentSupervisor, setCurrentSupervisor] = useState(null);
 
   useEffect(() => {
-    checkAuthAndLoadData();
+    loadData();
   }, []);
 
-  async function checkAuthAndLoadData() {
+  async function loadData() {
     try {
+      setLoading(true);
+
+      // Get current session
       const { data: sessionData } = await supabase.auth.getSession();
       const session = sessionData?.session;
 
@@ -31,7 +34,7 @@ export default function NationalServiceReports() {
         return;
       }
 
-      // Get supervisor profile
+      // Get supervisor info
       const { data: profile } = await supabase
         .from('supervisor_profiles')
         .select('id, full_name, email')
@@ -42,24 +45,19 @@ export default function NationalServiceReports() {
         setCurrentSupervisor(profile);
       }
 
-      await loadNationalServiceReports(session.user.id);
-    } catch (error) {
-      console.error('Error loading reports:', error);
-      setLoading(false);
-    }
-  }
-
-  async function loadNationalServiceReports(supervisorId) {
-    try {
-      setLoading(true);
-
-      // 1. Get all candidates under this supervisor
+      // Get candidates for this supervisor
       const { data: candidates, error: candidatesError } = await supabase
         .from('candidate_profiles')
         .select('id, full_name, email, university, programme')
-        .eq('supervisor_id', supervisorId);
+        .eq('supervisor_id', session.user.id);
 
-      if (candidatesError) throw candidatesError;
+      if (candidatesError) {
+        console.error('Candidates error:', candidatesError);
+        setLoading(false);
+        return;
+      }
+
+      console.log('Candidates found:', candidates?.length || 0);
 
       if (!candidates || candidates.length === 0) {
         setReports([]);
@@ -75,78 +73,23 @@ export default function NationalServiceReports() {
       }
 
       const candidateIds = candidates.map(c => c.id);
+      console.log('Candidate IDs:', candidateIds);
 
-      // 2. Get assessments for these candidates with their results
-      const { data: assessments, error: assessmentsError } = await supabase
+      // Get assessment results for these candidates - WITHOUT joining assessments
+      const { data: assessmentResults, error: resultsError } = await supabase
         .from('assessment_results')
-        .select(`
-          id,
-          candidate_id,
-          assessment_id,
-          score,
-          status,
-          created_at,
-          completed_at,
-          assessments:assessment_id (
-            id,
-            title,
-            type,
-            description
-          )
-        `)
-        .in('candidate_id', candidateIds)
-        .order('created_at', { ascending: false });
+        .select('*')
+        .in('candidate_id', candidateIds);
 
-      if (assessmentsError) throw assessmentsError;
-
-      // 3. Process the data
-      const reportData = [];
-      let totalScore = 0;
-      let scoreCount = 0;
-      let completed = 0;
-      let pending = 0;
-      let failed = 0;
-
-      if (assessments && assessments.length > 0) {
-        assessments.forEach(assessment => {
-          // Find candidate info
-          const candidate = candidates.find(c => c.id === assessment.candidate_id);
-          
-          // Only include National Service type assessments (you can adjust this filter)
-          // Assuming assessment type 'national_service' or similar
-          const assessmentType = assessment.assessments?.type || '';
-          
-          // For now, include all assessments - you can filter by type if needed
-          // if (assessmentType === 'national_service' || assessmentType === 'ns') {
-            reportData.push({
-              id: assessment.id,
-              candidate: candidate?.full_name || 'Unknown',
-              candidate_id: assessment.candidate_id,
-              university: candidate?.university || 'Not Specified',
-              program: candidate?.programme || 'Not Specified',
-              score: assessment.score || 0,
-              status: assessment.status || 'Pending',
-              date: assessment.completed_at ? new Date(assessment.completed_at).toISOString().split('T')[0] : 
-                     assessment.created_at ? new Date(assessment.created_at).toISOString().split('T')[0] : 'N/A',
-              assessment_id: assessment.assessment_id,
-              assessment_title: assessment.assessments?.title || 'Untitled'
-            });
-
-            // Calculate stats
-            if (assessment.score) {
-              totalScore += assessment.score;
-              scoreCount++;
-            }
-
-            if (assessment.status === 'Completed') completed++;
-            else if (assessment.status === 'Pending' || assessment.status === 'In Progress') pending++;
-            else if (assessment.status === 'Failed') failed++;
-          // }
-        });
+      if (resultsError) {
+        console.error('Assessment results error:', resultsError);
+        setLoading(false);
+        return;
       }
 
-      // If no assessments found, show message
-      if (reportData.length === 0) {
+      console.log('Assessment results found:', assessmentResults?.length || 0);
+
+      if (!assessmentResults || assessmentResults.length === 0) {
         setReports([]);
         setStats({
           totalAssessments: 0,
@@ -159,6 +102,62 @@ export default function NationalServiceReports() {
         return;
       }
 
+      // Get assessment details separately
+      const assessmentIds = [...new Set(assessmentResults.map(a => a.assessment_id).filter(id => id))];
+      let assessmentMap = {};
+
+      if (assessmentIds.length > 0) {
+        const { data: assessments, error: assessmentsError } = await supabase
+          .from('assessments')
+          .select('id, title, description')
+          .in('id', assessmentIds);
+
+        if (!assessmentsError && assessments) {
+          assessmentMap = assessments.reduce((acc, a) => {
+            acc[a.id] = a;
+            return acc;
+          }, {});
+        }
+      }
+
+      // Build report data
+      const reportData = [];
+      let totalScore = 0;
+      let scoreCount = 0;
+      let completed = 0;
+      let pending = 0;
+      let failed = 0;
+
+      assessmentResults.forEach(result => {
+        const candidate = candidates.find(c => c.id === result.candidate_id);
+        const assessment = assessmentMap[result.assessment_id] || {};
+
+        reportData.push({
+          id: result.id,
+          candidate: candidate?.full_name || 'Unknown',
+          candidate_id: result.candidate_id,
+          university: candidate?.university || 'Not Specified',
+          program: candidate?.programme || 'Not Specified',
+          score: result.score || 0,
+          status: result.status || 'Pending',
+          date: result.completed_at ? new Date(result.completed_at).toISOString().split('T')[0] : 
+                 result.created_at ? new Date(result.created_at).toISOString().split('T')[0] : 'N/A',
+          assessment_id: result.assessment_id,
+          assessment_title: assessment?.title || 'Untitled Assessment'
+        });
+
+        // Calculate stats
+        if (result.score) {
+          totalScore += result.score;
+          scoreCount++;
+        }
+
+        const status = (result.status || '').toLowerCase();
+        if (status === 'completed' || status === 'complete') completed++;
+        else if (status === 'pending' || status === 'in progress') pending++;
+        else if (status === 'failed' || status === 'fail') failed++;
+      });
+
       setReports(reportData);
       setStats({
         totalAssessments: reportData.length,
@@ -170,18 +169,20 @@ export default function NationalServiceReports() {
 
     } catch (error) {
       console.error('Error loading national service reports:', error);
-      setReports([]);
     } finally {
       setLoading(false);
     }
   }
 
   const getStatusColor = (status) => {
-    switch(status?.toLowerCase()) {
+    const s = (status || '').toLowerCase();
+    switch(s) {
       case 'completed': return '#48bb78';
+      case 'complete': return '#48bb78';
       case 'pending': return '#ed8936';
       case 'in progress': return '#4299e1';
       case 'failed': return '#fc8181';
+      case 'fail': return '#fc8181';
       default: return '#a0aec0';
     }
   };
