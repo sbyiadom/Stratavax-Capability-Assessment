@@ -1,9 +1,112 @@
-// pages/supervisor/reports/index.js
-import { useState, useEffect } from 'react';
+// pages/supervisor/reports/index.js - UPDATED WITH PROPER SCORE CALCULATION
+// Based on admin reports/index.js with proper score display
+
+import { useState, useEffect, Fragment } from 'react';
 import { useRouter } from 'next/router';
 import AppLayout from '../../../components/AppLayout';
 import { supabase } from '../../../supabase/client';
 
+// ============================================================
+// HELPER FUNCTIONS
+// ============================================================
+function safeNumber(value, fallback = 0) {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : fallback;
+}
+
+function calculateNationalServiceScores(reportData, categoryScores, result) {
+  let workplaceReadiness = 0;
+  let intellectualCapability = 0;
+  let overallScore = 0;
+
+  // Try to get from report_data first
+  if (reportData) {
+    if (reportData.workplaceReadiness) workplaceReadiness = safeNumber(reportData.workplaceReadiness);
+    else if (reportData.workplace_readiness) workplaceReadiness = safeNumber(reportData.workplace_readiness);
+    else if (reportData.dimensions?.workplaceReadiness) workplaceReadiness = safeNumber(reportData.dimensions.workplaceReadiness);
+    
+    if (reportData.intellectualCapability) intellectualCapability = safeNumber(reportData.intellectualCapability);
+    else if (reportData.intellectual_capability) intellectualCapability = safeNumber(reportData.intellectual_capability);
+    else if (reportData.dimensions?.intellectualCapability) intellectualCapability = safeNumber(reportData.dimensions.intellectualCapability);
+    
+    if (reportData.overallScore) overallScore = safeNumber(reportData.overallScore);
+    else if (reportData.percentage_score) overallScore = safeNumber(reportData.percentage_score);
+    else if (reportData.dimensions?.overallScore) overallScore = safeNumber(reportData.dimensions.overallScore);
+  }
+
+  // Try to get from result if not found
+  if (!workplaceReadiness && result) {
+    workplaceReadiness = safeNumber(result.workplace_readiness);
+    intellectualCapability = safeNumber(result.intellectual_capability);
+    overallScore = safeNumber(result.percentage_score);
+  }
+
+  // If still 0, calculate from category scores
+  if (workplaceReadiness === 0 || intellectualCapability === 0 || overallScore === 0) {
+    const workplaceCategories = [
+      'Communication & Teamwork',
+      'Ownership & Integrity',
+      'Technical Fundamentals',
+      'Safety & Risk Awareness'
+    ];
+    
+    const intellectualCategories = [
+      'Learning Agility',
+      'Problem Solving & Troubleshooting',
+      'Logical Reasoning',
+      'Numerical Reasoning',
+      'Measurement & Engineering Units'
+    ];
+
+    let workplaceTotal = 0;
+    let workplaceCount = 0;
+    let intellectualTotal = 0;
+    let intellectualCount = 0;
+
+    if (categoryScores && categoryScores.length > 0) {
+      categoryScores.forEach(cat => {
+        const name = cat.category || cat.name || '';
+        const percentage = safeNumber(cat.percentage || cat.score || 0);
+        
+        if (workplaceCategories.some(c => name.includes(c) || name.toLowerCase().includes(c.toLowerCase()))) {
+          workplaceTotal += percentage;
+          workplaceCount++;
+        } else if (intellectualCategories.some(c => name.includes(c) || name.toLowerCase().includes(c.toLowerCase()))) {
+          intellectualTotal += percentage;
+          intellectualCount++;
+        }
+      });
+    }
+
+    if (workplaceReadiness === 0 && workplaceCount > 0) {
+      workplaceReadiness = Math.round(workplaceTotal / workplaceCount);
+    }
+    
+    if (intellectualCapability === 0 && intellectualCount > 0) {
+      intellectualCapability = Math.round(intellectualTotal / intellectualCount);
+    }
+    
+    if (overallScore === 0 && (workplaceReadiness > 0 || intellectualCapability > 0)) {
+      overallScore = Math.round((workplaceReadiness + intellectualCapability) / 2);
+    }
+  }
+
+  return { workplaceReadiness, intellectualCapability, overallScore };
+}
+
+function calculateNationalServiceRecommendation(workplaceReadiness, intellectualCapability) {
+  const workplace = Number(workplaceReadiness || 0);
+  const intellectual = Number(intellectualCapability || 0);
+
+  if (workplace >= 85 && intellectual >= 85) return 'Highly Recommended';
+  if (workplace >= 75 && intellectual >= 75) return 'Recommended';
+  if (workplace >= 65 && intellectual >= 65) return 'Reserve Pool';
+  return 'Not Recommended';
+}
+
+// ============================================================
+// MAIN COMPONENT
+// ============================================================
 export default function ReportsIndex() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -17,6 +120,7 @@ export default function ReportsIndex() {
     failed: 0
   });
   const [currentSupervisor, setCurrentSupervisor] = useState(null);
+  const [error, setError] = useState(null);
 
   // Check URL for tab parameter
   useEffect(() => {
@@ -35,6 +139,7 @@ export default function ReportsIndex() {
   async function loadData() {
     try {
       setLoading(true);
+      setError(null);
 
       const { data: sessionData } = await supabase.auth.getSession();
       const session = sessionData?.session;
@@ -81,7 +186,7 @@ export default function ReportsIndex() {
 
       const candidateIds = candidates.map(c => c.id);
 
-      // Try to get assessment results - try different column names
+      // Get assessment results - try different column names
       let assessmentResults = [];
 
       // Try candidate_id
@@ -93,6 +198,7 @@ export default function ReportsIndex() {
 
         if (!error && data && data.length > 0) {
           assessmentResults = data;
+          console.log('Found using candidate_id:', data.length);
         }
       } catch (e) {}
 
@@ -106,6 +212,7 @@ export default function ReportsIndex() {
 
           if (!error && data && data.length > 0) {
             assessmentResults = data;
+            console.log('Found using user_id:', data.length);
           }
         } catch (e) {}
       }
@@ -120,6 +227,7 @@ export default function ReportsIndex() {
 
           if (!error && data && data.length > 0) {
             assessmentResults = data;
+            console.log('Found using profile_id:', data.length);
           }
         } catch (e) {}
       }
@@ -144,7 +252,7 @@ export default function ReportsIndex() {
       if (assessmentIds.length > 0) {
         const { data: assessments, error: assessmentsError } = await supabase
           .from('assessments')
-          .select('id, title, description')
+          .select('id, title, description, type')
           .in('id', assessmentIds);
 
         if (!assessmentsError && assessments) {
@@ -152,10 +260,11 @@ export default function ReportsIndex() {
             acc[a.id] = a;
             return acc;
           }, {});
+          console.log('Assessment types loaded:', assessments.map(a => ({ id: a.id, title: a.title, type: a.type })));
         }
       }
 
-      // Build report data
+      // Build report data with proper score calculation
       const reportData = [];
       let totalScore = 0;
       let scoreCount = 0;
@@ -175,6 +284,45 @@ export default function ReportsIndex() {
         }
 
         const assessment = assessmentMap[result.assessment_id] || {};
+        const reportDataObj = result.report_data ? 
+          (typeof result.report_data === 'string' ? JSON.parse(result.report_data) : result.report_data) : 
+          {};
+        
+        // Determine if this is a National Service assessment
+        const isNationalService = 
+          assessment.type === 'national_service' || 
+          assessment.type === 'ns' || 
+          assessment.type === 'national' ||
+          assessment.title === 'National Service Recruitment Assessment' ||
+          assessment.title?.toLowerCase().includes('national service');
+
+        // Calculate scores properly
+        let displayScore = 0;
+        let workplaceReadiness = 0;
+        let intellectualCapability = 0;
+        let recommendation = 'N/A';
+
+        if (isNationalService) {
+          // Get category scores
+          const categoryScores = reportDataObj.categoryScores || 
+                                 reportDataObj.category_scores || 
+                                 result.category_scores || [];
+          
+          const calculated = calculateNationalServiceScores(
+            reportDataObj,
+            categoryScores,
+            result
+          );
+          
+          displayScore = calculated.overallScore;
+          workplaceReadiness = calculated.workplaceReadiness;
+          intellectualCapability = calculated.intellectualCapability;
+          recommendation = calculateNationalServiceRecommendation(workplaceReadiness, intellectualCapability);
+        } else {
+          // For Stratavax, use percentage score directly
+          displayScore = safeNumber(result.percentage_score || result.score || 0);
+          recommendation = result.recommendation || 'N/A';
+        }
 
         reportData.push({
           id: result.id,
@@ -182,16 +330,23 @@ export default function ReportsIndex() {
           candidate_id: result.candidate_id || result.user_id || result.profile_id || 'N/A',
           university: candidate?.university || 'Not Specified',
           program: candidate?.programme || 'Not Specified',
-          score: result.score || 0,
+          score: displayScore,
           status: result.status || 'Pending',
           date: result.completed_at ? new Date(result.completed_at).toISOString().split('T')[0] : 
                  result.created_at ? new Date(result.created_at).toISOString().split('T')[0] : 'N/A',
           assessment_id: result.assessment_id,
-          assessment_title: assessment?.title || 'Untitled Assessment'
+          assessment_title: assessment?.title || 'Untitled Assessment',
+          assessment_type: assessment?.type || 'Unknown',
+          isNationalService: isNationalService,
+          workplaceReadiness: workplaceReadiness,
+          intellectualCapability: intellectualCapability,
+          recommendation: recommendation,
+          report_data: reportDataObj
         });
 
-        if (result.score) {
-          totalScore += result.score;
+        // Calculate stats
+        if (displayScore > 0) {
+          totalScore += displayScore;
           scoreCount++;
         }
 
@@ -201,17 +356,44 @@ export default function ReportsIndex() {
         else if (status === 'failed' || status === 'fail') failed++;
       });
 
-      setReports(reportData);
-      setStats({
-        totalAssessments: reportData.length,
-        averageScore: scoreCount > 0 ? Math.round(totalScore / scoreCount) : 0,
-        completedAssessments: completed,
-        pendingReview: pending,
-        failed: failed
+      // Filter reports based on active tab
+      const filteredReports = activeTab === 'national' 
+        ? reportData.filter(r => r.isNationalService === true)
+        : reportData.filter(r => r.isNationalService === false);
+
+      // Calculate filtered stats
+      let filteredTotalScore = 0;
+      let filteredScoreCount = 0;
+      let filteredCompleted = 0;
+      let filteredPending = 0;
+      let filteredFailed = 0;
+
+      filteredReports.forEach(r => {
+        if (r.score > 0) {
+          filteredTotalScore += r.score;
+          filteredScoreCount++;
+        }
+        const status = (r.status || '').toLowerCase();
+        if (status === 'completed' || status === 'complete') filteredCompleted++;
+        else if (status === 'pending' || status === 'in progress') filteredPending++;
+        else if (status === 'failed' || status === 'fail') filteredFailed++;
       });
+
+      setReports(filteredReports);
+      setStats({
+        totalAssessments: filteredReports.length,
+        averageScore: filteredScoreCount > 0 ? Math.round(filteredTotalScore / filteredScoreCount) : 0,
+        completedAssessments: filteredCompleted,
+        pendingReview: filteredPending,
+        failed: filteredFailed
+      });
+
+      console.log(`[Reports] ${activeTab} tab: ${filteredReports.length} reports found`);
+      console.log('[Reports] Sample report:', filteredReports[0]);
 
     } catch (error) {
       console.error('Error loading reports:', error);
+      setError(error.message);
     } finally {
       setLoading(false);
     }
@@ -236,10 +418,17 @@ export default function ReportsIndex() {
     return '#fc8181';
   };
 
-  // Filter reports based on active tab
-  const filteredReports = activeTab === 'national' 
-    ? reports.filter(r => r.status === 'Completed' || r.status === 'Pending')
-    : reports;
+  const getRecommendationBadge = (recommendation) => {
+    const styles = {
+      background: recommendation === 'Highly Recommended' ? '#dcfce7' :
+                 recommendation === 'Recommended' ? '#dbeafe' :
+                 recommendation === 'Reserve Pool' ? '#fef3c7' : '#fee2e2',
+      color: recommendation === 'Highly Recommended' ? '#166534' :
+             recommendation === 'Recommended' ? '#1e40af' :
+             recommendation === 'Reserve Pool' ? '#92400e' : '#991b1b'
+    };
+    return styles;
+  };
 
   return (
     <AppLayout>
@@ -250,7 +439,7 @@ export default function ReportsIndex() {
               {activeTab === 'national' ? '📋 National Service Reports' : '📊 Other Assessment Reports'}
             </h1>
             <p style={styles.subtitle}>
-              View and manage assessment reports
+              View and manage {activeTab === 'national' ? 'National Service' : 'other'} assessment reports
               {currentSupervisor && ` — ${currentSupervisor.full_name || currentSupervisor.email}`}
             </p>
           </div>
@@ -259,6 +448,13 @@ export default function ReportsIndex() {
             <button style={styles.printButton}>🖨️ Print</button>
           </div>
         </div>
+
+        {error && (
+          <div style={styles.errorBox}>
+            <strong>Error:</strong> {error}
+            <button onClick={loadData} style={styles.retryButton}>Retry</button>
+          </div>
+        )}
 
         {/* Stats Cards */}
         <div style={styles.statsGrid}>
@@ -331,7 +527,7 @@ export default function ReportsIndex() {
               <div style={styles.spinner} />
               <p>Loading reports...</p>
             </div>
-          ) : filteredReports.length === 0 ? (
+          ) : reports.length === 0 ? (
             <div style={styles.emptyState}>
               <div style={styles.emptyIcon}>📭</div>
               <h3 style={styles.emptyTitle}>
@@ -350,26 +546,46 @@ export default function ReportsIndex() {
                   <th style={styles.tableHeadCell}>Program</th>
                   <th style={styles.tableHeadCell}>Assessment</th>
                   <th style={styles.tableHeadCell}>Score</th>
+                  {activeTab === 'national' && (
+                    <th style={styles.tableHeadCell}>Recommendation</th>
+                  )}
                   <th style={styles.tableHeadCell}>Status</th>
                   <th style={styles.tableHeadCell}>Date</th>
                   <th style={styles.tableHeadCell}>Action</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredReports.map((report) => (
+                {reports.map((report) => (
                   <tr key={report.id} style={styles.tableRow}>
-                    <td style={styles.tableCell}>{report.candidate}</td>
+                    <td style={styles.tableCell}>
+                      <div style={styles.candidateName}>{report.candidate}</div>
+                      <div style={styles.candidateEmail}>{report.candidate_id}</div>
+                    </td>
                     <td style={styles.tableCell}>{report.university}</td>
                     <td style={styles.tableCell}>{report.program}</td>
                     <td style={styles.tableCell}>{report.assessment_title}</td>
                     <td style={styles.tableCell}>
-                      <span style={{
-                        ...styles.scoreBadge,
-                        background: getScoreColor(report.score)
-                      }}>
-                        {report.score || 'N/A'}%
-                      </span>
+                      {report.score > 0 ? (
+                        <span style={{
+                          ...styles.scoreBadge,
+                          background: getScoreColor(report.score)
+                        }}>
+                          {report.score}%
+                        </span>
+                      ) : (
+                        <span style={styles.noScoreBadge}>Pending</span>
+                      )}
                     </td>
+                    {activeTab === 'national' && (
+                      <td style={styles.tableCell}>
+                        <span style={{
+                          ...styles.recommendationBadge,
+                          ...getRecommendationBadge(report.recommendation)
+                        }}>
+                          {report.recommendation}
+                        </span>
+                      </td>
+                    )}
                     <td style={styles.tableCell}>
                       <span style={{
                         ...styles.statusBadge,
@@ -436,6 +652,26 @@ const styles = {
     fontSize: '16px',
     color: '#718096',
     margin: 0
+  },
+  errorBox: {
+    background: '#fee2e2',
+    border: '1px solid #fecaca',
+    borderRadius: '8px',
+    padding: '12px 16px',
+    marginBottom: '16px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    color: '#991b1b'
+  },
+  retryButton: {
+    padding: '4px 12px',
+    background: '#991b1b',
+    color: 'white',
+    border: 'none',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    fontSize: '12px'
   },
   exportButton: {
     padding: '8px 20px',
@@ -506,12 +742,13 @@ const styles = {
   tableContainer: {
     background: 'white',
     borderRadius: '12px',
-    overflow: 'hidden',
+    overflow: 'auto',
     boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
   },
   table: {
     width: '100%',
-    borderCollapse: 'collapse'
+    borderCollapse: 'collapse',
+    fontSize: '14px'
   },
   tableHeadRow: {
     background: '#F8FAFC'
@@ -522,7 +759,8 @@ const styles = {
     borderBottom: '2px solid #E2E8F0',
     fontSize: '13px',
     fontWeight: '600',
-    color: '#4A5568'
+    color: '#4A5568',
+    whiteSpace: 'nowrap'
   },
   tableRow: {
     transition: 'background 0.2s ease'
@@ -531,7 +769,16 @@ const styles = {
     padding: '12px 16px',
     borderBottom: '1px solid #E2E8F0',
     fontSize: '14px',
-    color: '#2D3748'
+    color: '#2D3748',
+    verticalAlign: 'middle'
+  },
+  candidateName: {
+    fontWeight: '500',
+    color: '#1a202c'
+  },
+  candidateEmail: {
+    fontSize: '12px',
+    color: '#94a3b8'
   },
   scoreBadge: {
     display: 'inline-block',
@@ -541,6 +788,15 @@ const styles = {
     fontWeight: '600',
     color: 'white'
   },
+  noScoreBadge: {
+    display: 'inline-block',
+    padding: '2px 10px',
+    borderRadius: '12px',
+    fontSize: '13px',
+    fontWeight: '500',
+    color: '#94a3b8',
+    background: '#f1f5f9'
+  },
   statusBadge: {
     display: 'inline-block',
     padding: '4px 12px',
@@ -548,6 +804,13 @@ const styles = {
     fontSize: '12px',
     fontWeight: '600',
     color: 'white'
+  },
+  recommendationBadge: {
+    padding: '2px 10px',
+    borderRadius: '12px',
+    fontSize: '11px',
+    fontWeight: '600',
+    display: 'inline-block'
   },
   viewButton: {
     padding: '4px 12px',
