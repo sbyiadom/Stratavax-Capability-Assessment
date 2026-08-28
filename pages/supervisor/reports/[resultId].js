@@ -1,5 +1,4 @@
 // pages/supervisor/reports/[resultId].js - COMPLETE FIXED
-// Based on the actual data structure from the database
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -17,10 +16,6 @@ function safeNumber(value, fallback = 0) {
   if (value === null || value === undefined || value === '') return fallback;
   const num = Number(value);
   return Number.isFinite(num) ? num : fallback;
-}
-
-function roundScore(value) {
-  return Math.round(safeNumber(value, 0));
 }
 
 function getReportDataObject(rawReportData) {
@@ -92,9 +87,6 @@ function calculateScore(result) {
   return 0;
 }
 
-// ============================================================
-// BEHAVIORAL MATRIX EXTRACTOR
-// ============================================================
 function extractBehavioralMatrix(reportData) {
   if (!reportData) return null;
 
@@ -107,7 +99,7 @@ function extractBehavioralMatrix(reportData) {
     return null;
   }
 
-  const matrix = {
+  return {
     totalTime: proctoring.totalTime || '00:00:00',
     avgTimePerQuestion: proctoring.avgTimePerQuestion || 0,
     answerChanges: proctoring.answerChanges || proctoring.answer_changes || 0,
@@ -125,13 +117,8 @@ function extractBehavioralMatrix(reportData) {
       answerChanges: proctoring.answerChanges || proctoring.answer_changes || 0
     }
   };
-
-  return matrix;
 }
 
-// ============================================================
-// UUID VALIDATION
-// ============================================================
 function isValidUUID(uuid) {
   const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   return uuidRegex.test(uuid);
@@ -213,7 +200,6 @@ export default function SupervisorReportView() {
       const parsedResultReportData = getReportDataObject(result.report_data);
       let report = data.report || {};
 
-      // Merge report_data into report
       if (parsedResultReportData && Object.keys(parsedResultReportData).length > 0) {
         report = {
           ...parsedResultReportData,
@@ -236,10 +222,10 @@ export default function SupervisorReportView() {
         email: profile?.email || '',
         university: profile?.university || 'Not Specified',
         programme: profile?.programme || 'Not Specified',
-        assessmentDate: result?.completed_at ? new Date(result.completed_at).toLocaleDateString() : 'N/A'
+        assessmentDate: result?.completed_at ? new Date(result?.completed_at).toLocaleDateString() : 'N/A'
       };
 
-      // Get category scores
+      // Get category scores - ensure it's always an array
       const categoryScores = result?.category_scores || 
                              report?.category_scores || 
                              report?.categoryScores || 
@@ -290,7 +276,7 @@ export default function SupervisorReportView() {
         supervisorImplication: report?.supervisorImplication || ''
       };
 
-      // Build the result object for StratavaxReport
+      // Build the result object for StratavaxReport - ensure all arrays are valid
       const stratavaxResult = {
         ...result,
         candidate_profiles: {
@@ -305,14 +291,14 @@ export default function SupervisorReportView() {
         percentage_score: displayScore,
         classification: reportObject.classification,
         riskLevel: reportObject.riskLevel,
-        categoryScores: categoryScores,
-        strengths: reportObject.strengths,
-        weaknesses: reportObject.weaknesses,
-        recommendations: reportObject.recommendations,
-        executiveSummary: reportObject.executiveSummary,
-        supervisorImplication: reportObject.supervisorImplication,
-        total_questions: reportObject.total_questions,
-        answered_questions: reportObject.answered_questions,
+        categoryScores: categoryScores || [],
+        strengths: reportObject.strengths || [],
+        weaknesses: reportObject.weaknesses || [],
+        recommendations: reportObject.recommendations || [],
+        executiveSummary: reportObject.executiveSummary || '',
+        supervisorImplication: reportObject.supervisorImplication || '',
+        total_questions: reportObject.total_questions || 0,
+        answered_questions: reportObject.answered_questions || 0,
         completed_at: result?.completed_at,
         candidateName: candidateInfo.fullName,
         behavioralMatrix: matrix
