@@ -1,29 +1,110 @@
-// pages/supervisor/reports/index.js - COMPLETELY FIXED
-// Properly distinguishes between National Service and Other Assessments
+// pages/supervisor/reports/index.js - COMPLETE FIXED FILE
+// Replicates the admin version's logic for proper report categorization
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
-import AppLayout from '../../../components/AppLayout';
 import { supabase } from '../../../supabase/client';
+import AppLayout from '../../../components/AppLayout';
 
-// National Service Assessment ID - this is the only assessment that should show in National Service tab
+// National Service Assessment ID - same as admin
 const NATIONAL_SERVICE_ASSESSMENT_ID = 'bdb9d46e-9fac-4d00-8478-1f649e7ac600';
 
-// Assessment IDs that are NOT National Service (Other assessments)
-// If you have specific assessment IDs for Other assessments, list them here
-// Otherwise, we'll treat everything that's NOT the National Service ID as "Other"
-const OTHER_ASSESSMENT_IDS = [
-  // Add other assessment IDs here if you know them
-  // 'some-other-assessment-id-1',
-  // 'some-other-assessment-id-2',
-];
-
 // ============================================================
-// HELPER FUNCTIONS
+// HELPER FUNCTIONS (Replicated from admin)
 // ============================================================
 function safeNumber(value, fallback = 0) {
   const num = Number(value);
   return Number.isFinite(num) ? num : fallback;
+}
+
+function calculateNationalServiceScores(reportData, categoryScores, result) {
+  let workplaceReadiness = 0;
+  let intellectualCapability = 0;
+  let overallScore = 0;
+
+  // Try to get from report_data first
+  if (reportData) {
+    if (reportData.workplaceReadiness) workplaceReadiness = safeNumber(reportData.workplaceReadiness);
+    else if (reportData.workplace_readiness) workplaceReadiness = safeNumber(reportData.workplace_readiness);
+    else if (reportData.dimensions?.workplaceReadiness) workplaceReadiness = safeNumber(reportData.dimensions.workplaceReadiness);
+    
+    if (reportData.intellectualCapability) intellectualCapability = safeNumber(reportData.intellectualCapability);
+    else if (reportData.intellectual_capability) intellectualCapability = safeNumber(reportData.intellectual_capability);
+    else if (reportData.dimensions?.intellectualCapability) intellectualCapability = safeNumber(reportData.dimensions.intellectualCapability);
+    
+    if (reportData.overallScore) overallScore = safeNumber(reportData.overallScore);
+    else if (reportData.percentage_score) overallScore = safeNumber(reportData.percentage_score);
+    else if (reportData.dimensions?.overallScore) overallScore = safeNumber(reportData.dimensions.overallScore);
+  }
+
+  // Try to get from result if not found
+  if (!workplaceReadiness && result) {
+    workplaceReadiness = safeNumber(result.workplace_readiness);
+    intellectualCapability = safeNumber(result.intellectual_capability);
+    overallScore = safeNumber(result.percentage_score);
+  }
+
+  // If still 0, calculate from category scores
+  if (workplaceReadiness === 0 || intellectualCapability === 0 || overallScore === 0) {
+    const workplaceCategories = [
+      'Communication & Teamwork',
+      'Ownership & Integrity',
+      'Technical Fundamentals',
+      'Safety & Risk Awareness'
+    ];
+    
+    const intellectualCategories = [
+      'Learning Agility',
+      'Problem Solving & Troubleshooting',
+      'Logical Reasoning',
+      'Numerical Reasoning',
+      'Measurement & Engineering Units'
+    ];
+
+    let workplaceTotal = 0;
+    let workplaceCount = 0;
+    let intellectualTotal = 0;
+    let intellectualCount = 0;
+
+    if (categoryScores && categoryScores.length > 0) {
+      categoryScores.forEach(cat => {
+        const name = cat.category || cat.name || '';
+        const percentage = safeNumber(cat.percentage || cat.score || 0);
+        
+        if (workplaceCategories.some(c => name.includes(c) || name.toLowerCase().includes(c.toLowerCase()))) {
+          workplaceTotal += percentage;
+          workplaceCount++;
+        } else if (intellectualCategories.some(c => name.includes(c) || name.toLowerCase().includes(c.toLowerCase()))) {
+          intellectualTotal += percentage;
+          intellectualCount++;
+        }
+      });
+    }
+
+    if (workplaceReadiness === 0 && workplaceCount > 0) {
+      workplaceReadiness = Math.round(workplaceTotal / workplaceCount);
+    }
+    
+    if (intellectualCapability === 0 && intellectualCount > 0) {
+      intellectualCapability = Math.round(intellectualTotal / intellectualCount);
+    }
+    
+    if (overallScore === 0 && (workplaceReadiness > 0 || intellectualCapability > 0)) {
+      overallScore = Math.round((workplaceReadiness + intellectualCapability) / 2);
+    }
+  }
+
+  return { workplaceReadiness, intellectualCapability, overallScore };
+}
+
+function calculateNationalServiceRecommendation(workplaceReadiness, intellectualCapability) {
+  const workplace = Number(workplaceReadiness || 0);
+  const intellectual = Number(intellectualCapability || 0);
+
+  if (workplace >= 85 && intellectual >= 85) return 'Highly Recommended';
+  if (workplace >= 75 && intellectual >= 75) return 'Recommended';
+  if (workplace >= 65 && intellectual >= 65) return 'Reserve Pool';
+  return 'Not Recommended';
 }
 
 function extractScore(result) {
@@ -122,6 +203,7 @@ export default function ReportsIndex() {
   const [currentSupervisor, setCurrentSupervisor] = useState(null);
   const [error, setError] = useState(null);
 
+  // Check URL for tab parameter
   useEffect(() => {
     const tab = router.query.tab;
     if (tab === 'other') {
@@ -185,7 +267,7 @@ export default function ReportsIndex() {
 
       const candidateIds = candidates.map(c => c.id);
 
-      // Get assessment results using user_id
+      // Get assessment results using user_id (same as admin)
       let assessmentResults = [];
 
       try {
@@ -196,7 +278,7 @@ export default function ReportsIndex() {
 
         if (!error && data && data.length > 0) {
           assessmentResults = data;
-          console.log('Total assessment results found:', data.length);
+          console.log('Found assessment results:', data.length);
         } else if (error) {
           console.error('Error fetching assessment_results:', error);
         }
@@ -233,90 +315,94 @@ export default function ReportsIndex() {
               acc[a.id] = a;
               return acc;
             }, {});
-            console.log('Assessments loaded:', assessments.map(a => ({ id: a.id, title: a.title })));
           }
         } catch (e) {
           console.error('Error fetching assessments:', e);
         }
       }
 
-      // Build report data with proper categorization
-      const reportData = [];
-      let totalScore = 0;
-      let scoreCount = 0;
-      let completed = 0;
-      let pending = 0;
-      let failed = 0;
-
-      let nationalServiceCount = 0;
-      let otherAssessmentsCount = 0;
-
-      assessmentResults.forEach(result => {
-        let candidate = null;
-        for (const c of candidates) {
-          if (result.user_id === c.id) {
-            candidate = c;
-            break;
-          }
-        }
-
+      // Process reports - replicating admin logic
+      const processedReports = assessmentResults.map(result => {
+        const candidate = candidates.find(c => c.id === result.user_id);
         const assessment = assessmentMap[result.assessment_id] || {};
-        const assessmentTitle = assessment?.title || 'Untitled Assessment';
         
-        // ✅ FIX: Determine if this is a National Service assessment
-        // Only the specific National Service assessment ID should be considered National Service
-        const isNationalService = result.assessment_id === NATIONAL_SERVICE_ASSESSMENT_ID;
+        // ✅ FIX: Determine if National Service - same logic as admin
+        const isNationalService = 
+          result.assessment_id === NATIONAL_SERVICE_ASSESSMENT_ID ||
+          assessment.title === 'National Service Recruitment Assessment' ||
+          result.isNationalService === true;
 
-        // Log for debugging
+        // Get report_data
+        let reportData = {};
+        try {
+          reportData = typeof result.report_data === 'string' 
+            ? JSON.parse(result.report_data) 
+            : (result.report_data || {});
+        } catch (e) {
+          reportData = {};
+        }
+
+        // Get category scores
+        const categoryScores = reportData.categoryScores || 
+                               reportData.category_scores || 
+                               result.category_scores || [];
+
+        let displayScore = 0;
+        let workplaceReadiness = 0;
+        let intellectualCapability = 0;
+        let recommendation = 'N/A';
+
         if (isNationalService) {
-          nationalServiceCount++;
-          console.log(`✅ National Service: ${assessmentTitle} (${result.assessment_id}) - ${candidate?.full_name}`);
+          // Calculate scores for National Service (same as admin)
+          const calculated = calculateNationalServiceScores(
+            reportData,
+            categoryScores,
+            result
+          );
+          
+          displayScore = calculated.overallScore;
+          workplaceReadiness = calculated.workplaceReadiness;
+          intellectualCapability = calculated.intellectualCapability;
+          recommendation = calculateNationalServiceRecommendation(workplaceReadiness, intellectualCapability);
         } else {
-          otherAssessmentsCount++;
-          console.log(`📊 Other Assessment: ${assessmentTitle} (${result.assessment_id}) - ${candidate?.full_name}`);
+          // For Stratavax, use percentage score directly
+          displayScore = extractScore(result);
+          recommendation = extractRecommendation(result);
         }
 
-        const displayScore = extractScore(result);
-        const recommendation = extractRecommendation(result);
-
-        reportData.push({
+        return {
           id: result.id,
-          candidate: candidate?.full_name || 'Unknown',
-          university: candidate?.university || 'Not Specified',
-          program: candidate?.programme || 'Not Specified',
-          score: displayScore,
-          status: result.status || 'Pending',
-          date: result.completed_at ? new Date(result.completed_at).toISOString().split('T')[0] : 
-                 result.created_at ? new Date(result.created_at).toISOString().split('T')[0] : 'N/A',
+          candidate_name: candidate?.full_name || 'Unknown',
+          candidate_email: candidate?.email || '',
+          candidate_university: candidate?.university || 'Not Specified',
+          candidate_programme: candidate?.programme || 'Not Specified',
+          user_id: result.user_id,
           assessment_id: result.assessment_id,
-          assessment_title: assessmentTitle,
+          assessment_title: assessment?.title || 'Untitled Assessment',
           isNationalService: isNationalService,
+          displayScore: displayScore,
+          percentage_score: result.percentage_score || 0,
+          workplaceReadiness: workplaceReadiness,
+          intellectualCapability: intellectualCapability,
           recommendation: recommendation,
-          raw_result: result
-        });
-
-        // Calculate stats
-        if (displayScore > 0) {
-          totalScore += displayScore;
-          scoreCount++;
-        }
-
-        const status = (result.status || '').toLowerCase();
-        if (status === 'completed' || status === 'complete') completed++;
-        else if (status === 'pending' || status === 'in progress') pending++;
-        else if (status === 'failed' || status === 'fail') failed++;
+          status: result.status || 'Pending',
+          completed_at: result.completed_at,
+          created_at: result.created_at,
+          report_data: reportData,
+          category_scores: categoryScores
+        };
       });
 
-      console.log(`📊 Summary: ${nationalServiceCount} National Service, ${otherAssessmentsCount} Other Assessments`);
+      // Separate into National Service and Other (same as admin)
+      const nationalServiceReports = processedReports.filter(r => r.isNationalService === true);
+      const otherReports = processedReports.filter(r => r.isNationalService === false);
 
-      // ✅ Filter reports based on active tab
-      const filteredReports = activeTab === 'national' 
-        ? reportData.filter(r => r.isNationalService === true)
-        : reportData.filter(r => r.isNationalService === false);
+      console.log(`📊 SUMMARY: ${nationalServiceReports.length} National Service, ${otherReports.length} Other Assessments`);
 
-      console.log(`[${activeTab}] Filtered reports: ${filteredReports.length}`);
+      // Select which reports to show based on active tab
+      const filteredReports = activeTab === 'national' ? nationalServiceReports : otherReports;
 
-      // Calculate filtered stats
+      // Calculate stats
       let filteredTotalScore = 0;
       let filteredScoreCount = 0;
       let filteredCompleted = 0;
@@ -324,8 +410,8 @@ export default function ReportsIndex() {
       let filteredFailed = 0;
 
       filteredReports.forEach(r => {
-        if (r.score > 0) {
-          filteredTotalScore += r.score;
+        if (r.displayScore > 0) {
+          filteredTotalScore += r.displayScore;
           filteredScoreCount++;
         }
         const status = (r.status || '').toLowerCase();
@@ -507,18 +593,19 @@ export default function ReportsIndex() {
                 {reports.map((report) => (
                   <tr key={report.id} style={styles.tableRow}>
                     <td style={styles.tableCell}>
-                      <div style={styles.candidateName}>{report.candidate}</div>
+                      <div style={styles.candidateName}>{report.candidate_name}</div>
+                      <div style={styles.candidateEmail}>{report.candidate_email}</div>
                     </td>
-                    <td style={styles.tableCell}>{report.university}</td>
-                    <td style={styles.tableCell}>{report.program}</td>
+                    <td style={styles.tableCell}>{report.candidate_university}</td>
+                    <td style={styles.tableCell}>{report.candidate_programme}</td>
                     <td style={styles.tableCell}>{report.assessment_title}</td>
                     <td style={styles.tableCell}>
-                      {report.score > 0 ? (
+                      {report.displayScore > 0 ? (
                         <span style={{
                           ...styles.scoreBadge,
-                          background: getScoreColor(report.score)
+                          background: getScoreColor(report.displayScore)
                         }}>
-                          {report.score}%
+                          {report.displayScore}%
                         </span>
                       ) : (
                         <span style={styles.noScoreBadge}>Pending</span>
@@ -528,9 +615,9 @@ export default function ReportsIndex() {
                       <td style={styles.tableCell}>
                         <span style={{
                           ...styles.recommendationBadge,
-                          ...getRecommendationBadge(report.recommendation)
+                          ...getRecommendationBadge(report.recommendation || 'Not Recommended')
                         }}>
-                          {report.recommendation || 'N/A'}
+                          {report.recommendation || 'Not Recommended'}
                         </span>
                       </td>
                     )}
@@ -542,7 +629,10 @@ export default function ReportsIndex() {
                         {report.status || 'Pending'}
                       </span>
                     </td>
-                    <td style={styles.tableCell}>{report.date}</td>
+                    <td style={styles.tableCell}>
+                      {report.completed_at ? new Date(report.completed_at).toISOString().split('T')[0] : 
+                       report.created_at ? new Date(report.created_at).toISOString().split('T')[0] : 'N/A'}
+                    </td>
                     <td style={styles.tableCell}>
                       <button
                         onClick={() => router.push(`/supervisor/reports/${report.id}`)}
@@ -723,6 +813,10 @@ const styles = {
   candidateName: {
     fontWeight: '500',
     color: '#1a202c'
+  },
+  candidateEmail: {
+    fontSize: '12px',
+    color: '#94a3b8'
   },
   scoreBadge: {
     display: 'inline-block',
