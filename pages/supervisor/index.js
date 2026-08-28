@@ -1,5 +1,5 @@
 // pages/supervisor/index.js
-// COMPLETE PRODUCTION-READY VERSION
+// CLEAN VERSION - Removed redundant tabs, better styling
 
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/router';
@@ -75,14 +75,46 @@ function calculateTrueScore(report) {
   return Math.round(Number(report.score || report.percentage_score || report.overallScore || 0));
 }
 
+// ============================================================
+// ENHANCED PROGRAM NORMALIZATION
+// ============================================================
 const ABBREVIATIONS = {
   'bsc': 'BSc', 'b.sc': 'BSc', 'b. sc': 'BSc', 'b.s.c': 'BSc',
   'bachelor': 'Bachelor', 'btech': 'B-Tech', 'b.tech': 'B-Tech',
+  'b-tech': 'B-Tech', 'hnd': 'HND',
   'eng': 'Engineering', 'engr': 'Engineering',
   'elec': 'Electrical', 'electronics': 'Electronics',
+  'electronic': 'Electronics',
   'mech': 'Mechanical', 'mechanical': 'Mechanical',
   'admin': 'Administration', 'adminis': 'Administration',
-  'of': 'of', 'and': 'and', 'in': 'in', 'with': 'with'
+  'of': 'of', 'and': 'and', 'in': 'in', 'with': 'with',
+  '&': 'and', '/': 'and', '-': ' ', '_': ' ',
+  'plant': 'Plant', 'option': 'Option',
+  'automobile': 'Automobile', 'auto': 'Automobile',
+  'production': 'Production', 'manufacturing': 'Manufacturing',
+  'technology': 'Technology', 'telecommunication': 'Telecommunication',
+  'telecom': 'Telecommunication', 'information': 'Information',
+  'it': 'Information Technology', 'computer': 'Computer',
+  'science': 'Science', 'mathematics': 'Mathematics',
+  'math': 'Mathematics', 'statistics': 'Statistics',
+  'chemical': 'Chemical', 'petroleum': 'Petroleum',
+  'renewable': 'Renewable', 'energy': 'Energy',
+  'environmental': 'Environmental', 'civil': 'Civil',
+  'geomatic': 'Geomatic', 'geological': 'Geological',
+  'minerals': 'Minerals', 'materials': 'Materials',
+  'industrial': 'Industrial', 'agricultural': 'Agricultural',
+  'marine': 'Marine', 'biomedical': 'Biomedical',
+  'mechatronics': 'Mechatronics', 'instrumentation': 'Instrumentation',
+  'control': 'Control', 'power': 'Power',
+  'communication': 'Communication', 'networking': 'Networking',
+  'business': 'Business', 'management': 'Management',
+  'marketing': 'Marketing', 'finance': 'Finance',
+  'accounting': 'Accounting', 'economics': 'Economics',
+  'human': 'Human', 'resource': 'Resource',
+  'psychology': 'Psychology', 'sociology': 'Sociology',
+  'geography': 'Geography', 'history': 'History',
+  'political': 'Political', 'education': 'Education',
+  'arts': 'Arts', 'humanities': 'Humanities'
 };
 
 function normalizeProgramName(raw) {
@@ -136,19 +168,64 @@ function getUniqueMasterNames(rawPrograms) {
   return { groups, masterToRawMap };
 }
 
+// ============================================================
+// SUB-COMPONENTS
+// ============================================================
+
+function StatCard({ icon, label, value, color = '#0a1929', bg = 'white' }) {
+  return (
+    <div style={{ ...styles.statCard, background: bg }}>
+      <div style={styles.statIcon}>{icon}</div>
+      <div>
+        <div style={{ ...styles.statLabel, color: bg === '#1a237e' ? 'rgba(255,255,255,0.8)' : '#718096' }}>
+          {label}
+        </div>
+        <div style={{ ...styles.statValue, color: bg === '#1a237e' ? 'white' : '#0a1929' }}>
+          {value}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TabButton({ active, onClick, label, count }) {
+  return (
+    <button 
+      onClick={onClick} 
+      style={{ 
+        ...styles.tabButton, 
+        background: active ? '#1a237e' : 'white', 
+        color: active ? 'white' : '#1a237e', 
+        border: active ? 'none' : '1px solid #e2e8f0',
+        fontWeight: active ? '700' : '500'
+      }}
+    >
+      {label} {count !== undefined && `(${count})`}
+    </button>
+  );
+}
+
+// ============================================================
+// MAIN COMPONENT
+// ============================================================
 export default function SupervisorDashboard() {
   const router = useRouter();
   const { session, loading: authLoading } = useRequireAuth();
 
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('assessments');
+  // Get tab from URL query param or default to 'assessments'
+  const [activeTab, setActiveTab] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      return params.get('tab') || 'assessments';
+    }
+    return 'assessments';
+  });
   const [candidates, setCandidates] = useState([]);
   const [nationalServiceReports, setNationalServiceReports] = useState([]);
   const [otherReports, setOtherReports] = useState([]);
   const [allReports, setAllReports] = useState([]);
-  const [selectedAssessments, setSelectedAssessments] = useState({});
   const [errorMessage, setErrorMessage] = useState('');
-  const [debugInfo, setDebugInfo] = useState(null);
   const [exporting, setExporting] = useState(false);
   const [stats, setStats] = useState({
     totalCandidates: 0,
@@ -162,6 +239,15 @@ export default function SupervisorDashboard() {
   const [minScore, setMinScore] = useState(0);
   const [maxScore, setMaxScore] = useState(100);
 
+  // Update URL when tab changes
+  useEffect(() => {
+    if (typeof window !== 'undefined' && activeTab) {
+      const url = new URL(window.location);
+      url.searchParams.set('tab', activeTab);
+      window.history.replaceState({}, '', url);
+    }
+  }, [activeTab]);
+
   useEffect(() => {
     if (!session) return;
     fetchDashboardData();
@@ -171,7 +257,6 @@ export default function SupervisorDashboard() {
     try {
       setLoading(true);
       setErrorMessage('');
-      setDebugInfo(null);
 
       const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
       if (sessionError) throw new Error(sessionError.message);
@@ -204,7 +289,6 @@ export default function SupervisorDashboard() {
         pendingReviews: Number(dashboardStats.pendingReviews || 0),
         nationalServiceReports: Number(dashboardStats.nationalServiceReports || 0)
       });
-      setDebugInfo(payload.debug || null);
     } catch (error) {
       console.error('[Supervisor Dashboard] Load error:', error);
       setErrorMessage(error?.message || 'Unable to load dashboard data.');
@@ -253,10 +337,6 @@ export default function SupervisorDashboard() {
   const handleViewReport = (resultId) => {
     if (!resultId) { alert('No result available.'); return; }
     router.push(`/supervisor/reports/${resultId}`);
-  };
-
-  const handleAssessmentChange = (candidateId, assessmentId) => {
-    setSelectedAssessments((prev) => ({ ...prev, [candidateId]: assessmentId }));
   };
 
   const getRecommendationColor = (recommendation) => {
@@ -375,6 +455,20 @@ export default function SupervisorDashboard() {
     setMaxScore(100);
   };
 
+  // Determine which reports to show based on active tab
+  const getActiveReports = () => {
+    if (activeTab === 'national_service') return filteredNationalService;
+    if (activeTab === 'other') return filteredOther;
+    return filteredReports;
+  };
+
+  const activeReports = getActiveReports();
+  const reportsCount = {
+    all: allReports.length,
+    national_service: nationalServiceReports.length,
+    other: otherReports.length
+  };
+
   if (authLoading || loading) {
     return (
       <AppLayout background="/images/supervisor-bg.jpg">
@@ -389,6 +483,7 @@ export default function SupervisorDashboard() {
   return (
     <AppLayout background="/images/supervisor-bg.jpg">
       <div style={styles.container}>
+        {/* Header */}
         <div style={styles.header}>
           <div>
             <h1 style={styles.title}>Supervisor Dashboard</h1>
@@ -406,19 +501,21 @@ export default function SupervisorDashboard() {
           <div style={styles.errorBox}><strong>Dashboard loading issue:</strong> {errorMessage}</div>
         )}
 
+        {/* Stats Cards */}
         <div style={styles.statsRow}>
           <StatCard icon="👥" label="Total Candidates" value={stats.totalCandidates} />
-          <StatCard icon="✓" label="Completed" value={stats.completedAssessments} />
+          <StatCard icon="✓" label="Completed Assessments" value={stats.completedAssessments} />
           <StatCard icon="◉" label="Pending Review" value={stats.pendingReviews} />
-          <div style={{ ...styles.statCard, background: '#1a237e' }}>
-            <div style={{ ...styles.statIcon, color: 'white' }}>●</div>
-            <div>
-              <div style={{ ...styles.statLabel, color: 'rgba(255,255,255,0.8)' }}>National Service Reports</div>
-              <div style={{ ...styles.statValue, color: 'white' }}>{stats.nationalServiceReports}</div>
-            </div>
-          </div>
+          <StatCard 
+            icon="📄" 
+            label="National Service Reports" 
+            value={stats.nationalServiceReports}
+            bg="#1a237e"
+            color="white"
+          />
         </div>
 
+        {/* Filters */}
         <div style={styles.filtersBar}>
           <div style={styles.filtersRow}>
             <div style={styles.filterGroup}>
@@ -465,6 +562,7 @@ export default function SupervisorDashboard() {
           </div>
         </div>
 
+        {/* Charts */}
         <div style={styles.chartGrid}>
           <div style={styles.chartCard}>
             <h4 style={styles.chartTitle}>
@@ -521,12 +619,29 @@ export default function SupervisorDashboard() {
           </div>
         </div>
 
+        {/* 🟢 Navigation Tabs (Now using sidebar navigation instead) */}
         <div style={styles.tabsContainer}>
-          <TabButton active={activeTab === 'assessments'} onClick={() => setActiveTab('assessments')} label={`Assessment View (${allReports.length})`} />
-          <TabButton active={activeTab === 'national_service'} onClick={() => setActiveTab('national_service')} label={`National Service (${nationalServiceReports.length})`} />
-          <TabButton active={activeTab === 'other'} onClick={() => setActiveTab('other')} label={`Other Assessments (${otherReports.length})`} />
+          <TabButton 
+            active={activeTab === 'assessments'} 
+            onClick={() => setActiveTab('assessments')} 
+            label="All Assessments" 
+            count={reportsCount.all}
+          />
+          <TabButton 
+            active={activeTab === 'national_service'} 
+            onClick={() => setActiveTab('national_service')} 
+            label="National Service" 
+            count={reportsCount.national_service}
+          />
+          <TabButton 
+            active={activeTab === 'other'} 
+            onClick={() => setActiveTab('other')} 
+            label="Other Assessments" 
+            count={reportsCount.other}
+          />
         </div>
 
+        {/* Tab Content */}
         <div style={styles.tabContent}>
           {activeTab === 'assessments' && (
             <AssessmentTab
@@ -558,30 +673,12 @@ export default function SupervisorDashboard() {
 // SUB-COMPONENTS
 // ============================================================
 
-function StatCard({ icon, label, value }) {
-  return (
-    <div style={styles.statCard}>
-      <div style={styles.statIcon}>{icon}</div>
-      <div>
-        <div style={styles.statLabel}>{label}</div>
-        <div style={styles.statValue}>{value}</div>
-      </div>
-    </div>
-  );
-}
-
-function TabButton({ active, onClick, label }) {
-  return (
-    <button onClick={onClick} style={{ ...styles.tabButton, background: active ? '#1a237e' : 'white', color: active ? 'white' : '#1a237e', border: active ? 'none' : '1px solid #e2e8f0' }}>
-      {label}
-    </button>
-  );
-}
-
 function AssessmentTab({ reports, getScoreColor, getScoreTextColor, onViewReport }) {
   return (
     <div style={styles.tabPanel}>
-      <div style={styles.tabDescription}><p>Filtered view of all completed assessments based on selected criteria. ({reports.length} results)</p></div>
+      <div style={styles.tabDescription}>
+        <p>Filtered view of all completed assessments based on selected criteria. ({reports.length} results)</p>
+      </div>
       {reports.length === 0 ? (
         <div style={styles.emptyState}><p>No assessments match your current filter selections.</p></div>
       ) : (
@@ -631,7 +728,9 @@ function AssessmentTab({ reports, getScoreColor, getScoreTextColor, onViewReport
 function NationalServiceTab({ reports, getScoreColor, getScoreTextColor, getRecommendationColor, onViewReport }) {
   return (
     <div style={styles.tabPanel}>
-      <div style={styles.tabDescription}><p>All National Service assessment reports assigned to this supervisor. ({reports.length} reports)</p></div>
+      <div style={styles.tabDescription}>
+        <p>All National Service assessment reports assigned to this supervisor. ({reports.length} reports)</p>
+      </div>
       {reports.length === 0 ? (
         <div style={styles.emptyState}><p>No National Service assessments found.</p></div>
       ) : (
@@ -710,7 +809,9 @@ function NationalServiceTab({ reports, getScoreColor, getScoreTextColor, getReco
 function OtherAssessmentsTab({ reports, onViewReport }) {
   return (
     <div style={styles.tabPanel}>
-      <div style={styles.tabDescription}><p>All other completed assessments for candidates under your supervision. ({reports.length} reports)</p></div>
+      <div style={styles.tabDescription}>
+        <p>All other completed assessments for candidates under your supervision. ({reports.length} reports)</p>
+      </div>
       {reports.length === 0 ? (
         <div style={styles.emptyState}><p>No other assessments found.</p></div>
       ) : (
@@ -865,7 +966,7 @@ const styles = {
   },
   statsRow: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
     gap: '16px',
     marginBottom: '24px'
   },
@@ -1016,7 +1117,11 @@ const styles = {
     display: 'flex',
     gap: '8px',
     marginBottom: '20px',
-    flexWrap: 'wrap'
+    flexWrap: 'wrap',
+    background: 'white',
+    padding: '8px 16px',
+    borderRadius: '12px',
+    border: '1px solid #eef2f7'
   },
   tabButton: {
     padding: '10px 20px',
