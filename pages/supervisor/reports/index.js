@@ -415,8 +415,8 @@ const styles = {
   spinner: {
     width: '40px',
     height: '40px',
-    border: '4px solid '#E2E8F0',
-    borderTop: '4px solid '#0A1929',
+    border: '4px solid #E2E8F0',
+    borderTop: '4px solid #0A1929',
     borderRadius: '50%',
     animation: 'spin 1s linear infinite'
   },
