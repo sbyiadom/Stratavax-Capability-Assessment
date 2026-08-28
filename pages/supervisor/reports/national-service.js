@@ -9,36 +9,179 @@ export default function NationalServiceReports() {
   const [loading, setLoading] = useState(true);
   const [reports, setReports] = useState([]);
   const [stats, setStats] = useState({
-    totalAssessments: 62,
-    averageScore: 89,
-    totalPrograms: 12,
-    totalCandidates: 65,
-    completedAssessments: 45,
-    pendingReview: 17
+    totalAssessments: 0,
+    averageScore: 0,
+    completedAssessments: 0,
+    pendingReview: 0,
+    failed: 0
   });
+  const [currentSupervisor, setCurrentSupervisor] = useState(null);
 
   useEffect(() => {
-    // Simulate loading data - replace with actual API call
-    setTimeout(() => {
-      setReports([
-        { id: 1, candidate: 'John Doe', university: 'KNUST', program: 'BSc Mechanical Engineering', score: 92, status: 'Completed', date: '2026-08-15' },
-        { id: 2, candidate: 'Jane Smith', university: 'University of Mines and Technology', program: 'Telecommunication Engineering', score: 78, status: 'Pending', date: '2026-08-14' },
-        { id: 3, candidate: 'Bob Johnson', university: 'Kumasi Technical University', program: 'B-Tech Electrical and Electronics', score: 85, status: 'Completed', date: '2026-08-13' },
-        { id: 4, candidate: 'Alice Brown', university: 'Accra Technical University', program: 'BSc Agricultural Engineering', score: 91, status: 'Completed', date: '2026-08-12' },
-        { id: 5, candidate: 'Charlie Wilson', university: 'KNUST', program: 'Chemical Engineering', score: 67, status: 'Failed', date: '2026-08-11' },
-        { id: 6, candidate: 'Diana Ross', university: 'Regional Maritime University', program: 'Mechanical Engineering Plant Option', score: 88, status: 'Completed', date: '2026-08-10' },
-        { id: 7, candidate: 'Eve Adams', university: 'Koforidua Technical University', program: 'Electrical Engineering', score: 94, status: 'Completed', date: '2026-08-09' },
-        { id: 8, candidate: 'Frank Castle', university: 'University of Mines and Technology', program: 'BSc Mechanical Engineering', score: 73, status: 'Pending', date: '2026-08-08' },
-      ]);
-      setLoading(false);
-    }, 1000);
+    checkAuthAndLoadData();
   }, []);
 
+  async function checkAuthAndLoadData() {
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const session = sessionData?.session;
+
+      if (!session?.user) {
+        router.push('/login');
+        return;
+      }
+
+      // Get supervisor profile
+      const { data: profile } = await supabase
+        .from('supervisor_profiles')
+        .select('id, full_name, email')
+        .eq('id', session.user.id)
+        .maybeSingle();
+
+      if (profile) {
+        setCurrentSupervisor(profile);
+      }
+
+      await loadNationalServiceReports(session.user.id);
+    } catch (error) {
+      console.error('Error loading reports:', error);
+      setLoading(false);
+    }
+  }
+
+  async function loadNationalServiceReports(supervisorId) {
+    try {
+      setLoading(true);
+
+      // 1. Get all candidates under this supervisor
+      const { data: candidates, error: candidatesError } = await supabase
+        .from('candidate_profiles')
+        .select('id, full_name, email, university, programme')
+        .eq('supervisor_id', supervisorId);
+
+      if (candidatesError) throw candidatesError;
+
+      if (!candidates || candidates.length === 0) {
+        setReports([]);
+        setStats({
+          totalAssessments: 0,
+          averageScore: 0,
+          completedAssessments: 0,
+          pendingReview: 0,
+          failed: 0
+        });
+        setLoading(false);
+        return;
+      }
+
+      const candidateIds = candidates.map(c => c.id);
+
+      // 2. Get assessments for these candidates with their results
+      const { data: assessments, error: assessmentsError } = await supabase
+        .from('assessment_results')
+        .select(`
+          id,
+          candidate_id,
+          assessment_id,
+          score,
+          status,
+          created_at,
+          completed_at,
+          assessments:assessment_id (
+            id,
+            title,
+            type,
+            description
+          )
+        `)
+        .in('candidate_id', candidateIds)
+        .order('created_at', { ascending: false });
+
+      if (assessmentsError) throw assessmentsError;
+
+      // 3. Process the data
+      const reportData = [];
+      let totalScore = 0;
+      let scoreCount = 0;
+      let completed = 0;
+      let pending = 0;
+      let failed = 0;
+
+      if (assessments && assessments.length > 0) {
+        assessments.forEach(assessment => {
+          // Find candidate info
+          const candidate = candidates.find(c => c.id === assessment.candidate_id);
+          
+          // Only include National Service type assessments (you can adjust this filter)
+          // Assuming assessment type 'national_service' or similar
+          const assessmentType = assessment.assessments?.type || '';
+          
+          // For now, include all assessments - you can filter by type if needed
+          // if (assessmentType === 'national_service' || assessmentType === 'ns') {
+            reportData.push({
+              id: assessment.id,
+              candidate: candidate?.full_name || 'Unknown',
+              candidate_id: assessment.candidate_id,
+              university: candidate?.university || 'Not Specified',
+              program: candidate?.programme || 'Not Specified',
+              score: assessment.score || 0,
+              status: assessment.status || 'Pending',
+              date: assessment.completed_at ? new Date(assessment.completed_at).toISOString().split('T')[0] : 
+                     assessment.created_at ? new Date(assessment.created_at).toISOString().split('T')[0] : 'N/A',
+              assessment_id: assessment.assessment_id,
+              assessment_title: assessment.assessments?.title || 'Untitled'
+            });
+
+            // Calculate stats
+            if (assessment.score) {
+              totalScore += assessment.score;
+              scoreCount++;
+            }
+
+            if (assessment.status === 'Completed') completed++;
+            else if (assessment.status === 'Pending' || assessment.status === 'In Progress') pending++;
+            else if (assessment.status === 'Failed') failed++;
+          // }
+        });
+      }
+
+      // If no assessments found, show message
+      if (reportData.length === 0) {
+        setReports([]);
+        setStats({
+          totalAssessments: 0,
+          averageScore: 0,
+          completedAssessments: 0,
+          pendingReview: 0,
+          failed: 0
+        });
+        setLoading(false);
+        return;
+      }
+
+      setReports(reportData);
+      setStats({
+        totalAssessments: reportData.length,
+        averageScore: scoreCount > 0 ? Math.round(totalScore / scoreCount) : 0,
+        completedAssessments: completed,
+        pendingReview: pending,
+        failed: failed
+      });
+
+    } catch (error) {
+      console.error('Error loading national service reports:', error);
+      setReports([]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   const getStatusColor = (status) => {
-    switch(status) {
-      case 'Completed': return '#48bb78';
-      case 'Pending': return '#ed8936';
-      case 'Failed': return '#fc8181';
+    switch(status?.toLowerCase()) {
+      case 'completed': return '#48bb78';
+      case 'pending': return '#ed8936';
+      case 'in progress': return '#4299e1';
+      case 'failed': return '#fc8181';
       default: return '#a0aec0';
     }
   };
@@ -55,7 +198,10 @@ export default function NationalServiceReports() {
         <div style={styles.header}>
           <div style={styles.headerLeft}>
             <h1 style={styles.title}>📋 National Service Reports</h1>
-            <p style={styles.subtitle}>View and manage National Service assessment reports</p>
+            <p style={styles.subtitle}>
+              View and manage National Service assessment reports
+              {currentSupervisor && ` — ${currentSupervisor.full_name || currentSupervisor.email}`}
+            </p>
           </div>
           <div style={styles.headerActions}>
             <button style={styles.exportButton}>📥 Export CSV</button>
@@ -102,6 +248,15 @@ export default function NationalServiceReports() {
               <div style={styles.spinner} />
               <p>Loading reports...</p>
             </div>
+          ) : reports.length === 0 ? (
+            <div style={styles.emptyState}>
+              <div style={styles.emptyIcon}>📭</div>
+              <h3 style={styles.emptyTitle}>No National Service Reports Found</h3>
+              <p style={styles.emptyText}>
+                There are no National Service assessment reports available for your candidates yet.
+                Assessments will appear here once candidates complete them.
+              </p>
+            </div>
           ) : (
             <table style={styles.table}>
               <thead>
@@ -109,6 +264,7 @@ export default function NationalServiceReports() {
                   <th style={styles.tableHeadCell}>Candidate</th>
                   <th style={styles.tableHeadCell}>University</th>
                   <th style={styles.tableHeadCell}>Program</th>
+                  <th style={styles.tableHeadCell}>Assessment</th>
                   <th style={styles.tableHeadCell}>Score</th>
                   <th style={styles.tableHeadCell}>Status</th>
                   <th style={styles.tableHeadCell}>Date</th>
@@ -116,49 +272,39 @@ export default function NationalServiceReports() {
                 </tr>
               </thead>
               <tbody>
-                {reports.length === 0 ? (
-                  <tr>
-                    <td colSpan="7" style={styles.emptyState}>
-                      <div style={styles.emptyStateContent}>
-                        <span style={styles.emptyStateIcon}>📭</span>
-                        <p>No national service reports found</p>
-                      </div>
+                {reports.map((report) => (
+                  <tr key={report.id} style={styles.tableRow}>
+                    <td style={styles.tableCell}>{report.candidate}</td>
+                    <td style={styles.tableCell}>{report.university}</td>
+                    <td style={styles.tableCell}>{report.program}</td>
+                    <td style={styles.tableCell}>{report.assessment_title}</td>
+                    <td style={styles.tableCell}>
+                      <span style={{
+                        ...styles.scoreBadge,
+                        background: getScoreColor(report.score)
+                      }}>
+                        {report.score || 'N/A'}%
+                      </span>
+                    </td>
+                    <td style={styles.tableCell}>
+                      <span style={{
+                        ...styles.statusBadge,
+                        background: getStatusColor(report.status)
+                      }}>
+                        {report.status || 'Pending'}
+                      </span>
+                    </td>
+                    <td style={styles.tableCell}>{report.date}</td>
+                    <td style={styles.tableCell}>
+                      <button
+                        onClick={() => router.push(`/supervisor/reports/${report.id}`)}
+                        style={styles.viewButton}
+                      >
+                        View Details
+                      </button>
                     </td>
                   </tr>
-                ) : (
-                  reports.map((report) => (
-                    <tr key={report.id} style={styles.tableRow}>
-                      <td style={styles.tableCell}>{report.candidate}</td>
-                      <td style={styles.tableCell}>{report.university}</td>
-                      <td style={styles.tableCell}>{report.program}</td>
-                      <td style={styles.tableCell}>
-                        <span style={{
-                          ...styles.scoreBadge,
-                          background: getScoreColor(report.score)
-                        }}>
-                          {report.score}%
-                        </span>
-                      </td>
-                      <td style={styles.tableCell}>
-                        <span style={{
-                          ...styles.statusBadge,
-                          background: getStatusColor(report.status)
-                        }}>
-                          {report.status}
-                        </span>
-                      </td>
-                      <td style={styles.tableCell}>{report.date}</td>
-                      <td style={styles.tableCell}>
-                        <button
-                          onClick={() => router.push(`/supervisor/reports/${report.id}`)}
-                          style={styles.viewButton}
-                        >
-                          View Details
-                        </button>
-                      </td>
-                    </tr>
-                  ))
-                )}
+                ))}
               </tbody>
             </table>
           )}
@@ -276,10 +422,7 @@ const styles = {
     color: '#4A5568'
   },
   tableRow: {
-    transition: 'background 0.2s ease',
-    ':hover': {
-      background: '#F8FAFC'
-    }
+    transition: 'background 0.2s ease'
   },
   tableCell: {
     padding: '12px 16px',
@@ -317,14 +460,21 @@ const styles = {
     padding: '60px 20px',
     textAlign: 'center'
   },
-  emptyStateContent: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: '12px'
+  emptyIcon: {
+    fontSize: '48px',
+    display: 'block',
+    marginBottom: '16px'
   },
-  emptyStateIcon: {
-    fontSize: '48px'
+  emptyTitle: {
+    fontSize: '18px',
+    fontWeight: '600',
+    color: '#0A1929',
+    margin: '0 0 8px 0'
+  },
+  emptyText: {
+    fontSize: '14px',
+    color: '#94a3b8',
+    margin: 0
   },
   loadingState: {
     padding: '60px 20px',
