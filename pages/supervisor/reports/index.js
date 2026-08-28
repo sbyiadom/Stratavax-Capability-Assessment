@@ -1,13 +1,22 @@
-// pages/supervisor/reports/index.js - FIXED
-// Uses assessment ID to identify National Service reports
+// pages/supervisor/reports/index.js - COMPLETELY FIXED
+// Properly distinguishes between National Service and Other Assessments
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import AppLayout from '../../../components/AppLayout';
 import { supabase } from '../../../supabase/client';
 
-// National Service Assessment ID - hardcoded for now
+// National Service Assessment ID - this is the only assessment that should show in National Service tab
 const NATIONAL_SERVICE_ASSESSMENT_ID = 'bdb9d46e-9fac-4d00-8478-1f649e7ac600';
+
+// Assessment IDs that are NOT National Service (Other assessments)
+// If you have specific assessment IDs for Other assessments, list them here
+// Otherwise, we'll treat everything that's NOT the National Service ID as "Other"
+const OTHER_ASSESSMENT_IDS = [
+  // Add other assessment IDs here if you know them
+  // 'some-other-assessment-id-1',
+  // 'some-other-assessment-id-2',
+];
 
 // ============================================================
 // HELPER FUNCTIONS
@@ -17,14 +26,82 @@ function safeNumber(value, fallback = 0) {
   return Number.isFinite(num) ? num : fallback;
 }
 
-function calculateNationalServiceRecommendation(workplaceReadiness, intellectualCapability) {
-  const workplace = Number(workplaceReadiness || 0);
-  const intellectual = Number(intellectualCapability || 0);
+function extractScore(result) {
+  // Try multiple possible score fields
+  const possibleFields = [
+    'score',
+    'percentage_score',
+    'overallScore',
+    'overall_score',
+    'total_score',
+    'final_score',
+    'result'
+  ];
+  
+  for (const field of possibleFields) {
+    if (result[field] !== undefined && result[field] !== null) {
+      const val = safeNumber(result[field]);
+      if (val > 0) return val;
+    }
+  }
+  
+  // Check if score is in report_data
+  if (result.report_data) {
+    try {
+      const reportData = typeof result.report_data === 'string' 
+        ? JSON.parse(result.report_data) 
+        : result.report_data;
+      
+      if (reportData.overallScore) return safeNumber(reportData.overallScore);
+      if (reportData.percentage_score) return safeNumber(reportData.percentage_score);
+      if (reportData.score) return safeNumber(reportData.score);
+      if (reportData.totalScore) return safeNumber(reportData.totalScore);
+      if (reportData.result) return safeNumber(reportData.result);
+      
+      if (reportData.dimensions?.overallScore) return safeNumber(reportData.dimensions.overallScore);
+      if (reportData.dimensions?.percentage_score) return safeNumber(reportData.dimensions.percentage_score);
+      
+      if (reportData.scores?.overall) return safeNumber(reportData.scores.overall);
+      if (reportData.scores?.total) return safeNumber(reportData.scores.total);
+      if (reportData.scores?.percentage) return safeNumber(reportData.scores.percentage);
+    } catch (e) {
+      console.log('Error parsing report_data:', e);
+    }
+  }
+  
+  return 0;
+}
 
-  if (workplace >= 85 && intellectual >= 85) return 'Highly Recommended';
-  if (workplace >= 75 && intellectual >= 75) return 'Recommended';
-  if (workplace >= 65 && intellectual >= 65) return 'Reserve Pool';
-  return 'Not Recommended';
+function extractRecommendation(result) {
+  const possibleFields = [
+    'recommendation',
+    'classification',
+    'status',
+    'result_status'
+  ];
+  
+  for (const field of possibleFields) {
+    if (result[field]) {
+      const val = String(result[field]);
+      if (val && val !== 'Pending' && val !== 'pending') {
+        return val;
+      }
+    }
+  }
+  
+  if (result.report_data) {
+    try {
+      const reportData = typeof result.report_data === 'string' 
+        ? JSON.parse(result.report_data) 
+        : result.report_data;
+      
+      if (reportData.recommendation) return reportData.recommendation;
+      if (reportData.classification) return reportData.classification;
+      if (reportData.result) return reportData.result;
+    } catch (e) {}
+  }
+  
+  return 'N/A';
 }
 
 // ============================================================
@@ -45,7 +122,6 @@ export default function ReportsIndex() {
   const [currentSupervisor, setCurrentSupervisor] = useState(null);
   const [error, setError] = useState(null);
 
-  // Check URL for tab parameter
   useEffect(() => {
     const tab = router.query.tab;
     if (tab === 'other') {
@@ -109,7 +185,7 @@ export default function ReportsIndex() {
 
       const candidateIds = candidates.map(c => c.id);
 
-      // Get assessment results - use user_id since candidate_id doesn't exist
+      // Get assessment results using user_id
       let assessmentResults = [];
 
       try {
@@ -120,7 +196,7 @@ export default function ReportsIndex() {
 
         if (!error && data && data.length > 0) {
           assessmentResults = data;
-          console.log('Found using user_id:', data.length);
+          console.log('Total assessment results found:', data.length);
         } else if (error) {
           console.error('Error fetching assessment_results:', error);
         }
@@ -141,7 +217,7 @@ export default function ReportsIndex() {
         return;
       }
 
-      // Get assessment titles - don't query for type column since it doesn't exist
+      // Get assessment titles
       const assessmentIds = [...new Set(assessmentResults.map(a => a.assessment_id).filter(id => id))];
       let assessmentMap = {};
 
@@ -158,21 +234,22 @@ export default function ReportsIndex() {
               return acc;
             }, {});
             console.log('Assessments loaded:', assessments.map(a => ({ id: a.id, title: a.title })));
-          } else if (assessmentsError) {
-            console.error('Error fetching assessments:', assessmentsError);
           }
         } catch (e) {
           console.error('Error fetching assessments:', e);
         }
       }
 
-      // Build report data
+      // Build report data with proper categorization
       const reportData = [];
       let totalScore = 0;
       let scoreCount = 0;
       let completed = 0;
       let pending = 0;
       let failed = 0;
+
+      let nationalServiceCount = 0;
+      let otherAssessmentsCount = 0;
 
       assessmentResults.forEach(result => {
         let candidate = null;
@@ -184,29 +261,27 @@ export default function ReportsIndex() {
         }
 
         const assessment = assessmentMap[result.assessment_id] || {};
+        const assessmentTitle = assessment?.title || 'Untitled Assessment';
         
-        // Determine if this is a National Service assessment by ID
+        // ✅ FIX: Determine if this is a National Service assessment
+        // Only the specific National Service assessment ID should be considered National Service
         const isNationalService = result.assessment_id === NATIONAL_SERVICE_ASSESSMENT_ID;
 
-        // Get score
-        let displayScore = safeNumber(result.score || result.percentage_score || 0);
-        let recommendation = 'N/A';
-
-        if (isNationalService && displayScore > 0) {
-          // For National Service, calculate recommendation based on score
-          // If we have separate scores, use them, otherwise use overall score
-          const workplace = safeNumber(result.workplace_readiness || displayScore);
-          const intellectual = safeNumber(result.intellectual_capability || displayScore);
-          recommendation = calculateNationalServiceRecommendation(workplace, intellectual);
-        } else if (!isNationalService) {
-          // For other assessments, get recommendation if available
-          recommendation = result.recommendation || 'N/A';
+        // Log for debugging
+        if (isNationalService) {
+          nationalServiceCount++;
+          console.log(`✅ National Service: ${assessmentTitle} (${result.assessment_id}) - ${candidate?.full_name}`);
+        } else {
+          otherAssessmentsCount++;
+          console.log(`📊 Other Assessment: ${assessmentTitle} (${result.assessment_id}) - ${candidate?.full_name}`);
         }
+
+        const displayScore = extractScore(result);
+        const recommendation = extractRecommendation(result);
 
         reportData.push({
           id: result.id,
           candidate: candidate?.full_name || 'Unknown',
-          candidate_id: result.user_id || 'N/A',
           university: candidate?.university || 'Not Specified',
           program: candidate?.programme || 'Not Specified',
           score: displayScore,
@@ -214,11 +289,10 @@ export default function ReportsIndex() {
           date: result.completed_at ? new Date(result.completed_at).toISOString().split('T')[0] : 
                  result.created_at ? new Date(result.created_at).toISOString().split('T')[0] : 'N/A',
           assessment_id: result.assessment_id,
-          assessment_title: assessment?.title || 'Untitled Assessment',
+          assessment_title: assessmentTitle,
           isNationalService: isNationalService,
           recommendation: recommendation,
-          workplaceReadiness: safeNumber(result.workplace_readiness || 0),
-          intellectualCapability: safeNumber(result.intellectual_capability || 0)
+          raw_result: result
         });
 
         // Calculate stats
@@ -233,10 +307,14 @@ export default function ReportsIndex() {
         else if (status === 'failed' || status === 'fail') failed++;
       });
 
-      // Filter reports based on active tab
+      console.log(`📊 Summary: ${nationalServiceCount} National Service, ${otherAssessmentsCount} Other Assessments`);
+
+      // ✅ Filter reports based on active tab
       const filteredReports = activeTab === 'national' 
         ? reportData.filter(r => r.isNationalService === true)
         : reportData.filter(r => r.isNationalService === false);
+
+      console.log(`[${activeTab}] Filtered reports: ${filteredReports.length}`);
 
       // Calculate filtered stats
       let filteredTotalScore = 0;
@@ -264,8 +342,6 @@ export default function ReportsIndex() {
         pendingReview: filteredPending,
         failed: filteredFailed
       });
-
-      console.log(`[Reports] ${activeTab} tab: ${filteredReports.length} reports found`);
 
     } catch (error) {
       console.error('Error loading reports:', error);
@@ -332,7 +408,6 @@ export default function ReportsIndex() {
           </div>
         )}
 
-        {/* Stats Cards */}
         <div style={styles.statsGrid}>
           <div style={styles.statsCard}>
             <div style={styles.statsIcon}>📋</div>
@@ -364,7 +439,6 @@ export default function ReportsIndex() {
           </div>
         </div>
 
-        {/* Tab Navigation */}
         <div style={styles.tabContainer}>
           <button
             onClick={() => {
@@ -396,7 +470,6 @@ export default function ReportsIndex() {
           </button>
         </div>
 
-        {/* Reports Table */}
         <div style={styles.tableContainer}>
           {loading ? (
             <div style={styles.loadingState}>
@@ -457,7 +530,7 @@ export default function ReportsIndex() {
                           ...styles.recommendationBadge,
                           ...getRecommendationBadge(report.recommendation)
                         }}>
-                          {report.recommendation}
+                          {report.recommendation || 'N/A'}
                         </span>
                       </td>
                     )}
