@@ -9,36 +9,181 @@ export default function OtherAssessmentReports() {
   const [loading, setLoading] = useState(true);
   const [reports, setReports] = useState([]);
   const [stats, setStats] = useState({
-    totalAssessments: 38,
-    averageScore: 76,
-    totalPrograms: 8,
-    totalCandidates: 42,
-    completedAssessments: 28,
-    pendingReview: 10
+    totalAssessments: 0,
+    averageScore: 0,
+    completedAssessments: 0,
+    pendingReview: 0,
+    failed: 0
   });
+  const [currentSupervisor, setCurrentSupervisor] = useState(null);
 
   useEffect(() => {
-    // Simulate loading data - replace with actual API call
-    setTimeout(() => {
-      setReports([
-        { id: 101, candidate: 'Grace Mensah', university: 'KNUST', program: 'BSc Computer Science', score: 88, status: 'Completed', date: '2026-08-15' },
-        { id: 102, candidate: 'Henry Addo', university: 'University of Ghana', program: 'BSc Business Administration', score: 72, status: 'Pending', date: '2026-08-14' },
-        { id: 103, candidate: 'Ivy Osei', university: 'Central University', program: 'BSc Information Technology', score: 95, status: 'Completed', date: '2026-08-13' },
-        { id: 104, candidate: 'James Kumi', university: 'Ashesi University', program: 'BSc Computer Engineering', score: 65, status: 'Failed', date: '2026-08-12' },
-        { id: 105, candidate: 'Kate Asare', university: 'University of Cape Coast', program: 'BEd Mathematics', score: 81, status: 'Completed', date: '2026-08-11' },
-        { id: 106, candidate: 'Louis Agyeman', university: 'Kwame Nkrumah University of Science and Technology', program: 'BSc Civil Engineering', score: 79, status: 'Completed', date: '2026-08-10' },
-        { id: 107, candidate: 'Mary Tetteh', university: 'University of Education Winneba', program: 'BEd Science', score: 93, status: 'Completed', date: '2026-08-09' },
-        { id: 108, candidate: 'Nana Yaw', university: 'Ghana Institute of Journalism', program: 'BA Communication Studies', score: 70, status: 'Pending', date: '2026-08-08' },
-      ]);
-      setLoading(false);
-    }, 1000);
+    checkAuthAndLoadData();
   }, []);
 
+  async function checkAuthAndLoadData() {
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const session = sessionData?.session;
+
+      if (!session?.user) {
+        router.push('/login');
+        return;
+      }
+
+      // Get supervisor profile
+      const { data: profile } = await supabase
+        .from('supervisor_profiles')
+        .select('id, full_name, email')
+        .eq('id', session.user.id)
+        .maybeSingle();
+
+      if (profile) {
+        setCurrentSupervisor(profile);
+      }
+
+      await loadOtherAssessmentReports(session.user.id);
+    } catch (error) {
+      console.error('Error loading reports:', error);
+      setLoading(false);
+    }
+  }
+
+  async function loadOtherAssessmentReports(supervisorId) {
+    try {
+      setLoading(true);
+
+      // 1. Get all candidates under this supervisor
+      const { data: candidates, error: candidatesError } = await supabase
+        .from('candidate_profiles')
+        .select('id, full_name, email, university, programme')
+        .eq('supervisor_id', supervisorId);
+
+      if (candidatesError) throw candidatesError;
+
+      if (!candidates || candidates.length === 0) {
+        setReports([]);
+        setStats({
+          totalAssessments: 0,
+          averageScore: 0,
+          completedAssessments: 0,
+          pendingReview: 0,
+          failed: 0
+        });
+        setLoading(false);
+        return;
+      }
+
+      const candidateIds = candidates.map(c => c.id);
+
+      // 2. Get assessments for these candidates with their results
+      const { data: assessments, error: assessmentsError } = await supabase
+        .from('assessment_results')
+        .select(`
+          id,
+          candidate_id,
+          assessment_id,
+          score,
+          status,
+          created_at,
+          completed_at,
+          assessments:assessment_id (
+            id,
+            title,
+            type,
+            description
+          )
+        `)
+        .in('candidate_id', candidateIds)
+        .order('created_at', { ascending: false });
+
+      if (assessmentsError) throw assessmentsError;
+
+      // 3. Process the data - filter out National Service assessments (or filter based on type)
+      const reportData = [];
+      let totalScore = 0;
+      let scoreCount = 0;
+      let completed = 0;
+      let pending = 0;
+      let failed = 0;
+
+      if (assessments && assessments.length > 0) {
+        assessments.forEach(assessment => {
+          // Find candidate info
+          const candidate = candidates.find(c => c.id === assessment.candidate_id);
+          
+          // Exclude National Service type assessments (or include only 'other' types)
+          const assessmentType = assessment.assessments?.type || '';
+          
+          // Skip national service assessments - adjust filter based on your assessment types
+          if (assessmentType === 'national_service' || assessmentType === 'ns' || assessmentType === 'National Service') {
+            return; // Skip this assessment
+          }
+          
+          reportData.push({
+            id: assessment.id,
+            candidate: candidate?.full_name || 'Unknown',
+            candidate_id: assessment.candidate_id,
+            university: candidate?.university || 'Not Specified',
+            program: candidate?.programme || 'Not Specified',
+            score: assessment.score || 0,
+            status: assessment.status || 'Pending',
+            date: assessment.completed_at ? new Date(assessment.completed_at).toISOString().split('T')[0] : 
+                   assessment.created_at ? new Date(assessment.created_at).toISOString().split('T')[0] : 'N/A',
+            assessment_id: assessment.assessment_id,
+            assessment_title: assessment.assessments?.title || 'Untitled',
+            assessment_type: assessmentType || 'Other'
+          });
+
+          // Calculate stats
+          if (assessment.score) {
+            totalScore += assessment.score;
+            scoreCount++;
+          }
+
+          if (assessment.status === 'Completed') completed++;
+          else if (assessment.status === 'Pending' || assessment.status === 'In Progress') pending++;
+          else if (assessment.status === 'Failed') failed++;
+        });
+      }
+
+      // If no assessments found, show message
+      if (reportData.length === 0) {
+        setReports([]);
+        setStats({
+          totalAssessments: 0,
+          averageScore: 0,
+          completedAssessments: 0,
+          pendingReview: 0,
+          failed: 0
+        });
+        setLoading(false);
+        return;
+      }
+
+      setReports(reportData);
+      setStats({
+        totalAssessments: reportData.length,
+        averageScore: scoreCount > 0 ? Math.round(totalScore / scoreCount) : 0,
+        completedAssessments: completed,
+        pendingReview: pending,
+        failed: failed
+      });
+
+    } catch (error) {
+      console.error('Error loading other assessment reports:', error);
+      setReports([]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   const getStatusColor = (status) => {
-    switch(status) {
-      case 'Completed': return '#48bb78';
-      case 'Pending': return '#ed8936';
-      case 'Failed': return '#fc8181';
+    switch(status?.toLowerCase()) {
+      case 'completed': return '#48bb78';
+      case 'pending': return '#ed8936';
+      case 'in progress': return '#4299e1';
+      case 'failed': return '#fc8181';
       default: return '#a0aec0';
     }
   };
@@ -55,7 +200,10 @@ export default function OtherAssessmentReports() {
         <div style={styles.header}>
           <div style={styles.headerLeft}>
             <h1 style={styles.title}>📊 Other Assessment Reports</h1>
-            <p style={styles.subtitle}>View and manage other assessment reports</p>
+            <p style={styles.subtitle}>
+              View and manage other assessment reports
+              {currentSupervisor && ` — ${currentSupervisor.full_name || currentSupervisor.email}`}
+            </p>
           </div>
           <div style={styles.headerActions}>
             <button style={styles.exportButton}>📥 Export CSV</button>
@@ -102,6 +250,15 @@ export default function OtherAssessmentReports() {
               <div style={styles.spinner} />
               <p>Loading reports...</p>
             </div>
+          ) : reports.length === 0 ? (
+            <div style={styles.emptyState}>
+              <div style={styles.emptyIcon}>📭</div>
+              <h3 style={styles.emptyTitle}>No Other Assessment Reports Found</h3>
+              <p style={styles.emptyText}>
+                There are no other assessment reports available for your candidates yet.
+                Assessments will appear here once candidates complete them.
+              </p>
+            </div>
           ) : (
             <table style={styles.table}>
               <thead>
@@ -109,6 +266,8 @@ export default function OtherAssessmentReports() {
                   <th style={styles.tableHeadCell}>Candidate</th>
                   <th style={styles.tableHeadCell}>University</th>
                   <th style={styles.tableHeadCell}>Program</th>
+                  <th style={styles.tableHeadCell}>Assessment</th>
+                  <th style={styles.tableHeadCell}>Type</th>
                   <th style={styles.tableHeadCell}>Score</th>
                   <th style={styles.tableHeadCell}>Status</th>
                   <th style={styles.tableHeadCell}>Date</th>
@@ -116,49 +275,44 @@ export default function OtherAssessmentReports() {
                 </tr>
               </thead>
               <tbody>
-                {reports.length === 0 ? (
-                  <tr>
-                    <td colSpan="7" style={styles.emptyState}>
-                      <div style={styles.emptyStateContent}>
-                        <span style={styles.emptyStateIcon}>📭</span>
-                        <p>No other assessment reports found</p>
-                      </div>
+                {reports.map((report) => (
+                  <tr key={report.id} style={styles.tableRow}>
+                    <td style={styles.tableCell}>{report.candidate}</td>
+                    <td style={styles.tableCell}>{report.university}</td>
+                    <td style={styles.tableCell}>{report.program}</td>
+                    <td style={styles.tableCell}>{report.assessment_title}</td>
+                    <td style={styles.tableCell}>
+                      <span style={styles.assessmentTypeBadge}>
+                        {report.assessment_type || 'Other'}
+                      </span>
+                    </td>
+                    <td style={styles.tableCell}>
+                      <span style={{
+                        ...styles.scoreBadge,
+                        background: getScoreColor(report.score)
+                      }}>
+                        {report.score || 'N/A'}%
+                      </span>
+                    </td>
+                    <td style={styles.tableCell}>
+                      <span style={{
+                        ...styles.statusBadge,
+                        background: getStatusColor(report.status)
+                      }}>
+                        {report.status || 'Pending'}
+                      </span>
+                    </td>
+                    <td style={styles.tableCell}>{report.date}</td>
+                    <td style={styles.tableCell}>
+                      <button
+                        onClick={() => router.push(`/supervisor/reports/${report.id}`)}
+                        style={styles.viewButton}
+                      >
+                        View Details
+                      </button>
                     </td>
                   </tr>
-                ) : (
-                  reports.map((report) => (
-                    <tr key={report.id} style={styles.tableRow}>
-                      <td style={styles.tableCell}>{report.candidate}</td>
-                      <td style={styles.tableCell}>{report.university}</td>
-                      <td style={styles.tableCell}>{report.program}</td>
-                      <td style={styles.tableCell}>
-                        <span style={{
-                          ...styles.scoreBadge,
-                          background: getScoreColor(report.score)
-                        }}>
-                          {report.score}%
-                        </span>
-                      </td>
-                      <td style={styles.tableCell}>
-                        <span style={{
-                          ...styles.statusBadge,
-                          background: getStatusColor(report.status)
-                        }}>
-                          {report.status}
-                        </span>
-                      </td>
-                      <td style={styles.tableCell}>{report.date}</td>
-                      <td style={styles.tableCell}>
-                        <button
-                          onClick={() => router.push(`/supervisor/reports/${report.id}`)}
-                          style={styles.viewButton}
-                        >
-                          View Details
-                        </button>
-                      </td>
-                    </tr>
-                  ))
-                )}
+                ))}
               </tbody>
             </table>
           )}
@@ -276,10 +430,7 @@ const styles = {
     color: '#4A5568'
   },
   tableRow: {
-    transition: 'background 0.2s ease',
-    ':hover': {
-      background: '#F8FAFC'
-    }
+    transition: 'background 0.2s ease'
   },
   tableCell: {
     padding: '12px 16px',
@@ -303,6 +454,15 @@ const styles = {
     fontWeight: '600',
     color: 'white'
   },
+  assessmentTypeBadge: {
+    display: 'inline-block',
+    padding: '2px 10px',
+    background: '#ebf8ff',
+    color: '#2b6cb0',
+    borderRadius: '12px',
+    fontSize: '12px',
+    fontWeight: '500'
+  },
   viewButton: {
     padding: '4px 12px',
     background: '#4299e1',
@@ -317,14 +477,21 @@ const styles = {
     padding: '60px 20px',
     textAlign: 'center'
   },
-  emptyStateContent: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: '12px'
+  emptyIcon: {
+    fontSize: '48px',
+    display: 'block',
+    marginBottom: '16px'
   },
-  emptyStateIcon: {
-    fontSize: '48px'
+  emptyTitle: {
+    fontSize: '18px',
+    fontWeight: '600',
+    color: '#0A1929',
+    margin: '0 0 8px 0'
+  },
+  emptyText: {
+    fontSize: '14px',
+    color: '#94a3b8',
+    margin: 0
   },
   loadingState: {
     padding: '60px 20px',
