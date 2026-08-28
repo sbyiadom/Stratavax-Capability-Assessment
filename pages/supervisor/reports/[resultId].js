@@ -1,4 +1,4 @@
-// pages/supervisor/reports/[resultId].js - FULLY CORRECTED
+// pages/supervisor/reports/[resultId].js - FIXED with UUID validation
 // FIX: Extracts behavioral matrix from report_data.proctoring directly
 
 import { useState, useEffect } from 'react';
@@ -231,8 +231,22 @@ export default function SupervisorReportView() {
   const [behavioralMatrix, setBehavioralMatrix] = useState(null);
   const [loadingBehavioral, setLoadingBehavioral] = useState(false);
 
+  // ✅ FIX: Validate UUID format before fetching
   useEffect(() => {
+    // If no resultId, don't do anything
     if (!resultId) return;
+
+    // Check if resultId is a valid UUID format
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    
+    if (!uuidRegex.test(resultId)) {
+      console.log('[Report View] Invalid UUID format:', resultId);
+      setError('Invalid report ID format. Please go back and select a valid report.');
+      setLoading(false);
+      return;
+    }
+
+    // Valid UUID - fetch the report
     fetchReport();
   }, [resultId]);
 
@@ -423,8 +437,10 @@ export default function SupervisorReportView() {
           <div style={styles.errorIcon}>⚠️</div>
           <h2>Error Loading Report</h2>
           <p>{error}</p>
-          <button onClick={handleBack} style={styles.errorButton}>Go Back</button>
-          <button onClick={fetchReport} style={styles.retryButton}>Retry</button>
+          <div style={styles.errorButtonGroup}>
+            <button onClick={handleBack} style={styles.errorButton}>Go Back</button>
+            <button onClick={fetchReport} style={styles.retryButton}>Retry</button>
+          </div>
         </div>
       </AppLayout>
     );
@@ -553,6 +569,12 @@ const styles = {
     fontSize: '48px',
     marginBottom: '16px'
   },
+  errorButtonGroup: {
+    display: 'flex',
+    gap: '8px',
+    justifyContent: 'center',
+    marginTop: '16px'
+  },
   errorButton: {
     padding: '10px 24px',
     background: '#1a237e',
@@ -560,8 +582,6 @@ const styles = {
     border: 'none',
     borderRadius: '8px',
     cursor: 'pointer',
-    marginTop: '16px',
-    marginRight: '8px',
     fontSize: '14px',
     fontWeight: '500'
   },
@@ -572,7 +592,6 @@ const styles = {
     border: 'none',
     borderRadius: '8px',
     cursor: 'pointer',
-    marginTop: '16px',
     fontSize: '14px',
     fontWeight: '500'
   },
