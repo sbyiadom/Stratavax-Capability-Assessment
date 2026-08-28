@@ -1,5 +1,5 @@
 // pages/supervisor/reports/[resultId].js - FIXED with UUID validation
-// FIX: Extracts behavioral matrix from report_data.proctoring directly
+// FIX: Properly extracts and passes behavioral matrix to NationalServiceReport
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -11,9 +11,8 @@ import AppLayout from '../../../components/AppLayout';
 const NATIONAL_SERVICE_ASSESSMENT_ID = 'bdb9d46e-9fac-4d00-8478-1f649e7ac600';
 
 // ============================================================
-// HELPER FUNCTIONS
+// SCORE / REPORT DATA HELPERS
 // ============================================================
-
 function safeNumber(value, fallback = 0) {
   const numberValue = Number(value);
   return Number.isFinite(numberValue) ? numberValue : fallback;
@@ -25,7 +24,11 @@ function roundScore(value) {
 
 function getReportDataObject(rawReportData) {
   if (!rawReportData) return {};
-  if (typeof rawReportData === 'object') return rawReportData;
+
+  if (typeof rawReportData === 'object') {
+    return rawReportData;
+  }
+
   if (typeof rawReportData === 'string') {
     try {
       const parsed = JSON.parse(rawReportData);
@@ -35,6 +38,7 @@ function getReportDataObject(rawReportData) {
       return {};
     }
   }
+
   return {};
 }
 
@@ -47,88 +51,85 @@ function formatDuration(seconds) {
 }
 
 // ============================================================
-// 🟢 FIXED: NORMALIZE BEHAVIORAL MATRIX FROM PROCTORING DATA
+// 🟢 BEHAVIORAL MATRIX EXTRACTOR - Reads from proctoring data
 // ============================================================
 
-function normalizeBehavioralMatrix(matrix) {
-  if (!matrix) return null;
-
-  // 🔥 Handle proctoring data from report_data (the actual data source)
-  if (matrix.tabSwitches !== undefined || matrix.totalViolations !== undefined || matrix.riskLevel !== undefined) {
-    return {
-      totalTime: matrix.totalTime || '00:00:00',
-      avgTimePerQuestion: matrix.avgTimePerQuestion || 0,
-      answerChanges: matrix.answerChanges || 0,
-      tabSwitches: matrix.tabSwitches || 0,
-      violations: matrix.totalViolations || 0,
-      copyPasteAttempts: matrix.externalUrlsVisited || 0,
-      rightClickAttempts: 0,
-      riskLevel: matrix.riskLevel || 'Low Risk',
-      riskScore: matrix.riskScore || 0,
-      riskFactors: matrix.riskFactors || [],
-      flags: {
-        violations: matrix.totalViolations || 0,
-        tabSwitches: matrix.tabSwitches || 0,
-        answerChanges: matrix.answerChanges || 0
-      }
-    };
+function extractBehavioralMatrix(reportData) {
+  if (!reportData) {
+    console.warn('[Behavioral Matrix] No report data provided');
+    return null;
   }
 
-  // Handle nested schema (from API fallback)
-  const isNested = matrix.timing || matrix.behavior || matrix.riskAssessment;
+  // Get proctoring data from multiple possible locations
+  const proctoring = reportData.proctoring || 
+                     reportData.behavioral || 
+                     reportData.behavioralMatrix || 
+                     {};
 
-  if (isNested) {
-    return {
-      totalTime: matrix.timing?.formattedTotalTime || formatDuration(matrix.timing?.totalTimeSeconds),
-      avgTimePerQuestion: matrix.timing?.averageTimePerQuestion || 0,
-      answerChanges: matrix.behavior?.answerChanges || 0,
-      tabSwitches: matrix.behavior?.tabSwitches || 0,
-      violations: matrix.behavior?.violations || 0,
-      copyPasteAttempts: (matrix.behavior?.copyAttempts || 0) + (matrix.behavior?.pasteAttempts || 0),
-      rightClickAttempts: matrix.behavior?.rightClickAttempts || 0,
-      riskLevel: matrix.riskAssessment?.level || 'Low Risk',
-      riskScore: matrix.riskAssessment?.score || 0,
-      riskFactors: matrix.riskAssessment?.factors || [],
-      flags: {
-        violations: matrix.behavior?.violations || 0,
-        tabSwitches: matrix.behavior?.tabSwitches || 0,
-        answerChanges: matrix.behavior?.answerChanges || 0
-      }
-    };
+  console.log('[Behavioral Matrix] Raw proctoring data:', JSON.stringify(proctoring, null, 2));
+
+  // If no proctoring data, return null
+  if (Object.keys(proctoring).length === 0) {
+    console.warn('[Behavioral Matrix] No proctoring data found');
+    return null;
   }
 
-  // Flat schema - return as-is
+  // Calculate total time from completedAt if available
+  let totalTime = '00:00:00';
+  if (reportData.completedAt) {
+    try {
+      const startTime = new Date(reportData.completedAt);
+      const now = new Date();
+      const diffMs = now - startTime;
+      if (diffMs > 0 && diffMs < 24 * 60 * 60 * 1000) {
+        const diffSeconds = Math.floor(diffMs / 1000);
+        const hours = Math.floor(diffSeconds / 3600);
+        const minutes = Math.floor((diffSeconds % 3600) / 60);
+        const seconds = diffSeconds % 60;
+        totalTime = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+      }
+    } catch (e) {
+      totalTime = '00:00:00';
+    }
+  }
+
+  // Calculate avg time per question
+  let avgTimePerQuestion = 0;
+  if (reportData.totalMax && reportData.totalMax > 0 && reportData.completedAt) {
+    try {
+      const startTime = new Date(reportData.completedAt);
+      const now = new Date();
+      const diffMs = now - startTime;
+      if (diffMs > 0 && reportData.totalMax > 0) {
+        avgTimePerQuestion = Math.round(diffMs / reportData.totalMax / 1000);
+      }
+    } catch (e) {
+      avgTimePerQuestion = 0;
+    }
+  }
+
+  // Build the behavioral matrix
+  const matrix = {
+    totalTime: totalTime,
+    avgTimePerQuestion: avgTimePerQuestion || proctoring.avgTimePerQuestion || 0,
+    answerChanges: proctoring.answerChanges || proctoring.answer_changes || 0,
+    tabSwitches: proctoring.tabSwitches || proctoring.tab_switches || 0,
+    violations: proctoring.totalViolations || proctoring.violations || proctoring.violation_count || 0,
+    copyPasteAttempts: proctoring.copyPasteAttempts || proctoring.copy_paste_attempts || 0,
+    rightClickAttempts: proctoring.rightClickAttempts || proctoring.right_click_attempts || 0,
+    riskLevel: proctoring.riskLevel || proctoring.risk_level || 'Low Risk',
+    riskScore: proctoring.riskScore || proctoring.risk_score || 0,
+    riskFactors: proctoring.riskFactors || proctoring.risk_factors || [],
+    externalUrlsVisited: proctoring.externalUrlsVisited || proctoring.external_urls_visited || 0,
+    flags: {
+      violations: proctoring.totalViolations || proctoring.violations || 0,
+      tabSwitches: proctoring.tabSwitches || proctoring.tab_switches || 0,
+      answerChanges: proctoring.answerChanges || proctoring.answer_changes || 0
+    }
+  };
+
+  console.log('[Behavioral Matrix] Extracted matrix:', JSON.stringify(matrix, null, 2));
   return matrix;
-}
-
-// ============================================================
-// 🟢 FIXED: GET BEHAVIORAL MATRIX FROM REPORT_DATA
-// ============================================================
-
-function getBehavioralMatrixFromReport(result) {
-  const reportData = getReportDataObject(result?.report_data);
-  
-  // Try proctoring data first
-  const proctoring = reportData?.proctoring || {};
-  
-  if (Object.keys(proctoring).length > 0) {
-    return normalizeBehavioralMatrix(proctoring);
-  }
-  
-  // Try behavioral data
-  const behavioral = reportData?.behavioral || {};
-  if (Object.keys(behavioral).length > 0) {
-    return normalizeBehavioralMatrix(behavioral);
-  }
-  
-  // Try direct proctoring_data column
-  const proctoringData = result?.proctoring_data || {};
-  if (Object.keys(proctoringData).length > 0) {
-    return normalizeBehavioralMatrix(proctoringData);
-  }
-  
-  // If no data found, return null
-  return null;
 }
 
 function getAuthoritativeNationalServiceScores(data, result, report) {
@@ -217,6 +218,15 @@ function getCategoryScores(data, result, report) {
 }
 
 // ============================================================
+// UUID VALIDATION HELPER
+// ============================================================
+
+function isValidUUID(uuid) {
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  return uuidRegex.test(uuid);
+}
+
+// ============================================================
 // MAIN COMPONENT
 // ============================================================
 
@@ -231,15 +241,12 @@ export default function SupervisorReportView() {
   const [behavioralMatrix, setBehavioralMatrix] = useState(null);
   const [loadingBehavioral, setLoadingBehavioral] = useState(false);
 
-  // ✅ FIX: Validate UUID format before fetching
   useEffect(() => {
     // If no resultId, don't do anything
     if (!resultId) return;
 
-    // Check if resultId is a valid UUID format
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    
-    if (!uuidRegex.test(resultId)) {
+    // ✅ FIX: Validate UUID format before fetching
+    if (!isValidUUID(resultId)) {
       console.log('[Report View] Invalid UUID format:', resultId);
       setError('Invalid report ID format. Please go back and select a valid report.');
       setLoading(false);
@@ -251,7 +258,7 @@ export default function SupervisorReportView() {
   }, [resultId]);
 
   // ============================================================
-  // 🟢 FIXED: FETCH REPORT - NO SEPARATE API CALL FOR BEHAVIORAL
+  // 🟢 FETCH REPORT
   // ============================================================
 
   const fetchReport = async () => {
@@ -268,6 +275,8 @@ export default function SupervisorReportView() {
         return;
       }
 
+      console.log('[Report View] Fetching report with authentication...');
+
       const response = await fetch(`/api/assessment-report/${resultId}`, {
         method: 'GET',
         headers: {
@@ -281,29 +290,36 @@ export default function SupervisorReportView() {
         data = await response.json();
       } catch (parseError) {
         console.error('[Report View] Invalid API response:', parseError);
-        throw new Error('Invalid response from server');
+        throw new Error(
+          `The report server returned an invalid response. HTTP status: ${response.status}`
+        );
       }
 
       if (!response.ok || !data.success) {
         if (response.status === 401) {
-          throw new Error('Your session has expired. Please sign in again.');
+          throw new Error(
+            data?.error || 'Your session is invalid or has expired. Please sign in again.'
+          );
         }
         if (response.status === 403) {
-          throw new Error('You do not have permission to view this report.');
+          throw new Error(
+            data?.error || 'You do not have permission to view this report.'
+          );
         }
         if (response.status === 404) {
-          throw new Error('The requested report could not be found.');
+          throw new Error(
+            data?.error || 'The requested assessment report could not be found.'
+          );
         }
-        throw new Error(data?.error || 'Failed to load report');
+        throw new Error(
+          data?.error || `Failed to load report. HTTP status: ${response.status}`
+        );
       }
+
+      console.log('[Report View] Report fetched successfully');
 
       const result = data.result || {};
       const parsedResultReportData = getReportDataObject(result.report_data);
-
-      // 🟢 FIX: Get behavioral matrix from report_data directly
-      const matrix = getBehavioralMatrixFromReport(result);
-      console.log('[Report View] Behavioral Matrix:', matrix);
-
       let report = data.report || {};
 
       if (parsedResultReportData && Object.keys(parsedResultReportData).length > 0) {
@@ -332,6 +348,11 @@ export default function SupervisorReportView() {
       const candidateInfo = getCandidateInfo(data, result, report);
       const candidateName = candidateInfo.fullName || 'Candidate';
       const categoryScores = getCategoryScores(data, result, report);
+
+      // 🟢 EXTRACT BEHAVIORAL MATRIX FROM REPORT DATA
+      const matrix = extractBehavioralMatrix(parsedResultReportData || report);
+
+      console.log('[Report View] Extracted Behavioral Matrix:', JSON.stringify(matrix, null, 2));
 
       if (isNS) {
         const authoritativeScores = getAuthoritativeNationalServiceScores(data, result, report);
@@ -371,6 +392,8 @@ export default function SupervisorReportView() {
             totalQuestions: result.total_questions || 0,
             totalAnswered: result.answered_questions || 0
           },
+          // 🟢 INCLUDE BEHAVIORAL MATRIX IN REPORT
+          proctoring: parsedResultReportData?.proctoring || report.proctoring || null,
           behavioralMatrix: matrix
         };
       } else {
@@ -390,6 +413,8 @@ export default function SupervisorReportView() {
           recommendations: result.recommendations || report.recommendations || data.recommendations || [],
           total_questions: result.total_questions || 0,
           answered_questions: result.answered_questions || 0,
+          // 🟢 INCLUDE BEHAVIORAL MATRIX IN REPORT
+          proctoring: parsedResultReportData?.proctoring || report.proctoring || null,
           behavioralMatrix: matrix
         };
       }
@@ -405,14 +430,17 @@ export default function SupervisorReportView() {
       setBehavioralMatrix(matrix);
       setLoading(false);
     } catch (err) {
-      console.error('[Report View] Error:', err);
+      console.error('[Report View] Error fetching report:', err);
       setError(err.message || 'Failed to load report');
       setLoading(false);
+      if (err.message?.includes('session') || err.message?.includes('token') || err.message?.includes('Unauthorized')) {
+        setTimeout(() => router.push('/login'), 2000);
+      }
     }
   };
 
   const handleBack = () => {
-    router.push('/supervisor');
+    router.push('/supervisor/reports');
   };
 
   // ============================================================
@@ -436,10 +464,15 @@ export default function SupervisorReportView() {
         <div style={styles.errorContainer}>
           <div style={styles.errorIcon}>⚠️</div>
           <h2>Error Loading Report</h2>
-          <p>{error}</p>
+          <p style={styles.errorMessage}>{error}</p>
           <div style={styles.errorButtonGroup}>
             <button onClick={handleBack} style={styles.errorButton}>Go Back</button>
-            <button onClick={fetchReport} style={styles.retryButton}>Retry</button>
+            <button 
+              onClick={() => router.push('/login')} 
+              style={{ ...styles.errorButton, ...styles.secondaryButton }}
+            >
+              Sign In Again
+            </button>
           </div>
         </div>
       </AppLayout>
@@ -450,7 +483,7 @@ export default function SupervisorReportView() {
     return (
       <AppLayout background="/images/admin-bg.jpg">
         <div style={styles.breadcrumb}>
-          <button onClick={handleBack} style={styles.breadcrumbButton}>← Back to Dashboard</button>
+          <button onClick={handleBack} style={styles.breadcrumbButton}>← Back to Reports</button>
           <span style={styles.breadcrumbSeparator}>|</span>
           <span style={styles.breadcrumbText}>National Service Report</span>
         </div>
@@ -458,7 +491,9 @@ export default function SupervisorReportView() {
         <NationalServiceReport
           report={{
             ...reportData.report,
-            behavioralMatrix: behavioralMatrix
+            proctoring: reportData.report.proctoring,
+            behavioralMatrix: behavioralMatrix,
+            report_data: reportData.report.report_data || {}
           }}
           onBack={handleBack}
           behavioralMatrix={behavioralMatrix}
@@ -500,13 +535,15 @@ export default function SupervisorReportView() {
       answered_questions: report.answered_questions || 0,
       completed_at: reportData.result?.completed_at || null,
       candidateName: report.candidateInfo?.fullName || reportData.candidateName || 'Candidate',
+      // 🟢 INCLUDE BEHAVIORAL MATRIX
+      proctoring: report.proctoring,
       behavioralMatrix: behavioralMatrix
     };
 
     return (
       <AppLayout background="/images/admin-bg.jpg">
         <div style={styles.breadcrumb}>
-          <button onClick={handleBack} style={styles.breadcrumbButton}>← Back to Dashboard</button>
+          <button onClick={handleBack} style={styles.breadcrumbButton}>← Back to Reports</button>
           <span style={styles.breadcrumbSeparator}>|</span>
           <span style={styles.breadcrumbText}>Assessment Report</span>
         </div>
@@ -525,7 +562,7 @@ export default function SupervisorReportView() {
   return (
     <AppLayout background="/images/admin-bg.jpg">
       <div style={styles.fallbackContainer}>
-        <button onClick={handleBack} style={styles.backButton}>← Back to Dashboard</button>
+        <button onClick={handleBack} style={styles.backButton}>← Back to Reports</button>
         <div style={styles.fallbackContent}>
           <h2>Report Not Available</h2>
           <p>Unable to determine the report type.</p>
@@ -569,6 +606,10 @@ const styles = {
     fontSize: '48px',
     marginBottom: '16px'
   },
+  errorMessage: {
+    color: '#dc2626',
+    marginBottom: '20px'
+  },
   errorButtonGroup: {
     display: 'flex',
     gap: '8px',
@@ -585,15 +626,9 @@ const styles = {
     fontSize: '14px',
     fontWeight: '500'
   },
-  retryButton: {
-    padding: '10px 24px',
+  secondaryButton: {
     background: '#e2e8f0',
-    color: '#1a202c',
-    border: 'none',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    fontSize: '14px',
-    fontWeight: '500'
+    color: '#1a202c'
   },
   breadcrumb: {
     display: 'flex',
