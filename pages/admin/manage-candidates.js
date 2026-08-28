@@ -1,5 +1,5 @@
 // pages/admin/manage-candidates.js
-// COMPLETE WITH FILTERS - University, Program, Status, Search
+// COMPLETE WITH PROGRAM NORMALIZATION AND FILTERS
 
 import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/router";
@@ -67,11 +67,198 @@ function getScoreStyle(score) {
 }
 
 // ============================================================
+// PROGRAM NORMALIZATION UTILITIES
+// ============================================================
+
+const ABBREVIATIONS = {
+  'bsc': 'BSc',
+  'b.sc': 'BSc',
+  'b. sc': 'BSc',
+  'b.s.c': 'BSc',
+  'bachelor': 'Bachelor',
+  'btech': 'B-Tech',
+  'b.tech': 'B-Tech',
+  'b-tech': 'B-Tech',
+  'hnd': 'HND',
+  'eng': 'Engineering',
+  'engr': 'Engineering',
+  'elec': 'Electrical',
+  'electronics': 'Electronics',
+  'electronic': 'Electronics',
+  'mech': 'Mechanical',
+  'mechanical': 'Mechanical',
+  'admin': 'Administration',
+  'adminis': 'Administration',
+  'of': 'of',
+  'and': 'and',
+  'in': 'in',
+  'with': 'with',
+  '&': 'and',
+  '/': 'and',
+  '-': ' ',
+  '_': ' ',
+  'plant': 'Plant',
+  'option': 'Option',
+  'automobile': 'Automobile',
+  'auto': 'Automobile',
+  'production': 'Production',
+  'manufacturing': 'Manufacturing',
+  'technology': 'Technology',
+  'telecommunication': 'Telecommunication',
+  'telecom': 'Telecommunication',
+  'information': 'Information',
+  'it': 'Information Technology',
+  'computer': 'Computer',
+  'science': 'Science',
+  'mathematics': 'Mathematics',
+  'math': 'Mathematics',
+  'statistics': 'Statistics',
+  'physics': 'Physics',
+  'chemistry': 'Chemistry',
+  'biology': 'Biology',
+  'biochemistry': 'Biochemistry',
+  'chemical': 'Chemical',
+  'petroleum': 'Petroleum',
+  'petrochemical': 'Petrochemical',
+  'renewable': 'Renewable',
+  'energy': 'Energy',
+  'environmental': 'Environmental',
+  'civil': 'Civil',
+  'structural': 'Structural',
+  'geomatic': 'Geomatic',
+  'geological': 'Geological',
+  'mining': 'Mining',
+  'minerals': 'Minerals',
+  'metallurgy': 'Metallurgy',
+  'materials': 'Materials',
+  'industrial': 'Industrial',
+  'manufacturing': 'Manufacturing',
+  'automotive': 'Automotive',
+  'marine': 'Marine',
+  'aerospace': 'Aerospace',
+  'biomedical': 'Biomedical',
+  'mechatronics': 'Mechatronics',
+  'robotics': 'Robotics',
+  'control': 'Control',
+  'instrumentation': 'Instrumentation',
+  'power': 'Power',
+  'communication': 'Communication',
+  'networking': 'Networking',
+  'cybersecurity': 'Cybersecurity',
+  'data': 'Data',
+  'analytics': 'Analytics',
+  'business': 'Business',
+  'administration': 'Administration',
+  'management': 'Management',
+  'marketing': 'Marketing',
+  'finance': 'Finance',
+  'accounting': 'Accounting',
+  'economics': 'Economics',
+  'human': 'Human',
+  'resource': 'Resource',
+  'psychology': 'Psychology',
+  'sociology': 'Sociology',
+  'geography': 'Geography',
+  'history': 'History',
+  'political': 'Political',
+  'education': 'Education',
+  'arts': 'Arts',
+  'humanities': 'Humanities'
+};
+
+function normalizeProgramName(raw) {
+  if (!raw || typeof raw !== 'string') return '';
+  
+  // Remove extra spaces and clean
+  let cleaned = raw
+    .toLowerCase()
+    .replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  
+  // Split into words and map abbreviations
+  const words = cleaned.split(' ');
+  const mappedWords = words.map(word => {
+    const lower = word.toLowerCase();
+    return ABBREVIATIONS[lower] || word.charAt(0).toUpperCase() + word.slice(1);
+  });
+  
+  return mappedWords.join(' ');
+}
+
+function getProgramGroups(programs) {
+  if (!programs || programs.length === 0) return [];
+  
+  const groups = [];
+  const processed = new Set();
+  
+  // Sort programs by length (longest first) to keep the most descriptive master
+  const sortedPrograms = [...programs].sort((a, b) => b.length - a.length);
+  
+  sortedPrograms.forEach(p => {
+    const normalized = normalizeProgramName(p);
+    if (processed.has(normalized)) return;
+    
+    // Find all programs similar to this one
+    const group = [p];
+    const master = normalized;
+    processed.add(normalized);
+    
+    sortedPrograms.forEach(p2 => {
+      if (p === p2) return;
+      const norm2 = normalizeProgramName(p2);
+      if (processed.has(norm2)) return;
+      
+      const words1 = master.split(' ');
+      const words2 = norm2.split(' ');
+      const intersection = words1.filter(w => words2.includes(w)).length;
+      const union = new Set([...words1, ...words2]).size;
+      const similarity = union > 0 ? intersection / union : 0;
+      
+      // If they share more than 50% of words, group them
+      if (similarity > 0.5) {
+        group.push(p2);
+        processed.add(norm2);
+      }
+    });
+    
+    // Find the most common variation as the master label
+    const masterLabel = group.reduce((a, b) => a.length >= b.length ? a : b);
+    
+    groups.push({
+      master: master,
+      displayName: masterLabel,
+      variants: group,
+      count: group.length
+    });
+  });
+  
+  // Sort groups by count (most variants first) then alphabetically
+  return groups.sort((a, b) => b.count - a.count || a.master.localeCompare(b.master));
+}
+
+function getMasterProgramName(program, groups) {
+  if (!program) return '';
+  const normalized = normalizeProgramName(program);
+  
+  for (const group of groups) {
+    if (group.variants.includes(program)) {
+      return group.master;
+    }
+    // Also check normalized match
+    if (normalized === group.master) {
+      return group.master;
+    }
+  }
+  return program;
+}
+
+// ============================================================
 // FILTER COMPONENT
 // ============================================================
 function FilterBar({
   universityOptions,
-  programOptions,
+  programGroups,
   selectedUniversity,
   setSelectedUniversity,
   selectedProgram,
@@ -139,9 +326,9 @@ function FilterBar({
             onChange={(e) => setSelectedProgram(e.target.value)}
           >
             <option value="">All Programs</option>
-            {programOptions.map((prog) => (
-              <option key={prog} value={prog}>
-                {prog}
+            {programGroups.map((group) => (
+              <option key={group.master} value={group.master}>
+                {group.displayName} {group.count > 1 ? `(${group.count} variants)` : ""}
               </option>
             ))}
           </select>
@@ -283,17 +470,13 @@ export default function ManageCandidates() {
   const [expandedCandidate, setExpandedCandidate] = useState(null);
   const [error, setError] = useState("");
 
-  // ============================================================
-  // FILTER STATE
-  // ============================================================
+  // Filter state
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedUniversity, setSelectedUniversity] = useState("");
   const [selectedProgram, setSelectedProgram] = useState("");
   const [selectedStatus, setSelectedStatus] = useState("all");
 
-  // ============================================================
-  // FETCH CANDIDATES
-  // ============================================================
+  // Fetch candidates
   useEffect(() => {
     fetchCandidates();
   }, []);
@@ -374,6 +557,26 @@ export default function ManageCandidates() {
   }
 
   // ============================================================
+  // UNIQUE VALUES FOR FILTERS
+  // ============================================================
+  const universityOptions = useMemo(() => {
+    const unis = new Set();
+    candidates.forEach((c) => {
+      if (c.university) unis.add(c.university);
+    });
+    return Array.from(unis).sort();
+  }, [candidates]);
+
+  // 🟢 PROGRAM GROUPS (Normalized)
+  const programGroups = useMemo(() => {
+    const allPrograms = [];
+    candidates.forEach(c => {
+      if (c.programme) allPrograms.push(c.programme);
+    });
+    return getProgramGroups(allPrograms);
+  }, [candidates]);
+
+  // ============================================================
   // FILTER LOGIC
   // ============================================================
   const filteredCandidates = useMemo(() => {
@@ -393,9 +596,15 @@ export default function ManageCandidates() {
       filtered = filtered.filter((c) => c.university === selectedUniversity);
     }
 
-    // Program filter
+    // 🟢 Program filter - matches any variant of the selected master program
     if (selectedProgram) {
-      filtered = filtered.filter((c) => c.programme === selectedProgram);
+      const group = programGroups.find(g => g.master === selectedProgram);
+      if (group) {
+        const variants = group.variants;
+        filtered = filtered.filter((c) => 
+          variants.some(variant => c.programme === variant)
+        );
+      }
     }
 
     // Status filter
@@ -404,31 +613,11 @@ export default function ManageCandidates() {
     } else if (selectedStatus === "not_started") {
       filtered = filtered.filter((c) => c.latest === null);
     } else if (selectedStatus === "in_progress") {
-      // In progress = has results but no completion date
       filtered = filtered.filter((c) => c.results.length > 0 && c.latest?.completed_at === null);
     }
 
     return filtered;
-  }, [candidates, searchQuery, selectedUniversity, selectedProgram, selectedStatus]);
-
-  // ============================================================
-  // UNIQUE VALUES FOR FILTERS
-  // ============================================================
-  const universityOptions = useMemo(() => {
-    const unis = new Set();
-    candidates.forEach((c) => {
-      if (c.university) unis.add(c.university);
-    });
-    return Array.from(unis).sort();
-  }, [candidates]);
-
-  const programOptions = useMemo(() => {
-    const progs = new Set();
-    candidates.forEach((c) => {
-      if (c.programme) progs.add(c.programme);
-    });
-    return Array.from(progs).sort();
-  }, [candidates]);
+  }, [candidates, searchQuery, selectedUniversity, selectedProgram, selectedStatus, programGroups]);
 
   // ============================================================
   // HANDLERS
@@ -478,10 +667,9 @@ export default function ManageCandidates() {
           <div style={styles.loading}>Loading candidates...</div>
         ) : (
           <>
-            {/* 🟢 FILTER BAR */}
             <FilterBar
               universityOptions={universityOptions}
-              programOptions={programOptions}
+              programGroups={programGroups}
               selectedUniversity={selectedUniversity}
               setSelectedUniversity={setSelectedUniversity}
               selectedProgram={selectedProgram}
@@ -865,10 +1053,7 @@ const styles = {
 
   dataRow: {
     cursor: "pointer",
-    transition: "background 0.15s",
-    ":hover": {
-      background: "#f1f5f9"
-    }
+    transition: "background 0.15s"
   },
 
   candidateInfo: {
