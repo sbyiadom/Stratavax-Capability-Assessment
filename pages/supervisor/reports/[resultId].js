@@ -1,5 +1,5 @@
-// pages/supervisor/reports/[resultId].js - COMPLETE FIXED FILE
-// Replicates the admin version's logic for proper report display
+// pages/supervisor/reports/[resultId].js - COMPLETE FIXED
+// Based on the actual data structure from the database
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -11,11 +11,12 @@ import AppLayout from '../../../components/AppLayout';
 const NATIONAL_SERVICE_ASSESSMENT_ID = 'bdb9d46e-9fac-4d00-8478-1f649e7ac600';
 
 // ============================================================
-// SCORE / REPORT DATA HELPERS (Replicated from admin)
+// HELPER FUNCTIONS
 // ============================================================
 function safeNumber(value, fallback = 0) {
-  const numberValue = Number(value);
-  return Number.isFinite(numberValue) ? numberValue : fallback;
+  if (value === null || value === undefined || value === '') return fallback;
+  const num = Number(value);
+  return Number.isFinite(num) ? num : fallback;
 }
 
 function roundScore(value) {
@@ -42,77 +43,82 @@ function getReportDataObject(rawReportData) {
   return {};
 }
 
-// ============================================================
-// 🟢 BEHAVIORAL MATRIX EXTRACTOR - Replicated from admin
-// ============================================================
-
-function extractBehavioralMatrix(reportData) {
-  if (!reportData) {
-    console.warn('[Behavioral Matrix] No report data provided');
-    return null;
+function calculateScore(result) {
+  // First try to get percentage_score
+  if (result.percentage_score !== undefined && result.percentage_score !== null) {
+    const val = safeNumber(result.percentage_score);
+    if (val === 0 && result.total_score !== undefined && result.max_score !== undefined) {
+      const total = safeNumber(result.total_score);
+      const max = safeNumber(result.max_score);
+      if (max > 0) {
+        return Math.round((total / max) * 100);
+      }
+    }
+    if (val > 0) return val;
   }
+  
+  // Calculate from total_score and max_score
+  if (result.total_score !== undefined && result.max_score !== undefined) {
+    const total = safeNumber(result.total_score);
+    const max = safeNumber(result.max_score);
+    if (max > 0) {
+      return Math.round((total / max) * 100);
+    }
+  }
+  
+  // Check in report_data
+  if (result.report_data) {
+    try {
+      let reportData = result.report_data;
+      if (typeof reportData === 'string') {
+        reportData = JSON.parse(reportData);
+      }
+      
+      if (reportData.totalEarned !== undefined && reportData.totalMax !== undefined) {
+        const earned = safeNumber(reportData.totalEarned);
+        const max = safeNumber(reportData.totalMax);
+        if (max > 0) {
+          return Math.round((earned / max) * 100);
+        }
+      }
+      
+      if (reportData.percentageScore !== undefined) {
+        const val = safeNumber(reportData.percentageScore);
+        if (val > 0) return val;
+      }
+    } catch (e) {}
+  }
+  
+  return 0;
+}
 
-  // Get proctoring data from multiple possible locations
+// ============================================================
+// BEHAVIORAL MATRIX EXTRACTOR
+// ============================================================
+function extractBehavioralMatrix(reportData) {
+  if (!reportData) return null;
+
   const proctoring = reportData.proctoring || 
                      reportData.behavioral || 
                      reportData.behavioralMatrix || 
                      {};
 
-  console.log('[Behavioral Matrix] Raw proctoring data:', JSON.stringify(proctoring, null, 2));
-
-  // If no proctoring data, return null
   if (Object.keys(proctoring).length === 0) {
-    console.warn('[Behavioral Matrix] No proctoring data found');
     return null;
   }
 
-  // Calculate total time from completedAt if available
-  let totalTime = '00:00:00';
-  if (reportData.completedAt) {
-    try {
-      const startTime = new Date(reportData.completedAt);
-      const now = new Date();
-      const diffMs = now - startTime;
-      if (diffMs > 0 && diffMs < 24 * 60 * 60 * 1000) {
-        const diffSeconds = Math.floor(diffMs / 1000);
-        const hours = Math.floor(diffSeconds / 3600);
-        const minutes = Math.floor((diffSeconds % 3600) / 60);
-        const seconds = diffSeconds % 60;
-        totalTime = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-      }
-    } catch (e) {
-      totalTime = '00:00:00';
-    }
-  }
-
-  // Calculate avg time per question
-  let avgTimePerQuestion = 0;
-  if (reportData.totalMax && reportData.totalMax > 0 && reportData.completedAt) {
-    try {
-      const startTime = new Date(reportData.completedAt);
-      const now = new Date();
-      const diffMs = now - startTime;
-      if (diffMs > 0 && reportData.totalMax > 0) {
-        avgTimePerQuestion = Math.round(diffMs / reportData.totalMax / 1000);
-      }
-    } catch (e) {
-      avgTimePerQuestion = 0;
-    }
-  }
-
-  // Build the behavioral matrix
   const matrix = {
-    totalTime: totalTime,
-    avgTimePerQuestion: avgTimePerQuestion || proctoring.avgTimePerQuestion || 0,
+    totalTime: proctoring.totalTime || '00:00:00',
+    avgTimePerQuestion: proctoring.avgTimePerQuestion || 0,
     answerChanges: proctoring.answerChanges || proctoring.answer_changes || 0,
     tabSwitches: proctoring.tabSwitches || proctoring.tab_switches || 0,
-    violations: proctoring.totalViolations || proctoring.violations || proctoring.violation_count || 0,
-    copyPasteAttempts: proctoring.copyPasteAttempts || proctoring.copy_paste_attempts || 0,
-    rightClickAttempts: proctoring.rightClickAttempts || proctoring.right_click_attempts || 0,
-    riskLevel: proctoring.riskLevel || proctoring.risk_level || 'Low Risk',
-    riskScore: proctoring.riskScore || proctoring.risk_score || 0,
-    riskFactors: proctoring.riskFactors || proctoring.risk_factors || [],
-    externalUrlsVisited: proctoring.externalUrlsVisited || proctoring.external_urls_visited || 0,
+    violations: proctoring.totalViolations || proctoring.violations || 0,
+    copyPasteAttempts: proctoring.copyPasteAttempts || 0,
+    rightClickAttempts: proctoring.rightClickAttempts || 0,
+    riskLevel: proctoring.riskLevel || 'Low Risk',
+    riskScore: proctoring.riskScore || 0,
+    riskFactors: proctoring.riskFactors || [],
+    externalUrlsVisited: proctoring.externalUrlsVisited || 0,
     flags: {
       violations: proctoring.totalViolations || proctoring.violations || 0,
       tabSwitches: proctoring.tabSwitches || proctoring.tab_switches || 0,
@@ -120,99 +126,12 @@ function extractBehavioralMatrix(reportData) {
     }
   };
 
-  console.log('[Behavioral Matrix] Extracted matrix:', JSON.stringify(matrix, null, 2));
   return matrix;
 }
 
-function getAuthoritativeNationalServiceScores(data, result, report) {
-  const parsedReportData = getReportDataObject(result?.report_data);
-  const reportDimensions = report?.dimensions || {};
-  const parsedDimensions = parsedReportData?.dimensions || {};
-  const parsedScores = parsedReportData?.scores || {};
-
-  const workplaceReadiness = roundScore(
-    parsedDimensions.workplaceReadiness ??
-    parsedScores.workplace ??
-    reportDimensions.workplaceReadiness ??
-    report?.workplaceReadiness ??
-    report?.workplace_readiness ??
-    data?.workplaceReadiness ??
-    result?.workplace_readiness ??
-    0
-  );
-
-  const intellectualCapability = roundScore(
-    parsedDimensions.intellectualCapability ??
-    parsedScores.intellectual ??
-    reportDimensions.intellectualCapability ??
-    report?.intellectualCapability ??
-    report?.intellectual_capability ??
-    data?.intellectualCapability ??
-    result?.intellectual_capability ??
-    0
-  );
-
-  const overallScore = roundScore(
-    parsedDimensions.overallScore ??
-    parsedScores.overall ??
-    parsedReportData?.overallScore ??
-    reportDimensions.overallScore ??
-    report?.overallScore ??
-    report?.percentage_score ??
-    report?.score ??
-    data?.overallScore ??
-    result?.percentage_score ??
-    0
-  );
-
-  return {
-    workplaceReadiness,
-    intellectualCapability,
-    overallScore,
-    parsedReportData
-  };
-}
-
-function getCandidateInfo(data, result, report) {
-  const profile = result?.candidate_profiles || {};
-  const existingInfo = report?.candidateInfo || {};
-
-  return {
-    fullName:
-      profile?.full_name ||
-      existingInfo?.fullName ||
-      data?.candidateName ||
-      result?.candidate_name ||
-      'Candidate',
-    email: profile?.email || existingInfo?.email || '',
-    university: profile?.university || existingInfo?.university || data?.university || 'N/A',
-    programme: profile?.programme || existingInfo?.programme || data?.programme || 'N/A',
-    graduationYear: profile?.graduation_year || existingInfo?.graduationYear || data?.graduationYear || '',
-    preferredDepartment: profile?.preferred_department || existingInfo?.preferredDepartment || data?.preferredDepartment || 'Not Specified',
-    assessmentDate: result?.completed_at ? new Date(result.completed_at).toLocaleDateString() : (existingInfo?.assessmentDate || 'N/A')
-  };
-}
-
-function getCategoryScores(data, result, report) {
-  if (Array.isArray(data?.categoryScores) && data.categoryScores.length > 0) return data.categoryScores;
-  if (Array.isArray(data?.category_scores) && data.category_scores.length > 0) return data.category_scores;
-  if (Array.isArray(data?.workplaceSubCategories) || Array.isArray(data?.intellectualSubCategories)) {
-    return [
-      ...(data.workplaceSubCategories || []),
-      ...(data.intellectualSubCategories || [])
-    ];
-  }
-  if (Array.isArray(result?.category_scores) && result.category_scores.length > 0) return result.category_scores;
-  if (Array.isArray(report?.category_scores) && report.category_scores.length > 0) return report.category_scores;
-  if (Array.isArray(report?.categoryScores) && report.categoryScores.length > 0) return report.categoryScores;
-  if (Array.isArray(report?.categoryBreakdown) && report.categoryBreakdown.length > 0) return report.categoryBreakdown;
-  return [];
-}
-
 // ============================================================
-// UUID VALIDATION HELPER
+// UUID VALIDATION
 // ============================================================
-
 function isValidUUID(uuid) {
   const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   return uuidRegex.test(uuid);
@@ -221,7 +140,6 @@ function isValidUUID(uuid) {
 // ============================================================
 // MAIN COMPONENT
 // ============================================================
-
 export default function SupervisorReportView() {
   const router = useRouter();
   const { resultId } = router.query;
@@ -231,27 +149,18 @@ export default function SupervisorReportView() {
   const [reportData, setReportData] = useState(null);
   const [isNationalService, setIsNationalService] = useState(false);
   const [behavioralMatrix, setBehavioralMatrix] = useState(null);
-  const [loadingBehavioral, setLoadingBehavioral] = useState(false);
 
   useEffect(() => {
-    // If no resultId, don't do anything
     if (!resultId) return;
 
-    // ✅ Validate UUID format before fetching
     if (!isValidUUID(resultId)) {
-      console.log('[Report View] Invalid UUID format:', resultId);
       setError('Invalid report ID format. Please go back and select a valid report.');
       setLoading(false);
       return;
     }
 
-    // Valid UUID - fetch the report
     fetchReport();
   }, [resultId]);
-
-  // ============================================================
-  // 🟢 FETCH REPORT - Replicated from admin
-  // ============================================================
 
   const fetchReport = async () => {
     try {
@@ -267,7 +176,7 @@ export default function SupervisorReportView() {
         return;
       }
 
-      console.log('[Report View] Fetching report with authentication...');
+      console.log('[Report View] Fetching report...');
 
       const response = await fetch(`/api/assessment-report/${resultId}`, {
         method: 'GET',
@@ -282,30 +191,20 @@ export default function SupervisorReportView() {
         data = await response.json();
       } catch (parseError) {
         console.error('[Report View] Invalid API response:', parseError);
-        throw new Error(
-          `The report server returned an invalid response. HTTP status: ${response.status}`
-        );
+        throw new Error('Invalid response from server');
       }
 
       if (!response.ok || !data.success) {
         if (response.status === 401) {
-          throw new Error(
-            data?.error || 'Your session is invalid or has expired. Please sign in again.'
-          );
+          throw new Error('Your session has expired. Please sign in again.');
         }
         if (response.status === 403) {
-          throw new Error(
-            data?.error || 'You do not have permission to view this report.'
-          );
+          throw new Error('You do not have permission to view this report.');
         }
         if (response.status === 404) {
-          throw new Error(
-            data?.error || 'The requested assessment report could not be found.'
-          );
+          throw new Error('The requested report could not be found.');
         }
-        throw new Error(
-          data?.error || `Failed to load report. HTTP status: ${response.status}`
-        );
+        throw new Error(data?.error || 'Failed to load report');
       }
 
       console.log('[Report View] Report fetched successfully');
@@ -314,121 +213,125 @@ export default function SupervisorReportView() {
       const parsedResultReportData = getReportDataObject(result.report_data);
       let report = data.report || {};
 
+      // Merge report_data into report
       if (parsedResultReportData && Object.keys(parsedResultReportData).length > 0) {
         report = {
           ...parsedResultReportData,
           ...report,
-          dimensions: report.dimensions || parsedResultReportData.dimensions || {},
-          scores: report.scores || parsedResultReportData.scores || {},
-          category_scores: report.category_scores || parsedResultReportData.category_scores || parsedResultReportData.categoryBreakdown || [],
-          categoryBreakdown: report.categoryBreakdown || parsedResultReportData.categoryBreakdown || parsedResultReportData.category_scores || [],
           report_data: parsedResultReportData
         };
       }
 
-      // ✅ FIX: Determine if National Service - same logic as admin
+      // Determine if National Service
       const assessmentId = result?.assessment_id || data?.assessment_id || '';
-      const assessmentTypeCode = data?.assessmentTypeCode || result?.assessment_type_code || result?.assessments?.assessment_type?.code || '';
       const assessmentTitle = result?.assessments?.title || report?.assessmentName || data?.assessmentTitle || '';
 
-      const isNS =
-        assessmentId === NATIONAL_SERVICE_ASSESSMENT_ID ||
-        assessmentTypeCode === 'national_service' ||
-        data?.isNationalService === true ||
-        assessmentTitle === 'National Service Recruitment Assessment' ||
-        report?.reportType === 'national_service';
+      const isNS = assessmentId === NATIONAL_SERVICE_ASSESSMENT_ID ||
+                   assessmentTitle === 'National Service Recruitment Assessment';
 
-      const candidateInfo = getCandidateInfo(data, result, report);
-      const candidateName = candidateInfo.fullName || 'Candidate';
-      const categoryScores = getCategoryScores(data, result, report);
+      // Get candidate info
+      const profile = result?.candidate_profiles || {};
+      const candidateInfo = {
+        fullName: profile?.full_name || result?.candidate_name || data?.candidateName || 'Candidate',
+        email: profile?.email || '',
+        university: profile?.university || 'Not Specified',
+        programme: profile?.programme || 'Not Specified',
+        assessmentDate: result?.completed_at ? new Date(result.completed_at).toLocaleDateString() : 'N/A'
+      };
 
-      // 🟢 EXTRACT BEHAVIORAL MATRIX FROM REPORT DATA
-      const matrix = extractBehavioralMatrix(parsedResultReportData || report);
+      // Get category scores
+      const categoryScores = result?.category_scores || 
+                             report?.category_scores || 
+                             report?.categoryScores || 
+                             parsedResultReportData?.categoryScores || [];
 
-      console.log('[Report View] Extracted Behavioral Matrix:', JSON.stringify(matrix, null, 2));
+      // Calculate score
+      const displayScore = calculateScore(result);
 
-      if (isNS) {
-        const authoritativeScores = getAuthoritativeNationalServiceScores(data, result, report);
-
-        report = {
-          ...report,
-          reportType: 'national_service',
-          candidateName,
-          candidateInfo,
-          category_scores: categoryScores,
-          categoryScores: categoryScores,
-          categoryBreakdown: categoryScores,
-          workplaceSubCategories: data.workplaceSubCategories || report.workplaceSubCategories || [],
-          intellectualSubCategories: data.intellectualSubCategories || report.intellectualSubCategories || [],
-          dimensions: {
-            ...(report.dimensions || {}),
-            workplaceReadiness: authoritativeScores.workplaceReadiness,
-            intellectualCapability: authoritativeScores.intellectualCapability,
-            overallScore: authoritativeScores.overallScore
-          },
-          scores: {
-            ...(report.scores || {}),
-            workplace: authoritativeScores.workplaceReadiness,
-            intellectual: authoritativeScores.intellectualCapability,
-            overall: authoritativeScores.overallScore,
-            recommendation: report.scores?.recommendation || report.recommendation || data.recommendation || result.recommendation || 'Not Recommended'
-          },
-          workplaceReadiness: authoritativeScores.workplaceReadiness,
-          intellectualCapability: authoritativeScores.intellectualCapability,
-          workplace_readiness: authoritativeScores.workplaceReadiness,
-          intellectual_capability: authoritativeScores.intellectualCapability,
-          overallScore: authoritativeScores.overallScore,
-          percentage_score: authoritativeScores.overallScore,
-          score: authoritativeScores.overallScore,
-          recommendation: report.scores?.recommendation || report.recommendation || data.recommendation || result.recommendation || 'Not Recommended',
-          statistics: report.statistics || {
-            totalQuestions: result.total_questions || 0,
-            totalAnswered: result.answered_questions || 0
-          },
-          // 🟢 INCLUDE BEHAVIORAL MATRIX IN REPORT
-          proctoring: parsedResultReportData?.proctoring || report.proctoring || null,
-          behavioralMatrix: matrix
-        };
-      } else {
-        report = {
-          ...report,
-          reportType: 'stratavax',
-          candidateName,
-          candidateInfo,
-          categoryScores: categoryScores,
-          category_scores: categoryScores,
-          overallScore: roundScore(result.percentage_score ?? report.overallScore ?? data.overallScore ?? 0),
-          percentage_score: roundScore(result.percentage_score ?? report.percentage_score ?? data.percentage_score ?? 0),
-          classification: result.classification || report.classification || data.classification || 'Standard Profile',
-          riskLevel: result.riskLevel || report.riskLevel || result.risk_level || data.riskLevel || 'Medium',
-          strengths: result.strengths || report.strengths || data.strengths || [],
-          weaknesses: result.weaknesses || report.weaknesses || report.developmentAreas || data.weaknesses || [],
-          recommendations: result.recommendations || report.recommendations || data.recommendations || [],
-          total_questions: result.total_questions || 0,
-          answered_questions: result.answered_questions || 0,
-          // 🟢 INCLUDE BEHAVIORAL MATRIX IN REPORT
-          proctoring: parsedResultReportData?.proctoring || report.proctoring || null,
-          behavioralMatrix: matrix
-        };
+      // Get recommendation
+      let recommendation = result?.recommendation || report?.recommendation || 'N/A';
+      if (isNS && displayScore > 0) {
+        const s = displayScore;
+        if (s >= 85) recommendation = 'Highly Recommended';
+        else if (s >= 75) recommendation = 'Recommended';
+        else if (s >= 65) recommendation = 'Reserve Pool';
+        else recommendation = 'Not Recommended';
       }
 
+      // Extract behavioral matrix
+      const matrix = extractBehavioralMatrix(parsedResultReportData || report);
+      console.log('[Report View] Behavioral Matrix:', matrix);
+
+      // Build the report object
+      const reportObject = {
+        ...report,
+        reportType: isNS ? 'national_service' : 'stratavax',
+        candidateName: candidateInfo.fullName,
+        candidateInfo: candidateInfo,
+        category_scores: categoryScores,
+        categoryScores: categoryScores,
+        overallScore: displayScore,
+        percentage_score: displayScore,
+        score: displayScore,
+        recommendation: recommendation,
+        status: result?.status || 'Pending',
+        completed_at: result?.completed_at,
+        created_at: result?.created_at,
+        total_questions: result?.total_questions || 0,
+        answered_questions: result?.answered_questions || 0,
+        behavioralMatrix: matrix,
+        proctoring: parsedResultReportData?.proctoring || null,
+        strengths: result?.strengths || report?.strengths || [],
+        weaknesses: result?.weaknesses || report?.weaknesses || [],
+        recommendations: result?.recommendations || report?.recommendations || [],
+        classification: result?.classification || report?.classification || 'Standard Profile',
+        riskLevel: result?.risk_level || report?.riskLevel || 'Medium',
+        executiveSummary: report?.executiveSummary || '',
+        supervisorImplication: report?.supervisorImplication || ''
+      };
+
+      // Build the result object for StratavaxReport
+      const stratavaxResult = {
+        ...result,
+        candidate_profiles: {
+          full_name: candidateInfo.fullName,
+          email: candidateInfo.email,
+          university: candidateInfo.university,
+          programme: candidateInfo.programme
+        },
+        assessments: {
+          title: assessmentTitle || 'Assessment'
+        },
+        percentage_score: displayScore,
+        classification: reportObject.classification,
+        riskLevel: reportObject.riskLevel,
+        categoryScores: categoryScores,
+        strengths: reportObject.strengths,
+        weaknesses: reportObject.weaknesses,
+        recommendations: reportObject.recommendations,
+        executiveSummary: reportObject.executiveSummary,
+        supervisorImplication: reportObject.supervisorImplication,
+        total_questions: reportObject.total_questions,
+        answered_questions: reportObject.answered_questions,
+        completed_at: result?.completed_at,
+        candidateName: candidateInfo.fullName,
+        behavioralMatrix: matrix
+      };
+
       setReportData({
-        ...data,
-        report,
-        result,
-        candidateName,
+        report: reportObject,
+        result: stratavaxResult,
+        candidateName: candidateInfo.fullName,
         behavioralMatrix: matrix
       });
       setIsNationalService(isNS);
       setBehavioralMatrix(matrix);
       setLoading(false);
+
     } catch (err) {
-      console.error('[Report View] Error fetching report:', err);
+      console.error('[Report View] Error:', err);
       setError(err.message || 'Failed to load report');
       setLoading(false);
-      if (err.message?.includes('session') || err.message?.includes('token') || err.message?.includes('Unauthorized')) {
-        setTimeout(() => router.push('/login'), 2000);
-      }
     }
   };
 
@@ -442,7 +345,7 @@ export default function SupervisorReportView() {
 
   if (loading) {
     return (
-      <AppLayout background="/images/admin-bg.jpg">
+      <AppLayout>
         <div style={styles.loadingContainer}>
           <div style={styles.loadingSpinner}></div>
           <p>Loading report...</p>
@@ -453,19 +356,14 @@ export default function SupervisorReportView() {
 
   if (error) {
     return (
-      <AppLayout background="/images/admin-bg.jpg">
+      <AppLayout>
         <div style={styles.errorContainer}>
           <div style={styles.errorIcon}>⚠️</div>
           <h2>Error Loading Report</h2>
           <p style={styles.errorMessage}>{error}</p>
           <div style={styles.errorButtonGroup}>
             <button onClick={handleBack} style={styles.errorButton}>Go Back</button>
-            <button 
-              onClick={() => router.push('/login')} 
-              style={{ ...styles.errorButton, ...styles.secondaryButton }}
-            >
-              Sign In Again
-            </button>
+            <button onClick={fetchReport} style={styles.retryButton}>Retry</button>
           </div>
         </div>
       </AppLayout>
@@ -474,7 +372,7 @@ export default function SupervisorReportView() {
 
   if (isNationalService && reportData?.report) {
     return (
-      <AppLayout background="/images/admin-bg.jpg">
+      <AppLayout>
         <div style={styles.breadcrumb}>
           <button onClick={handleBack} style={styles.breadcrumbButton}>← Back to Reports</button>
           <span style={styles.breadcrumbSeparator}>|</span>
@@ -490,51 +388,15 @@ export default function SupervisorReportView() {
           }}
           onBack={handleBack}
           behavioralMatrix={behavioralMatrix}
-          loadingBehavioral={loadingBehavioral}
+          loadingBehavioral={false}
         />
       </AppLayout>
     );
   }
 
-  if (!isNationalService && reportData?.report) {
-    const report = reportData.report;
-
-    const stratavaxResult = {
-      ...reportData.result,
-      candidate_profiles: {
-        full_name: report.candidateInfo?.fullName || reportData.candidateName || 'Candidate',
-        email: report.candidateInfo?.email || '',
-        university: report.candidateInfo?.university || '',
-        programme: report.candidateInfo?.programme || '',
-        graduation_year: report.candidateInfo?.graduationYear || '',
-        preferred_department: report.candidateInfo?.preferredDepartment || ''
-      },
-      assessments: {
-        title: reportData.result?.assessments?.title || report.assessmentName || 'Assessment',
-        assessment_type: {
-          name: reportData.result?.assessments?.assessment_type?.name || 'General'
-        }
-      },
-      percentage_score: report.overallScore || report.percentage_score || 0,
-      classification: report.classification || 'Standard Profile',
-      riskLevel: report.riskLevel || 'Medium',
-      categoryScores: report.categoryScores || report.category_scores || [],
-      strengths: report.strengths || [],
-      weaknesses: report.weaknesses || [],
-      recommendations: report.recommendations || [],
-      executiveSummary: report.executiveSummary || '',
-      supervisorImplication: report.supervisorImplication || '',
-      total_questions: report.total_questions || 0,
-      answered_questions: report.answered_questions || 0,
-      completed_at: reportData.result?.completed_at || null,
-      candidateName: report.candidateInfo?.fullName || reportData.candidateName || 'Candidate',
-      // 🟢 INCLUDE BEHAVIORAL MATRIX
-      proctoring: report.proctoring,
-      behavioralMatrix: behavioralMatrix
-    };
-
+  if (!isNationalService && reportData?.result) {
     return (
-      <AppLayout background="/images/admin-bg.jpg">
+      <AppLayout>
         <div style={styles.breadcrumb}>
           <button onClick={handleBack} style={styles.breadcrumbButton}>← Back to Reports</button>
           <span style={styles.breadcrumbSeparator}>|</span>
@@ -542,9 +404,9 @@ export default function SupervisorReportView() {
         </div>
 
         <StratavaxReport
-          result={stratavaxResult}
-          candidate={stratavaxResult.candidate_profiles || null}
-          assessment={stratavaxResult.assessments || null}
+          result={reportData.result}
+          candidate={reportData.result.candidate_profiles || null}
+          assessment={reportData.result.assessments || null}
           onBack={handleBack}
           behavioralMatrix={behavioralMatrix}
         />
@@ -553,7 +415,7 @@ export default function SupervisorReportView() {
   }
 
   return (
-    <AppLayout background="/images/admin-bg.jpg">
+    <AppLayout>
       <div style={styles.fallbackContainer}>
         <button onClick={handleBack} style={styles.backButton}>← Back to Reports</button>
         <div style={styles.fallbackContent}>
@@ -619,9 +481,15 @@ const styles = {
     fontSize: '14px',
     fontWeight: '500'
   },
-  secondaryButton: {
+  retryButton: {
+    padding: '10px 24px',
     background: '#e2e8f0',
-    color: '#1a202c'
+    color: '#1a202c',
+    border: 'none',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    fontSize: '14px',
+    fontWeight: '500'
   },
   breadcrumb: {
     display: 'flex',
@@ -672,3 +540,15 @@ const styles = {
     boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
   }
 };
+
+// Add keyframe animation for spinner
+if (typeof document !== 'undefined') {
+  const style = document.createElement('style');
+  style.textContent = `
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  `;
+  document.head.appendChild(style);
+}
