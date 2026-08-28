@@ -1,6 +1,7 @@
 // pages/admin/manage-candidates.js
+// COMPLETE WITH FILTERS - University, Program, Status, Search
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/router";
 import AppLayout from "../../components/AppLayout";
 import { supabase } from "../../supabase/client";
@@ -65,6 +66,215 @@ function getScoreStyle(score) {
   };
 }
 
+// ============================================================
+// FILTER COMPONENT
+// ============================================================
+function FilterBar({
+  universityOptions,
+  programOptions,
+  selectedUniversity,
+  setSelectedUniversity,
+  selectedProgram,
+  setSelectedProgram,
+  selectedStatus,
+  setSelectedStatus,
+  searchQuery,
+  setSearchQuery,
+  clearFilters,
+  totalFiltered,
+  totalCandidates
+}) {
+  const statusOptions = [
+    { value: "all", label: "All" },
+    { value: "completed", label: "Completed" },
+    { value: "in_progress", label: "In Progress" },
+    { value: "not_started", label: "Not Started" }
+  ];
+
+  return (
+    <div style={filterStyles.container}>
+      <div style={filterStyles.searchRow}>
+        <div style={filterStyles.searchWrapper}>
+          <span style={filterStyles.searchIcon}>🔍</span>
+          <input
+            type="text"
+            style={filterStyles.searchInput}
+            placeholder="Search by name or email..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+          {searchQuery && (
+            <button
+              style={filterStyles.clearSearch}
+              onClick={() => setSearchQuery("")}
+            >
+              ✕
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div style={filterStyles.filterRow}>
+        <div style={filterStyles.filterGroup}>
+          <label style={filterStyles.filterLabel}>University</label>
+          <select
+            style={filterStyles.filterSelect}
+            value={selectedUniversity}
+            onChange={(e) => setSelectedUniversity(e.target.value)}
+          >
+            <option value="">All Universities</option>
+            {universityOptions.map((uni) => (
+              <option key={uni} value={uni}>
+                {uni}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div style={filterStyles.filterGroup}>
+          <label style={filterStyles.filterLabel}>Program</label>
+          <select
+            style={filterStyles.filterSelect}
+            value={selectedProgram}
+            onChange={(e) => setSelectedProgram(e.target.value)}
+          >
+            <option value="">All Programs</option>
+            {programOptions.map((prog) => (
+              <option key={prog} value={prog}>
+                {prog}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div style={filterStyles.filterGroup}>
+          <label style={filterStyles.filterLabel}>Status</label>
+          <select
+            style={filterStyles.filterSelect}
+            value={selectedStatus}
+            onChange={(e) => setSelectedStatus(e.target.value)}
+          >
+            {statusOptions.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div style={filterStyles.filterActions}>
+          <button style={filterStyles.clearButton} onClick={clearFilters}>
+            Clear Filters
+          </button>
+          <span style={filterStyles.resultCount}>
+            Showing {totalFiltered} of {totalCandidates} candidates
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const filterStyles = {
+  container: {
+    background: "white",
+    borderRadius: "12px",
+    padding: "20px 24px",
+    marginBottom: "24px",
+    boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
+    border: "1px solid #eef2f7"
+  },
+  searchRow: {
+    marginBottom: "16px"
+  },
+  searchWrapper: {
+    position: "relative",
+    display: "flex",
+    alignItems: "center"
+  },
+  searchIcon: {
+    position: "absolute",
+    left: "12px",
+    fontSize: "16px",
+    color: "#94a3b8"
+  },
+  searchInput: {
+    width: "100%",
+    padding: "10px 40px 10px 36px",
+    border: "1px solid #e2e8f0",
+    borderRadius: "8px",
+    fontSize: "14px",
+    background: "#f8fafc",
+    outline: "none",
+    transition: "all 0.2s"
+  },
+  clearSearch: {
+    position: "absolute",
+    right: "10px",
+    background: "none",
+    border: "none",
+    color: "#94a3b8",
+    cursor: "pointer",
+    fontSize: "16px",
+    padding: "4px 8px"
+  },
+  filterRow: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: "16px",
+    alignItems: "flex-end"
+  },
+  filterGroup: {
+    display: "flex",
+    flexDirection: "column",
+    flex: "1",
+    minWidth: "160px"
+  },
+  filterLabel: {
+    fontSize: "12px",
+    fontWeight: "600",
+    color: "#475569",
+    marginBottom: "4px"
+  },
+  filterSelect: {
+    padding: "8px 12px",
+    border: "1px solid #e2e8f0",
+    borderRadius: "8px",
+    fontSize: "13px",
+    background: "#f8fafc",
+    color: "#1a202c",
+    outline: "none",
+    cursor: "pointer",
+    width: "100%"
+  },
+  filterActions: {
+    display: "flex",
+    alignItems: "center",
+    gap: "16px",
+    flexWrap: "wrap",
+    paddingTop: "4px"
+  },
+  clearButton: {
+    padding: "8px 20px",
+    background: "#f1f5f9",
+    border: "1px solid #e2e8f0",
+    borderRadius: "8px",
+    cursor: "pointer",
+    fontSize: "13px",
+    fontWeight: "500",
+    color: "#475569",
+    whiteSpace: "nowrap"
+  },
+  resultCount: {
+    fontSize: "13px",
+    color: "#64748b",
+    whiteSpace: "nowrap"
+  }
+};
+
+// ============================================================
+// MAIN COMPONENT
+// ============================================================
 export default function ManageCandidates() {
   const router = useRouter();
 
@@ -73,6 +283,17 @@ export default function ManageCandidates() {
   const [expandedCandidate, setExpandedCandidate] = useState(null);
   const [error, setError] = useState("");
 
+  // ============================================================
+  // FILTER STATE
+  // ============================================================
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedUniversity, setSelectedUniversity] = useState("");
+  const [selectedProgram, setSelectedProgram] = useState("");
+  const [selectedStatus, setSelectedStatus] = useState("all");
+
+  // ============================================================
+  // FETCH CANDIDATES
+  // ============================================================
   useEffect(() => {
     fetchCandidates();
   }, []);
@@ -82,7 +303,6 @@ export default function ManageCandidates() {
       setLoading(true);
       setError("");
 
-      // 1) Fetch candidates
       const { data: candidateData, error: candidateError } = await supabase
         .from("candidate_profiles")
         .select("*")
@@ -90,7 +310,6 @@ export default function ManageCandidates() {
 
       if (candidateError) throw candidateError;
 
-      // 2) Fetch all assessment results
       const { data: resultsData, error: resultsError } = await supabase
         .from("assessment_results")
         .select("*")
@@ -98,7 +317,6 @@ export default function ManageCandidates() {
 
       if (resultsError) throw resultsError;
 
-      // 3) Fetch assessment names separately (more reliable than depending on a join)
       const assessmentIds = [
         ...new Set(
           (resultsData || [])
@@ -123,21 +341,18 @@ export default function ManageCandidates() {
         }, {});
       }
 
-      // 4) Attach readable assessment titles to each result
       const resultsWithTitles = (resultsData || []).map((result) => ({
         ...result,
         assessment_title:
           assessmentNameMap[result.assessment_id] || "Unnamed Assessment"
       }));
 
-      // 5) Group results by candidate/user
       const resultMap = {};
       resultsWithTitles.forEach((result) => {
         if (!resultMap[result.user_id]) resultMap[result.user_id] = [];
         resultMap[result.user_id].push(result);
       });
 
-      // 6) Build final candidate objects
       const enrichedCandidates = (candidateData || []).map((candidate) => {
         const results = resultMap[candidate.id] || [];
         const latest = results.length > 0 ? results[0] : null;
@@ -158,6 +373,73 @@ export default function ManageCandidates() {
     }
   }
 
+  // ============================================================
+  // FILTER LOGIC
+  // ============================================================
+  const filteredCandidates = useMemo(() => {
+    let filtered = candidates;
+
+    // Search filter
+    if (searchQuery.trim()) {
+      const query = searchQuery.trim().toLowerCase();
+      filtered = filtered.filter((c) =>
+        (c.full_name?.toLowerCase() || "").includes(query) ||
+        (c.email?.toLowerCase() || "").includes(query)
+      );
+    }
+
+    // University filter
+    if (selectedUniversity) {
+      filtered = filtered.filter((c) => c.university === selectedUniversity);
+    }
+
+    // Program filter
+    if (selectedProgram) {
+      filtered = filtered.filter((c) => c.programme === selectedProgram);
+    }
+
+    // Status filter
+    if (selectedStatus === "completed") {
+      filtered = filtered.filter((c) => c.latest !== null);
+    } else if (selectedStatus === "not_started") {
+      filtered = filtered.filter((c) => c.latest === null);
+    } else if (selectedStatus === "in_progress") {
+      // In progress = has results but no completion date
+      filtered = filtered.filter((c) => c.results.length > 0 && c.latest?.completed_at === null);
+    }
+
+    return filtered;
+  }, [candidates, searchQuery, selectedUniversity, selectedProgram, selectedStatus]);
+
+  // ============================================================
+  // UNIQUE VALUES FOR FILTERS
+  // ============================================================
+  const universityOptions = useMemo(() => {
+    const unis = new Set();
+    candidates.forEach((c) => {
+      if (c.university) unis.add(c.university);
+    });
+    return Array.from(unis).sort();
+  }, [candidates]);
+
+  const programOptions = useMemo(() => {
+    const progs = new Set();
+    candidates.forEach((c) => {
+      if (c.programme) progs.add(c.programme);
+    });
+    return Array.from(progs).sort();
+  }, [candidates]);
+
+  // ============================================================
+  // HANDLERS
+  // ============================================================
+  function clearFilters() {
+    setSearchQuery("");
+    setSelectedUniversity("");
+    setSelectedProgram("");
+    setSelectedStatus("all");
+  }
+
   function toggleExpand(candidateId) {
     setExpandedCandidate((prev) => (prev === candidateId ? null : candidateId));
   }
@@ -171,6 +453,9 @@ export default function ManageCandidates() {
     router.push(`/supervisor/${candidateId}?assessment=${assessmentId}`);
   }
 
+  // ============================================================
+  // RENDER
+  // ============================================================
   return (
     <AppLayout background="/images/admin-bg.jpg">
       <div style={styles.container}>
@@ -192,53 +477,96 @@ export default function ManageCandidates() {
         {loading ? (
           <div style={styles.loading}>Loading candidates...</div>
         ) : (
-          <div style={styles.tableContainer}>
-            <table style={styles.table}>
-              <thead>
-                <tr>
-                  <th style={styles.th}>Candidate</th>
-                  <th style={styles.th}>Email</th>
-                  <th style={styles.th}>Reports</th>
-                  <th style={styles.th}>Latest Score</th>
-                  <th style={styles.th}>Latest Status</th>
-                  <th style={styles.th}>Actions</th>
-                </tr>
-              </thead>
+          <>
+            {/* 🟢 FILTER BAR */}
+            <FilterBar
+              universityOptions={universityOptions}
+              programOptions={programOptions}
+              selectedUniversity={selectedUniversity}
+              setSelectedUniversity={setSelectedUniversity}
+              selectedProgram={selectedProgram}
+              setSelectedProgram={setSelectedProgram}
+              selectedStatus={selectedStatus}
+              setSelectedStatus={setSelectedStatus}
+              searchQuery={searchQuery}
+              setSearchQuery={setSearchQuery}
+              clearFilters={clearFilters}
+              totalFiltered={filteredCandidates.length}
+              totalCandidates={candidates.length}
+            />
 
-              <tbody>
-                {candidates.length === 0 ? (
+            <div style={styles.tableContainer}>
+              <table style={styles.table}>
+                <thead>
                   <tr>
-                    <td colSpan="6" style={styles.noData}>
-                      No candidates found.
-                    </td>
+                    <th style={styles.th}>Candidate</th>
+                    <th style={styles.th}>Email</th>
+                    <th style={styles.th}>University</th>
+                    <th style={styles.th}>Program</th>
+                    <th style={styles.th}>Reports</th>
+                    <th style={styles.th}>Latest Score</th>
+                    <th style={styles.th}>Status</th>
+                    <th style={styles.th}>Actions</th>
                   </tr>
-                ) : (
-                  candidates.map((candidate) => {
-                    const latest = candidate.latest;
-                    const latestScore = latest
-                      ? Math.round(toNumber(latest.percentage_score, 0))
-                      : 0;
-                    const scoreStyle = getScoreStyle(latestScore);
-                    const isExpanded = expandedCandidate === candidate.id;
+                </thead>
 
-                    return (
-                      <FragmentRow
-                        key={candidate.id}
-                        candidate={candidate}
-                        latest={latest}
-                        latestScore={latestScore}
-                        scoreStyle={scoreStyle}
-                        isExpanded={isExpanded}
-                        onToggleExpand={() => toggleExpand(candidate.id)}
-                        onOpenLatest={() => openLatestReport(candidate)}
-                        onOpenSpecific={openSpecificReport}
-                      />
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
+                <tbody>
+                  {filteredCandidates.length === 0 ? (
+                    <tr>
+                      <td colSpan="8" style={styles.noData}>
+                        {searchQuery || selectedUniversity || selectedProgram || selectedStatus !== "all"
+                          ? "No candidates match your filters."
+                          : "No candidates found."}
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredCandidates.map((candidate) => {
+                      const latest = candidate.latest;
+                      const latestScore = latest
+                        ? Math.round(toNumber(latest.percentage_score, 0))
+                        : 0;
+                      const scoreStyle = getScoreStyle(latestScore);
+                      const isExpanded = expandedCandidate === candidate.id;
+
+                      // Determine status
+                      let statusText = "Not Started";
+                      let statusBg = "#FFF3E0";
+                      let statusColor = "#E65100";
+
+                      if (latest) {
+                        if (latest.completed_at) {
+                          statusText = "Completed";
+                          statusBg = "#E8F5E9";
+                          statusColor = "#2E7D32";
+                        } else {
+                          statusText = "In Progress";
+                          statusBg = "#FFF8E1";
+                          statusColor = "#F57F17";
+                        }
+                      }
+
+                      return (
+                        <FragmentRow
+                          key={candidate.id}
+                          candidate={candidate}
+                          latest={latest}
+                          latestScore={latestScore}
+                          scoreStyle={scoreStyle}
+                          isExpanded={isExpanded}
+                          statusText={statusText}
+                          statusBg={statusBg}
+                          statusColor={statusColor}
+                          onToggleExpand={() => toggleExpand(candidate.id)}
+                          onOpenLatest={() => openLatestReport(candidate)}
+                          onOpenSpecific={openSpecificReport}
+                        />
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </div>
     </AppLayout>
@@ -251,6 +579,9 @@ function FragmentRow({
   latestScore,
   scoreStyle,
   isExpanded,
+  statusText,
+  statusBg,
+  statusColor,
   onToggleExpand,
   onOpenLatest,
   onOpenSpecific
@@ -279,6 +610,10 @@ function FragmentRow({
         </td>
 
         <td style={styles.td}>{candidate.email || "No email"}</td>
+
+        <td style={styles.td}>{candidate.university || "—"}</td>
+
+        <td style={styles.td}>{candidate.programme || "—"}</td>
 
         <td style={styles.td}>
           <span style={styles.countBadge}>{candidate.results.length}</span>
@@ -312,27 +647,15 @@ function FragmentRow({
         </td>
 
         <td style={styles.td}>
-          {latest ? (
-            <span
-              style={{
-                ...styles.statusBadge,
-                background: "#E8F5E9",
-                color: "#2E7D32"
-              }}
-            >
-              Completed
-            </span>
-          ) : (
-            <span
-              style={{
-                ...styles.statusBadge,
-                background: "#FFF3E0",
-                color: "#E65100"
-              }}
-            >
-              No Report
-            </span>
-          )}
+          <span
+            style={{
+              ...styles.statusBadge,
+              background: statusBg,
+              color: statusColor
+            }}
+          >
+            {statusText}
+          </span>
         </td>
 
         <td
@@ -352,16 +675,18 @@ function FragmentRow({
               </button>
             )}
 
-            <button style={styles.expandButton} onClick={onToggleExpand}>
-              {isExpanded ? "Hide Reports" : "Show Reports"}
-            </button>
+            {candidate.results.length > 0 && (
+              <button style={styles.expandButton} onClick={onToggleExpand}>
+                {isExpanded ? "Hide Reports" : "Show Reports"}
+              </button>
+            )}
           </div>
         </td>
       </tr>
 
       {isExpanded && (
         <tr>
-          <td colSpan="6" style={styles.expandCell}>
+          <td colSpan="8" style={styles.expandCell}>
             <div style={styles.expandPanel}>
               <div style={styles.expandHeader}>
                 <h3 style={styles.expandTitle}>Assessment Reports</h3>
@@ -440,9 +765,12 @@ function FragmentRow({
   );
 }
 
+// ============================================================
+// STYLES
+// ============================================================
 const styles = {
   container: {
-    maxWidth: "1200px",
+    maxWidth: "1400px",
     margin: "0 auto",
     padding: "40px 20px"
   },
@@ -536,7 +864,11 @@ const styles = {
   },
 
   dataRow: {
-    cursor: "pointer"
+    cursor: "pointer",
+    transition: "background 0.15s",
+    ":hover": {
+      background: "#f1f5f9"
+    }
   },
 
   candidateInfo: {
@@ -555,7 +887,8 @@ const styles = {
     alignItems: "center",
     justifyContent: "center",
     fontSize: "14px",
-    fontWeight: 600
+    fontWeight: 600,
+    flexShrink: 0
   },
 
   candidateName: {
@@ -606,7 +939,8 @@ const styles = {
 
   progressFill: {
     height: "100%",
-    borderRadius: "999px"
+    borderRadius: "999px",
+    transition: "width 0.3s ease"
   },
 
   noValue: {
