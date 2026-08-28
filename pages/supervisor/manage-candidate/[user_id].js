@@ -1,4 +1,4 @@
-// pages/supervisor/manage-candidate/[user_id].js
+// pages/supervisor/manage-candidate/[user_id].js - FIXED VIEW REPORT LINK
 
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/router";
@@ -37,7 +37,16 @@ function formatDate(value) {
 function getPercentage(result) {
   if (!result) return 0;
   if (result.percentage_score !== null && result.percentage_score !== undefined) {
-    return Math.round(toNumber(result.percentage_score, 0));
+    const val = toNumber(result.percentage_score, 0);
+    // If percentage_score is 0 but there's a total_score, calculate from total/max
+    if (val === 0 && result.total_score !== undefined && result.max_score !== undefined) {
+      const total = toNumber(result.total_score, 0);
+      const max = toNumber(result.max_score, 0);
+      if (max > 0) {
+        return Math.round((total / max) * 100);
+      }
+    }
+    return Math.round(val);
   }
   const score = toNumber(result.total_score, 0);
   const maxScore = toNumber(result.max_score, 0);
@@ -366,6 +375,13 @@ export default function ManageSingleCandidate() {
     });
   }
 
+  // 🟢 FIXED: Navigate to report detail page
+  const handleViewReport = (resultId) => {
+    if (resultId) {
+      router.push(`/supervisor/reports/${resultId}`);
+    }
+  };
+
   if (checkingAuth || !router.isReady) {
     return (
       <div style={styles.checkingContainer}>
@@ -476,10 +492,13 @@ export default function ManageSingleCandidate() {
                             </td>
                             <td style={styles.td}>
                               <div style={styles.actionGroup}>
-                                {isCompleted && (
-                                  <Link href={`/supervisor/${user_id}?assessment=${assessment.assessment_id}`} legacyBehavior>
-                                    <a style={styles.viewButton}>View Report</a>
-                                  </Link>
+                                {isCompleted && assessment.result && (
+                                  <button
+                                    onClick={() => handleViewReport(assessment.result.id)}
+                                    style={styles.viewButton}
+                                  >
+                                    View Report
+                                  </button>
                                 )}
                                 <button
                                   onClick={() => openShareModal(assessment)}
@@ -630,7 +649,7 @@ const styles = {
   scoreBadge: { display: "inline-block", padding: "4px 10px", borderRadius: "12px", fontSize: "12px", fontWeight: 700 },
   noScore: { fontSize: "12px", color: "#9e9e9e", fontStyle: "italic" },
   actionGroup: { display: "flex", gap: "8px", flexWrap: "wrap" },
-  viewButton: { padding: "6px 12px", background: "#0a1929", color: "white", borderRadius: "6px", fontSize: "12px", textDecoration: "none", cursor: "pointer", display: "inline-block" },
+  viewButton: { padding: "6px 12px", background: "#0a1929", color: "white", borderRadius: "6px", fontSize: "12px", border: "none", cursor: "pointer", display: "inline-block" },
   shareButton: { padding: "6px 12px", background: "#8b5cf6", color: "white", borderRadius: "6px", fontSize: "12px", border: "none", cursor: "pointer" },
   revokeButton: { background: "#ef4444", color: "white", border: "none", borderRadius: "4px", padding: "2px 8px", fontSize: "10px", cursor: "pointer" },
   sharedAccessList: { display: "flex", flexWrap: "wrap", gap: "15px", alignItems: "center" },
