@@ -1,4 +1,4 @@
-// components/AppLayout.js - COMPLETE FIXED VERSION
+// components/AppLayout.js - COMPLETE FIXED VERSION WITH ALL ROUTES
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
@@ -119,7 +119,7 @@ function isActiveRoute(pathname, href) {
 }
 
 // ============================================================
-// ROLE-BASED MENU SECTIONS - COMPLETELY FIXED SUPERVISOR ROUTES
+// ROLE-BASED MENU SECTIONS - COMPLETELY FIXED WITH ALL ROUTES
 // ============================================================
 function getMenuSections(role) {
   // Admin menu
@@ -176,7 +176,9 @@ function getMenuSections(role) {
     ];
   }
 
+  // ============================================================
   // SUPERVISOR MENU - ALL ROUTES CORRECTLY MAPPED
+  // ============================================================
   if (role === 'supervisor') {
     return [
       {
@@ -192,13 +194,13 @@ function getMenuSections(role) {
         icon: Icons.Users(),
         isSection: true,
         children: [
-          // ✅ View Candidates → /supervisor/manage-candidate (folder with index.js)
+          // ✅ View Candidates → /supervisor/manage-candidate
           { id: 'view-candidates', label: 'View Candidates', icon: Icons.UserCheck(), href: '/supervisor/manage-candidate' },
-          // ✅ Add Candidate → /supervisor/add-candidate (file)
+          // ✅ Add Candidate → /supervisor/add-candidate
           { id: 'add-candidate', label: 'Add Candidate', icon: Icons.UserPlus(), href: '/supervisor/add-candidate' },
-          // ✅ Assign Assessment → /supervisor/assign-assessment (folder with index.js)
+          // ✅ Assign Assessment → /supervisor/assign-assessment
           { id: 'assign-assessment', label: 'Assign Assessment', icon: Icons.CheckSquare(), href: '/supervisor/assign-assessment' },
-          // ✅ Batch Manage → /supervisor/batch-manage (file)
+          // ✅ Batch Manage → /supervisor/batch-manage
           { id: 'batch-manage', label: 'Batch Manage', icon: Icons.Layers(), href: '/supervisor/batch-manage' },
         ]
       },
@@ -208,9 +210,10 @@ function getMenuSections(role) {
         icon: Icons.FileText(),
         isSection: true,
         children: [
-          // ✅ Both reports go to /supervisor/reports (folder with index.js)
-          { id: 'national-service', label: 'National Service Reports', icon: Icons.FileText(), href: '/supervisor/reports' },
-          { id: 'other-assessments', label: 'Other Assessment Reports', icon: Icons.Reports(), href: '/supervisor/reports' },
+          // ✅ National Service Reports → /supervisor/reports/national-service
+          { id: 'national-service', label: 'National Service Reports', icon: Icons.FileText(), href: '/supervisor/reports/national-service' },
+          // ✅ Other Assessment Reports → /supervisor/reports/other
+          { id: 'other-assessments', label: 'Other Assessment Reports', icon: Icons.Reports(), href: '/supervisor/reports/other' },
         ]
       },
     ];
