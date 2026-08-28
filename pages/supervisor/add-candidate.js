@@ -1,148 +1,282 @@
 // pages/supervisor/add-candidate.js
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import AppLayout from "../../components/AppLayout";
 import { supabase } from "../../supabase/client";
 
+function cleanText(value, fallback = "") {
+  if (value === null || value === undefined || value === "") return fallback;
+  return String(value);
+}
+
+function getReadableError(error) {
+  if (!error) return "Something went wrong.";
+  return error.message || String(error) || "Something went wrong.";
+}
+
+function generateCandidatePassword() {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
+  let result = "Strat@";
+  for (let index = 0; index < 8; index += 1) {
+    result += alphabet[Math.floor(Math.random() * alphabet.length)];
+  }
+  return result + "9";
+}
+
+function isValidEmail(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
 export default function AddCandidate() {
   const router = useRouter();
+  const [checkingAuth, setCheckingAuth] = useState(true);
   const [loading, setLoading] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
+  const [isSupervisor, setIsSupervisor] = useState(false);
   const [currentSupervisor, setCurrentSupervisor] = useState(null);
-  const [formData, setFormData] = useState({
+  const [message, setMessage] = useState({ type: "", text: "" });
+  const [createdCandidate, setCreatedCandidate] = useState(null);
+  const [temporaryPassword, setTemporaryPassword] = useState("");
+
+  const [form, setForm] = useState({
     full_name: "",
     email: "",
     phone: "",
     university: "",
-    program: ""
+    program: "",
+    password: generateCandidatePassword(),
+    send_invite: false
   });
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
 
   useEffect(() => {
-    const checkAuth = () => {
-      if (typeof window !== 'undefined') {
-        const userSession = localStorage.getItem("userSession");
-        
-        if (!userSession) {
-          router.push("/login");
-          return;
-        }
-        
-        try {
-          const session = JSON.parse(userSession);
-          if (session.loggedIn && (session.role === 'supervisor' || session.role === 'admin')) {
-            setCurrentSupervisor({
-              id: session.user_id,
-              email: session.email,
-              name: session.full_name || session.email,
-              role: session.role
-            });
-          } else {
-            router.push("/login");
-          }
-        } catch {
-          router.push("/login");
-        }
+    checkSupervisorAuth();
+  }, []);
+
+  const canSubmit = useMemo(() => {
+    return cleanText(form.full_name).trim() && 
+           isValidEmail(cleanText(form.email).trim()) && 
+           cleanText(form.university).trim() &&
+           cleanText(form.program).trim() &&
+           (form.send_invite || cleanText(form.password).length >= 8);
+  }, [form]);
+
+  async function checkSupervisorAuth() {
+    try {
+      setCheckingAuth(true);
+      setMessage({ type: "", text: "" });
+
+      const { data, error } = await supabase.auth.getSession();
+      if (error) throw error;
+
+      const activeSession = data?.session || null;
+
+      if (!activeSession?.user) {
+        if (typeof window !== "undefined") localStorage.removeItem("userSession");
+        router.push("/login");
+        return;
       }
-    };
-    checkAuth();
-  }, [router]);
 
-  const handleChange = (e) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value
+      const metadataRole = activeSession.user.user_metadata?.role || null;
+
+      const { data: profile, error: profileError } = await supabase
+        .from("supervisor_profiles")
+        .select("id, email, full_name, role, is_active")
+        .eq("id", activeSession.user.id)
+        .maybeSingle();
+
+      if (profileError && profileError.code !== "PGRST116") throw profileError;
+
+      const resolvedRole = profile?.role || metadataRole;
+
+      if (resolvedRole !== "supervisor" && resolvedRole !== "admin") {
+        setMessage({ type: "error", text: "Supervisor access is required." });
+        router.push("/login");
+        return;
+      }
+
+      if (profile?.is_active === false) {
+        await supabase.auth.signOut();
+        if (typeof window !== "undefined") localStorage.removeItem("userSession");
+        router.push("/login");
+        return;
+      }
+
+      setIsSupervisor(true);
+      setCurrentSupervisor({
+        id: activeSession.user.id,
+        email: activeSession.user.email,
+        name: profile?.full_name || activeSession.user.user_metadata?.full_name || activeSession.user.email,
+        role: resolvedRole
+      });
+    } catch (error) {
+      console.error("Add candidate auth error:", error);
+      setMessage({ type: "error", text: getReadableError(error) });
+      router.push("/login");
+    } finally {
+      setCheckingAuth(false);
+    }
+  }
+
+  function updateField(key, value) {
+    setForm((previous) => ({ ...previous, [key]: value }));
+  }
+
+  function resetForm() {
+    setForm({
+      full_name: "",
+      email: "",
+      phone: "",
+      university: "",
+      program: "",
+      password: generateCandidatePassword(),
+      send_invite: false
     });
-  };
+    setCreatedCandidate(null);
+    setTemporaryPassword("");
+    setMessage({ type: "", text: "" });
+  }
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError("");
-    setSuccess("");
-    setSubmitting(true);
+  async function handleSubmit(event) {
+    event.preventDefault();
+
+    if (!cleanText(form.full_name).trim()) {
+      setMessage({ type: "error", text: "Candidate full name is required." });
+      return;
+    }
+
+    if (!isValidEmail(cleanText(form.email).trim())) {
+      setMessage({ type: "error", text: "A valid candidate email is required." });
+      return;
+    }
+
+    if (!cleanText(form.university).trim()) {
+      setMessage({ type: "error", text: "University is required." });
+      return;
+    }
+
+    if (!cleanText(form.program).trim()) {
+      setMessage({ type: "error", text: "Program of study is required." });
+      return;
+    }
+
+    if (!form.send_invite && cleanText(form.password).length < 8) {
+      setMessage({ type: "error", text: "Temporary password must be at least 8 characters." });
+      return;
+    }
 
     try {
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(formData.email)) {
-        throw new Error("Please enter a valid email address");
-      }
+      setLoading(true);
+      setMessage({ type: "", text: "" });
+      setCreatedCandidate(null);
+      setTemporaryPassword("");
 
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData?.session?.access_token || null;
+
+      // Check if candidate already exists
       const { data: existing, error: checkError } = await supabase
         .from('candidate_profiles')
         .select('id')
-        .eq('email', formData.email.toLowerCase().trim())
+        .eq('email', cleanText(form.email).trim().toLowerCase())
         .maybeSingle();
 
       if (checkError) throw checkError;
 
       if (existing) {
-        throw new Error("A candidate with this email already exists");
+        throw new Error("A candidate with this email already exists.");
       }
 
-      const tempPassword = Math.random().toString(36).slice(-8) + "A1!";
-      
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: formData.email.toLowerCase().trim(),
-        password: tempPassword,
-        options: {
-          data: {
-            full_name: formData.full_name,
-            role: 'candidate',
-            is_supervisor: false,
-            university: formData.university,
-            program: formData.program
-          }
-        }
+      // Create the candidate using the admin API endpoint (or use a supervisor-specific one)
+      const response = await fetch("/api/admin/add-candidate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(accessToken ? { Authorization: "Bearer " + accessToken } : {})
+        },
+        body: JSON.stringify({
+          full_name: cleanText(form.full_name).trim(),
+          email: cleanText(form.email).trim().toLowerCase(),
+          phone: cleanText(form.phone).trim(),
+          university: cleanText(form.university).trim(),
+          program: cleanText(form.program).trim(),
+          supervisor_id: currentSupervisor.id,
+          password: form.send_invite ? "" : form.password,
+          send_invite: form.send_invite
+        })
       });
 
-      if (authError) throw authError;
+      const result = await response.json();
 
-      const { error: profileError } = await supabase
-        .from('candidate_profiles')
-        .insert({
-          id: authData.user.id,
-          full_name: formData.full_name,
-          email: formData.email.toLowerCase().trim(),
-          phone: formData.phone || null,
-          university: formData.university || null,
-          program: formData.program || null,
-          supervisor_id: currentSupervisor.id,
-          created_at: new Date().toISOString()
-        });
+      if (!response.ok || !result?.success) {
+        throw new Error(result?.message || "Failed to create candidate.");
+      }
 
-      if (profileError) throw profileError;
+      setCreatedCandidate(result.candidate || null);
+      setTemporaryPassword(result.temporary_password || "");
+      setMessage({ 
+        type: "success", 
+        text: result.message || "Candidate created successfully." 
+      });
 
-      setSuccess(`✅ Candidate added successfully!\n\nName: ${formData.full_name}\nEmail: ${formData.email}\nTemporary Password: ${tempPassword}\n\nShare these credentials with the candidate.`);
-      
-      setFormData({
+      // Reset form but keep success message
+      setForm((previous) => ({
+        ...previous,
         full_name: "",
         email: "",
         phone: "",
         university: "",
-        program: ""
-      });
+        program: "",
+        password: generateCandidatePassword(),
+        send_invite: false
+      }));
 
-      // Redirect after 3 seconds
+      // Auto-redirect after 5 seconds
       setTimeout(() => {
         router.push('/supervisor/manage-candidate');
-      }, 3000);
+      }, 5000);
 
-    } catch (err) {
-      console.error('Error adding candidate:', err);
-      setError(err.message);
+    } catch (error) {
+      console.error("Add candidate submit error:", error);
+      setMessage({ type: "error", text: getReadableError(error) });
     } finally {
-      setSubmitting(false);
+      setLoading(false);
     }
-  };
+  }
 
-  if (!currentSupervisor) {
+  async function copyTemporaryPassword() {
+    if (!temporaryPassword) return;
+    try {
+      await navigator.clipboard.writeText(temporaryPassword);
+      setMessage({ type: "success", text: "Temporary password copied to clipboard." });
+    } catch (error) {
+      setMessage({ type: "error", text: "Could not copy password. Please copy it manually." });
+    }
+  }
+
+  if (checkingAuth) {
     return (
-      <div style={styles.loadingContainer}>
+      <div style={styles.checkingContainer}>
         <div style={styles.spinner} />
-        <p>Loading...</p>
+        <p style={styles.checkingText}>Checking supervisor access...</p>
+        <style jsx>{`
+          @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+          }
+        `}</style>
       </div>
+    );
+  }
+
+  if (!isSupervisor) {
+    return (
+      <AppLayout>
+        <div style={styles.unauthorized}>
+          <h2>Access Denied</h2>
+          <p>You do not have permission to view this page.</p>
+          <button onClick={() => router.push("/supervisor")} style={styles.button}>Go to Dashboard</button>
+        </div>
+      </AppLayout>
     );
   }
 
@@ -156,66 +290,69 @@ export default function AddCandidate() {
           >
             ← Back to Candidates
           </button>
-          <h1 style={styles.title}>Add New Candidate</h1>
+          <div>
+            <h1 style={styles.title}>Add New Candidate</h1>
+            <p style={styles.subtitle}>Create a candidate account and profile.</p>
+          </div>
           <div style={styles.headerRight}>
             <span style={styles.supervisorBadge}>
-              👑 {currentSupervisor.name}
+              👑 {currentSupervisor?.name || 'Supervisor'}
             </span>
           </div>
         </div>
 
-        <div style={styles.formContainer}>
-          {error && (
-            <div style={styles.errorMessage}>
-              <span style={styles.errorIcon}>⚠️</span>
-              <span>{error}</span>
-            </div>
-          )}
+        {message.text && (
+          <div style={{
+            ...styles.message,
+            background: message.type === "success" ? "#e8f5e9" : "#ffebee",
+            color: message.type === "success" ? "#2e7d32" : "#c62828",
+            border: "1px solid " + (message.type === "success" ? "#a5d6a7" : "#ffcdd2")
+          }}>
+            {message.type === "success" && <span style={{ marginRight: '8px' }}>✅</span>}
+            {message.type === "error" && <span style={{ marginRight: '8px' }}>⚠️</span>}
+            {message.text}
+            {message.type === "success" && (
+              <p style={styles.redirectingText}>Redirecting to candidate list in 5 seconds...</p>
+            )}
+          </div>
+        )}
 
-          {success && (
-            <div style={styles.successMessage}>
-              <span style={styles.successIcon}>✅</span>
-              <pre style={styles.successPre}>{success}</pre>
-              <p style={styles.redirectingText}>Redirecting to candidate list...</p>
-            </div>
-          )}
+        <div style={styles.layoutGrid}>
+          <form onSubmit={handleSubmit} style={styles.formCard}>
+            <h2 style={styles.sectionTitle}>Candidate Details</h2>
 
-          <form onSubmit={handleSubmit} style={styles.form}>
-            <div style={styles.formGroup}>
+            <div style={styles.fieldGroup}>
               <label style={styles.label}>Full Name *</label>
               <input
                 type="text"
-                name="full_name"
-                value={formData.full_name}
-                onChange={handleChange}
-                required
-                placeholder="Enter candidate's full name"
+                value={form.full_name}
+                onChange={(event) => updateField("full_name", event.target.value)}
                 style={styles.input}
+                placeholder="Enter candidate full name"
+                required
               />
             </div>
 
-            <div style={styles.formGroup}>
+            <div style={styles.fieldGroup}>
               <label style={styles.label}>Email Address *</label>
               <input
                 type="email"
-                name="email"
-                value={formData.email}
-                onChange={handleChange}
-                required
-                placeholder="candidate@example.com"
+                value={form.email}
+                onChange={(event) => updateField("email", event.target.value)}
                 style={styles.input}
+                placeholder="candidate@example.com"
+                required
               />
               <p style={styles.hint}>Candidate will use this email to login</p>
             </div>
 
-            <div style={styles.formGroup}>
+            <div style={styles.fieldGroup}>
               <label style={styles.label}>University *</label>
               <select
-                name="university"
-                value={formData.university}
-                onChange={handleChange}
-                required
+                value={form.university}
+                onChange={(event) => updateField("university", event.target.value)}
                 style={styles.input}
+                required
               >
                 <option value="">Select University</option>
                 <option value="KNUST">KNUST</option>
@@ -228,30 +365,56 @@ export default function AddCandidate() {
               </select>
             </div>
 
-            <div style={styles.formGroup}>
+            <div style={styles.fieldGroup}>
               <label style={styles.label}>Program of Study *</label>
               <input
                 type="text"
-                name="program"
-                value={formData.program}
-                onChange={handleChange}
-                required
-                placeholder="e.g., BSc Mechanical Engineering"
+                value={form.program}
+                onChange={(event) => updateField("program", event.target.value)}
                 style={styles.input}
+                placeholder="e.g., BSc Mechanical Engineering"
+                required
               />
             </div>
 
-            <div style={styles.formGroup}>
+            <div style={styles.fieldGroup}>
               <label style={styles.label}>Phone Number (Optional)</label>
               <input
                 type="tel"
-                name="phone"
-                value={formData.phone}
-                onChange={handleChange}
-                placeholder="+233 XX XXX XXXX"
+                value={form.phone}
+                onChange={(event) => updateField("phone", event.target.value)}
                 style={styles.input}
+                placeholder="+233 XX XXX XXXX"
               />
             </div>
+
+            <div style={styles.optionBox}>
+              <label style={styles.checkboxLabel}>
+                <input
+                  type="checkbox"
+                  checked={form.send_invite}
+                  onChange={(event) => updateField("send_invite", event.target.checked)}
+                />
+                Send Supabase invite email instead of setting a temporary password
+              </label>
+            </div>
+
+            {!form.send_invite && (
+              <div style={styles.fieldGroup}>
+                <label style={styles.label}>Temporary Password</label>
+                <div style={styles.passwordRow}>
+                  <input
+                    type="text"
+                    value={form.password}
+                    onChange={(event) => updateField("password", event.target.value)}
+                    style={styles.input}
+                    required
+                  />
+                  <button type="button" onClick={() => updateField("password", generateCandidatePassword())} style={styles.generateButton}>Generate</button>
+                </div>
+                <p style={styles.hint}>Share this temporary password securely with the candidate. The candidate can change the password later.</p>
+              </div>
+            )}
 
             <div style={styles.infoBox}>
               <h4 style={styles.infoTitle}>📋 What happens next:</h4>
@@ -259,32 +422,64 @@ export default function AddCandidate() {
                 <li>A temporary password will be generated automatically</li>
                 <li>The candidate will be assigned to you as their supervisor</li>
                 <li>Share the credentials with the candidate securely</li>
-                <li>The candidate can login at <code>/login</code> (Candidate mode)</li>
+                <li>The candidate can login at <code style={styles.code}>/login</code> (Candidate mode)</li>
                 <li>You'll be able to view their assessment reports once completed</li>
               </ul>
             </div>
 
-            <div style={styles.buttonGroup}>
-              <button
-                type="button"
-                onClick={() => router.push('/supervisor/manage-candidate')}
-                style={styles.cancelButton}
-              >
-                Cancel
-              </button>
+            <div style={styles.actionRow}>
+              <button type="button" onClick={resetForm} style={styles.secondaryButton}>Clear</button>
               <button
                 type="submit"
-                disabled={submitting}
-                style={{
-                  ...styles.submitButton,
-                  opacity: submitting ? 0.7 : 1,
-                  cursor: submitting ? 'not-allowed' : 'pointer'
+                disabled={loading || !canSubmit}
+                style={{ 
+                  ...styles.submitButton, 
+                  opacity: loading || !canSubmit ? 0.6 : 1, 
+                  cursor: loading || !canSubmit ? "not-allowed" : "pointer" 
                 }}
               >
-                {submitting ? 'Adding Candidate...' : 'Add Candidate'}
+                {loading ? "Creating..." : "Add Candidate"}
               </button>
             </div>
           </form>
+
+          <div style={styles.sideCard}>
+            <h2 style={styles.sectionTitle}>After Candidate Creation</h2>
+            <div style={styles.infoBoxSide}>
+              <strong>Next steps:</strong>
+              <ol style={styles.list}>
+                <li>Confirm the candidate appears in Manage Candidates.</li>
+                <li>Assign assessments to the candidate.</li>
+                <li>Share login details securely if a temporary password was used.</li>
+                <li>Monitor candidate progress in the dashboard.</li>
+              </ol>
+            </div>
+
+            {createdCandidate && (
+              <div style={styles.successPanel}>
+                <h3 style={styles.successTitle}>✅ Candidate Created</h3>
+                <p style={styles.detailText}><strong>Name:</strong> {createdCandidate.full_name}</p>
+                <p style={styles.detailText}><strong>Email:</strong> {createdCandidate.email}</p>
+                <p style={styles.detailText}><strong>University:</strong> {createdCandidate.university || 'Not specified'}</p>
+                <p style={styles.detailText}><strong>Program:</strong> {createdCandidate.program || 'Not specified'}</p>
+                {temporaryPassword && (
+                  <div style={styles.passwordPanel}>
+                    <p style={styles.detailText}><strong>Temporary Password:</strong></p>
+                    <code style={styles.passwordCode}>{temporaryPassword}</code>
+                    <button type="button" onClick={copyTemporaryPassword} style={styles.copyButton}>Copy Password</button>
+                  </div>
+                )}
+                <div style={styles.linkRow}>
+                  <button onClick={() => router.push('/supervisor/manage-candidate')} style={styles.primaryLink}>
+                    Manage Candidates
+                  </button>
+                  <button onClick={() => router.push('/supervisor/assign-assessment')} style={styles.secondaryLink}>
+                    Assign Assessments
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -299,61 +494,79 @@ export default function AddCandidate() {
 }
 
 const styles = {
-  loadingContainer: {
-    minHeight: '100vh',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    background: 'linear-gradient(135deg, #0A1929 0%, #1A2A3A 100%)',
-    color: 'white'
+  checkingContainer: { 
+    minHeight: "100vh", 
+    display: "flex", 
+    flexDirection: "column", 
+    alignItems: "center", 
+    justifyContent: "center", 
+    background: "linear-gradient(135deg, #0a1929 0%, #1a2a3a 100%)", 
+    color: "white", 
+    padding: "20px", 
+    textAlign: "center" 
   },
-  spinner: {
-    width: '40px',
-    height: '40px',
-    border: '4px solid rgba(255,255,255,0.3)',
-    borderTop: '4px solid white',
-    borderRadius: '50%',
-    animation: 'spin 1s linear infinite',
-    marginBottom: '20px'
+  checkingText: { 
+    margin: 0, 
+    color: "rgba(255,255,255,0.9)", 
+    fontSize: "14px" 
   },
-  container: {
-    width: '90vw',
-    maxWidth: '800px',
-    margin: '0 auto',
-    padding: '30px 20px'
+  spinner: { 
+    width: "40px", 
+    height: "40px", 
+    border: "4px solid rgba(255,255,255,0.3)", 
+    borderTop: "4px solid white", 
+    borderRadius: "50%", 
+    animation: "spin 1s linear infinite", 
+    marginBottom: "20px" 
   },
-  header: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '30px',
-    background: 'white',
-    padding: '20px 30px',
-    borderRadius: '16px',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.05)'
+  container: { 
+    width: "90vw", 
+    maxWidth: "1200px", 
+    margin: "0 auto", 
+    padding: "30px 20px" 
   },
-  backButton: {
-    color: '#0A1929',
-    textDecoration: 'none',
-    fontSize: '16px',
-    fontWeight: 500,
-    padding: '8px 16px',
-    borderRadius: '20px',
-    border: '1px solid #0A1929',
-    background: 'transparent',
-    cursor: 'pointer',
-    transition: 'all 0.2s ease'
+  header: { 
+    display: "flex", 
+    alignItems: "center", 
+    gap: "20px", 
+    marginBottom: "24px", 
+    background: "white", 
+    padding: "22px 30px", 
+    borderRadius: "16px", 
+    boxShadow: "0 4px 12px rgba(0,0,0,0.08)", 
+    flexWrap: "wrap" 
   },
-  title: {
-    margin: 0,
-    color: '#0A1929',
-    fontSize: '24px',
-    fontWeight: 600
+  backButton: { 
+    color: "#0a1929", 
+    textDecoration: "none", 
+    fontSize: "14px", 
+    fontWeight: 700, 
+    padding: "8px 16px", 
+    borderRadius: "8px", 
+    border: "1px solid #0a1929", 
+    background: "transparent", 
+    cursor: "pointer",
+    transition: "all 0.2s ease",
+    ':hover': {
+      background: "#0a1929",
+      color: "white"
+    }
+  },
+  title: { 
+    margin: 0, 
+    color: "#0a1929", 
+    fontSize: "24px", 
+    fontWeight: 800 
+  },
+  subtitle: { 
+    margin: "5px 0 0", 
+    color: "#667085", 
+    fontSize: "14px" 
   },
   headerRight: {
     display: 'flex',
-    alignItems: 'center'
+    alignItems: 'center',
+    marginLeft: 'auto'
   },
   supervisorBadge: {
     padding: '8px 16px',
@@ -363,92 +576,115 @@ const styles = {
     fontSize: '14px',
     fontWeight: 600
   },
-  formContainer: {
-    background: 'white',
-    borderRadius: '16px',
-    padding: '30px',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.05)'
-  },
-  errorMessage: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px',
-    background: '#FFEBEE',
-    color: '#C62828',
-    padding: '15px',
-    borderRadius: '8px',
-    marginBottom: '20px',
-    border: '1px solid #FFCDD2'
-  },
-  errorIcon: {
-    fontSize: '20px'
-  },
-  successMessage: {
-    background: '#E8F5E9',
-    color: '#2E7D32',
-    padding: '20px',
-    borderRadius: '8px',
-    marginBottom: '20px',
-    border: '1px solid #A5D6A7'
-  },
-  successIcon: {
-    fontSize: '24px',
-    display: 'block',
-    marginBottom: '10px'
-  },
-  successPre: {
-    margin: 0,
-    whiteSpace: 'pre-wrap',
-    fontFamily: 'inherit',
-    fontSize: '14px',
-    lineHeight: '1.6'
-  },
   redirectingText: {
-    marginTop: '10px',
+    marginTop: '8px',
     fontSize: '13px',
-    color: '#2E7D32',
     fontWeight: 500,
-    animation: 'pulse 1.5s ease-in-out infinite'
+    opacity: 0.8
   },
-  form: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '20px'
+  message: { 
+    padding: "13px 18px", 
+    borderRadius: "10px", 
+    marginBottom: "20px", 
+    fontSize: "14px", 
+    lineHeight: 1.5 
   },
-  formGroup: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '8px'
+  layoutGrid: { 
+    display: "grid", 
+    gridTemplateColumns: "minmax(0, 1.3fr) minmax(300px, 0.7fr)", 
+    gap: "22px", 
+    alignItems: "start" 
   },
-  label: {
-    fontSize: '14px',
-    fontWeight: 600,
-    color: '#2D3748'
+  formCard: { 
+    background: "white", 
+    borderRadius: "16px", 
+    padding: "24px", 
+    boxShadow: "0 4px 12px rgba(0,0,0,0.08)", 
+    border: "1px solid #eef2f7" 
   },
-  input: {
-    padding: '12px 16px',
-    border: '2px solid #E2E8F0',
-    borderRadius: '8px',
-    fontSize: '15px',
-    transition: 'all 0.2s ease',
-    outline: 'none',
-    background: 'white',
-    width: '100%'
+  sideCard: { 
+    background: "white", 
+    borderRadius: "16px", 
+    padding: "24px", 
+    boxShadow: "0 4px 12px rgba(0,0,0,0.08)", 
+    border: "1px solid #eef2f7" 
   },
-  hint: {
-    margin: '4px 0 0 0',
-    fontSize: '12px',
-    color: '#718096'
+  sectionTitle: { 
+    margin: "0 0 20px", 
+    color: "#0a1929", 
+    fontSize: "18px", 
+    fontWeight: 800 
+  },
+  fieldGroup: { 
+    marginBottom: "18px" 
+  },
+  label: { 
+    display: "block", 
+    marginBottom: "8px", 
+    fontSize: "14px", 
+    fontWeight: 800, 
+    color: "#2d3748" 
+  },
+  input: { 
+    width: "100%", 
+    padding: "11px 12px", 
+    border: "2px solid #e2e8f0", 
+    borderRadius: "8px", 
+    fontSize: "14px", 
+    outline: "none", 
+    boxSizing: "border-box", 
+    background: "white",
+    transition: "border-color 0.2s ease",
+    ':focus': {
+      borderColor: "#0a1929"
+    }
+  },
+  passwordRow: { 
+    display: "flex", 
+    gap: "10px" 
+  },
+  generateButton: { 
+    padding: "10px 16px", 
+    background: "#1565c0", 
+    color: "white", 
+    border: "none", 
+    borderRadius: "8px", 
+    fontSize: "13px", 
+    fontWeight: 800, 
+    cursor: "pointer",
+    whiteSpace: "nowrap"
+  },
+  hint: { 
+    margin: "7px 0 0", 
+    color: "#667085", 
+    fontSize: "12px", 
+    lineHeight: 1.5 
+  },
+  optionBox: { 
+    background: "#f8fafc", 
+    border: "1px solid #e2e8f0", 
+    borderRadius: "10px", 
+    padding: "12px", 
+    marginBottom: "18px" 
+  },
+  checkboxLabel: { 
+    display: "flex", 
+    gap: "10px", 
+    alignItems: "flex-start", 
+    color: "#334155", 
+    fontSize: "13px", 
+    lineHeight: 1.5, 
+    cursor: "pointer" 
   },
   infoBox: {
     background: '#F8FAFC',
-    padding: '20px',
+    padding: '16px',
     borderRadius: '8px',
-    marginTop: '10px'
+    margin: '10px 0 20px 0'
   },
   infoTitle: {
-    margin: '0 0 15px 0',
-    fontSize: '15px',
+    margin: '0 0 10px 0',
+    fontSize: '14px',
     fontWeight: 600,
     color: '#0A1929'
   },
@@ -456,38 +692,167 @@ const styles = {
     margin: 0,
     paddingLeft: '20px',
     color: '#4A5568',
-    fontSize: '14px',
+    fontSize: '13px',
     lineHeight: '1.8'
   },
-  buttonGroup: {
-    display: 'flex',
-    gap: '15px',
-    marginTop: '20px'
+  code: {
+    background: '#e2e8f0',
+    padding: '2px 6px',
+    borderRadius: '4px',
+    fontSize: '12px'
   },
-  cancelButton: {
-    flex: 1,
-    padding: '14px',
-    background: '#E2E8F0',
-    color: '#2D3748',
-    border: 'none',
-    borderRadius: '8px',
-    fontSize: '16px',
-    fontWeight: 600,
-    cursor: 'pointer',
-    textDecoration: 'none',
-    textAlign: 'center',
-    transition: 'all 0.2s ease'
+  actionRow: { 
+    display: "flex", 
+    justifyContent: "flex-end", 
+    gap: "12px", 
+    marginTop: "24px", 
+    flexWrap: "wrap" 
   },
-  submitButton: {
-    flex: 1,
-    padding: '14px',
-    background: '#0A1929',
-    color: 'white',
-    border: 'none',
-    borderRadius: '8px',
-    fontSize: '16px',
-    fontWeight: 600,
-    cursor: 'pointer',
-    transition: 'all 0.2s ease'
+  submitButton: { 
+    padding: "12px 26px", 
+    background: "#0a1929", 
+    color: "white", 
+    border: "none", 
+    borderRadius: "8px", 
+    fontSize: "14px", 
+    fontWeight: 800,
+    transition: "all 0.2s ease",
+    ':hover': {
+      background: "#1a2a3a",
+      transform: "translateY(-1px)",
+      boxShadow: "0 4px 12px rgba(10,25,41,0.3)"
+    }
+  },
+  secondaryButton: { 
+    padding: "12px 22px", 
+    background: "#f1f5f9", 
+    color: "#0a1929", 
+    border: "1px solid #cbd5e1", 
+    borderRadius: "8px", 
+    fontSize: "14px", 
+    fontWeight: 800, 
+    cursor: "pointer",
+    transition: "all 0.2s ease",
+    ':hover': {
+      background: "#e2e8f0"
+    }
+  },
+  infoBoxSide: { 
+    background: "#f8fafc", 
+    border: "1px solid #e2e8f0", 
+    borderRadius: "10px", 
+    padding: "14px", 
+    color: "#334155", 
+    fontSize: "13px", 
+    lineHeight: 1.6 
+  },
+  list: { 
+    margin: "10px 0 0", 
+    paddingLeft: "20px" 
+  },
+  successPanel: { 
+    marginTop: "20px", 
+    background: "#e8f5e9", 
+    border: "1px solid #a5d6a7", 
+    borderRadius: "12px", 
+    padding: "16px", 
+    color: "#2e7d32" 
+  },
+  successTitle: { 
+    margin: "0 0 12px", 
+    color: "#2e7d32", 
+    fontSize: "16px", 
+    fontWeight: 800 
+  },
+  detailText: { 
+    margin: "6px 0", 
+    fontSize: "13px", 
+    lineHeight: 1.5 
+  },
+  passwordPanel: { 
+    marginTop: "12px", 
+    padding: "12px", 
+    background: "white", 
+    borderRadius: "10px" 
+  },
+  passwordCode: { 
+    display: "block", 
+    padding: "10px", 
+    background: "#0a1929", 
+    color: "white", 
+    borderRadius: "8px", 
+    marginBottom: "10px", 
+    fontSize: "13px", 
+    wordBreak: "break-all" 
+  },
+  copyButton: { 
+    padding: "8px 12px", 
+    background: "#1565c0", 
+    color: "white", 
+    border: "none", 
+    borderRadius: "8px", 
+    fontSize: "12px", 
+    fontWeight: 800, 
+    cursor: "pointer",
+    transition: "all 0.2s ease",
+    ':hover': {
+      background: "#0d47a1"
+    }
+  },
+  linkRow: { 
+    display: "flex", 
+    gap: "10px", 
+    flexWrap: "wrap", 
+    marginTop: "14px" 
+  },
+  primaryLink: { 
+    padding: "9px 12px", 
+    background: "#0a1929", 
+    color: "white", 
+    borderRadius: "8px", 
+    border: "none",
+    textDecoration: "none", 
+    fontSize: "12px", 
+    fontWeight: 800, 
+    cursor: "pointer",
+    transition: "all 0.2s ease",
+    ':hover': {
+      background: "#1a2a3a"
+    }
+  },
+  secondaryLink: { 
+    padding: "9px 12px", 
+    background: "white", 
+    color: "#0a1929", 
+    border: "1px solid #cbd5e1", 
+    borderRadius: "8px", 
+    textDecoration: "none", 
+    fontSize: "12px", 
+    fontWeight: 800,
+    cursor: "pointer",
+    transition: "all 0.2s ease",
+    ':hover': {
+      background: "#f8fafc"
+    }
+  },
+  unauthorized: { 
+    textAlign: "center", 
+    padding: "60px", 
+    color: "#667085", 
+    background: "white", 
+    borderRadius: "16px", 
+    maxWidth: "400px", 
+    margin: "100px auto" 
+  },
+  button: { 
+    padding: "10px 20px", 
+    background: "#0a1929", 
+    color: "white", 
+    border: "none", 
+    borderRadius: "8px", 
+    cursor: "pointer", 
+    fontSize: "14px", 
+    fontWeight: 700, 
+    marginTop: "20px" 
   }
 };
