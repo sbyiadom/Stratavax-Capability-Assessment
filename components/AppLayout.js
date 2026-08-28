@@ -1,4 +1,4 @@
-// components/AppLayout.js - WITH PROPER ROUTING FOR SUPERVISOR SUB-PAGES
+// components/AppLayout.js - FULLY CORRECTED WITH PROPER ROUTING FOR SUPERVISOR SUB-PAGES
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
@@ -129,7 +129,7 @@ function isActiveRoute(pathname, href) {
 }
 
 // ============================================================
-// ROLE-BASED MENU SECTIONS
+// ROLE-BASED MENU SECTIONS - FIXED SUPERVISOR ROUTES
 // ============================================================
 function getMenuSections(role) {
   // Admin menu
@@ -186,7 +186,7 @@ function getMenuSections(role) {
     ];
   }
 
-  // 🟢 SUPERVISOR MENU - With proper routes
+  // 🟢 SUPERVISOR MENU - WITH CORRECT ROUTES FOR ALL SUB-PAGES
   if (role === 'supervisor') {
     return [
       {
@@ -202,8 +202,10 @@ function getMenuSections(role) {
         icon: Icons.Users(),
         isSection: true,
         children: [
-          { id: 'view-candidates', label: 'View Candidates', icon: Icons.UserCheck(), href: '/supervisor' },
+          // FIXED: View Candidates now goes to the manage-candidate index page
+          { id: 'view-candidates', label: 'View Candidates', icon: Icons.UserCheck(), href: '/supervisor/manage-candidate' },
           { id: 'add-candidate', label: 'Add Candidate', icon: Icons.UserPlus(), href: '/supervisor/add-candidate' },
+          // FIXED: Assign Assessment now goes to the assign-assessment index page
           { id: 'assign-assessment', label: 'Assign Assessment', icon: Icons.CheckSquare(), href: '/supervisor/assign-assessment' },
           { id: 'batch-manage', label: 'Batch Manage', icon: Icons.Layers(), href: '/supervisor/batch-manage' },
         ]
@@ -214,8 +216,9 @@ function getMenuSections(role) {
         icon: Icons.FileText(),
         isSection: true,
         children: [
-          { id: 'national-service', label: 'National Service Reports', icon: Icons.FileText(), href: '/supervisor?tab=national_service' },
-          { id: 'other-assessments', label: 'Other Assessment Reports', icon: Icons.Reports(), href: '/supervisor?tab=other' },
+          // FIXED: Reports now go to the reports index page
+          { id: 'national-service', label: 'National Service Reports', icon: Icons.FileText(), href: '/supervisor/reports' },
+          { id: 'other-assessments', label: 'Other Assessment Reports', icon: Icons.Reports(), href: '/supervisor/reports' },
         ]
       },
     ];
