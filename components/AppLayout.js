@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
+import Link from "next/link";
 import { supabase } from "../supabase/client";
 
 // ============================================================
@@ -62,6 +63,9 @@ const Icons = {
   Assessment: () => (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
   ),
+  Candidate: () => (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+  ),
 };
 
 function getStoredRole() {
@@ -98,7 +102,7 @@ function normalizeBackground(background) {
 }
 
 // ============================================================
-// PROPER ROUTE DETECTION FOR SUB-PAGES
+// 🟢 FIXED: PROPER ROUTE DETECTION FOR SUB-PAGES
 // ============================================================
 function isActiveRoute(pathname, href) {
   if (!pathname || !href) return false;
@@ -107,11 +111,11 @@ function isActiveRoute(pathname, href) {
   if (href === "/admin" && pathname === "/admin") return true;
   if (href === "/supervisor" && pathname === "/supervisor") return true;
   
-  // Check if path starts with href for sub-pages
+  // Check if path starts with href for sub-pages (e.g., /supervisor/add-candidate)
   if (href.startsWith("/supervisor/") && pathname.startsWith(href)) return true;
   if (href.startsWith("/admin/") && pathname.startsWith(href)) return true;
   
-  // Check for tab URLs
+  // Check for tab URLs (like ?tab=national_service)
   if (href.includes("?tab=")) {
     const basePath = href.split("?")[0];
     if (pathname === basePath) {
@@ -182,7 +186,7 @@ function getMenuSections(role) {
     ];
   }
 
-  // SUPERVISOR MENU - With proper routes
+  // 🟢 SUPERVISOR MENU - With proper routes
   if (role === 'supervisor') {
     return [
       {
@@ -255,10 +259,9 @@ function getMenuSections(role) {
 }
 
 // ============================================================
-// SIDEBAR COMPONENT - FIXED WITH PROPER ROUTING
+// SIDEBAR COMPONENT
 // ============================================================
 function Sidebar({ isOpen, toggleSidebar, currentPath, handleLogout, userRole }) {
-  const router = useRouter();
   const [isMobile, setIsMobile] = useState(false);
   const [expandedSections, setExpandedSections] = useState({
     supervisors: true,
@@ -306,21 +309,19 @@ function Sidebar({ isOpen, toggleSidebar, currentPath, handleLogout, userRole })
   const menuSections = getMenuSections(userRole);
   const isSupervisor = userRole === 'supervisor';
 
-  // Active route detection - FIXED
+  // 🟢 FIXED: PROPER ACTIVE ROUTE DETECTION
   const isActive = (href) => {
     if (!currentPath) return false;
     
     // Exact match
     if (currentPath === href) return true;
     
+    // Check if currentPath starts with href (for sub-pages like /supervisor/add-candidate)
+    if (href !== '/supervisor' && currentPath.startsWith(href)) return true;
+    
     // For '/supervisor' main page, only highlight if exactly '/supervisor'
     if (href === '/supervisor') {
       return currentPath === '/supervisor';
-    }
-    
-    // Check if currentPath starts with href (for sub-pages)
-    if (href !== '/supervisor' && currentPath.startsWith(href)) {
-      return true;
     }
     
     // For tab URLs
@@ -336,11 +337,15 @@ function Sidebar({ isOpen, toggleSidebar, currentPath, handleLogout, userRole })
     return false;
   };
 
+  // 🟢 FIXED: PROPER SECTION ACTIVE DETECTION
   const isSectionActive = (section) => {
     if (!section.children) return false;
     return section.children.some(child => {
+      // For '/supervisor' main page
       if (child.href === '/supervisor' && currentPath === '/supervisor') return true;
+      // For sub-pages
       if (child.href !== '/supervisor' && currentPath.startsWith(child.href)) return true;
+      // For tab URLs
       if (child.href.includes('?tab=') && currentPath === '/supervisor') {
         const tab = child.href.split('=')[1];
         const currentTab = new URLSearchParams(window.location.search).get('tab');
@@ -348,12 +353,6 @@ function Sidebar({ isOpen, toggleSidebar, currentPath, handleLogout, userRole })
       }
       return isActive(child.href);
     });
-  };
-
-  // Navigate function with proper handling
-  const navigateTo = (href) => {
-    router.push(href);
-    if (window.innerWidth < 768) toggleSidebar();
   };
 
   return (
@@ -381,48 +380,26 @@ function Sidebar({ isOpen, toggleSidebar, currentPath, handleLogout, userRole })
 
         <nav style={stylesSidebar.nav}>
           {menuSections.map((item) => {
-            // Main item (Dashboard)
+            // Main item (Dashboard, Profile, Assessments)
             if (item.isMain) {
               const active = isActive(item.href);
               return (
-                <button
-                  key={item.id}
-                  onClick={() => navigateTo(item.href)}
-                  style={{
-                    ...stylesSidebar.navItem,
-                    background: active ? 'rgba(255,255,255,0.15)' : 'transparent',
-                    borderLeft: active ? '3px solid #2563EB' : '3px solid transparent',
-                    marginBottom: '4px',
-                    cursor: 'pointer',
-                    width: '100%',
-                    textAlign: 'left',
-                    fontFamily: 'inherit',
-                    fontSize: '14px',
-                    color: active ? 'white' : 'rgba(255,255,255,0.7)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '14px',
-                    padding: '10px 16px 10px 20px',
-                    borderRadius: '8px 0 0 8px',
-                    border: 'none',
-                    background: active ? 'rgba(255,255,255,0.15)' : 'transparent',
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!active) {
-                      e.currentTarget.style.background = 'rgba(255,255,255,0.08)';
-                      e.currentTarget.style.color = 'white';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!active) {
-                      e.currentTarget.style.background = 'transparent';
-                      e.currentTarget.style.color = 'rgba(255,255,255,0.7)';
-                    }
-                  }}
-                >
-                  <span style={stylesSidebar.navIcon}>{item.icon}</span>
-                  <span style={stylesSidebar.navLabel}>{item.label}</span>
-                </button>
+                <Link href={item.href} key={item.id} legacyBehavior>
+                  <a
+                    style={{
+                      ...stylesSidebar.navItem,
+                      background: active ? 'rgba(255,255,255,0.15)' : 'transparent',
+                      borderLeft: active ? '3px solid #2563EB' : '3px solid transparent',
+                      marginBottom: '4px',
+                    }}
+                    onClick={() => {
+                      if (window.innerWidth < 768) toggleSidebar();
+                    }}
+                  >
+                    <span style={stylesSidebar.navIcon}>{item.icon}</span>
+                    <span style={stylesSidebar.navLabel}>{item.label}</span>
+                  </a>
+                </Link>
               );
             }
 
@@ -439,31 +416,6 @@ function Sidebar({ isOpen, toggleSidebar, currentPath, handleLogout, userRole })
                       ...stylesSidebar.sectionHeader,
                       background: sectionActive ? 'rgba(255,255,255,0.08)' : 'transparent',
                       borderLeft: sectionActive ? '3px solid #2563EB' : '3px solid transparent',
-                      cursor: 'pointer',
-                      width: '100%',
-                      textAlign: 'left',
-                      fontFamily: 'inherit',
-                      fontSize: '13px',
-                      color: sectionActive ? 'white' : 'rgba(255,255,255,0.7)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '14px',
-                      padding: '10px 16px 10px 20px',
-                      borderRadius: '8px 0 0 8px',
-                      border: 'none',
-                      background: sectionActive ? 'rgba(255,255,255,0.08)' : 'transparent',
-                    }}
-                    onMouseEnter={(e) => {
-                      if (!sectionActive) {
-                        e.currentTarget.style.background = 'rgba(255,255,255,0.06)';
-                        e.currentTarget.style.color = 'white';
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      if (!sectionActive) {
-                        e.currentTarget.style.background = 'transparent';
-                        e.currentTarget.style.color = 'rgba(255,255,255,0.7)';
-                      }
                     }}
                   >
                     <span style={stylesSidebar.navIcon}>{item.icon}</span>
@@ -477,82 +429,26 @@ function Sidebar({ isOpen, toggleSidebar, currentPath, handleLogout, userRole })
                     <div style={stylesSidebar.subNav}>
                       {item.children.map((child) => {
                         let href = child.href;
-                        // For supervisor reports, add tab parameter
-                        if (isSupervisor) {
-                          if (child.id === 'national-service') {
-                            href = '/supervisor?tab=national_service';
-                          } else if (child.id === 'other-assessments') {
-                            href = '/supervisor?tab=other';
-                          }
-                        }
-                        
-                        // FIXED: Properly detect active child
-                        const childActive = (() => {
-                          // Check exact match
-                          if (currentPath === child.href) return true;
-                          
-                          // Check if currentPath starts with child.href (for sub-pages)
-                          if (child.href !== '/supervisor' && currentPath.startsWith(child.href)) {
-                            return true;
-                          }
-                          
-                          // Check for tab URLs
-                          if (child.href.includes('?tab=')) {
-                            const basePath = child.href.split('?')[0];
-                            if (currentPath === basePath) {
-                              const currentTab = new URLSearchParams(window.location.search).get('tab');
-                              const targetTab = child.href.split('=')[1];
-                              if (currentTab === targetTab) return true;
-                            }
-                          }
-                          
-                          // For '/supervisor' main page, only highlight if exactly '/supervisor'
-                          if (child.href === '/supervisor') {
-                            return currentPath === '/supervisor';
-                          }
-                          
-                          return false;
-                        })();
+                        const childActive = isActive(child.href) || 
+                          (child.href === '/supervisor' && currentPath === '/supervisor') ||
+                          (currentPath.startsWith(child.href) && child.href !== '/supervisor');
                         
                         return (
-                          <button
-                            key={child.id}
-                            onClick={() => navigateTo(href)}
-                            style={{
-                              ...stylesSidebar.subNavItem,
-                              background: childActive ? 'rgba(255,255,255,0.1)' : 'transparent',
-                              borderLeft: childActive ? '3px solid #2563EB' : '3px solid transparent',
-                              cursor: 'pointer',
-                              width: '100%',
-                              textAlign: 'left',
-                              fontFamily: 'inherit',
-                              fontSize: '13px',
-                              color: childActive ? 'white' : 'rgba(255,255,255,0.6)',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '14px',
-                              padding: '8px 16px 8px 44px',
-                              borderRadius: '8px 0 0 8px',
-                              border: 'none',
-                              background: childActive ? 'rgba(255,255,255,0.1)' : 'transparent',
-                              transition: 'all 0.2s',
-                            }}
-                            onMouseEnter={(e) => {
-                              if (!childActive) {
-                                e.currentTarget.style.background = 'rgba(255,255,255,0.06)';
-                                e.currentTarget.style.color = 'white';
-                              }
-                            }}
-                            onMouseLeave={(e) => {
-                              if (!childActive) {
-                                e.currentTarget.style.background = 'transparent';
-                                e.currentTarget.style.color = 'rgba(255,255,255,0.6)';
-                              }
-                            }}
-                          >
-                            <span style={stylesSidebar.subNavIcon}>{child.icon}</span>
-                            <span style={stylesSidebar.subNavLabel}>{child.label}</span>
-                          </button>
+                          <Link href={href} key={child.id} legacyBehavior>
+                            <a
+                              style={{
+                                ...stylesSidebar.subNavItem,
+                                background: childActive ? 'rgba(255,255,255,0.1)' : 'transparent',
+                                borderLeft: childActive ? '3px solid #2563EB' : '3px solid transparent',
+                              }}
+                              onClick={() => {
+                                if (window.innerWidth < 768) toggleSidebar();
+                              }}
+                            >
+                              <span style={stylesSidebar.subNavIcon}>{child.icon}</span>
+                              <span style={stylesSidebar.subNavLabel}>{child.label}</span>
+                            </a>
+                          </Link>
                         );
                       })}
                     </div>
@@ -768,13 +664,13 @@ const stylesSidebar = {
   userInfo: {
     display: 'flex',
     alignItems: 'center',
-    gap: '12px',
+    gap: '10px',
   },
   userAvatar: {
     width: '32px',
     height: '32px',
     borderRadius: '50%',
-    background: 'rgba(255,255,255,0.1)',
+    background: '#2563EB',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -788,18 +684,16 @@ const stylesSidebar = {
   logoutBtn: {
     display: 'flex',
     alignItems: 'center',
-    gap: '12px',
+    gap: '10px',
     padding: '8px 16px',
+    background: 'rgba(255,255,255,0.05)',
+    border: 'none',
     borderRadius: '8px',
-    border: '1px solid rgba(255,255,255,0.1)',
-    background: 'transparent',
     color: 'rgba(255,255,255,0.7)',
     cursor: 'pointer',
-    fontSize: '14px',
+    fontSize: '13px',
     fontWeight: 500,
     transition: 'all 0.2s',
-    width: '100%',
-    justifyContent: 'center',
     '&:hover': {
       background: 'rgba(255,255,255,0.1)',
       color: 'white',
@@ -810,203 +704,348 @@ const stylesSidebar = {
 // ============================================================
 // MAIN APPLAYOUT COMPONENT
 // ============================================================
-export default function AppLayout({ children, background, noPadding }) {
+export default function AppLayout({ children, background, showNavigation = true }) {
   const router = useRouter();
-  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [userRole, setUserRole] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [loading, setLoading] = useState(showNavigation);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
-    const checkAuth = async () => {
+    let mounted = true;
+
+    async function resolveRole() {
       try {
-        // Check session from localStorage first
-        const stored = localStorage.getItem('userSession');
-        if (stored) {
-          const session = JSON.parse(stored);
-          setUserRole(session.role || 'candidate');
-          setIsLoading(false);
-          return;
+        const storedRole = getStoredRole();
+        if (storedRole && mounted) {
+          setUserRole(storedRole);
         }
 
-        // Fallback to Supabase session
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user) {
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select('role')
-            .eq('id', session.user.id)
-            .single();
+        const { data } = await supabase.auth.getSession();
+        const sessionRole = data?.session?.user?.user_metadata?.role || storedRole || null;
 
-          const role = profile?.role || 'candidate';
-          localStorage.setItem('userSession', JSON.stringify({ role, userId: session.user.id }));
-          setUserRole(role);
-        } else {
-          // No session, redirect to login
-          router.push('/login');
+        if (mounted) {
+          setUserRole(sessionRole);
+          setLoading(false);
         }
       } catch (error) {
-        console.error('Auth check failed:', error);
-        router.push('/login');
-      } finally {
-        setIsLoading(false);
+        console.error("AppLayout role check error:", error);
+        if (mounted) {
+          setUserRole(getStoredRole());
+          setLoading(false);
+        }
       }
-    };
+    }
 
-    checkAuth();
+    if (!showNavigation) {
+      setLoading(false);
+      return () => {
+        mounted = false;
+      };
+    }
 
-    // Subscribe to auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session?.user) {
-        supabase
-          .from('profiles')
-          .select('role')
-          .eq('id', session.user.id)
-          .single()
-          .then(({ data }) => {
-            const role = data?.role || 'candidate';
-            localStorage.setItem('userSession', JSON.stringify({ role, userId: session.user.id }));
-            setUserRole(role);
-          });
-      } else {
-        localStorage.removeItem('userSession');
+    resolveRole();
+
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!mounted) return;
+
+      if (event === "SIGNED_OUT") {
         setUserRole(null);
-        router.push('/login');
+        return;
+      }
+
+      if (session?.user) {
+        setUserRole(session.user.user_metadata?.role || getStoredRole());
       }
     });
 
     return () => {
-      subscription.unsubscribe();
+      mounted = false;
+      if (authListener?.subscription) authListener.subscription.unsubscribe();
     };
-  }, [router]);
+  }, [showNavigation]);
 
-  const handleLogout = async () => {
+  // Handle responsive sidebar
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth >= 768) {
+        setSidebarOpen(true);
+      } else {
+        setSidebarOpen(false);
+      }
+    };
+    window.addEventListener('resize', handleResize);
+    handleResize();
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  async function handleLogout() {
     try {
       await supabase.auth.signOut();
-      localStorage.removeItem('userSession');
-      router.push('/login');
+      if (typeof window !== "undefined") localStorage.removeItem("userSession");
+      router.push("/login");
     } catch (error) {
-      console.error('Logout failed:', error);
+      console.error("Logout error:", error);
+      router.push("/login");
     }
-  };
+  }
+
+  function getNavLinks() {
+    if (userRole === "admin") {
+      return [
+        { href: "/admin", label: "Dashboard" },
+        { href: "/admin/batch-manage", label: "Batch Manage" },
+        { href: "/admin/add-candidate", label: "Add Candidate" }
+      ];
+    }
+
+    if (userRole === "supervisor") {
+      return [
+        { href: "/supervisor", label: "Dashboard" },
+        { href: "/supervisor/batch-manage", label: "Batch Manage" },
+        { href: "/supervisor/add-candidate", label: "Add Candidate" }
+      ];
+    }
+
+    if (userRole === "candidate") {
+      return [
+        { href: "/candidate/dashboard", label: "Dashboard" },
+        { href: "/candidate/profile", label: "Profile" }
+      ];
+    }
+
+    return [];
+  }
 
   const toggleSidebar = () => {
     setSidebarOpen(!sidebarOpen);
   };
 
-  // Loading state
-  if (isLoading) {
+  const wrapperStyle = {
+    minHeight: "100vh",
+    background: normalizeBackground(background),
+    backgroundSize: "cover",
+    backgroundPosition: "center",
+    backgroundAttachment: "fixed"
+  };
+
+  if (!showNavigation) {
+    return <div style={wrapperStyle}>{children}</div>;
+  }
+
+  if (loading) {
     return (
-      <div style={stylesLayout.loadingContainer}>
-        <div style={stylesLayout.loadingSpinner}></div>
-        <p>Loading...</p>
+      <div style={{ ...wrapperStyle, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <div style={styles.loadingCard}>
+          <div style={styles.spinner} />
+          <div style={styles.loadingText}>Loading...</div>
+        </div>
+        <style jsx>{`
+          @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+          }
+        `}</style>
       </div>
     );
   }
 
-  // Redirect if no role
-  if (!userRole) {
-    return null;
-  }
+  const navLinks = getNavLinks();
+  const homeHref = getDashboardHref(userRole);
+  const showSidebar = userRole === "admin" || userRole === "supervisor";
 
   return (
-    <div style={stylesLayout.container}>
-      <Sidebar
-        isOpen={sidebarOpen}
-        toggleSidebar={toggleSidebar}
-        currentPath={router.pathname}
-        handleLogout={handleLogout}
-        userRole={userRole}
-      />
+    <div style={wrapperStyle}>
+      {showSidebar && (
+        <Sidebar
+          isOpen={sidebarOpen}
+          toggleSidebar={toggleSidebar}
+          currentPath={router.pathname}
+          handleLogout={handleLogout}
+          userRole={userRole}
+        />
+      )}
 
-      <div style={stylesLayout.mainContent}>
-        {/* Header */}
-        <header style={stylesLayout.header}>
-          <button onClick={toggleSidebar} style={stylesLayout.menuButton}>
-            <Icons.Menu />
-          </button>
-          <h1 style={stylesLayout.headerTitle}>
-            {userRole === 'admin' ? 'Admin Panel' : 
-             userRole === 'supervisor' ? 'Supervisor Dashboard' : 
-             'Candidate Dashboard'}
-          </h1>
+      <div style={{
+        ...styles.mainContent,
+        marginLeft: showSidebar ? (sidebarOpen ? '280px' : '0') : '0',
+      }}>
+        <header style={styles.navBar}>
+          <div style={styles.navContainer}>
+            <div style={styles.navLeft}>
+              {showSidebar && (
+                <button onClick={toggleSidebar} style={styles.menuButton}>
+                  <Icons.Menu />
+                </button>
+              )}
+              
+              <Link href={homeHref} legacyBehavior>
+                <a style={styles.logoLink}>
+                  <img 
+                    src="/images/stratavax-logo.png" 
+                    alt="Stratavax" 
+                    style={styles.logoImage}
+                  />
+                  <span style={styles.logoText}>Stratavax</span>
+                </a>
+              </Link>
+
+              {navLinks.length > 0 && (
+                <nav style={styles.navLinks}>
+                  {navLinks.map((link) => {
+                    const active = isActiveRoute(router.pathname, link.href);
+                    return (
+                      <Link key={link.href} href={link.href} legacyBehavior>
+                        <a style={{ ...styles.navLink, ...(active ? styles.navLinkActive : {}) }}>
+                          {link.label}
+                        </a>
+                      </Link>
+                    );
+                  })}
+                </nav>
+              )}
+            </div>
+
+            <div style={styles.navRight}>
+              <span style={styles.userRole}>{getRoleLabel(userRole)}</span>
+              <button onClick={handleLogout} style={styles.logoutButton}>Sign Out</button>
+            </div>
+          </div>
         </header>
 
-        {/* Content */}
-        <main style={{
-          ...stylesLayout.content,
-          ...(noPadding ? { padding: 0 } : {}),
-          background: normalizeBackground(background),
-        }}>
-          {children}
-        </main>
+        <main style={styles.content}>{children}</main>
       </div>
+
+      <style jsx>{`
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+      `}</style>
     </div>
   );
 }
 
-const stylesLayout = {
-  container: {
-    display: 'flex',
-    minHeight: '100vh',
-    background: '#f8fafc',
-  },
-  loadingContainer: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: '100vh',
-    background: '#f8fafc',
-  },
-  loadingSpinner: {
-    width: '40px',
-    height: '40px',
-    borderRadius: '50%',
-    border: '4px solid #e2e8f0',
-    borderTopColor: '#2563EB',
-    animation: 'spin 1s linear infinite',
-  },
+const styles = {
   mainContent: {
-    flex: 1,
-    display: 'flex',
-    flexDirection: 'column',
-    marginLeft: '0',
     transition: 'margin-left 0.3s ease',
     minHeight: '100vh',
   },
-  header: {
-    background: 'white',
-    padding: '16px 24px',
-    borderBottom: '1px solid #e2e8f0',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '16px',
-    flexShrink: 0,
-    boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+  navBar: {
+    background: "rgba(255,255,255,0.95)",
+    backdropFilter: "blur(10px)",
+    borderBottom: "1px solid rgba(0,0,0,0.05)",
+    position: "sticky",
+    top: 0,
+    zIndex: 100,
+    boxShadow: "0 2px 8px rgba(0,0,0,0.05)"
+  },
+  navContainer: {
+    maxWidth: "1400px",
+    margin: "0 auto",
+    padding: "12px 24px",
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: "15px"
+  },
+  navLeft: {
+    display: "flex",
+    alignItems: "center",
+    gap: "16px",
+    flexWrap: "wrap"
   },
   menuButton: {
-    background: 'none',
-    border: 'none',
-    color: '#0F2747',
-    cursor: 'pointer',
-    padding: '8px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: '8px',
-    '&:hover': {
-      background: '#f1f5f9',
-    },
+    background: "none",
+    border: "none",
+    cursor: "pointer",
+    color: "#1a202c",
+    padding: "4px",
+    display: "flex",
+    alignItems: "center",
   },
-  headerTitle: {
-    fontSize: '20px',
+  logoLink: {
+    display: "flex",
+    alignItems: "center",
+    gap: "10px",
+    textDecoration: "none"
+  },
+  logoImage: {
+    height: "36px",
+    width: "36px",
+    objectFit: "contain"
+  },
+  logoText: {
+    fontSize: "18px",
+    fontWeight: 700,
+    color: "#0a1929",
+    letterSpacing: "1px"
+  },
+  navLinks: {
+    display: "flex",
+    gap: "10px",
+    flexWrap: "wrap"
+  },
+  navLink: {
+    color: "#475569",
+    textDecoration: "none",
+    fontSize: "14px",
     fontWeight: 600,
-    color: '#0F2747',
-    margin: 0,
+    padding: "8px 12px",
+    borderRadius: "8px",
+    transition: "all 0.2s",
+    cursor: "pointer"
+  },
+  navLinkActive: {
+    background: "#0a1929",
+    color: "white"
+  },
+  navRight: {
+    display: "flex",
+    alignItems: "center",
+    gap: "12px",
+    flexWrap: "wrap"
+  },
+  userRole: {
+    fontSize: "13px",
+    padding: "6px 12px",
+    background: "#e2e8f0",
+    borderRadius: "20px",
+    color: "#475569",
+    fontWeight: 600
+  },
+  logoutButton: {
+    padding: "8px 18px",
+    background: "#f44336",
+    color: "white",
+    border: "none",
+    borderRadius: "8px",
+    cursor: "pointer",
+    fontSize: "14px",
+    fontWeight: 600
   },
   content: {
-    flex: 1,
-    padding: '24px',
-    overflowY: 'auto',
+    minHeight: "calc(100vh - 64px)",
+    padding: "0",
   },
+  loadingCard: {
+    background: "rgba(255,255,255,0.9)",
+    borderRadius: "16px",
+    padding: "28px",
+    textAlign: "center",
+    boxShadow: "0 10px 30px rgba(0,0,0,0.15)"
+  },
+  spinner: {
+    width: "42px",
+    height: "42px",
+    border: "4px solid #e2e8f0",
+    borderTop: "4px solid #0a1929",
+    borderRadius: "50%",
+    animation: "spin 1s linear infinite",
+    margin: "0 auto 14px"
+  },
+  loadingText: {
+    color: "#334155",
+    fontWeight: 600
+  }
 };
