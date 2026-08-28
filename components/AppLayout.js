@@ -1,5 +1,4 @@
-// components/AppLayout.js - WITH ROLE-BASED CATEGORIZED SIDEBAR FOR ALL USERS
-// FIXED: Added Add Candidate and Assign Assessment to supervisor menu
+// components/AppLayout.js - WITH PROPER ROUTING FOR SUPERVISOR SUB-PAGES
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
@@ -64,6 +63,9 @@ const Icons = {
   Assessment: () => (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
   ),
+  Candidate: () => (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+  ),
 };
 
 function getStoredRole() {
@@ -99,12 +101,30 @@ function normalizeBackground(background) {
   return "url(" + background + ") center/cover no-repeat";
 }
 
+// ============================================================
+// 🟢 FIXED: PROPER ROUTE DETECTION FOR SUB-PAGES
+// ============================================================
 function isActiveRoute(pathname, href) {
   if (!pathname || !href) return false;
-  if (href === "/admin") return pathname === "/admin";
-  if (href === "/supervisor") return pathname === "/supervisor";
-  if (href === "/supervisor?tab=national_service") return pathname === "/supervisor";
-  if (href === "/supervisor?tab=other") return pathname === "/supervisor";
+  
+  // Exact match for main pages
+  if (href === "/admin" && pathname === "/admin") return true;
+  if (href === "/supervisor" && pathname === "/supervisor") return true;
+  
+  // Check if path starts with href for sub-pages (e.g., /supervisor/add-candidate)
+  if (href.startsWith("/supervisor/") && pathname.startsWith(href)) return true;
+  if (href.startsWith("/admin/") && pathname.startsWith(href)) return true;
+  
+  // Check for tab URLs (like ?tab=national_service)
+  if (href.includes("?tab=")) {
+    const basePath = href.split("?")[0];
+    if (pathname === basePath) {
+      const currentTab = new URLSearchParams(window.location.search).get('tab');
+      const targetTab = href.split("=")[1];
+      if (currentTab === targetTab) return true;
+    }
+  }
+  
   return pathname === href || pathname.startsWith(href + "/");
 }
 
@@ -166,7 +186,7 @@ function getMenuSections(role) {
     ];
   }
 
-  // 🟢 SUPERVISOR MENU - Updated with all actions
+  // 🟢 SUPERVISOR MENU - With proper routes
   if (role === 'supervisor') {
     return [
       {
@@ -182,7 +202,7 @@ function getMenuSections(role) {
         icon: Icons.Users(),
         isSection: true,
         children: [
-          { id: 'view-candidates', label: 'View Candidates', icon: Icons.UserCheck(), href: '/supervisor?tab=view_candidates' },
+          { id: 'view-candidates', label: 'View Candidates', icon: Icons.UserCheck(), href: '/supervisor' },
           { id: 'add-candidate', label: 'Add Candidate', icon: Icons.UserPlus(), href: '/supervisor/add-candidate' },
           { id: 'assign-assessment', label: 'Assign Assessment', icon: Icons.CheckSquare(), href: '/supervisor/assign-assessment' },
           { id: 'batch-manage', label: 'Batch Manage', icon: Icons.Layers(), href: '/supervisor/batch-manage' },
@@ -248,6 +268,7 @@ function Sidebar({ isOpen, toggleSidebar, currentPath, handleLogout, userRole })
     candidates: true,
     reports: true,
     system: true,
+    'my-candidates': true,
   });
 
   useEffect(() => {
@@ -288,17 +309,48 @@ function Sidebar({ isOpen, toggleSidebar, currentPath, handleLogout, userRole })
   const menuSections = getMenuSections(userRole);
   const isSupervisor = userRole === 'supervisor';
 
+  // 🟢 FIXED: PROPER ACTIVE ROUTE DETECTION
   const isActive = (href) => {
-    if (href === '/admin' && currentPath === '/admin') return true;
-    if (href === '/supervisor' && currentPath === '/supervisor') return true;
-    if (href !== '/admin' && href !== '/supervisor' && currentPath.startsWith(href)) return true;
+    if (!currentPath) return false;
+    
+    // Exact match
+    if (currentPath === href) return true;
+    
+    // Check if currentPath starts with href (for sub-pages like /supervisor/add-candidate)
+    if (href !== '/supervisor' && currentPath.startsWith(href)) return true;
+    
+    // For '/supervisor' main page, only highlight if exactly '/supervisor'
+    if (href === '/supervisor') {
+      return currentPath === '/supervisor';
+    }
+    
+    // For tab URLs
+    if (href.includes('?tab=')) {
+      const basePath = href.split('?')[0];
+      if (currentPath === basePath) {
+        const currentTab = new URLSearchParams(window.location.search).get('tab');
+        const targetTab = href.split('=')[1];
+        if (currentTab === targetTab) return true;
+      }
+    }
+    
     return false;
   };
 
+  // 🟢 FIXED: PROPER SECTION ACTIVE DETECTION
   const isSectionActive = (section) => {
     if (!section.children) return false;
     return section.children.some(child => {
+      // For '/supervisor' main page
       if (child.href === '/supervisor' && currentPath === '/supervisor') return true;
+      // For sub-pages
+      if (child.href !== '/supervisor' && currentPath.startsWith(child.href)) return true;
+      // For tab URLs
+      if (child.href.includes('?tab=') && currentPath === '/supervisor') {
+        const tab = child.href.split('=')[1];
+        const currentTab = new URLSearchParams(window.location.search).get('tab');
+        return currentTab === tab;
+      }
       return isActive(child.href);
     });
   };
@@ -330,13 +382,14 @@ function Sidebar({ isOpen, toggleSidebar, currentPath, handleLogout, userRole })
           {menuSections.map((item) => {
             // Main item (Dashboard, Profile, Assessments)
             if (item.isMain) {
+              const active = isActive(item.href);
               return (
                 <Link href={item.href} key={item.id} legacyBehavior>
                   <a
                     style={{
                       ...stylesSidebar.navItem,
-                      background: isActive(item.href) ? 'rgba(255,255,255,0.15)' : 'transparent',
-                      borderLeft: isActive(item.href) ? '3px solid #2563EB' : '3px solid transparent',
+                      background: active ? 'rgba(255,255,255,0.15)' : 'transparent',
+                      borderLeft: active ? '3px solid #2563EB' : '3px solid transparent',
                       marginBottom: '4px',
                     }}
                     onClick={() => {
@@ -376,20 +429,17 @@ function Sidebar({ isOpen, toggleSidebar, currentPath, handleLogout, userRole })
                     <div style={stylesSidebar.subNav}>
                       {item.children.map((child) => {
                         let href = child.href;
-                        if (isSupervisor) {
-                          if (child.id === 'national-service') {
-                            href = '/supervisor?tab=national_service';
-                          } else if (child.id === 'other-assessments') {
-                            href = '/supervisor?tab=other';
-                          }
-                        }
+                        const childActive = isActive(child.href) || 
+                          (child.href === '/supervisor' && currentPath === '/supervisor') ||
+                          (currentPath.startsWith(child.href) && child.href !== '/supervisor');
+                        
                         return (
                           <Link href={href} key={child.id} legacyBehavior>
                             <a
                               style={{
                                 ...stylesSidebar.subNavItem,
-                                background: isActive(child.href) ? 'rgba(255,255,255,0.1)' : 'transparent',
-                                borderLeft: isActive(child.href) ? '3px solid #2563EB' : '3px solid transparent',
+                                background: childActive ? 'rgba(255,255,255,0.1)' : 'transparent',
+                                borderLeft: childActive ? '3px solid #2563EB' : '3px solid transparent',
                               }}
                               onClick={() => {
                                 if (window.innerWidth < 768) toggleSidebar();
