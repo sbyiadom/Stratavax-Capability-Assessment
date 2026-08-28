@@ -1,4 +1,4 @@
-// components/AppLayout.js - FIXED (No Blur)
+// components/AppLayout.js - WITH CATEGORIZED SIDEBAR
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
@@ -15,11 +15,29 @@ const Icons = {
   Users: () => (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
   ),
-  Reports: () => (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+  UserPlus: () => (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
   ),
-  Assessment: () => (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+  UserCheck: () => (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><polyline points="17 11 19 13 23 9"/></svg>
+  ),
+  UserX: () => (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="18" y1="8" x2="23" y2="13"/><line x1="23" y1="8" x2="18" y2="13"/></svg>
+  ),
+  Users: () => (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+  ),
+  Clipboard: () => (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>
+  ),
+  CheckSquare: () => (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+  ),
+  Layers: () => (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
+  ),
+  FileText: () => (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
   ),
   Settings: () => (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v2"/><path d="M12 21v2"/><path d="M4.22 4.22l1.42 1.42"/><path d="M18.36 18.36l1.42 1.42"/><path d="M1 12h2"/><path d="M21 12h2"/><path d="M4.22 19.78l1.42-1.42"/><path d="M18.36 5.64l1.42-1.42"/></svg>
@@ -32,6 +50,15 @@ const Icons = {
   ),
   Close: () => (
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+  ),
+  ChevronDown: () => (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9"/></svg>
+  ),
+  ChevronRight: () => (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
+  ),
+  History: () => (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
   ),
 };
 
@@ -76,10 +103,16 @@ function isActiveRoute(pathname, href) {
 }
 
 // ============================================================
-// SIDEBAR COMPONENT - FIXED (No Blur)
+// SIDEBAR COMPONENT - WITH CATEGORIZED SECTIONS
 // ============================================================
 function Sidebar({ isOpen, toggleSidebar, currentPath, handleLogout, userRole }) {
   const [isMobile, setIsMobile] = useState(false);
+  const [expandedSections, setExpandedSections] = useState({
+    supervisors: true,
+    candidates: true,
+    reports: true,
+    system: true,
+  });
 
   useEffect(() => {
     const checkMobile = () => {
@@ -90,12 +123,82 @@ function Sidebar({ isOpen, toggleSidebar, currentPath, handleLogout, userRole })
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  const menuItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: Icons.Dashboard(), href: '/admin' },
-    { id: 'candidates', label: 'Candidates', icon: Icons.Users(), href: '/admin/manage-candidates' },
-    { id: 'reports', label: 'Reports', icon: Icons.Reports(), href: '/admin/reports' },
-    { id: 'assessments', label: 'Assessments', icon: Icons.Assessment(), href: '/admin/assign-assessments' },
-    { id: 'settings', label: 'Settings', icon: Icons.Settings(), href: '/admin/system-settings' },
+  // Load expanded state from localStorage
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('sidebar_expanded_sections');
+      if (saved) {
+        setExpandedSections(JSON.parse(saved));
+      }
+    } catch (e) {
+      // Ignore
+    }
+  }, []);
+
+  // Save expanded state to localStorage
+  const toggleSection = (section) => {
+    const newState = {
+      ...expandedSections,
+      [section]: !expandedSections[section]
+    };
+    setExpandedSections(newState);
+    try {
+      localStorage.setItem('sidebar_expanded_sections', JSON.stringify(newState));
+    } catch (e) {
+      // Ignore
+    }
+  };
+
+  // 🟢 CATEGORIZED MENU ITEMS
+  const menuSections = [
+    {
+      id: 'dashboard',
+      label: 'Dashboard',
+      icon: Icons.Dashboard(),
+      href: '/admin',
+      isMain: true,
+    },
+    {
+      id: 'supervisors',
+      label: 'Supervisors',
+      icon: Icons.Users(),
+      isSection: true,
+      children: [
+        { id: 'add-supervisor', label: 'Add Supervisor', icon: Icons.UserPlus(), href: '/admin/add-supervisor' },
+        { id: 'manage-supervisors', label: 'Manage Supervisors', icon: Icons.UserCheck(), href: '/admin/manage-supervisors' },
+        { id: 'assign-supervisors', label: 'Assign Supervisors', icon: Icons.UserX(), href: '/admin/assign-candidates' },
+      ]
+    },
+    {
+      id: 'candidates',
+      label: 'Candidates',
+      icon: Icons.Users(),
+      isSection: true,
+      children: [
+        { id: 'manage-candidates', label: 'Manage Candidates', icon: Icons.UserCheck(), href: '/admin/manage-candidates' },
+        { id: 'assign-assessments', label: 'Assign Assessments', icon: Icons.CheckSquare(), href: '/admin/assign-assessments' },
+        { id: 'batch-manage', label: 'Batch Manage', icon: Icons.Layers(), href: '/admin/batch-manage' },
+      ]
+    },
+    {
+      id: 'reports',
+      label: 'Reports',
+      icon: Icons.FileText(),
+      isSection: true,
+      children: [
+        { id: 'assessment-reports', label: 'Assessment Reports', icon: Icons.FileText(), href: '/admin/reports' },
+      ]
+    },
+    {
+      id: 'system',
+      label: 'System',
+      icon: Icons.Settings(),
+      isSection: true,
+      children: [
+        { id: 'audit-logs', label: 'Audit Logs', icon: Icons.History(), href: '/admin/audit-logs' },
+        { id: 'system-settings', label: 'System Settings', icon: Icons.Settings(), href: '/admin/system-settings' },
+      ]
+    }
   ];
 
   const isActive = (href) => {
@@ -104,9 +207,14 @@ function Sidebar({ isOpen, toggleSidebar, currentPath, handleLogout, userRole })
     return false;
   };
 
+  // Check if any child is active
+  const isSectionActive = (section) => {
+    if (!section.children) return false;
+    return section.children.some(child => isActive(child.href));
+  };
+
   return (
     <>
-      {/* Overlay - Only on mobile, NO BLUR */}
       {isOpen && isMobile && (
         <div 
           onClick={toggleSidebar}
@@ -114,7 +222,6 @@ function Sidebar({ isOpen, toggleSidebar, currentPath, handleLogout, userRole })
         />
       )}
 
-      {/* Sidebar */}
       <div style={{
         ...stylesSidebar.sidebar,
         transform: isOpen ? 'translateX(0)' : 'translateX(-100%)',
@@ -130,23 +237,78 @@ function Sidebar({ isOpen, toggleSidebar, currentPath, handleLogout, userRole })
         </div>
 
         <nav style={stylesSidebar.nav}>
-          {menuItems.map((item) => (
-            <Link href={item.href} key={item.id} legacyBehavior>
-              <a
-                style={{
-                  ...stylesSidebar.navItem,
-                  background: isActive(item.href) ? 'rgba(255,255,255,0.1)' : 'transparent',
-                  borderLeft: isActive(item.href) ? '3px solid #2563EB' : '3px solid transparent',
-                }}
-                onClick={() => {
-                  if (window.innerWidth < 768) toggleSidebar();
-                }}
-              >
-                <span style={stylesSidebar.navIcon}>{item.icon}</span>
-                <span style={stylesSidebar.navLabel}>{item.label}</span>
-              </a>
-            </Link>
-          ))}
+          {menuSections.map((item) => {
+            // Main item (Dashboard)
+            if (item.isMain) {
+              return (
+                <Link href={item.href} key={item.id} legacyBehavior>
+                  <a
+                    style={{
+                      ...stylesSidebar.navItem,
+                      background: isActive(item.href) ? 'rgba(255,255,255,0.15)' : 'transparent',
+                      borderLeft: isActive(item.href) ? '3px solid #2563EB' : '3px solid transparent',
+                      marginBottom: '8px',
+                    }}
+                    onClick={() => {
+                      if (window.innerWidth < 768) toggleSidebar();
+                    }}
+                  >
+                    <span style={stylesSidebar.navIcon}>{item.icon}</span>
+                    <span style={stylesSidebar.navLabel}>{item.label}</span>
+                  </a>
+                </Link>
+              );
+            }
+
+            // Section with children
+            if (item.isSection) {
+              const isExpanded = expandedSections[item.id] !== false;
+              const sectionActive = isSectionActive(item);
+
+              return (
+                <div key={item.id} style={stylesSidebar.sectionContainer}>
+                  <button
+                    onClick={() => toggleSection(item.id)}
+                    style={{
+                      ...stylesSidebar.sectionHeader,
+                      background: sectionActive ? 'rgba(255,255,255,0.08)' : 'transparent',
+                      borderLeft: sectionActive ? '3px solid #2563EB' : '3px solid transparent',
+                    }}
+                  >
+                    <span style={stylesSidebar.navIcon}>{item.icon}</span>
+                    <span style={stylesSidebar.sectionLabel}>{item.label}</span>
+                    <span style={stylesSidebar.sectionChevron}>
+                      {isExpanded ? <Icons.ChevronDown /> : <Icons.ChevronRight />}
+                    </span>
+                  </button>
+
+                  {isExpanded && (
+                    <div style={stylesSidebar.subNav}>
+                      {item.children.map((child) => (
+                        <Link href={child.href} key={child.id} legacyBehavior>
+                          <a
+                            style={{
+                              ...stylesSidebar.subNavItem,
+                              background: isActive(child.href) ? 'rgba(255,255,255,0.1)' : 'transparent',
+                              borderLeft: isActive(child.href) ? '3px solid #2563EB' : '3px solid transparent',
+                            }}
+                            onClick={() => {
+                              if (window.innerWidth < 768) toggleSidebar();
+                            }}
+                          >
+                            <span style={stylesSidebar.subNavIcon}>{child.icon}</span>
+                            <span style={stylesSidebar.subNavLabel}>{child.label}</span>
+                          </a>
+                        </Link>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            }
+
+            return null;
+          })}
         </nav>
 
         <div style={stylesSidebar.sidebarFooter}>
@@ -175,13 +337,12 @@ const stylesSidebar = {
     bottom: 0,
     background: 'rgba(0,0,0,0.4)',
     zIndex: 999,
-    // ✅ REMOVED: backdropFilter: 'blur(4px)',
   },
   sidebar: {
     position: 'fixed',
     top: 0,
     left: 0,
-    width: '260px',
+    width: '280px',
     height: '100vh',
     background: '#0F2747',
     color: 'white',
@@ -198,6 +359,7 @@ const stylesSidebar = {
     alignItems: 'center',
     padding: '16px 20px',
     borderBottom: '1px solid rgba(255,255,255,0.1)',
+    flexShrink: 0,
   },
   logoArea: {
     display: 'flex',
@@ -234,17 +396,18 @@ const stylesSidebar = {
   },
   nav: {
     flex: 1,
-    padding: '16px 12px',
+    padding: '12px 12px 12px 0',
     display: 'flex',
     flexDirection: 'column',
-    gap: '4px',
+    gap: '2px',
+    overflowY: 'auto',
   },
   navItem: {
     display: 'flex',
     alignItems: 'center',
     gap: '14px',
-    padding: '10px 16px',
-    borderRadius: '8px',
+    padding: '10px 16px 10px 20px',
+    borderRadius: '8px 0 0 8px',
     textDecoration: 'none',
     color: 'rgba(255,255,255,0.7)',
     cursor: 'pointer',
@@ -267,12 +430,86 @@ const stylesSidebar = {
     flex: 1,
     textAlign: 'left',
   },
+  sectionContainer: {
+    display: 'flex',
+    flexDirection: 'column',
+  },
+  sectionHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '14px',
+    padding: '10px 16px 10px 20px',
+    borderRadius: '8px 0 0 8px',
+    background: 'transparent',
+    border: 'none',
+    color: 'rgba(255,255,255,0.7)',
+    cursor: 'pointer',
+    fontSize: '13px',
+    fontWeight: 600,
+    transition: 'all 0.2s',
+    width: '100%',
+    textAlign: 'left',
+    '&:hover': {
+      background: 'rgba(255,255,255,0.06)',
+      color: 'white',
+    },
+  },
+  sectionLabel: {
+    flex: 1,
+    textAlign: 'left',
+    textTransform: 'uppercase',
+    fontSize: '11px',
+    letterSpacing: '0.5px',
+    opacity: 0.7,
+  },
+  sectionChevron: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    color: 'rgba(255,255,255,0.4)',
+  },
+  subNav: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '2px',
+    paddingLeft: '8px',
+  },
+  subNavItem: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '14px',
+    padding: '8px 16px 8px 44px',
+    borderRadius: '8px 0 0 8px',
+    textDecoration: 'none',
+    color: 'rgba(255,255,255,0.6)',
+    cursor: 'pointer',
+    fontSize: '13px',
+    fontWeight: 400,
+    transition: 'all 0.2s',
+    '&:hover': {
+      background: 'rgba(255,255,255,0.06)',
+      color: 'white',
+    },
+  },
+  subNavIcon: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '18px',
+    flexShrink: 0,
+    opacity: 0.6,
+  },
+  subNavLabel: {
+    flex: 1,
+    textAlign: 'left',
+  },
   sidebarFooter: {
     padding: '16px 20px',
     borderTop: '1px solid rgba(255,255,255,0.1)',
     display: 'flex',
     flexDirection: 'column',
     gap: '12px',
+    flexShrink: 0,
   },
   userInfo: {
     display: 'flex',
@@ -377,7 +614,6 @@ export default function AppLayout({ children, background, showNavigation = true 
     };
   }, [showNavigation]);
 
-  // Handle responsive sidebar
   useEffect(() => {
     const handleResize = () => {
       if (window.innerWidth >= 768) {
@@ -467,7 +703,6 @@ export default function AppLayout({ children, background, showNavigation = true 
 
   return (
     <div style={wrapperStyle}>
-      {/* Sidebar - Only for admin */}
       {isAdmin && (
         <Sidebar
           isOpen={sidebarOpen}
@@ -478,12 +713,10 @@ export default function AppLayout({ children, background, showNavigation = true 
         />
       )}
 
-      {/* Main Content */}
       <div style={{
         ...styles.mainContent,
-        marginLeft: isAdmin ? (sidebarOpen ? '260px' : '0') : '0',
+        marginLeft: isAdmin ? (sidebarOpen ? '280px' : '0') : '0',
       }}>
-        {/* Top Navigation Bar */}
         <header style={styles.navBar}>
           <div style={styles.navContainer}>
             <div style={styles.navLeft}>
