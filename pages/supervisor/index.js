@@ -1,5 +1,5 @@
 // pages/supervisor/index.js
-// CLEAN VERSION - Removed redundant tabs, better styling
+// FULLY CLEANED - Works with sidebar navigation, proper tab separation
 
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/router';
@@ -30,6 +30,10 @@ ChartJS.register(
 );
 
 import Select from 'react-select';
+
+// ============================================================
+// HELPER FUNCTIONS
+// ============================================================
 
 function calculateNationalServiceRecommendation(workplace, intellectual, overall) {
   if (workplace >= 85 && intellectual >= 85) return 'Highly Recommended';
@@ -76,8 +80,9 @@ function calculateTrueScore(report) {
 }
 
 // ============================================================
-// ENHANCED PROGRAM NORMALIZATION
+// PROGRAM NORMALIZATION
 // ============================================================
+
 const ABBREVIATIONS = {
   'bsc': 'BSc', 'b.sc': 'BSc', 'b. sc': 'BSc', 'b.s.c': 'BSc',
   'bachelor': 'Bachelor', 'btech': 'B-Tech', 'b.tech': 'B-Tech',
@@ -172,7 +177,7 @@ function getUniqueMasterNames(rawPrograms) {
 // SUB-COMPONENTS
 // ============================================================
 
-function StatCard({ icon, label, value, color = '#0a1929', bg = 'white' }) {
+function StatCard({ icon, label, value, bg = 'white' }) {
   return (
     <div style={{ ...styles.statCard, background: bg }}>
       <div style={styles.statIcon}>{icon}</div>
@@ -206,6 +211,256 @@ function TabButton({ active, onClick, label, count }) {
 }
 
 // ============================================================
+// VIEW CANDIDATES TAB
+// ============================================================
+function ViewCandidatesTab({ candidates, onManageCandidate }) {
+  return (
+    <div style={styles.tabPanel}>
+      <div style={styles.tabDescription}>
+        <p>View all candidates assigned to you. Click on a candidate to manage their assessments.</p>
+      </div>
+      {candidates.length === 0 ? (
+        <div style={styles.emptyState}><p>No candidates assigned to you yet.</p></div>
+      ) : (
+        <div style={styles.tableContainer}>
+          <table style={styles.table}>
+            <thead>
+              <tr>
+                <th style={styles.th}>Candidate</th>
+                <th style={styles.th}>Email</th>
+                <th style={styles.th}>University</th>
+                <th style={styles.th}>Program</th>
+                <th style={styles.th}>Assessments</th>
+                <th style={styles.th}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {candidates.map((candidate) => {
+                const completedCount = candidate.completedAssessments?.length || 0;
+                return (
+                  <tr key={candidate.id} style={styles.tr}>
+                    <td style={styles.td}>
+                      <div style={styles.cellName}>{candidate.full_name || 'Unnamed'}</div>
+                      <div style={styles.cellSub}>ID: {candidate.id.substring(0, 8)}...</div>
+                    </td>
+                    <td style={styles.td}>{candidate.email || 'No email'}</td>
+                    <td style={styles.td}>{candidate.university || '—'}</td>
+                    <td style={styles.td}>{candidate.programme || '—'}</td>
+                    <td style={styles.td}>
+                      <span style={styles.countBadge}>{completedCount}</span>
+                    </td>
+                    <td style={styles.td}>
+                      <button 
+                        onClick={() => onManageCandidate(candidate.id)}
+                        style={styles.viewButton}
+                      >
+                        Manage
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// ASSESSMENT TAB (All Assessments)
+// ============================================================
+function AssessmentTab({ reports, getScoreColor, getScoreTextColor, onViewReport }) {
+  return (
+    <div style={styles.tabPanel}>
+      <div style={styles.tabDescription}>
+        <p>Filtered view of all completed assessments based on selected criteria. ({reports.length} results)</p>
+      </div>
+      {reports.length === 0 ? (
+        <div style={styles.emptyState}><p>No assessments match your current filter selections.</p></div>
+      ) : (
+        <div style={styles.tableContainer}>
+          <table style={styles.table}>
+            <thead>
+              <tr>
+                <th style={styles.th}>Candidate</th>
+                <th style={styles.th}>Assessment</th>
+                <th style={styles.th}>Score</th>
+                <th style={styles.th}>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {reports.map((report) => {
+                const trueScore = calculateTrueScore(report);
+                return (
+                  <tr key={report.result_id || `${report.candidate_id}-${report.assessment_id}`} style={styles.tr}>
+                    <td style={styles.td}>
+                      <div style={styles.cellName}>{report.candidate_name}</div>
+                      <div style={styles.cellSub}>{report.university || ''} • {report.programme || ''}</div>
+                    </td>
+                    <td style={styles.td}>{report.assessment_title}</td>
+                    <td style={styles.td}>
+                      <span style={{ ...styles.scoreBadge, background: getScoreColor(trueScore), color: getScoreTextColor(trueScore) }}>
+                        {trueScore}%
+                      </span>
+                    </td>
+                    <td style={styles.td}>
+                      {report.result_id ? (
+                        <button onClick={() => onViewReport(report.result_id)} style={styles.viewButton}>View Report</button>
+                      ) : (
+                        <span style={styles.pendingText}>No result</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// NATIONAL SERVICE TAB
+// ============================================================
+function NationalServiceTab({ reports, getScoreColor, getScoreTextColor, getRecommendationColor, onViewReport }) {
+  return (
+    <div style={styles.tabPanel}>
+      <div style={styles.tabDescription}>
+        <p>All National Service assessment reports assigned to this supervisor. ({reports.length} reports)</p>
+      </div>
+      {reports.length === 0 ? (
+        <div style={styles.emptyState}><p>No National Service assessments found.</p></div>
+      ) : (
+        <div style={styles.tableContainer}>
+          <table style={styles.table}>
+            <thead>
+              <tr>
+                <th style={styles.th}>Candidate</th>
+                <th style={styles.th}>Status</th>
+                <th style={styles.th}>Workplace Readiness</th>
+                <th style={styles.th}>Intellectual Capability</th>
+                <th style={styles.th}>Overall Score</th>
+                <th style={styles.th}>Recommendation</th>
+                <th style={styles.th}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {reports.map((report) => {
+                const overallScore = Number(report.score || report.overallScore || report.percentage_score || 0);
+                const workplaceScore = Number(report.workplace_readiness || 0);
+                const intellectualScore = Number(report.intellectual_capability || 0);
+                const isCompleted = report.status === 'completed' || report.result_id !== null || (report.percentage_score !== null && report.percentage_score !== undefined);
+                const hasScores = workplaceScore > 0 || intellectualScore > 0 || overallScore > 0;
+
+                const displayRecommendation = calculateNationalServiceRecommendation(workplaceScore, intellectualScore, overallScore);
+
+                return (
+                  <tr key={report.result_id || report.candidate_id} style={styles.tr}>
+                    <td style={styles.td}>
+                      <div style={styles.cellName}>{report.candidate_name}</div>
+                      <div style={styles.cellSub}>{report.university || ''} • {report.programme || ''}</div>
+                    </td>
+                    <td style={styles.td}>
+                      <span style={{ ...styles.statusBadge, background: isCompleted ? '#dcfce7' : '#fef3c7', color: isCompleted ? '#166534' : '#92400e' }}>
+                        {isCompleted ? 'Completed' : 'In Progress'}
+                      </span>
+                    </td>
+                    <td style={styles.td}>
+                      <span style={{ ...styles.scoreBadge, background: getScoreColor(workplaceScore), color: getScoreTextColor(workplaceScore) }}>
+                        {hasScores ? Math.round(workplaceScore) + '%' : '—'}
+                      </span>
+                    </td>
+                    <td style={styles.td}>
+                      <span style={{ ...styles.scoreBadge, background: getScoreColor(intellectualScore), color: getScoreTextColor(intellectualScore) }}>
+                        {hasScores ? Math.round(intellectualScore) + '%' : '—'}
+                      </span>
+                    </td>
+                    <td style={styles.td}>
+                      <span style={{ ...styles.scoreBadge, background: getScoreColor(overallScore), color: getScoreTextColor(overallScore) }}>
+                        {hasScores ? Math.round(overallScore) + '%' : '—'}
+                      </span>
+                    </td>
+                    <td style={styles.td}>
+                      <span style={{ ...styles.recommendationBadge, color: getRecommendationColor(displayRecommendation) }}>
+                        {hasScores ? displayRecommendation : 'Pending'}
+                      </span>
+                    </td>
+                    <td style={styles.td}>
+                      {isCompleted && report.result_id ? (
+                        <button onClick={() => onViewReport(report.result_id)} style={styles.viewButton}>View Report</button>
+                      ) : (
+                        <span style={styles.pendingText}>Awaiting completion</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// OTHER ASSESSMENTS TAB
+// ============================================================
+function OtherAssessmentsTab({ reports, onViewReport }) {
+  return (
+    <div style={styles.tabPanel}>
+      <div style={styles.tabDescription}>
+        <p>All other completed assessments for candidates under your supervision. ({reports.length} reports)</p>
+      </div>
+      {reports.length === 0 ? (
+        <div style={styles.emptyState}><p>No other assessments found.</p></div>
+      ) : (
+        <div style={styles.tableContainer}>
+          <table style={styles.table}>
+            <thead>
+              <tr>
+                <th style={styles.th}>Candidate</th>
+                <th style={styles.th}>Assessment</th>
+                <th style={styles.th}>Score</th>
+                <th style={styles.th}>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {reports.map((report) => {
+                const trueScore = calculateTrueScore(report);
+                return (
+                  <tr key={report.result_id || `${report.candidate_id}-${report.assessment_id}`} style={styles.tr}>
+                    <td style={styles.td}>
+                      <div style={styles.cellName}>{report.candidate_name}</div>
+                      <div style={styles.cellSub}>{report.university || ''} • {report.programme || ''}</div>
+                    </td>
+                    <td style={styles.td}>{report.assessment_title}</td>
+                    <td style={styles.td}>
+                      <span style={styles.scoreBadge}>{trueScore}%</span>
+                    </td>
+                    <td style={styles.td}>
+                      {report.result_id ? (
+                        <button onClick={() => onViewReport(report.result_id)} style={styles.viewButton}>View Report</button>
+                      ) : (
+                        <span style={styles.pendingText}>No result</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
 // MAIN COMPONENT
 // ============================================================
 export default function SupervisorDashboard() {
@@ -213,13 +468,13 @@ export default function SupervisorDashboard() {
   const { session, loading: authLoading } = useRequireAuth();
 
   const [loading, setLoading] = useState(true);
-  // Get tab from URL query param or default to 'assessments'
+  // Get tab from URL query param
   const [activeTab, setActiveTab] = useState(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
-      return params.get('tab') || 'assessments';
+      return params.get('tab') || 'view_candidates';
     }
-    return 'assessments';
+    return 'view_candidates';
   });
   const [candidates, setCandidates] = useState([]);
   const [nationalServiceReports, setNationalServiceReports] = useState([]);
@@ -339,6 +594,10 @@ export default function SupervisorDashboard() {
     router.push(`/supervisor/reports/${resultId}`);
   };
 
+  const handleManageCandidate = (candidateId) => {
+    router.push(`/supervisor/manage-candidate/${candidateId}`);
+  };
+
   const getRecommendationColor = (recommendation) => {
     const colors = {
       'Highly Recommended': '#2e7d32', Recommended: '#1565c0',
@@ -455,18 +714,20 @@ export default function SupervisorDashboard() {
     setMaxScore(100);
   };
 
-  // Determine which reports to show based on active tab
-  const getActiveReports = () => {
-    if (activeTab === 'national_service') return filteredNationalService;
-    if (activeTab === 'other') return filteredOther;
-    return filteredReports;
+  // Determine which data to show based on active tab
+  const getActiveData = () => {
+    if (activeTab === 'view_candidates') return { type: 'candidates', data: candidates };
+    if (activeTab === 'national_service') return { type: 'reports', data: filteredNationalService };
+    if (activeTab === 'other') return { type: 'reports', data: filteredOther };
+    return { type: 'reports', data: filteredReports };
   };
 
-  const activeReports = getActiveReports();
+  const activeData = getActiveData();
   const reportsCount = {
     all: allReports.length,
     national_service: nationalServiceReports.length,
-    other: otherReports.length
+    other: otherReports.length,
+    candidates: candidates.length
   };
 
   if (authLoading || loading) {
@@ -511,7 +772,6 @@ export default function SupervisorDashboard() {
             label="National Service Reports" 
             value={stats.nationalServiceReports}
             bg="#1a237e"
-            color="white"
           />
         </div>
 
@@ -562,7 +822,7 @@ export default function SupervisorDashboard() {
           </div>
         </div>
 
-        {/* Charts */}
+        {/* Charts - Only show on dashboard view */}
         <div style={styles.chartGrid}>
           <div style={styles.chartCard}>
             <h4 style={styles.chartTitle}>
@@ -619,8 +879,14 @@ export default function SupervisorDashboard() {
           </div>
         </div>
 
-        {/* 🟢 Navigation Tabs (Now using sidebar navigation instead) */}
+        {/* Navigation Tabs */}
         <div style={styles.tabsContainer}>
+          <TabButton 
+            active={activeTab === 'view_candidates'} 
+            onClick={() => setActiveTab('view_candidates')} 
+            label="My Candidates" 
+            count={reportsCount.candidates}
+          />
           <TabButton 
             active={activeTab === 'assessments'} 
             onClick={() => setActiveTab('assessments')} 
@@ -643,6 +909,12 @@ export default function SupervisorDashboard() {
 
         {/* Tab Content */}
         <div style={styles.tabContent}>
+          {activeTab === 'view_candidates' && (
+            <ViewCandidatesTab
+              candidates={candidates}
+              onManageCandidate={handleManageCandidate}
+            />
+          )}
           {activeTab === 'assessments' && (
             <AssessmentTab
               reports={filteredReports}
@@ -666,193 +938,6 @@ export default function SupervisorDashboard() {
         </div>
       </div>
     </AppLayout>
-  );
-}
-
-// ============================================================
-// SUB-COMPONENTS
-// ============================================================
-
-function AssessmentTab({ reports, getScoreColor, getScoreTextColor, onViewReport }) {
-  return (
-    <div style={styles.tabPanel}>
-      <div style={styles.tabDescription}>
-        <p>Filtered view of all completed assessments based on selected criteria. ({reports.length} results)</p>
-      </div>
-      {reports.length === 0 ? (
-        <div style={styles.emptyState}><p>No assessments match your current filter selections.</p></div>
-      ) : (
-        <div style={styles.tableContainer}>
-          <table style={styles.table}>
-            <thead>
-              <tr>
-                <th style={styles.th}>Candidate</th>
-                <th style={styles.th}>Assessment</th>
-                <th style={styles.th}>Score</th>
-                <th style={styles.th}>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {reports.map((report) => {
-                const trueScore = calculateTrueScore(report);
-                return (
-                  <tr key={report.result_id || `${report.candidate_id}-${report.assessment_id}`} style={styles.tr}>
-                    <td style={styles.td}>
-                      <div style={styles.cellName}>{report.candidate_name}</div>
-                      <div style={styles.cellSub}>{report.university || ''} • {report.programme || ''}</div>
-                    </td>
-                    <td style={styles.td}>{report.assessment_title}</td>
-                    <td style={styles.td}>
-                      <span style={{ ...styles.scoreBadge, background: getScoreColor(trueScore), color: getScoreTextColor(trueScore) }}>
-                        {trueScore}%
-                      </span>
-                    </td>
-                    <td style={styles.td}>
-                      {report.result_id ? (
-                        <button onClick={() => onViewReport(report.result_id)} style={styles.viewButton}>View Report</button>
-                      ) : (
-                        <span style={styles.pendingText}>No result</span>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function NationalServiceTab({ reports, getScoreColor, getScoreTextColor, getRecommendationColor, onViewReport }) {
-  return (
-    <div style={styles.tabPanel}>
-      <div style={styles.tabDescription}>
-        <p>All National Service assessment reports assigned to this supervisor. ({reports.length} reports)</p>
-      </div>
-      {reports.length === 0 ? (
-        <div style={styles.emptyState}><p>No National Service assessments found.</p></div>
-      ) : (
-        <div style={styles.tableContainer}>
-          <table style={styles.table}>
-            <thead>
-              <tr>
-                <th style={styles.th}>Candidate</th>
-                <th style={styles.th}>Status</th>
-                <th style={styles.th}>Workplace Readiness</th>
-                <th style={styles.th}>Intellectual Capability</th>
-                <th style={styles.th}>Overall Score</th>
-                <th style={styles.th}>Recommendation</th>
-                <th style={styles.th}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {reports.map((report) => {
-                const overallScore = Number(report.score || report.overallScore || report.percentage_score || 0);
-                const workplaceScore = Number(report.workplace_readiness || 0);
-                const intellectualScore = Number(report.intellectual_capability || 0);
-                const isCompleted = report.status === 'completed' || report.result_id !== null || (report.percentage_score !== null && report.percentage_score !== undefined);
-                const hasScores = workplaceScore > 0 || intellectualScore > 0 || overallScore > 0;
-
-                const displayRecommendation = calculateNationalServiceRecommendation(workplaceScore, intellectualScore, overallScore);
-
-                return (
-                  <tr key={report.result_id || report.candidate_id} style={styles.tr}>
-                    <td style={styles.td}>
-                      <div style={styles.cellName}>{report.candidate_name}</div>
-                      <div style={styles.cellSub}>{report.university || ''} • {report.programme || ''}</div>
-                    </td>
-                    <td style={styles.td}>
-                      <span style={{ ...styles.statusBadge, background: isCompleted ? '#dcfce7' : '#fef3c7', color: isCompleted ? '#166534' : '#92400e' }}>
-                        {isCompleted ? 'Completed' : 'In Progress'}
-                      </span>
-                    </td>
-                    <td style={styles.td}>
-                      <span style={{ ...styles.scoreBadge, background: getScoreColor(workplaceScore), color: getScoreTextColor(workplaceScore) }}>
-                        {hasScores ? Math.round(workplaceScore) + '%' : '—'}
-                      </span>
-                    </td>
-                    <td style={styles.td}>
-                      <span style={{ ...styles.scoreBadge, background: getScoreColor(intellectualScore), color: getScoreTextColor(intellectualScore) }}>
-                        {hasScores ? Math.round(intellectualScore) + '%' : '—'}
-                      </span>
-                    </td>
-                    <td style={styles.td}>
-                      <span style={{ ...styles.scoreBadge, background: getScoreColor(overallScore), color: getScoreTextColor(overallScore) }}>
-                        {hasScores ? Math.round(overallScore) + '%' : '—'}
-                      </span>
-                    </td>
-                    <td style={styles.td}>
-                      <span style={{ ...styles.recommendationBadge, color: getRecommendationColor(displayRecommendation) }}>
-                        {hasScores ? displayRecommendation : 'Pending'}
-                      </span>
-                    </td>
-                    <td style={styles.td}>
-                      {isCompleted && report.result_id ? (
-                        <button onClick={() => onViewReport(report.result_id)} style={styles.viewButton}>View Report</button>
-                      ) : (
-                        <span style={styles.pendingText}>Awaiting completion</span>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function OtherAssessmentsTab({ reports, onViewReport }) {
-  return (
-    <div style={styles.tabPanel}>
-      <div style={styles.tabDescription}>
-        <p>All other completed assessments for candidates under your supervision. ({reports.length} reports)</p>
-      </div>
-      {reports.length === 0 ? (
-        <div style={styles.emptyState}><p>No other assessments found.</p></div>
-      ) : (
-        <div style={styles.tableContainer}>
-          <table style={styles.table}>
-            <thead>
-              <tr>
-                <th style={styles.th}>Candidate</th>
-                <th style={styles.th}>Assessment</th>
-                <th style={styles.th}>Score</th>
-                <th style={styles.th}>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {reports.map((report) => {
-                const trueScore = calculateTrueScore(report);
-                return (
-                  <tr key={report.result_id || `${report.candidate_id}-${report.assessment_id}`} style={styles.tr}>
-                    <td style={styles.td}>
-                      <div style={styles.cellName}>{report.candidate_name}</div>
-                      <div style={styles.cellSub}>{report.university || ''} • {report.programme || ''}</div>
-                    </td>
-                    <td style={styles.td}>{report.assessment_title}</td>
-                    <td style={styles.td}>
-                      <span style={styles.scoreBadge}>{trueScore}%</span>
-                    </td>
-                    <td style={styles.td}>
-                      {report.result_id ? (
-                        <button onClick={() => onViewReport(report.result_id)} style={styles.viewButton}>View Report</button>
-                      ) : (
-                        <span style={styles.pendingText}>No result</span>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
   );
 }
 
@@ -1158,6 +1243,7 @@ const styles = {
   tr: { transition: 'background 0.2s' },
   cellName: { fontWeight: '600', color: '#1a202c' },
   cellSub: { fontSize: '12px', color: '#94a3b8' },
+  countBadge: { display: 'inline-block', padding: '4px 12px', borderRadius: '20px', background: '#eef4ff', color: '#3538cd', fontSize: '13px', fontWeight: '600' },
   statusBadge: { padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: '600', display: 'inline-block' },
   scoreBadge: { padding: '4px 12px', borderRadius: '20px', fontSize: '13px', fontWeight: '600', display: 'inline-block', background: '#f1f5f9' },
   recommendationBadge: { padding: '4px 12px', borderRadius: '20px', fontSize: '13px', fontWeight: '600', display: 'inline-block', background: 'white', border: '1px solid #e2e8f0' },
