@@ -111,9 +111,19 @@ function isActiveRoute(pathname, href) {
   if (href === "/admin" && pathname === "/admin") return true;
   if (href === "/supervisor" && pathname === "/supervisor") return true;
   
-  // Check if path starts with href for sub-pages (e.g., /supervisor/add-candidate)
+  // Check if path starts with href for sub-pages
   if (href.startsWith("/supervisor/") && pathname.startsWith(href)) return true;
   if (href.startsWith("/admin/") && pathname.startsWith(href)) return true;
+  
+  // Check for query params (like ?tab=)
+  if (href.includes("?tab=")) {
+    const basePath = href.split("?")[0];
+    if (pathname === basePath) {
+      const currentTab = new URLSearchParams(window.location.search).get('tab');
+      const targetTab = href.split("=")[1];
+      if (currentTab === targetTab) return true;
+    }
+  }
   
   return pathname === href || pathname.startsWith(href + "/");
 }
@@ -210,10 +220,10 @@ function getMenuSections(role) {
         icon: Icons.FileText(),
         isSection: true,
         children: [
-          // ✅ National Service Reports → /supervisor/reports/national-service
-          { id: 'national-service', label: 'National Service Reports', icon: Icons.FileText(), href: '/supervisor/reports/national-service' },
-          // ✅ Other Assessment Reports → /supervisor/reports/other
-          { id: 'other-assessments', label: 'Other Assessment Reports', icon: Icons.Reports(), href: '/supervisor/reports/other' },
+          // ✅ National Service Reports → /supervisor/reports?tab=national
+          { id: 'national-service', label: 'National Service Reports', icon: Icons.FileText(), href: '/supervisor/reports?tab=national' },
+          // ✅ Other Assessment Reports → /supervisor/reports?tab=other
+          { id: 'other-assessments', label: 'Other Assessment Reports', icon: Icons.Reports(), href: '/supervisor/reports?tab=other' },
         ]
       },
     ];
@@ -321,6 +331,16 @@ function Sidebar({ isOpen, toggleSidebar, currentPath, handleLogout, userRole })
       return currentPath === '/supervisor';
     }
     
+    // For tab URLs
+    if (href.includes('?tab=')) {
+      const basePath = href.split('?')[0];
+      if (currentPath === basePath) {
+        const currentTab = new URLSearchParams(window.location.search).get('tab');
+        const targetTab = href.split('=')[1];
+        if (currentTab === targetTab) return true;
+      }
+    }
+    
     return false;
   };
 
@@ -330,6 +350,14 @@ function Sidebar({ isOpen, toggleSidebar, currentPath, handleLogout, userRole })
     return section.children.some(child => {
       if (child.href === '/supervisor' && currentPath === '/supervisor') return true;
       if (child.href !== '/supervisor' && currentPath.startsWith(child.href)) return true;
+      if (child.href.includes('?tab=')) {
+        const basePath = child.href.split('?')[0];
+        if (currentPath === basePath) {
+          const currentTab = new URLSearchParams(window.location.search).get('tab');
+          const targetTab = child.href.split('=')[1];
+          if (currentTab === targetTab) return true;
+        }
+      }
       return isActive(child.href);
     });
   };
