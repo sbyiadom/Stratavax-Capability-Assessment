@@ -1,4 +1,5 @@
-// pages/admin/index.js - MODERN DASHBOARD WITH WORKING SIDEBAR NAVIGATION
+// pages/admin/index.js - CLEAN DASHBOARD (Action Cards Removed)
+// All navigation is now in the sidebar
 
 import { useEffect, useState, useMemo, Fragment } from "react";
 import { useRouter } from "next/router";
@@ -41,33 +42,6 @@ ChartJS.register(
 // REACT-SELECT IMPORTS
 // ============================================================
 import Select from 'react-select';
-
-// ============================================================
-// ICON HELPERS
-// ============================================================
-const Icons = {
-  Dashboard: () => (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
-  ),
-  Users: () => (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-  ),
-  Reports: () => (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-  ),
-  Assessment: () => (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
-  ),
-  Settings: () => (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v2"/><path d="M12 21v2"/><path d="M4.22 4.22l1.42 1.42"/><path d="M18.36 18.36l1.42 1.42"/><path d="M1 12h2"/><path d="M21 12h2"/><path d="M4.22 19.78l1.42-1.42"/><path d="M18.36 5.64l1.42-1.42"/></svg>
-  ),
-  Logout: () => (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-  ),
-  Search: () => (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-  ),
-};
 
 // ============================================================
 // COLOR SYSTEM
@@ -463,31 +437,41 @@ function Sidebar({ isOpen, toggleSidebar, activePage, setActivePage, handleLogou
     { 
       id: 'dashboard', 
       label: 'Dashboard', 
-      icon: Icons.Dashboard(),
+      icon: (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      ),
       href: '/admin'
     },
     { 
       id: 'candidates', 
       label: 'Candidates', 
-      icon: Icons.Users(),
+      icon: (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+      ),
       href: '/admin/manage-candidates'
     },
     { 
       id: 'reports', 
       label: 'Reports', 
-      icon: Icons.Reports(),
+      icon: (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+      ),
       href: '/admin/reports'
     },
     { 
       id: 'assessments', 
       label: 'Assessments', 
-      icon: Icons.Assessment(),
+      icon: (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+      ),
       href: '/admin/assign-assessments'
     },
     { 
       id: 'settings', 
       label: 'Settings', 
-      icon: Icons.Settings(),
+      icon: (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v2"/><path d="M12 21v2"/><path d="M4.22 4.22l1.42 1.42"/><path d="M18.36 18.36l1.42 1.42"/><path d="M1 12h2"/><path d="M21 12h2"/><path d="M4.22 19.78l1.42-1.42"/><path d="M18.36 5.64l1.42-1.42"/></svg>
+      ),
       href: '/admin/system-settings'
     },
   ];
@@ -527,7 +511,9 @@ function Sidebar({ isOpen, toggleSidebar, activePage, setActivePage, handleLogou
 
       <div style={stylesSidebar.bottomNav}>
         <button onClick={handleLogout} style={stylesSidebar.navItem}>
-          <span style={stylesSidebar.navIcon}><Icons.Logout /></span>
+          <span style={stylesSidebar.navIcon}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          </span>
           <span style={stylesSidebar.navLabel}>Logout</span>
         </button>
       </div>
@@ -614,47 +600,6 @@ const stylesSidebar = {
     padding: '12px',
     borderTop: '1px solid rgba(255,255,255,0.1)',
   },
-};
-
-// ============================================================
-// ACTION CARD COMPONENT
-// ============================================================
-function ActionCard({ href, icon, title, description }) {
-  return (
-    <Link href={href} legacyBehavior>
-      <a style={stylesActionCard.card}>
-        <span style={stylesActionCard.icon}>{icon}</span>
-        <div>
-          <h3 style={stylesActionCard.title}>{title}</h3>
-          <p style={stylesActionCard.desc}>{description}</p>
-        </div>
-      </a>
-    </Link>
-  );
-}
-
-const stylesActionCard = {
-  card: {
-    background: 'white',
-    padding: '16px 18px',
-    borderRadius: '10px',
-    textDecoration: 'none',
-    color: 'inherit',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '14px',
-    boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
-    border: '1px solid #eef2f7',
-    cursor: 'pointer',
-    transition: 'transform 0.15s ease, box-shadow 0.15s ease',
-    '&:hover': {
-      transform: 'translateY(-2px)',
-      boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
-    },
-  },
-  icon: { fontSize: '24px', flexShrink: 0 },
-  title: { margin: 0, fontSize: '14px', fontWeight: 700, color: '#0a1929' },
-  desc: { margin: '4px 0 0', fontSize: '12px', color: '#718096', lineHeight: 1.4 },
 };
 
 // ============================================================
@@ -1045,21 +990,6 @@ export default function AdminDashboard() {
   const totalFilteredInProgress = statusDistribution.inProgress;
   const totalFilteredBlocked = statusDistribution.blocked;
 
-  // ============================================================
-  // ACTION CARDS DATA
-  // ============================================================
-  const actionCards = [
-    { href: "/admin/add-supervisor", icon: "➕", title: "Add Supervisor", description: "Create new supervisor accounts with dashboard access." },
-    { href: "/admin/manage-supervisors", icon: "👥", title: "Manage Supervisors", description: "View, activate, deactivate, or update supervisor accounts." },
-    { href: "/admin/manage-candidates", icon: "🎓", title: "Manage Candidates", description: "View candidate profiles, reset access, and review activity." },
-    { href: "/admin/assign-candidates", icon: "🔗", title: "Assign Supervisors", description: "Assign candidates to specific supervisors for management." },
-    { href: "/admin/assign-assessments", icon: "📋", title: "Assign Assessments", description: "Assign, unblock, or block candidate assessments." },
-    { href: "/admin/batch-manage", icon: "📦", title: "Batch Manage", description: "Perform bulk administrative actions and candidate updates." },
-    { href: "/admin/audit-logs", icon: "📜", title: "Audit Logs", description: "View system activity, access events, and administrative actions." },
-    { href: "/admin/system-settings", icon: "⚙️", title: "System Settings", description: "Configure platform settings and assessment parameters." },
-    { href: "/admin/reports", icon: "📄", title: "Assessment Reports", description: "View detailed assessment reports for all candidates." },
-  ];
-
   return (
     <div style={stylesModern.appContainer}>
       {/* Sidebar */}
@@ -1083,7 +1013,9 @@ export default function AdminDashboard() {
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
             </button>
             <div style={stylesModern.searchWrapper}>
-              <span style={stylesModern.searchIcon}><Icons.Search /></span>
+              <span style={stylesModern.searchIcon}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              </span>
               <input type="text" placeholder="Search candidates, reports..." style={stylesModern.searchInput} />
             </div>
           </div>
@@ -1390,18 +1322,7 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* 🟢 ACTION CARDS - ALL PRESERVED */}
-        <div style={stylesModern.actionCardsGrid}>
-          {actionCards.map((card) => (
-            <ActionCard
-              key={card.href}
-              href={card.href}
-              icon={card.icon}
-              title={card.title}
-              description={card.description}
-            />
-          ))}
-        </div>
+        {/* 🟢 REMOVED: Action Cards - Now in Sidebar */}
 
         {/* Assessment Expiration */}
         <AssessmentExpiration />
@@ -1813,12 +1734,6 @@ const stylesModern = {
     padding: '20px',
     color: COLORS.muted,
     fontSize: '13px',
-  },
-  actionCardsGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-    gap: '12px',
-    marginBottom: '20px',
   },
 };
 
