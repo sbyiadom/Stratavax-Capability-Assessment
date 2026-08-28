@@ -10,37 +10,222 @@ export default function ReportsIndex() {
   const [activeTab, setActiveTab] = useState('national');
   const [reports, setReports] = useState([]);
   const [stats, setStats] = useState({
-    totalAssessments: 62,
-    averageScore: 89,
-    totalPrograms: 12,
-    totalCandidates: 65,
-    completedAssessments: 65,
-    pendingReview: 0
+    totalAssessments: 0,
+    averageScore: 0,
+    completedAssessments: 0,
+    pendingReview: 0,
+    failed: 0
   });
+  const [currentSupervisor, setCurrentSupervisor] = useState(null);
 
-  // This would normally fetch data from your database
+  // Check URL for tab parameter
   useEffect(() => {
-    // Simulate loading data
-    setTimeout(() => {
-      setReports([
-        { id: 1, candidate: 'John Doe', university: 'KNUST', program: 'BSc Mechanical Engineering', score: 92, status: 'Completed', date: '2026-08-15' },
-        { id: 2, candidate: 'Jane Smith', university: 'University of Mines and Technology', program: 'Telecommunication Engineering', score: 78, status: 'Pending', date: '2026-08-14' },
-        { id: 3, candidate: 'Bob Johnson', university: 'Kumasi Technical University', program: 'B-Tech Electrical and Electronics', score: 85, status: 'Completed', date: '2026-08-13' },
-        { id: 4, candidate: 'Alice Brown', university: 'Accra Technical University', program: 'BSc Agricultural Engineering', score: 91, status: 'Completed', date: '2026-08-12' },
-        { id: 5, candidate: 'Charlie Wilson', university: 'KNUST', program: 'Chemical Engineering', score: 67, status: 'Failed', date: '2026-08-11' },
-        { id: 6, candidate: 'Diana Ross', university: 'Regional Maritime University', program: 'Mechanical Engineering Plant Option', score: 88, status: 'Completed', date: '2026-08-10' },
-        { id: 7, candidate: 'Eve Adams', university: 'Koforidua Technical University', program: 'Electrical Engineering', score: 94, status: 'Completed', date: '2026-08-09' },
-        { id: 8, candidate: 'Frank Castle', university: 'University of Mines and Technology', program: 'BSc Mechanical Engineering', score: 73, status: 'Pending', date: '2026-08-08' },
-      ]);
-      setLoading(false);
-    }, 1000);
+    const tab = router.query.tab;
+    if (tab === 'other') {
+      setActiveTab('other');
+    } else if (tab === 'national') {
+      setActiveTab('national');
+    }
+  }, [router.query.tab]);
+
+  useEffect(() => {
+    loadData();
   }, []);
 
+  async function loadData() {
+    try {
+      setLoading(true);
+
+      const { data: sessionData } = await supabase.auth.getSession();
+      const session = sessionData?.session;
+
+      if (!session?.user) {
+        router.push('/login');
+        return;
+      }
+
+      const { data: profile } = await supabase
+        .from('supervisor_profiles')
+        .select('id, full_name, email')
+        .eq('id', session.user.id)
+        .maybeSingle();
+
+      if (profile) {
+        setCurrentSupervisor(profile);
+      }
+
+      // Get candidates for this supervisor
+      const { data: candidates, error: candidatesError } = await supabase
+        .from('candidate_profiles')
+        .select('id, full_name, email, university, programme')
+        .eq('supervisor_id', session.user.id);
+
+      if (candidatesError) {
+        console.error('Candidates error:', candidatesError);
+        setLoading(false);
+        return;
+      }
+
+      if (!candidates || candidates.length === 0) {
+        setReports([]);
+        setStats({
+          totalAssessments: 0,
+          averageScore: 0,
+          completedAssessments: 0,
+          pendingReview: 0,
+          failed: 0
+        });
+        setLoading(false);
+        return;
+      }
+
+      const candidateIds = candidates.map(c => c.id);
+
+      // Try to get assessment results - try different column names
+      let assessmentResults = [];
+
+      // Try candidate_id
+      try {
+        const { data, error } = await supabase
+          .from('assessment_results')
+          .select('*')
+          .in('candidate_id', candidateIds);
+
+        if (!error && data && data.length > 0) {
+          assessmentResults = data;
+        }
+      } catch (e) {}
+
+      // If no results, try user_id
+      if (assessmentResults.length === 0) {
+        try {
+          const { data, error } = await supabase
+            .from('assessment_results')
+            .select('*')
+            .in('user_id', candidateIds);
+
+          if (!error && data && data.length > 0) {
+            assessmentResults = data;
+          }
+        } catch (e) {}
+      }
+
+      // If no results, try profile_id
+      if (assessmentResults.length === 0) {
+        try {
+          const { data, error } = await supabase
+            .from('assessment_results')
+            .select('*')
+            .in('profile_id', candidateIds);
+
+          if (!error && data && data.length > 0) {
+            assessmentResults = data;
+          }
+        } catch (e) {}
+      }
+
+      if (!assessmentResults || assessmentResults.length === 0) {
+        setReports([]);
+        setStats({
+          totalAssessments: 0,
+          averageScore: 0,
+          completedAssessments: 0,
+          pendingReview: 0,
+          failed: 0
+        });
+        setLoading(false);
+        return;
+      }
+
+      // Get assessment details
+      const assessmentIds = [...new Set(assessmentResults.map(a => a.assessment_id).filter(id => id))];
+      let assessmentMap = {};
+
+      if (assessmentIds.length > 0) {
+        const { data: assessments, error: assessmentsError } = await supabase
+          .from('assessments')
+          .select('id, title, description')
+          .in('id', assessmentIds);
+
+        if (!assessmentsError && assessments) {
+          assessmentMap = assessments.reduce((acc, a) => {
+            acc[a.id] = a;
+            return acc;
+          }, {});
+        }
+      }
+
+      // Build report data
+      const reportData = [];
+      let totalScore = 0;
+      let scoreCount = 0;
+      let completed = 0;
+      let pending = 0;
+      let failed = 0;
+
+      assessmentResults.forEach(result => {
+        let candidate = null;
+        for (const c of candidates) {
+          if (result.candidate_id === c.id || 
+              result.user_id === c.id || 
+              result.profile_id === c.id) {
+            candidate = c;
+            break;
+          }
+        }
+
+        const assessment = assessmentMap[result.assessment_id] || {};
+
+        reportData.push({
+          id: result.id,
+          candidate: candidate?.full_name || 'Unknown',
+          candidate_id: result.candidate_id || result.user_id || result.profile_id || 'N/A',
+          university: candidate?.university || 'Not Specified',
+          program: candidate?.programme || 'Not Specified',
+          score: result.score || 0,
+          status: result.status || 'Pending',
+          date: result.completed_at ? new Date(result.completed_at).toISOString().split('T')[0] : 
+                 result.created_at ? new Date(result.created_at).toISOString().split('T')[0] : 'N/A',
+          assessment_id: result.assessment_id,
+          assessment_title: assessment?.title || 'Untitled Assessment'
+        });
+
+        if (result.score) {
+          totalScore += result.score;
+          scoreCount++;
+        }
+
+        const status = (result.status || '').toLowerCase();
+        if (status === 'completed' || status === 'complete') completed++;
+        else if (status === 'pending' || status === 'in progress') pending++;
+        else if (status === 'failed' || status === 'fail') failed++;
+      });
+
+      setReports(reportData);
+      setStats({
+        totalAssessments: reportData.length,
+        averageScore: scoreCount > 0 ? Math.round(totalScore / scoreCount) : 0,
+        completedAssessments: completed,
+        pendingReview: pending,
+        failed: failed
+      });
+
+    } catch (error) {
+      console.error('Error loading reports:', error);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   const getStatusColor = (status) => {
-    switch(status) {
-      case 'Completed': return '#48bb78';
-      case 'Pending': return '#ed8936';
-      case 'Failed': return '#fc8181';
+    const s = (status || '').toLowerCase();
+    switch(s) {
+      case 'completed': return '#48bb78';
+      case 'complete': return '#48bb78';
+      case 'pending': return '#ed8936';
+      case 'in progress': return '#4299e1';
+      case 'failed': return '#fc8181';
+      case 'fail': return '#fc8181';
       default: return '#a0aec0';
     }
   };
@@ -60,8 +245,19 @@ export default function ReportsIndex() {
     <AppLayout>
       <div style={styles.container}>
         <div style={styles.header}>
-          <h1 style={styles.title}>📊 Reports Dashboard</h1>
-          <p style={styles.subtitle}>View and manage assessment reports</p>
+          <div style={styles.headerLeft}>
+            <h1 style={styles.title}>
+              {activeTab === 'national' ? '📋 National Service Reports' : '📊 Other Assessment Reports'}
+            </h1>
+            <p style={styles.subtitle}>
+              View and manage assessment reports
+              {currentSupervisor && ` — ${currentSupervisor.full_name || currentSupervisor.email}`}
+            </p>
+          </div>
+          <div style={styles.headerActions}>
+            <button style={styles.exportButton}>📥 Export CSV</button>
+            <button style={styles.printButton}>🖨️ Print</button>
+          </div>
         </div>
 
         {/* Stats Cards */}
@@ -81,17 +277,17 @@ export default function ReportsIndex() {
             </div>
           </div>
           <div style={styles.statsCard}>
-            <div style={styles.statsIcon}>🎓</div>
+            <div style={styles.statsIcon}>✅</div>
             <div>
-              <div style={styles.statsValue}>{stats.totalPrograms}</div>
-              <div style={styles.statsLabel}>Programs</div>
+              <div style={styles.statsValue}>{stats.completedAssessments}</div>
+              <div style={styles.statsLabel}>Completed</div>
             </div>
           </div>
           <div style={styles.statsCard}>
-            <div style={styles.statsIcon}>👥</div>
+            <div style={styles.statsIcon}>⏳</div>
             <div>
-              <div style={styles.statsValue}>{stats.totalCandidates}</div>
-              <div style={styles.statsLabel}>Total Candidates</div>
+              <div style={styles.statsValue}>{stats.pendingReview}</div>
+              <div style={styles.statsLabel}>Pending Review</div>
             </div>
           </div>
         </div>
@@ -99,7 +295,10 @@ export default function ReportsIndex() {
         {/* Tab Navigation */}
         <div style={styles.tabContainer}>
           <button
-            onClick={() => setActiveTab('national')}
+            onClick={() => {
+              setActiveTab('national');
+              router.push('/supervisor/reports?tab=national', undefined, { shallow: true });
+            }}
             style={{
               ...styles.tabButton,
               background: activeTab === 'national' ? '#0A1929' : 'white',
@@ -110,7 +309,10 @@ export default function ReportsIndex() {
             📋 National Service Reports
           </button>
           <button
-            onClick={() => setActiveTab('other')}
+            onClick={() => {
+              setActiveTab('other');
+              router.push('/supervisor/reports?tab=other', undefined, { shallow: true });
+            }}
             style={{
               ...styles.tabButton,
               background: activeTab === 'other' ? '#0A1929' : 'white',
@@ -129,95 +331,67 @@ export default function ReportsIndex() {
               <div style={styles.spinner} />
               <p>Loading reports...</p>
             </div>
+          ) : filteredReports.length === 0 ? (
+            <div style={styles.emptyState}>
+              <div style={styles.emptyIcon}>📭</div>
+              <h3 style={styles.emptyTitle}>
+                No {activeTab === 'national' ? 'National Service' : 'Other Assessment'} Reports Found
+              </h3>
+              <p style={styles.emptyText}>
+                There are no {activeTab === 'national' ? 'National Service' : 'other assessment'} reports available for your candidates yet.
+              </p>
+            </div>
           ) : (
-            <>
-              <div style={styles.tableHeader}>
-                <div style={styles.tableTitle}>
-                  {activeTab === 'national' ? 'National Service Reports' : 'Other Assessment Reports'}
-                </div>
-                <div style={styles.tableActions}>
-                  <button style={styles.exportButton}>
-                    📥 Export CSV
-                  </button>
-                  <button style={styles.printButton}>
-                    🖨️ Print
-                  </button>
-                </div>
-              </div>
-              <table style={styles.table}>
-                <thead>
-                  <tr style={styles.tableHeadRow}>
-                    <th style={styles.tableHeadCell}>Candidate</th>
-                    <th style={styles.tableHeadCell}>University</th>
-                    <th style={styles.tableHeadCell}>Program</th>
-                    <th style={styles.tableHeadCell}>Score</th>
-                    <th style={styles.tableHeadCell}>Status</th>
-                    <th style={styles.tableHeadCell}>Date</th>
-                    <th style={styles.tableHeadCell}>Action</th>
+            <table style={styles.table}>
+              <thead>
+                <tr style={styles.tableHeadRow}>
+                  <th style={styles.tableHeadCell}>Candidate</th>
+                  <th style={styles.tableHeadCell}>University</th>
+                  <th style={styles.tableHeadCell}>Program</th>
+                  <th style={styles.tableHeadCell}>Assessment</th>
+                  <th style={styles.tableHeadCell}>Score</th>
+                  <th style={styles.tableHeadCell}>Status</th>
+                  <th style={styles.tableHeadCell}>Date</th>
+                  <th style={styles.tableHeadCell}>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredReports.map((report) => (
+                  <tr key={report.id} style={styles.tableRow}>
+                    <td style={styles.tableCell}>{report.candidate}</td>
+                    <td style={styles.tableCell}>{report.university}</td>
+                    <td style={styles.tableCell}>{report.program}</td>
+                    <td style={styles.tableCell}>{report.assessment_title}</td>
+                    <td style={styles.tableCell}>
+                      <span style={{
+                        ...styles.scoreBadge,
+                        background: getScoreColor(report.score)
+                      }}>
+                        {report.score || 'N/A'}%
+                      </span>
+                    </td>
+                    <td style={styles.tableCell}>
+                      <span style={{
+                        ...styles.statusBadge,
+                        background: getStatusColor(report.status)
+                      }}>
+                        {report.status || 'Pending'}
+                      </span>
+                    </td>
+                    <td style={styles.tableCell}>{report.date}</td>
+                    <td style={styles.tableCell}>
+                      <button
+                        onClick={() => router.push(`/supervisor/reports/${report.id}`)}
+                        style={styles.viewButton}
+                      >
+                        View Details
+                      </button>
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {filteredReports.length === 0 ? (
-                    <tr>
-                      <td colSpan="7" style={styles.emptyState}>
-                        <div style={styles.emptyStateContent}>
-                          <span style={styles.emptyStateIcon}>📭</span>
-                          <p>No {activeTab === 'national' ? 'national service' : 'other'} reports found</p>
-                        </div>
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredReports.map((report) => (
-                      <tr key={report.id} style={styles.tableRow}>
-                        <td style={styles.tableCell}>{report.candidate}</td>
-                        <td style={styles.tableCell}>{report.university}</td>
-                        <td style={styles.tableCell}>{report.program}</td>
-                        <td style={styles.tableCell}>
-                          <span style={{
-                            ...styles.scoreBadge,
-                            background: getScoreColor(report.score)
-                          }}>
-                            {report.score}%
-                          </span>
-                        </td>
-                        <td style={styles.tableCell}>
-                          <span style={{
-                            ...styles.statusBadge,
-                            background: getStatusColor(report.status)
-                          }}>
-                            {report.status}
-                          </span>
-                        </td>
-                        <td style={styles.tableCell}>{report.date}</td>
-                        <td style={styles.tableCell}>
-                          <button
-                            onClick={() => router.push(`/supervisor/reports/${report.id}`)}
-                            style={styles.viewButton}
-                          >
-                            View Details
-                          </button>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </>
+                ))}
+              </tbody>
+            </table>
           )}
-        </div>
-
-        {/* Top Universities Ranking */}
-        <div style={styles.rankingContainer}>
-          <h3 style={styles.rankingTitle}>🏆 Top Universities Ranking</h3>
-          <div style={styles.rankingList}>
-            {['KNUST', 'University of Mines and Technology', 'Kumasi Technical University', 'Accra Technical University', 'Koforidua Technical University'].map((uni, index) => (
-              <div key={uni} style={styles.rankingItem}>
-                <span style={styles.rankingPosition}>#{index + 1}</span>
-                <span style={styles.rankingName}>{uni}</span>
-                <span style={styles.rankingScore}>{(90 - index * 3)}%</span>
-              </div>
-            ))}
-          </div>
         </div>
       </div>
 
@@ -238,7 +412,19 @@ const styles = {
     margin: '0 auto'
   },
   header: {
-    marginBottom: '30px'
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '30px',
+    flexWrap: 'wrap',
+    gap: '16px'
+  },
+  headerLeft: {
+    flex: 1
+  },
+  headerActions: {
+    display: 'flex',
+    gap: '12px'
   },
   title: {
     fontSize: '28px',
@@ -250,6 +436,26 @@ const styles = {
     fontSize: '16px',
     color: '#718096',
     margin: 0
+  },
+  exportButton: {
+    padding: '8px 20px',
+    background: '#48bb78',
+    color: 'white',
+    border: 'none',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    fontSize: '14px',
+    fontWeight: '600'
+  },
+  printButton: {
+    padding: '8px 20px',
+    background: '#4299e1',
+    color: 'white',
+    border: 'none',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    fontSize: '14px',
+    fontWeight: '600'
   },
   statsGrid: {
     display: 'grid',
@@ -301,42 +507,7 @@ const styles = {
     background: 'white',
     borderRadius: '12px',
     overflow: 'hidden',
-    boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-    marginBottom: '30px'
-  },
-  tableHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: '16px 20px',
-    borderBottom: '1px solid #E2E8F0'
-  },
-  tableTitle: {
-    fontSize: '16px',
-    fontWeight: '600',
-    color: '#0A1929'
-  },
-  tableActions: {
-    display: 'flex',
-    gap: '8px'
-  },
-  exportButton: {
-    padding: '6px 16px',
-    background: '#48bb78',
-    color: 'white',
-    border: 'none',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    fontSize: '13px'
-  },
-  printButton: {
-    padding: '6px 16px',
-    background: '#4299e1',
-    color: 'white',
-    border: 'none',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    fontSize: '13px'
+    boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
   },
   table: {
     width: '100%',
@@ -354,10 +525,7 @@ const styles = {
     color: '#4A5568'
   },
   tableRow: {
-    transition: 'background 0.2s ease',
-    ':hover': {
-      background: '#F8FAFC'
-    }
+    transition: 'background 0.2s ease'
   },
   tableCell: {
     padding: '12px 16px',
@@ -395,14 +563,21 @@ const styles = {
     padding: '60px 20px',
     textAlign: 'center'
   },
-  emptyStateContent: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: '12px'
+  emptyIcon: {
+    fontSize: '48px',
+    display: 'block',
+    marginBottom: '16px'
   },
-  emptyStateIcon: {
-    fontSize: '48px'
+  emptyTitle: {
+    fontSize: '18px',
+    fontWeight: '600',
+    color: '#0A1929',
+    margin: '0 0 8px 0'
+  },
+  emptyText: {
+    fontSize: '14px',
+    color: '#94a3b8',
+    margin: 0
   },
   loadingState: {
     padding: '60px 20px',
@@ -419,45 +594,5 @@ const styles = {
     borderTop: '4px solid #0A1929',
     borderRadius: '50%',
     animation: 'spin 1s linear infinite'
-  },
-  rankingContainer: {
-    background: 'white',
-    borderRadius: '12px',
-    padding: '24px',
-    boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
-  },
-  rankingTitle: {
-    fontSize: '18px',
-    fontWeight: '600',
-    color: '#0A1929',
-    margin: '0 0 16px 0'
-  },
-  rankingList: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '8px'
-  },
-  rankingItem: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '16px',
-    padding: '10px 16px',
-    background: '#F8FAFC',
-    borderRadius: '8px',
-    transition: 'background 0.2s ease'
-  },
-  rankingPosition: {
-    fontWeight: 'bold',
-    color: '#4A5568',
-    minWidth: '40px'
-  },
-  rankingName: {
-    flex: 1,
-    fontWeight: '500',
-    color: '#2D3748'
-  },
-  rankingScore: {
-    fontWeight: '600',
-    color: '#48bb78'
   }
 };
