@@ -1,4 +1,4 @@
-// pages/supervisor/manage-candidate/[user_id].js - FIXED VIEW REPORT LINK
+// pages/supervisor/manage-candidate/[user_id].js - FIXED PERMISSION CHECK
 
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/router";
@@ -38,7 +38,6 @@ function getPercentage(result) {
   if (!result) return 0;
   if (result.percentage_score !== null && result.percentage_score !== undefined) {
     const val = toNumber(result.percentage_score, 0);
-    // If percentage_score is 0 but there's a total_score, calculate from total/max
     if (val === 0 && result.total_score !== undefined && result.max_score !== undefined) {
       const total = toNumber(result.total_score, 0);
       const max = toNumber(result.max_score, 0);
@@ -81,7 +80,7 @@ export default function ManageSingleCandidate() {
   const [assessments, setAssessments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [checkingAuth, setCheckingAuth] = useState(true);
-  const [supervisorId, setSupervisorId] = useState(null);
+  const [currentSupervisor, setCurrentSupervisor] = useState(null); // ✅ Store full supervisor object
   const [message, setMessage] = useState({ type: "", text: "" });
   
   // Share modal state
@@ -131,9 +130,11 @@ export default function ManageSingleCandidate() {
         return;
       }
 
-      setSupervisorId(userId);
+      // ✅ Store the full supervisor profile
+      setCurrentSupervisor(profile);
+
       await Promise.all([
-        fetchCandidateDetails(userId),
+        fetchCandidateDetails(profile), // ✅ Pass the full profile object
         fetchAvailableSupervisors()
       ]);
     } catch (error) {
@@ -150,7 +151,7 @@ export default function ManageSingleCandidate() {
         .from("supervisor_profiles")
         .select("id, full_name, email, role")
         .eq("is_active", true)
-        .neq("id", supervisorId);
+        .neq("id", currentSupervisor?.id);
       
       if (!error && data) {
         setAvailableSupervisors(data);
@@ -179,7 +180,8 @@ export default function ManageSingleCandidate() {
     }
   }
 
-  async function fetchCandidateDetails(currentSupervisorId) {
+  // ✅ FIXED: Accept supervisorProfile object instead of ID
+  async function fetchCandidateDetails(supervisorProfile) {
     try {
       setLoading(true);
       setMessage({ type: "", text: "" });
@@ -197,16 +199,16 @@ export default function ManageSingleCandidate() {
         return;
       }
 
-      // Check permission (admin or assigned supervisor)
-      const isAdmin = currentSupervisorId.role === "admin";
-      const isAssignedSupervisor = candidateData.supervisor_id === currentSupervisorId.id;
+      // ✅ FIXED: Check permission using the supervisorProfile object
+      const isAdmin = supervisorProfile.role === "admin";
+      const isAssignedSupervisor = candidateData.supervisor_id === supervisorProfile.id;
       
       // Check shared access
       const { data: sharedAccess } = await supabase
         .from("shared_report_access")
         .select("*")
         .eq("candidate_id", user_id)
-        .eq("granted_to", currentSupervisorId.id)
+        .eq("granted_to", supervisorProfile.id)
         .maybeSingle();
       
       const hasSharedAccess = sharedAccess && (!sharedAccess.expires_at || new Date(sharedAccess.expires_at) > new Date());
@@ -375,10 +377,17 @@ export default function ManageSingleCandidate() {
     });
   }
 
-  // 🟢 FIXED: Navigate to report detail page
+  // Navigate to report detail page
   const handleViewReport = (resultId) => {
     if (resultId) {
       router.push(`/supervisor/reports/${resultId}`);
+    }
+  };
+
+  // ✅ FIXED: Refresh with the current supervisor object
+  const handleRefresh = () => {
+    if (currentSupervisor) {
+      fetchCandidateDetails(currentSupervisor);
     }
   };
 
@@ -395,7 +404,7 @@ export default function ManageSingleCandidate() {
     <AppLayout background="/images/supervisor-bg.jpg">
       <div style={styles.container}>
         <div style={styles.backButtonContainer}>
-          <button onClick={() => router.push("/supervisor")} style={styles.backButton}>← Back to Dashboard</button>
+          <button onClick={() => router.push("/supervisor/manage-candidate")} style={styles.backButton}>← Back to Candidates</button>
         </div>
 
         <div style={styles.header}>
@@ -408,7 +417,7 @@ export default function ManageSingleCandidate() {
             )}
           </div>
           <div style={styles.headerButtons}>
-            <button onClick={() => fetchCandidateDetails(supervisorId)} style={styles.refreshButton}>Refresh</button>
+            <button onClick={handleRefresh} style={styles.refreshButton}>Refresh</button>
           </div>
         </div>
 
@@ -425,6 +434,17 @@ export default function ManageSingleCandidate() {
 
         {loading ? (
           <div style={styles.loading}>Loading assessments...</div>
+        ) : assessments.length === 0 ? (
+          <div style={styles.noDataContainer}>
+            <div style={styles.noDataIcon}>📭</div>
+            <p style={styles.noDataText}>No assessments found for this candidate.</p>
+            <button
+              onClick={() => router.push(`/supervisor/assign-assessment`)}
+              style={styles.assignButton}
+            >
+              Assign Assessment
+            </button>
+          </div>
         ) : (
           <div style={styles.tableContainer}>
             <div style={styles.tableScroll}>
@@ -440,100 +460,92 @@ export default function ManageSingleCandidate() {
                    </tr>
                 </thead>
                 <tbody>
-                  {assessments.length === 0 ? (
-                    <tr>
-                      <td colSpan="6" style={styles.noData}>
-                        No assessments found for this candidate.
-                      </td>
-                    </tr>
-                  ) : (
-                    assessments.map((assessment) => {
-                      const percentage = getPercentage(assessment.result);
-                      const classification = getClassification(percentage);
-                      const sharedKey = `${user_id}_${assessment.assessment_id}`;
-                      const sharedWith = sharedAccessList[sharedKey] || [];
-                      const isCompleted = assessment.status === "completed" || assessment.result;
+                  {assessments.map((assessment) => {
+                    const percentage = getPercentage(assessment.result);
+                    const classification = getClassification(percentage);
+                    const sharedKey = `${user_id}_${assessment.assessment_id}`;
+                    const sharedWith = sharedAccessList[sharedKey] || [];
+                    const isCompleted = assessment.status === "completed" || assessment.result;
 
-                      return (
-                        <React.Fragment key={assessment.id}>
-                          <tr style={styles.tableRow}>
-                            <td style={styles.td}>
-                              <div style={styles.assessmentInfo}>
-                                <div style={{ ...styles.assessmentIcon, background: `linear-gradient(135deg, ${assessment.type_gradient_start} 0%, ${assessment.type_gradient_end} 100%)` }}>
-                                  {assessment.type_icon}
-                                </div>
-                                <div>
-                                  <div style={styles.assessmentTitle}>{assessment.title}</div>
-                                  <div style={styles.assessmentType}>{assessment.type_name}</div>
-                                </div>
+                    return (
+                      <React.Fragment key={assessment.id}>
+                        <tr style={styles.tableRow}>
+                          <td style={styles.td}>
+                            <div style={styles.assessmentInfo}>
+                              <div style={{ ...styles.assessmentIcon, background: `linear-gradient(135deg, ${assessment.type_gradient_start} 0%, ${assessment.type_gradient_end} 100%)` }}>
+                                {assessment.type_icon}
                               </div>
-                            </td>
-                            <td style={styles.td}>{assessment.type_name}</td>
-                            <td style={styles.td}>
-                              <span style={{
-                                ...styles.statusBadge,
-                                background: isCompleted ? "#e8f5e9" : assessment.status === "unblocked" ? "#e3f2fd" : "#fff3e0",
-                                color: isCompleted ? "#2e7d32" : assessment.status === "unblocked" ? "#1565c0" : "#f57c00"
-                              }}>
-                                {isCompleted ? "Completed" : assessment.status === "unblocked" ? "Ready" : "Blocked"}
+                              <div>
+                                <div style={styles.assessmentTitle}>{assessment.title}</div>
+                                <div style={styles.assessmentType}>{assessment.type_name}</div>
+                              </div>
+                            </div>
+                          </td>
+                          <td style={styles.td}>{assessment.type_name}</td>
+                          <td style={styles.td}>
+                            <span style={{
+                              ...styles.statusBadge,
+                              background: isCompleted ? "#e8f5e9" : assessment.status === "unblocked" ? "#e3f2fd" : "#fff3e0",
+                              color: isCompleted ? "#2e7d32" : assessment.status === "unblocked" ? "#1565c0" : "#f57c00"
+                            }}>
+                              {isCompleted ? "Completed" : assessment.status === "unblocked" ? "Ready" : "Blocked"}
+                            </span>
+                          </td>
+                          <td style={styles.td}>
+                            {isCompleted ? (
+                              <span style={{ ...styles.scoreBadge, background: classification.bg, color: classification.color }}>
+                                {percentage}%
                               </span>
-                            </td>
-                            <td style={styles.td}>
-                              {isCompleted ? (
-                                <span style={{ ...styles.scoreBadge, background: classification.bg, color: classification.color }}>
-                                  {percentage}%
-                                </span>
-                              ) : (
-                                <span style={styles.noScore}>—</span>
-                              )}
-                            </td>
-                            <td style={styles.td}>
-                              {assessment.completed_at ? formatDate(assessment.completed_at) : "—"}
-                            </td>
-                            <td style={styles.td}>
-                              <div style={styles.actionGroup}>
-                                {isCompleted && assessment.result && (
-                                  <button
-                                    onClick={() => handleViewReport(assessment.result.id)}
-                                    style={styles.viewButton}
-                                  >
-                                    View Report
-                                  </button>
-                                )}
+                            ) : (
+                              <span style={styles.noScore}>—</span>
+                            )}
+                          </td>
+                          <td style={styles.td}>
+                            {assessment.completed_at ? formatDate(assessment.completed_at) : "—"}
+                          </td>
+                          <td style={styles.td}>
+                            <div style={styles.actionGroup}>
+                              {isCompleted && assessment.result && (
                                 <button
-                                  onClick={() => openShareModal(assessment)}
-                                  style={styles.shareButton}
+                                  onClick={() => handleViewReport(assessment.result.id)}
+                                  style={styles.viewButton}
                                 >
-                                  🔗 Share
+                                  View Report
                                 </button>
+                              )}
+                              <button
+                                onClick={() => openShareModal(assessment)}
+                                style={styles.shareButton}
+                              >
+                                🔗 Share
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                        
+                        {sharedWith.length > 0 && (
+                          <tr style={styles.sharedRow}>
+                            <td colSpan="6" style={styles.sharedCell}>
+                              <div style={styles.sharedAccessList}>
+                                <div style={styles.sharedAccessHeader}>Shared with:</div>
+                                {sharedWith.map(access => (
+                                  <div key={access.granted_to} style={styles.sharedAccessItem}>
+                                    <span>{access.supervisor_profiles?.full_name || access.granted_to}</span>
+                                    <button
+                                      onClick={() => revokeReportAccess(user_id, assessment.assessment_id, access.granted_to, access.supervisor_profiles?.full_name)}
+                                      style={styles.revokeButton}
+                                    >
+                                      Revoke
+                                    </button>
+                                  </div>
+                                ))}
                               </div>
                             </td>
                           </tr>
-                          
-                          {sharedWith.length > 0 && (
-                            <tr style={styles.sharedRow}>
-                              <td colSpan="6" style={styles.sharedCell}>
-                                <div style={styles.sharedAccessList}>
-                                  <div style={styles.sharedAccessHeader}>Shared with:</div>
-                                  {sharedWith.map(access => (
-                                    <div key={access.granted_to} style={styles.sharedAccessItem}>
-                                      <span>{access.supervisor_profiles?.full_name || access.granted_to}</span>
-                                      <button
-                                        onClick={() => revokeReportAccess(user_id, assessment.assessment_id, access.granted_to, access.supervisor_profiles?.full_name)}
-                                        style={styles.revokeButton}
-                                      >
-                                        Revoke
-                                      </button>
-                                    </div>
-                                  ))}
-                                </div>
-                              </td>
-                            </tr>
-                          )}
-                        </React.Fragment>
-                      );
-                    })
-                  )}
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -639,7 +651,10 @@ const styles = {
   td: { padding: "15px 20px", borderBottom: "1px solid #e2e8f0", verticalAlign: "middle" },
   tableRow: { background: "white" },
   sharedRow: { background: "#f8fafc" },
-  noData: { padding: "40px", textAlign: "center", color: "#718096", fontStyle: "italic" },
+  noDataContainer: { textAlign: "center", padding: "60px 20px", background: "white", borderRadius: "16px" },
+  noDataIcon: { fontSize: "48px", marginBottom: "16px" },
+  noDataText: { fontSize: "16px", color: "#718096", marginBottom: "16px" },
+  assignButton: { padding: "10px 24px", background: "#0a1929", color: "white", borderRadius: "8px", border: "none", fontSize: "14px", fontWeight: 700, cursor: "pointer" },
   loading: { textAlign: "center", padding: "60px", color: "#667085", background: "white", borderRadius: "16px" },
   assessmentInfo: { display: "flex", alignItems: "center", gap: "12px" },
   assessmentIcon: { width: "40px", height: "40px", borderRadius: "10px", color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "18px" },
