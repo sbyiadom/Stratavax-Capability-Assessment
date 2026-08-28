@@ -1,5 +1,5 @@
 // pages/admin/assign-candidates.js
-// COMPLETE FIXED VERSION - Shows detailed errors, merges legacy assignments, deduplicates IDs
+// COMPLETE FIXED VERSION - Displays ALL supervisors correctly
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
@@ -174,9 +174,7 @@ export default function AssignCandidates() {
       setCandidates(candidateRows);
       setSupervisors(supervisorRows);
 
-      // ============================================================
-      // FIXED: Merge legacy supervisor_id with multi-assignments
-      // ============================================================
+      // Merge legacy supervisor_id with multi-assignments
       const initialSelected = {};
       candidateRows.forEach((candidate) => {
         const multi = multipleAssignments[candidate.id] || [];
@@ -243,9 +241,6 @@ export default function AssignCandidates() {
     }, 4500);
   }
 
-  // ============================================================
-  // UPDATED: Shows detailed errors, deduplicates supervisor IDs
-  // ============================================================
   async function syncMultipleAssignments(candidateId, supervisorIds) {
     const { data: session } = await supabase.auth.getSession();
     const token = session?.session?.access_token;
@@ -276,11 +271,7 @@ export default function AssignCandidates() {
       throw new Error(result.error || `API returned ${response.status}`);
     }
 
-    // ============================================================
-    // FIXED: Show detailed error from result.results
-    // ============================================================
     if (!result.success) {
-      // Extract detailed errors from results array
       const detailedErrors = result.results
         ?.filter(r => !r.success)
         ?.map(r => `${r.candidateId || 'candidate'}: ${r.error || 'Unknown error'}`)
@@ -294,7 +285,6 @@ export default function AssignCandidates() {
       );
     }
 
-    // Check if individual assignments failed
     if (result.results) {
       const failed = result.results.filter(r => !r.success);
       if (failed.length > 0) {
@@ -394,7 +384,6 @@ export default function AssignCandidates() {
       return;
     }
 
-    // Deduplicate bulk supervisors
     const uniqueBulkSupervisors = [...new Set(selectedBulkSupervisors)];
 
     const supervisorNames = uniqueBulkSupervisors.map(id => {
@@ -643,13 +632,14 @@ export default function AssignCandidates() {
                         const isAssignDisabled = candidateSelectedSupervisors.length === 0 || isProcessing;
                         const isMultiSelect = showMultiSelect[candidate.id] || false;
 
-                        const currentSupervisorNames = candidate.supervisor ? [candidate.supervisor.full_name || candidate.supervisor.email] : [];
-                        const multiNames = (selectedSupervisors[candidate.id] || [])
+                        // ============================================================
+                        // 🟢 FIXED: Get all supervisor names from selectedSupervisors
+                        // ============================================================
+                        const supervisorIds = selectedSupervisors[candidate.id] || [];
+                        const supervisorNames = supervisorIds
                           .map(id => supervisors.find(s => s.id === id)?.full_name || id)
                           .filter(name => name);
-
-                        const allNames = [...currentSupervisorNames, ...multiNames];
-                        const uniqueNames = [...new Set(allNames)];
+                        const uniqueSupervisorNames = [...new Set(supervisorNames)];
 
                         return (
                           <tr key={candidate.id} style={styles.tableRow}>
@@ -668,9 +658,9 @@ export default function AssignCandidates() {
                               {candidate.phone && <div style={styles.candidatePhone}>{candidate.phone}</div>}
                             </td>
                             <td style={styles.tableCell}>
-                              {uniqueNames.length > 0 ? (
+                              {uniqueSupervisorNames.length > 0 ? (
                                 <div style={styles.assignedBadge}>
-                                  {uniqueNames.map((name, index) => (
+                                  {uniqueSupervisorNames.map((name, index) => (
                                     <span key={index} style={styles.assignedName}>{name}</span>
                                   ))}
                                 </div>
