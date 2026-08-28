@@ -1,6 +1,7 @@
 // pages/api/supervisor/reports.js
-// FIXED: Removed candidate_id references, uses user_id only
-// FIXED: Proper error handling
+// COMPLETE FIXED VERSION
+// Checks BOTH legacy AND junction table for permission
+// Also checks shared_report_access
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -95,7 +96,9 @@ export default async function handler(req, res) {
 
     console.log('[Supervisor Reports] Supervisor ID:', supervisorId);
 
-    // Get assigned candidates
+    // ============================================================
+    // GET ASSIGNED CANDIDATES (BOTH SOURCES)
+    // ============================================================
     let allCandidates = [];
     const candidateIdsSet = new Set();
 
@@ -145,15 +148,98 @@ export default async function handler(req, res) {
 
     console.log('[Supervisor Reports] Total assigned candidates:', allCandidates.length);
 
-    // Filter by specific user if requested
+    // ============================================================
+    // FILTER BY SPECIFIC USER WITH PERMISSION CHECK
+    // ============================================================
     let targetCandidates = allCandidates;
+
     if (user_id) {
-      targetCandidates = allCandidates.filter(c => c.id === user_id);
-      if (targetCandidates.length === 0) {
+      // Check if the candidate exists at all
+      const { data: candidateExists, error: existsError } = await supabase
+        .from('candidate_profiles')
+        .select('id')
+        .eq('id', user_id)
+        .maybeSingle();
+
+      if (existsError || !candidateExists) {
         return res.status(404).json({
           success: false,
-          error: 'Candidate not found or not assigned to you'
+          error: 'Candidate not found'
         });
+      }
+
+      // Check if candidate is assigned via legacy field
+      const assignedCandidate = allCandidates.find(c => c.id === user_id);
+      
+      if (assignedCandidate) {
+        targetCandidates = [assignedCandidate];
+        console.log('[Supervisor Reports] Found candidate via legacy assignment');
+      } else {
+        // Check junction table
+        const { data: junctionCheck, error: junctionCheckError } = await supabase
+          .from('candidate_supervisors')
+          .select('candidate_id')
+          .eq('candidate_id', user_id)
+          .eq('supervisor_id', supervisorId)
+          .maybeSingle();
+
+        if (!junctionCheckError && junctionCheck) {
+          // Candidate is assigned via junction table, fetch their details
+          const { data: candidateData, error: candidateDataError } = await supabase
+            .from('candidate_profiles')
+            .select('id, full_name, email, university, programme, supervisor_id, created_at')
+            .eq('id', user_id)
+            .maybeSingle();
+
+          if (!candidateDataError && candidateData) {
+            targetCandidates = [candidateData];
+            console.log('[Supervisor Reports] Found candidate via junction table');
+          } else {
+            return res.status(404).json({
+              success: false,
+              error: 'Candidate not found'
+            });
+          }
+        } else {
+          // Check shared access
+          const { data: sharedAccess, error: sharedError } = await supabase
+            .from('shared_report_access')
+            .select('candidate_id, expires_at')
+            .eq('candidate_id', user_id)
+            .eq('granted_to', supervisorId)
+            .maybeSingle();
+
+          if (!sharedError && sharedAccess) {
+            // Check if access has expired
+            if (sharedAccess.expires_at && new Date(sharedAccess.expires_at) < new Date()) {
+              return res.status(403).json({
+                success: false,
+                error: 'Access to this report has expired'
+              });
+            }
+
+            const { data: candidateData, error: candidateDataError } = await supabase
+              .from('candidate_profiles')
+              .select('id, full_name, email, university, programme, supervisor_id, created_at')
+              .eq('id', user_id)
+              .maybeSingle();
+
+            if (!candidateDataError && candidateData) {
+              targetCandidates = [candidateData];
+              console.log('[Supervisor Reports] Found candidate via shared access');
+            } else {
+              return res.status(404).json({
+                success: false,
+                error: 'Candidate not found'
+              });
+            }
+          } else {
+            return res.status(404).json({
+              success: false,
+              error: 'Candidate not found or not assigned to you'
+            });
+          }
+        }
       }
     }
 
@@ -169,7 +255,9 @@ export default async function handler(req, res) {
 
     const candidateIds = targetCandidates.map(c => c.id);
 
-    // Get assessment results - uses user_id only
+    // ============================================================
+    // GET ASSESSMENT RESULTS
+    // ============================================================
     let query = supabase
       .from('assessment_results')
       .select(`
@@ -219,7 +307,9 @@ export default async function handler(req, res) {
 
     console.log('[Supervisor Reports] Results found:', results?.length || 0);
 
-    // Process reports
+    // ============================================================
+    // PROCESS REPORTS
+    // ============================================================
     const reports = (results || []).map(result => {
       const assessment = result.assessments || {};
       
@@ -275,7 +365,9 @@ export default async function handler(req, res) {
       };
     });
 
-    // Return response
+    // ============================================================
+    // RETURN RESPONSE
+    // ============================================================
     if (assessment_id && reports.length === 1) {
       const report = reports[0];
       const candidate = targetCandidates.find(c => c.id === report.candidate_id) || {};
