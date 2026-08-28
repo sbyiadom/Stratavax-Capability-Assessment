@@ -1,0 +1,345 @@
+// pages/supervisor/reports/other.js
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/router';
+import AppLayout from '../../../components/AppLayout';
+import { supabase } from '../../../supabase/client';
+
+export default function OtherAssessmentReports() {
+  const router = useRouter();
+  const [loading, setLoading] = useState(true);
+  const [reports, setReports] = useState([]);
+  const [stats, setStats] = useState({
+    totalAssessments: 38,
+    averageScore: 76,
+    totalPrograms: 8,
+    totalCandidates: 42,
+    completedAssessments: 28,
+    pendingReview: 10
+  });
+
+  useEffect(() => {
+    // Simulate loading data - replace with actual API call
+    setTimeout(() => {
+      setReports([
+        { id: 101, candidate: 'Grace Mensah', university: 'KNUST', program: 'BSc Computer Science', score: 88, status: 'Completed', date: '2026-08-15' },
+        { id: 102, candidate: 'Henry Addo', university: 'University of Ghana', program: 'BSc Business Administration', score: 72, status: 'Pending', date: '2026-08-14' },
+        { id: 103, candidate: 'Ivy Osei', university: 'Central University', program: 'BSc Information Technology', score: 95, status: 'Completed', date: '2026-08-13' },
+        { id: 104, candidate: 'James Kumi', university: 'Ashesi University', program: 'BSc Computer Engineering', score: 65, status: 'Failed', date: '2026-08-12' },
+        { id: 105, candidate: 'Kate Asare', university: 'University of Cape Coast', program: 'BEd Mathematics', score: 81, status: 'Completed', date: '2026-08-11' },
+        { id: 106, candidate: 'Louis Agyeman', university: 'Kwame Nkrumah University of Science and Technology', program: 'BSc Civil Engineering', score: 79, status: 'Completed', date: '2026-08-10' },
+        { id: 107, candidate: 'Mary Tetteh', university: 'University of Education Winneba', program: 'BEd Science', score: 93, status: 'Completed', date: '2026-08-09' },
+        { id: 108, candidate: 'Nana Yaw', university: 'Ghana Institute of Journalism', program: 'BA Communication Studies', score: 70, status: 'Pending', date: '2026-08-08' },
+      ]);
+      setLoading(false);
+    }, 1000);
+  }, []);
+
+  const getStatusColor = (status) => {
+    switch(status) {
+      case 'Completed': return '#48bb78';
+      case 'Pending': return '#ed8936';
+      case 'Failed': return '#fc8181';
+      default: return '#a0aec0';
+    }
+  };
+
+  const getScoreColor = (score) => {
+    if (score >= 80) return '#48bb78';
+    if (score >= 60) return '#ed8936';
+    return '#fc8181';
+  };
+
+  return (
+    <AppLayout>
+      <div style={styles.container}>
+        <div style={styles.header}>
+          <div style={styles.headerLeft}>
+            <h1 style={styles.title}>📊 Other Assessment Reports</h1>
+            <p style={styles.subtitle}>View and manage other assessment reports</p>
+          </div>
+          <div style={styles.headerActions}>
+            <button style={styles.exportButton}>📥 Export CSV</button>
+            <button style={styles.printButton}>🖨️ Print</button>
+          </div>
+        </div>
+
+        {/* Stats Cards */}
+        <div style={styles.statsGrid}>
+          <div style={styles.statsCard}>
+            <div style={styles.statsIcon}>📋</div>
+            <div>
+              <div style={styles.statsValue}>{stats.totalAssessments}</div>
+              <div style={styles.statsLabel}>Total Assessments</div>
+            </div>
+          </div>
+          <div style={styles.statsCard}>
+            <div style={styles.statsIcon}>📈</div>
+            <div>
+              <div style={styles.statsValue}>{stats.averageScore}%</div>
+              <div style={styles.statsLabel}>Average Score</div>
+            </div>
+          </div>
+          <div style={styles.statsCard}>
+            <div style={styles.statsIcon}>✅</div>
+            <div>
+              <div style={styles.statsValue}>{stats.completedAssessments}</div>
+              <div style={styles.statsLabel}>Completed</div>
+            </div>
+          </div>
+          <div style={styles.statsCard}>
+            <div style={styles.statsIcon}>⏳</div>
+            <div>
+              <div style={styles.statsValue}>{stats.pendingReview}</div>
+              <div style={styles.statsLabel}>Pending Review</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Reports Table */}
+        <div style={styles.tableContainer}>
+          {loading ? (
+            <div style={styles.loadingState}>
+              <div style={styles.spinner} />
+              <p>Loading reports...</p>
+            </div>
+          ) : (
+            <table style={styles.table}>
+              <thead>
+                <tr style={styles.tableHeadRow}>
+                  <th style={styles.tableHeadCell}>Candidate</th>
+                  <th style={styles.tableHeadCell}>University</th>
+                  <th style={styles.tableHeadCell}>Program</th>
+                  <th style={styles.tableHeadCell}>Score</th>
+                  <th style={styles.tableHeadCell}>Status</th>
+                  <th style={styles.tableHeadCell}>Date</th>
+                  <th style={styles.tableHeadCell}>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {reports.length === 0 ? (
+                  <tr>
+                    <td colSpan="7" style={styles.emptyState}>
+                      <div style={styles.emptyStateContent}>
+                        <span style={styles.emptyStateIcon}>📭</span>
+                        <p>No other assessment reports found</p>
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  reports.map((report) => (
+                    <tr key={report.id} style={styles.tableRow}>
+                      <td style={styles.tableCell}>{report.candidate}</td>
+                      <td style={styles.tableCell}>{report.university}</td>
+                      <td style={styles.tableCell}>{report.program}</td>
+                      <td style={styles.tableCell}>
+                        <span style={{
+                          ...styles.scoreBadge,
+                          background: getScoreColor(report.score)
+                        }}>
+                          {report.score}%
+                        </span>
+                      </td>
+                      <td style={styles.tableCell}>
+                        <span style={{
+                          ...styles.statusBadge,
+                          background: getStatusColor(report.status)
+                        }}>
+                          {report.status}
+                        </span>
+                      </td>
+                      <td style={styles.tableCell}>{report.date}</td>
+                      <td style={styles.tableCell}>
+                        <button
+                          onClick={() => router.push(`/supervisor/reports/${report.id}`)}
+                          style={styles.viewButton}
+                        >
+                          View Details
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+
+      <style jsx>{`
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+      `}</style>
+    </AppLayout>
+  );
+}
+
+const styles = {
+  container: {
+    padding: '24px',
+    maxWidth: '1400px',
+    margin: '0 auto'
+  },
+  header: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '30px',
+    flexWrap: 'wrap',
+    gap: '16px'
+  },
+  headerLeft: {
+    flex: 1
+  },
+  headerActions: {
+    display: 'flex',
+    gap: '12px'
+  },
+  title: {
+    fontSize: '28px',
+    fontWeight: 'bold',
+    color: '#0A1929',
+    margin: '0 0 8px 0'
+  },
+  subtitle: {
+    fontSize: '16px',
+    color: '#718096',
+    margin: 0
+  },
+  exportButton: {
+    padding: '8px 20px',
+    background: '#48bb78',
+    color: 'white',
+    border: 'none',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    fontSize: '14px',
+    fontWeight: '600'
+  },
+  printButton: {
+    padding: '8px 20px',
+    background: '#4299e1',
+    color: 'white',
+    border: 'none',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    fontSize: '14px',
+    fontWeight: '600'
+  },
+  statsGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+    gap: '16px',
+    marginBottom: '30px'
+  },
+  statsCard: {
+    background: 'white',
+    padding: '20px',
+    borderRadius: '12px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '16px',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+  },
+  statsIcon: {
+    fontSize: '32px'
+  },
+  statsValue: {
+    fontSize: '24px',
+    fontWeight: 'bold',
+    color: '#0A1929'
+  },
+  statsLabel: {
+    fontSize: '14px',
+    color: '#718096'
+  },
+  tableContainer: {
+    background: 'white',
+    borderRadius: '12px',
+    overflow: 'hidden',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+  },
+  table: {
+    width: '100%',
+    borderCollapse: 'collapse'
+  },
+  tableHeadRow: {
+    background: '#F8FAFC'
+  },
+  tableHeadCell: {
+    padding: '12px 16px',
+    textAlign: 'left',
+    borderBottom: '2px solid #E2E8F0',
+    fontSize: '13px',
+    fontWeight: '600',
+    color: '#4A5568'
+  },
+  tableRow: {
+    transition: 'background 0.2s ease',
+    ':hover': {
+      background: '#F8FAFC'
+    }
+  },
+  tableCell: {
+    padding: '12px 16px',
+    borderBottom: '1px solid #E2E8F0',
+    fontSize: '14px',
+    color: '#2D3748'
+  },
+  scoreBadge: {
+    display: 'inline-block',
+    padding: '2px 10px',
+    borderRadius: '12px',
+    fontSize: '13px',
+    fontWeight: '600',
+    color: 'white'
+  },
+  statusBadge: {
+    display: 'inline-block',
+    padding: '4px 12px',
+    borderRadius: '20px',
+    fontSize: '12px',
+    fontWeight: '600',
+    color: 'white'
+  },
+  viewButton: {
+    padding: '4px 12px',
+    background: '#4299e1',
+    color: 'white',
+    border: 'none',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    fontSize: '12px',
+    transition: 'background 0.2s ease'
+  },
+  emptyState: {
+    padding: '60px 20px',
+    textAlign: 'center'
+  },
+  emptyStateContent: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '12px'
+  },
+  emptyStateIcon: {
+    fontSize: '48px'
+  },
+  loadingState: {
+    padding: '60px 20px',
+    textAlign: 'center',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '16px'
+  },
+  spinner: {
+    width: '40px',
+    height: '40px',
+    border: '4px solid #E2E8F0',
+    borderTop: '4px solid #0A1929',
+    borderRadius: '50%',
+    animation: 'spin 1s linear infinite'
+  }
+};
