@@ -1,4 +1,5 @@
 // components/AppLayout.js - WITH ROLE-BASED CATEGORIZED SIDEBAR FOR ALL USERS
+// FIXED: Added Add Candidate and Assign Assessment to supervisor menu
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
@@ -62,9 +63,6 @@ const Icons = {
   ),
   Assessment: () => (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
-  ),
-  Candidate: () => (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
   ),
 };
 
@@ -168,7 +166,7 @@ function getMenuSections(role) {
     ];
   }
 
-  // 🟢 SUPERVISOR MENU
+  // 🟢 SUPERVISOR MENU - Updated with all actions
   if (role === 'supervisor') {
     return [
       {
@@ -179,12 +177,14 @@ function getMenuSections(role) {
         isMain: true,
       },
       {
-        id: 'candidates',
+        id: 'my-candidates',
         label: 'My Candidates',
         icon: Icons.Users(),
         isSection: true,
         children: [
-          { id: 'view-candidates', label: 'View Candidates', icon: Icons.UserCheck(), href: '/supervisor' },
+          { id: 'view-candidates', label: 'View Candidates', icon: Icons.UserCheck(), href: '/supervisor?tab=view_candidates' },
+          { id: 'add-candidate', label: 'Add Candidate', icon: Icons.UserPlus(), href: '/supervisor/add-candidate' },
+          { id: 'assign-assessment', label: 'Assign Assessment', icon: Icons.CheckSquare(), href: '/supervisor/assign-assessment' },
           { id: 'batch-manage', label: 'Batch Manage', icon: Icons.Layers(), href: '/supervisor/batch-manage' },
         ]
       },
@@ -194,8 +194,8 @@ function getMenuSections(role) {
         icon: Icons.FileText(),
         isSection: true,
         children: [
-          { id: 'national-service', label: 'National Service Reports', icon: Icons.FileText(), href: '/supervisor' },
-          { id: 'other-assessments', label: 'Other Assessment Reports', icon: Icons.Reports(), href: '/supervisor' },
+          { id: 'national-service', label: 'National Service Reports', icon: Icons.FileText(), href: '/supervisor?tab=national_service' },
+          { id: 'other-assessments', label: 'Other Assessment Reports', icon: Icons.Reports(), href: '/supervisor?tab=other' },
         ]
       },
     ];
@@ -287,12 +287,10 @@ function Sidebar({ isOpen, toggleSidebar, currentPath, handleLogout, userRole })
 
   const menuSections = getMenuSections(userRole);
   const isSupervisor = userRole === 'supervisor';
-  const isCandidate = userRole === 'candidate';
 
   const isActive = (href) => {
     if (href === '/admin' && currentPath === '/admin') return true;
     if (href === '/supervisor' && currentPath === '/supervisor') return true;
-    if (href === '/supervisor' && currentPath === '/supervisor' && currentPath === '/supervisor') return true;
     if (href !== '/admin' && href !== '/supervisor' && currentPath.startsWith(href)) return true;
     return false;
   };
@@ -377,7 +375,6 @@ function Sidebar({ isOpen, toggleSidebar, currentPath, handleLogout, userRole })
                   {isExpanded && (
                     <div style={stylesSidebar.subNav}>
                       {item.children.map((child) => {
-                        // For supervisor reports, add tab parameter
                         let href = child.href;
                         if (isSupervisor) {
                           if (child.id === 'national-service') {
@@ -754,7 +751,8 @@ export default function AppLayout({ children, background, showNavigation = true 
     if (userRole === "supervisor") {
       return [
         { href: "/supervisor", label: "Dashboard" },
-        { href: "/supervisor/batch-manage", label: "Batch Manage" }
+        { href: "/supervisor/batch-manage", label: "Batch Manage" },
+        { href: "/supervisor/add-candidate", label: "Add Candidate" }
       ];
     }
 
@@ -803,7 +801,6 @@ export default function AppLayout({ children, background, showNavigation = true 
 
   const navLinks = getNavLinks();
   const homeHref = getDashboardHref(userRole);
-  // Show sidebar for admin AND supervisor roles
   const showSidebar = userRole === "admin" || userRole === "supervisor";
 
   return (
@@ -818,12 +815,10 @@ export default function AppLayout({ children, background, showNavigation = true 
         />
       )}
 
-      {/* Main Content */}
       <div style={{
         ...styles.mainContent,
         marginLeft: showSidebar ? (sidebarOpen ? '280px' : '0') : '0',
       }}>
-        {/* Top Navigation Bar */}
         <header style={styles.navBar}>
           <div style={styles.navContainer}>
             <div style={styles.navLeft}>
