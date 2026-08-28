@@ -1,5 +1,5 @@
-// pages/supervisor/reports/[resultId].js - FIXED with UUID validation
-// FIX: Properly extracts and passes behavioral matrix to NationalServiceReport
+// pages/supervisor/reports/[resultId].js - COMPLETE FIXED FILE
+// Replicates the admin version's logic for proper report display
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -11,7 +11,7 @@ import AppLayout from '../../../components/AppLayout';
 const NATIONAL_SERVICE_ASSESSMENT_ID = 'bdb9d46e-9fac-4d00-8478-1f649e7ac600';
 
 // ============================================================
-// SCORE / REPORT DATA HELPERS
+// SCORE / REPORT DATA HELPERS (Replicated from admin)
 // ============================================================
 function safeNumber(value, fallback = 0) {
   const numberValue = Number(value);
@@ -42,16 +42,8 @@ function getReportDataObject(rawReportData) {
   return {};
 }
 
-function formatDuration(seconds) {
-  if (!seconds || seconds <= 0) return '00:00:00';
-  const hrs = Math.floor(seconds / 3600);
-  const mins = Math.floor((seconds % 3600) / 60);
-  const secs = seconds % 60;
-  return `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-}
-
 // ============================================================
-// 🟢 BEHAVIORAL MATRIX EXTRACTOR - Reads from proctoring data
+// 🟢 BEHAVIORAL MATRIX EXTRACTOR - Replicated from admin
 // ============================================================
 
 function extractBehavioralMatrix(reportData) {
@@ -245,7 +237,7 @@ export default function SupervisorReportView() {
     // If no resultId, don't do anything
     if (!resultId) return;
 
-    // ✅ FIX: Validate UUID format before fetching
+    // ✅ Validate UUID format before fetching
     if (!isValidUUID(resultId)) {
       console.log('[Report View] Invalid UUID format:', resultId);
       setError('Invalid report ID format. Please go back and select a valid report.');
@@ -258,7 +250,7 @@ export default function SupervisorReportView() {
   }, [resultId]);
 
   // ============================================================
-  // 🟢 FETCH REPORT
+  // 🟢 FETCH REPORT - Replicated from admin
   // ============================================================
 
   const fetchReport = async () => {
@@ -334,6 +326,7 @@ export default function SupervisorReportView() {
         };
       }
 
+      // ✅ FIX: Determine if National Service - same logic as admin
       const assessmentId = result?.assessment_id || data?.assessment_id || '';
       const assessmentTypeCode = data?.assessmentTypeCode || result?.assessment_type_code || result?.assessments?.assessment_type?.code || '';
       const assessmentTitle = result?.assessments?.title || report?.assessmentName || data?.assessmentTitle || '';
