@@ -1,10 +1,13 @@
-// pages/supervisor/reports/index.js - UPDATED WITH PROPER SCORE CALCULATION
-// Based on admin reports/index.js with proper score display
+// pages/supervisor/reports/index.js - FIXED
+// Uses assessment ID to identify National Service reports
 
-import { useState, useEffect, Fragment } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import AppLayout from '../../../components/AppLayout';
 import { supabase } from '../../../supabase/client';
+
+// National Service Assessment ID - hardcoded for now
+const NATIONAL_SERVICE_ASSESSMENT_ID = 'bdb9d46e-9fac-4d00-8478-1f649e7ac600';
 
 // ============================================================
 // HELPER FUNCTIONS
@@ -12,86 +15,6 @@ import { supabase } from '../../../supabase/client';
 function safeNumber(value, fallback = 0) {
   const num = Number(value);
   return Number.isFinite(num) ? num : fallback;
-}
-
-function calculateNationalServiceScores(reportData, categoryScores, result) {
-  let workplaceReadiness = 0;
-  let intellectualCapability = 0;
-  let overallScore = 0;
-
-  // Try to get from report_data first
-  if (reportData) {
-    if (reportData.workplaceReadiness) workplaceReadiness = safeNumber(reportData.workplaceReadiness);
-    else if (reportData.workplace_readiness) workplaceReadiness = safeNumber(reportData.workplace_readiness);
-    else if (reportData.dimensions?.workplaceReadiness) workplaceReadiness = safeNumber(reportData.dimensions.workplaceReadiness);
-    
-    if (reportData.intellectualCapability) intellectualCapability = safeNumber(reportData.intellectualCapability);
-    else if (reportData.intellectual_capability) intellectualCapability = safeNumber(reportData.intellectual_capability);
-    else if (reportData.dimensions?.intellectualCapability) intellectualCapability = safeNumber(reportData.dimensions.intellectualCapability);
-    
-    if (reportData.overallScore) overallScore = safeNumber(reportData.overallScore);
-    else if (reportData.percentage_score) overallScore = safeNumber(reportData.percentage_score);
-    else if (reportData.dimensions?.overallScore) overallScore = safeNumber(reportData.dimensions.overallScore);
-  }
-
-  // Try to get from result if not found
-  if (!workplaceReadiness && result) {
-    workplaceReadiness = safeNumber(result.workplace_readiness);
-    intellectualCapability = safeNumber(result.intellectual_capability);
-    overallScore = safeNumber(result.percentage_score);
-  }
-
-  // If still 0, calculate from category scores
-  if (workplaceReadiness === 0 || intellectualCapability === 0 || overallScore === 0) {
-    const workplaceCategories = [
-      'Communication & Teamwork',
-      'Ownership & Integrity',
-      'Technical Fundamentals',
-      'Safety & Risk Awareness'
-    ];
-    
-    const intellectualCategories = [
-      'Learning Agility',
-      'Problem Solving & Troubleshooting',
-      'Logical Reasoning',
-      'Numerical Reasoning',
-      'Measurement & Engineering Units'
-    ];
-
-    let workplaceTotal = 0;
-    let workplaceCount = 0;
-    let intellectualTotal = 0;
-    let intellectualCount = 0;
-
-    if (categoryScores && categoryScores.length > 0) {
-      categoryScores.forEach(cat => {
-        const name = cat.category || cat.name || '';
-        const percentage = safeNumber(cat.percentage || cat.score || 0);
-        
-        if (workplaceCategories.some(c => name.includes(c) || name.toLowerCase().includes(c.toLowerCase()))) {
-          workplaceTotal += percentage;
-          workplaceCount++;
-        } else if (intellectualCategories.some(c => name.includes(c) || name.toLowerCase().includes(c.toLowerCase()))) {
-          intellectualTotal += percentage;
-          intellectualCount++;
-        }
-      });
-    }
-
-    if (workplaceReadiness === 0 && workplaceCount > 0) {
-      workplaceReadiness = Math.round(workplaceTotal / workplaceCount);
-    }
-    
-    if (intellectualCapability === 0 && intellectualCount > 0) {
-      intellectualCapability = Math.round(intellectualTotal / intellectualCount);
-    }
-    
-    if (overallScore === 0 && (workplaceReadiness > 0 || intellectualCapability > 0)) {
-      overallScore = Math.round((workplaceReadiness + intellectualCapability) / 2);
-    }
-  }
-
-  return { workplaceReadiness, intellectualCapability, overallScore };
 }
 
 function calculateNationalServiceRecommendation(workplaceReadiness, intellectualCapability) {
@@ -186,50 +109,23 @@ export default function ReportsIndex() {
 
       const candidateIds = candidates.map(c => c.id);
 
-      // Get assessment results - try different column names
+      // Get assessment results - use user_id since candidate_id doesn't exist
       let assessmentResults = [];
 
-      // Try candidate_id
       try {
         const { data, error } = await supabase
           .from('assessment_results')
           .select('*')
-          .in('candidate_id', candidateIds);
+          .in('user_id', candidateIds);
 
         if (!error && data && data.length > 0) {
           assessmentResults = data;
-          console.log('Found using candidate_id:', data.length);
+          console.log('Found using user_id:', data.length);
+        } else if (error) {
+          console.error('Error fetching assessment_results:', error);
         }
-      } catch (e) {}
-
-      // If no results, try user_id
-      if (assessmentResults.length === 0) {
-        try {
-          const { data, error } = await supabase
-            .from('assessment_results')
-            .select('*')
-            .in('user_id', candidateIds);
-
-          if (!error && data && data.length > 0) {
-            assessmentResults = data;
-            console.log('Found using user_id:', data.length);
-          }
-        } catch (e) {}
-      }
-
-      // If no results, try profile_id
-      if (assessmentResults.length === 0) {
-        try {
-          const { data, error } = await supabase
-            .from('assessment_results')
-            .select('*')
-            .in('profile_id', candidateIds);
-
-          if (!error && data && data.length > 0) {
-            assessmentResults = data;
-            console.log('Found using profile_id:', data.length);
-          }
-        } catch (e) {}
+      } catch (e) {
+        console.error('Error fetching assessment_results:', e);
       }
 
       if (!assessmentResults || assessmentResults.length === 0) {
@@ -245,26 +141,32 @@ export default function ReportsIndex() {
         return;
       }
 
-      // Get assessment details
+      // Get assessment titles - don't query for type column since it doesn't exist
       const assessmentIds = [...new Set(assessmentResults.map(a => a.assessment_id).filter(id => id))];
       let assessmentMap = {};
 
       if (assessmentIds.length > 0) {
-        const { data: assessments, error: assessmentsError } = await supabase
-          .from('assessments')
-          .select('id, title, description, type')
-          .in('id', assessmentIds);
+        try {
+          const { data: assessments, error: assessmentsError } = await supabase
+            .from('assessments')
+            .select('id, title, description')
+            .in('id', assessmentIds);
 
-        if (!assessmentsError && assessments) {
-          assessmentMap = assessments.reduce((acc, a) => {
-            acc[a.id] = a;
-            return acc;
-          }, {});
-          console.log('Assessment types loaded:', assessments.map(a => ({ id: a.id, title: a.title, type: a.type })));
+          if (!assessmentsError && assessments) {
+            assessmentMap = assessments.reduce((acc, a) => {
+              acc[a.id] = a;
+              return acc;
+            }, {});
+            console.log('Assessments loaded:', assessments.map(a => ({ id: a.id, title: a.title })));
+          } else if (assessmentsError) {
+            console.error('Error fetching assessments:', assessmentsError);
+          }
+        } catch (e) {
+          console.error('Error fetching assessments:', e);
         }
       }
 
-      // Build report data with proper score calculation
+      // Build report data
       const reportData = [];
       let totalScore = 0;
       let scoreCount = 0;
@@ -275,59 +177,36 @@ export default function ReportsIndex() {
       assessmentResults.forEach(result => {
         let candidate = null;
         for (const c of candidates) {
-          if (result.candidate_id === c.id || 
-              result.user_id === c.id || 
-              result.profile_id === c.id) {
+          if (result.user_id === c.id) {
             candidate = c;
             break;
           }
         }
 
         const assessment = assessmentMap[result.assessment_id] || {};
-        const reportDataObj = result.report_data ? 
-          (typeof result.report_data === 'string' ? JSON.parse(result.report_data) : result.report_data) : 
-          {};
         
-        // Determine if this is a National Service assessment
-        const isNationalService = 
-          assessment.type === 'national_service' || 
-          assessment.type === 'ns' || 
-          assessment.type === 'national' ||
-          assessment.title === 'National Service Recruitment Assessment' ||
-          assessment.title?.toLowerCase().includes('national service');
+        // Determine if this is a National Service assessment by ID
+        const isNationalService = result.assessment_id === NATIONAL_SERVICE_ASSESSMENT_ID;
 
-        // Calculate scores properly
-        let displayScore = 0;
-        let workplaceReadiness = 0;
-        let intellectualCapability = 0;
+        // Get score
+        let displayScore = safeNumber(result.score || result.percentage_score || 0);
         let recommendation = 'N/A';
 
-        if (isNationalService) {
-          // Get category scores
-          const categoryScores = reportDataObj.categoryScores || 
-                                 reportDataObj.category_scores || 
-                                 result.category_scores || [];
-          
-          const calculated = calculateNationalServiceScores(
-            reportDataObj,
-            categoryScores,
-            result
-          );
-          
-          displayScore = calculated.overallScore;
-          workplaceReadiness = calculated.workplaceReadiness;
-          intellectualCapability = calculated.intellectualCapability;
-          recommendation = calculateNationalServiceRecommendation(workplaceReadiness, intellectualCapability);
-        } else {
-          // For Stratavax, use percentage score directly
-          displayScore = safeNumber(result.percentage_score || result.score || 0);
+        if (isNationalService && displayScore > 0) {
+          // For National Service, calculate recommendation based on score
+          // If we have separate scores, use them, otherwise use overall score
+          const workplace = safeNumber(result.workplace_readiness || displayScore);
+          const intellectual = safeNumber(result.intellectual_capability || displayScore);
+          recommendation = calculateNationalServiceRecommendation(workplace, intellectual);
+        } else if (!isNationalService) {
+          // For other assessments, get recommendation if available
           recommendation = result.recommendation || 'N/A';
         }
 
         reportData.push({
           id: result.id,
           candidate: candidate?.full_name || 'Unknown',
-          candidate_id: result.candidate_id || result.user_id || result.profile_id || 'N/A',
+          candidate_id: result.user_id || 'N/A',
           university: candidate?.university || 'Not Specified',
           program: candidate?.programme || 'Not Specified',
           score: displayScore,
@@ -336,12 +215,10 @@ export default function ReportsIndex() {
                  result.created_at ? new Date(result.created_at).toISOString().split('T')[0] : 'N/A',
           assessment_id: result.assessment_id,
           assessment_title: assessment?.title || 'Untitled Assessment',
-          assessment_type: assessment?.type || 'Unknown',
           isNationalService: isNationalService,
-          workplaceReadiness: workplaceReadiness,
-          intellectualCapability: intellectualCapability,
           recommendation: recommendation,
-          report_data: reportDataObj
+          workplaceReadiness: safeNumber(result.workplace_readiness || 0),
+          intellectualCapability: safeNumber(result.intellectual_capability || 0)
         });
 
         // Calculate stats
@@ -389,7 +266,6 @@ export default function ReportsIndex() {
       });
 
       console.log(`[Reports] ${activeTab} tab: ${filteredReports.length} reports found`);
-      console.log('[Reports] Sample report:', filteredReports[0]);
 
     } catch (error) {
       console.error('Error loading reports:', error);
@@ -559,7 +435,6 @@ export default function ReportsIndex() {
                   <tr key={report.id} style={styles.tableRow}>
                     <td style={styles.tableCell}>
                       <div style={styles.candidateName}>{report.candidate}</div>
-                      <div style={styles.candidateEmail}>{report.candidate_id}</div>
                     </td>
                     <td style={styles.tableCell}>{report.university}</td>
                     <td style={styles.tableCell}>{report.program}</td>
@@ -775,10 +650,6 @@ const styles = {
   candidateName: {
     fontWeight: '500',
     color: '#1a202c'
-  },
-  candidateEmail: {
-    fontSize: '12px',
-    color: '#94a3b8'
   },
   scoreBadge: {
     display: 'inline-block',
