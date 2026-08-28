@@ -1,4 +1,4 @@
-// components/AppLayout.js - FULLY CORRECTED WITH PROPER ROUTING FOR SUPERVISOR SUB-PAGES
+// components/AppLayout.js - COMPLETE FIXED VERSION
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
@@ -102,7 +102,7 @@ function normalizeBackground(background) {
 }
 
 // ============================================================
-// 🟢 FIXED: PROPER ROUTE DETECTION FOR SUB-PAGES
+// PROPER ROUTE DETECTION FOR SUB-PAGES
 // ============================================================
 function isActiveRoute(pathname, href) {
   if (!pathname || !href) return false;
@@ -115,21 +115,11 @@ function isActiveRoute(pathname, href) {
   if (href.startsWith("/supervisor/") && pathname.startsWith(href)) return true;
   if (href.startsWith("/admin/") && pathname.startsWith(href)) return true;
   
-  // Check for tab URLs (like ?tab=national_service)
-  if (href.includes("?tab=")) {
-    const basePath = href.split("?")[0];
-    if (pathname === basePath) {
-      const currentTab = new URLSearchParams(window.location.search).get('tab');
-      const targetTab = href.split("=")[1];
-      if (currentTab === targetTab) return true;
-    }
-  }
-  
   return pathname === href || pathname.startsWith(href + "/");
 }
 
 // ============================================================
-// ROLE-BASED MENU SECTIONS - FIXED SUPERVISOR ROUTES
+// ROLE-BASED MENU SECTIONS - COMPLETELY FIXED SUPERVISOR ROUTES
 // ============================================================
 function getMenuSections(role) {
   // Admin menu
@@ -186,7 +176,7 @@ function getMenuSections(role) {
     ];
   }
 
-  // 🟢 SUPERVISOR MENU - WITH CORRECT ROUTES FOR ALL SUB-PAGES
+  // SUPERVISOR MENU - ALL ROUTES CORRECTLY MAPPED
   if (role === 'supervisor') {
     return [
       {
@@ -202,11 +192,13 @@ function getMenuSections(role) {
         icon: Icons.Users(),
         isSection: true,
         children: [
-          // FIXED: View Candidates now goes to the manage-candidate index page
+          // ✅ View Candidates → /supervisor/manage-candidate (folder with index.js)
           { id: 'view-candidates', label: 'View Candidates', icon: Icons.UserCheck(), href: '/supervisor/manage-candidate' },
+          // ✅ Add Candidate → /supervisor/add-candidate (file)
           { id: 'add-candidate', label: 'Add Candidate', icon: Icons.UserPlus(), href: '/supervisor/add-candidate' },
-          // FIXED: Assign Assessment now goes to the assign-assessment index page
+          // ✅ Assign Assessment → /supervisor/assign-assessment (folder with index.js)
           { id: 'assign-assessment', label: 'Assign Assessment', icon: Icons.CheckSquare(), href: '/supervisor/assign-assessment' },
+          // ✅ Batch Manage → /supervisor/batch-manage (file)
           { id: 'batch-manage', label: 'Batch Manage', icon: Icons.Layers(), href: '/supervisor/batch-manage' },
         ]
       },
@@ -216,7 +208,7 @@ function getMenuSections(role) {
         icon: Icons.FileText(),
         isSection: true,
         children: [
-          // FIXED: Reports now go to the reports index page
+          // ✅ Both reports go to /supervisor/reports (folder with index.js)
           { id: 'national-service', label: 'National Service Reports', icon: Icons.FileText(), href: '/supervisor/reports' },
           { id: 'other-assessments', label: 'Other Assessment Reports', icon: Icons.Reports(), href: '/supervisor/reports' },
         ]
@@ -310,16 +302,15 @@ function Sidebar({ isOpen, toggleSidebar, currentPath, handleLogout, userRole })
   };
 
   const menuSections = getMenuSections(userRole);
-  const isSupervisor = userRole === 'supervisor';
 
-  // 🟢 FIXED: PROPER ACTIVE ROUTE DETECTION
+  // PROPER ACTIVE ROUTE DETECTION
   const isActive = (href) => {
     if (!currentPath) return false;
     
     // Exact match
     if (currentPath === href) return true;
     
-    // Check if currentPath starts with href (for sub-pages like /supervisor/add-candidate)
+    // Check if currentPath starts with href (for sub-pages)
     if (href !== '/supervisor' && currentPath.startsWith(href)) return true;
     
     // For '/supervisor' main page, only highlight if exactly '/supervisor'
@@ -327,33 +318,15 @@ function Sidebar({ isOpen, toggleSidebar, currentPath, handleLogout, userRole })
       return currentPath === '/supervisor';
     }
     
-    // For tab URLs
-    if (href.includes('?tab=')) {
-      const basePath = href.split('?')[0];
-      if (currentPath === basePath) {
-        const currentTab = new URLSearchParams(window.location.search).get('tab');
-        const targetTab = href.split('=')[1];
-        if (currentTab === targetTab) return true;
-      }
-    }
-    
     return false;
   };
 
-  // 🟢 FIXED: PROPER SECTION ACTIVE DETECTION
+  // SECTION ACTIVE DETECTION
   const isSectionActive = (section) => {
     if (!section.children) return false;
     return section.children.some(child => {
-      // For '/supervisor' main page
       if (child.href === '/supervisor' && currentPath === '/supervisor') return true;
-      // For sub-pages
       if (child.href !== '/supervisor' && currentPath.startsWith(child.href)) return true;
-      // For tab URLs
-      if (child.href.includes('?tab=') && currentPath === '/supervisor') {
-        const tab = child.href.split('=')[1];
-        const currentTab = new URLSearchParams(window.location.search).get('tab');
-        return currentTab === tab;
-      }
       return isActive(child.href);
     });
   };
