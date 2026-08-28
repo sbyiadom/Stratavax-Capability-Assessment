@@ -1,5 +1,5 @@
 // pages/supervisor/index.js
-// FULLY CORRECTED - Dashboard tab shows stats/charts, reports in separate tabs
+// COMPLETE FIXED - Dashboard shows stats/charts, reports in separate tabs
 
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/router';
@@ -207,84 +207,6 @@ function TabButton({ active, onClick, label, count }) {
     >
       {label} {count !== undefined && `(${count})`}
     </button>
-  );
-}
-
-// ============================================================
-// DASHBOARD TAB - Shows stats and charts only
-// ============================================================
-function DashboardTab({ 
-  stats, 
-  pieChartData, 
-  universityStats, 
-  filteredReports, 
-  filteredAverageScore, 
-  programmeStats,
-  COLORS 
-}) {
-  return (
-    <div style={styles.tabPanel}>
-      {/* Stats Cards */}
-      <div style={styles.statsRow}>
-        <StatCard icon="👥" label="Total Candidates" value={stats.totalCandidates} />
-        <StatCard icon="✓" label="Completed Assessments" value={stats.completedAssessments} />
-        <StatCard icon="◉" label="Pending Review" value={stats.pendingReviews} />
-        <StatCard icon="📄" label="National Service Reports" value={stats.nationalServiceReports} bg="#1a237e" />
-      </div>
-
-      {/* Charts */}
-      <div style={styles.chartGrid}>
-        <div style={styles.chartCard}>
-          <h4 style={styles.chartTitle}>Top Programs (Distribution)</h4>
-          <div style={{ height: '280px', position: 'relative' }}>
-            <Pie
-              data={{
-                labels: pieChartData.labels,
-                datasets: [{ data: pieChartData.data, backgroundColor: COLORS, borderWidth: 2, borderColor: '#fff' }]
-              }}
-              options={{ maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { boxWidth: 12, padding: 10, font: { size: 11 } } } } }}
-            />
-          </div>
-        </div>
-
-        <div style={styles.chartCard}>
-          <h4 style={styles.chartTitle}>Top 15 Universities (Ranking)</h4>
-          <div style={{ height: '280px' }}>
-            <Bar
-              data={{
-                labels: universityStats.slice(0, 15).map(item => item.name),
-                datasets: [{ label: 'Count', data: universityStats.slice(0, 15).map(item => item.value), backgroundColor: '#1a237e', borderRadius: 4 }]
-              }}
-              options={{ indexAxis: 'y', maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true, ticks: { stepSize: 1 } } } }}
-            />
-          </div>
-        </div>
-
-        <div style={styles.statsCardLarge}>
-          <h4 style={styles.panelHeader}>📊 Platform Overview</h4>
-          <div style={styles.statRow}>
-            <span style={styles.statRowLabel}>Total Assessments</span>
-            <span style={styles.statRowValue}>{filteredReports.length}</span>
-          </div>
-          <div style={styles.statRow}>
-            <span style={styles.statRowLabel}>Average Score</span>
-            <span style={{...styles.statRowValue, color: filteredAverageScore >= 70 ? '#2e7d32' : '#c62828'}}>
-              {filteredAverageScore > 0 ? `${filteredAverageScore}%` : 'N/A'}
-            </span>
-          </div>
-          <div style={styles.statRow}>
-            <span style={styles.statRowLabel}>Number of Programs</span>
-            <span style={styles.statRowValue}>{new Set(filteredReports.map(r => r.programme).filter(Boolean)).size}</span>
-          </div>
-          <div style={styles.topProgramContainer}>
-            <div style={styles.topProgramLabel}>Most Popular Program:</div>
-            <div style={styles.topProgramValue}>
-              {programmeStats.length > 0 ? programmeStats[0].name : 'N/A'}
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
   );
 }
 
@@ -539,6 +461,84 @@ function OtherAssessmentsTab({ reports, onViewReport }) {
 }
 
 // ============================================================
+// DASHBOARD TAB - Shows stats and charts only
+// ============================================================
+function DashboardTab({ 
+  stats, 
+  pieChartData, 
+  universityStats, 
+  filteredReports, 
+  filteredAverageScore, 
+  programmeStats,
+  COLORS 
+}) {
+  return (
+    <div style={styles.tabPanel}>
+      {/* Stats Cards */}
+      <div style={styles.statsRow}>
+        <StatCard icon="👥" label="Total Candidates" value={stats.totalCandidates} />
+        <StatCard icon="✓" label="Completed Assessments" value={stats.completedAssessments} />
+        <StatCard icon="◉" label="Pending Review" value={stats.pendingReviews} />
+        <StatCard icon="📄" label="National Service Reports" value={stats.nationalServiceReports} bg="#1a237e" />
+      </div>
+
+      {/* Charts */}
+      <div style={styles.chartGrid}>
+        <div style={styles.chartCard}>
+          <h4 style={styles.chartTitle}>Top Programs (Distribution)</h4>
+          <div style={{ height: '280px', position: 'relative' }}>
+            <Pie
+              data={{
+                labels: pieChartData.labels,
+                datasets: [{ data: pieChartData.data, backgroundColor: COLORS, borderWidth: 2, borderColor: '#fff' }]
+              }}
+              options={{ maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { boxWidth: 12, padding: 10, font: { size: 11 } } } } }}
+            />
+          </div>
+        </div>
+
+        <div style={styles.chartCard}>
+          <h4 style={styles.chartTitle}>Top 15 Universities (Ranking)</h4>
+          <div style={{ height: '280px' }}>
+            <Bar
+              data={{
+                labels: universityStats.slice(0, 15).map(item => item.name),
+                datasets: [{ label: 'Count', data: universityStats.slice(0, 15).map(item => item.value), backgroundColor: '#1a237e', borderRadius: 4 }]
+              }}
+              options={{ indexAxis: 'y', maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true, ticks: { stepSize: 1 } } } }}
+            />
+          </div>
+        </div>
+
+        <div style={styles.statsCardLarge}>
+          <h4 style={styles.panelHeader}>📊 Platform Overview</h4>
+          <div style={styles.statRow}>
+            <span style={styles.statRowLabel}>Total Assessments</span>
+            <span style={styles.statRowValue}>{filteredReports.length}</span>
+          </div>
+          <div style={styles.statRow}>
+            <span style={styles.statRowLabel}>Average Score</span>
+            <span style={{...styles.statRowValue, color: filteredAverageScore >= 70 ? '#2e7d32' : '#c62828'}}>
+              {filteredAverageScore > 0 ? `${filteredAverageScore}%` : 'N/A'}
+            </span>
+          </div>
+          <div style={styles.statRow}>
+            <span style={styles.statRowLabel}>Number of Programs</span>
+            <span style={styles.statRowValue}>{new Set(filteredReports.map(r => r.programme).filter(Boolean)).size}</span>
+          </div>
+          <div style={styles.topProgramContainer}>
+            <div style={styles.topProgramLabel}>Most Popular Program:</div>
+            <div style={styles.topProgramValue}>
+              {programmeStats.length > 0 ? programmeStats[0].name : 'N/A'}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
 // MAIN COMPONENT
 // ============================================================
 export default function SupervisorDashboard() {
@@ -546,7 +546,7 @@ export default function SupervisorDashboard() {
   const { session, loading: authLoading } = useRequireAuth();
 
   const [loading, setLoading] = useState(true);
-  // 🟢 Default tab is 'dashboard'
+  // 🟢 DEFAULT TAB IS 'dashboard'
   const [activeTab, setActiveTab] = useState(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
@@ -831,8 +831,8 @@ export default function SupervisorDashboard() {
           <div style={styles.errorBox}><strong>Dashboard loading issue:</strong> {errorMessage}</div>
         )}
 
-        {/* 🟢 FILTERS - Only show on non-dashboard tabs */}
-        {activeTab !== 'dashboard' && (
+        {/* 🟢 FILTERS - Only show on report tabs */}
+        {activeTab !== 'dashboard' && activeTab !== 'view_candidates' && (
           <div style={styles.filtersBar}>
             <div style={styles.filtersRow}>
               <div style={styles.filterGroup}>
