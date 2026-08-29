@@ -1,4 +1,4 @@
-// pages/supervisor/reports/index.js - COMPLETE FIXED WITH PROPER SCORING FOR ALL ASSESSMENT TYPES
+// pages/supervisor/reports/index.js - COMPLETE FINAL FIXED FOR ALL ASSESSMENT TYPES
 
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/router';
@@ -6,6 +6,7 @@ import { supabase } from '../../../supabase/client';
 import AppLayout from '../../../components/AppLayout';
 
 const NATIONAL_SERVICE_ASSESSMENT_ID = 'bdb9d46e-9fac-4d00-8478-1f649e7ac600';
+const BEHAVIORAL_ASSESSMENT_ID = '671bf00f-46cc-46f5-a217-d5a90dafb9b6';
 
 function safeNumber(value, fallback = 0) {
   if (value === null || value === undefined || value === '') return fallback;
@@ -13,11 +14,39 @@ function safeNumber(value, fallback = 0) {
   return Number.isFinite(num) ? num : fallback;
 }
 
-// 🟢 PROPER UNIVERSAL SCORE CALCULATION
+// ============================================================
+// 🟢 UNIVERSAL SCORE CALCULATION FOR ALL ASSESSMENT TYPES
+// ============================================================
 function calculateScore(report) {
+  // STEP 1: Check if it's Behavioral & Soft Skills
+  const isBehavioral = report.assessment_id === BEHAVIORAL_ASSESSMENT_ID ||
+                       report.assessment_title === 'Behavioral & Soft Skills' ||
+                       report.assessment_type === 'behavioral';
+  
+  // 🟢 For Behavioral & Soft Skills: use percentage_score from database
+  if (isBehavioral) {
+    if (report.percentage_score !== undefined && report.percentage_score !== null) {
+      const val = safeNumber(report.percentage_score);
+      if (val > 0 && val <= 100) {
+        return val;
+      }
+    }
+    if (report.total_score !== undefined && report.max_score !== undefined) {
+      const total = safeNumber(report.total_score);
+      const max = safeNumber(report.max_score);
+      if (max > 0) {
+        const calc = Math.round((total / max) * 100);
+        if (calc >= 0 && calc <= 100) {
+          return calc;
+        }
+      }
+    }
+  }
+  
+  // STEP 2: For all other assessments, use category_scores
   let categoryScores = [];
   
-  // Extract category_scores from various locations
+  // Check direct fields
   if (report.category_scores && Array.isArray(report.category_scores) && report.category_scores.length > 0) {
     categoryScores = report.category_scores;
   } else if (report.categoryScores && Array.isArray(report.categoryScores) && report.categoryScores.length > 0) {
@@ -26,6 +55,7 @@ function calculateScore(report) {
     categoryScores = Object.values(report.category_scores);
   }
   
+  // Check inside report_data
   if (categoryScores.length === 0 && report.report_data) {
     try {
       let reportData = report.report_data;
@@ -42,45 +72,47 @@ function calculateScore(report) {
     } catch (e) {}
   }
   
+  // Calculate from category scores
   if (categoryScores.length > 0) {
-    // 🟢 Method 1: Sum of scores / sum of maxScores (for Behavioral & Soft Skills)
-    let totalEarned = 0;
-    let totalMax = 0;
-    let validPercentages = [];
+    const validScores = categoryScores
+      .map(cat => {
+        // Try to get percentage from various fields
+        let pct = safeNumber(cat.percentage || cat.score || 0);
+        
+        // If percentage > 100, try to calculate from score/maxScore
+        if (pct > 100 && cat.score !== undefined && cat.maxScore !== undefined) {
+          const score = safeNumber(cat.score);
+          const max = safeNumber(cat.maxScore);
+          if (max > 0) {
+            const calc = Math.round((score / max) * 100);
+            if (calc >= 0 && calc <= 100) {
+              pct = calc;
+            }
+          }
+        }
+        
+        // Handle earned/max format
+        if (cat.earned !== undefined && cat.max !== undefined) {
+          const earned = safeNumber(cat.earned);
+          const max = safeNumber(cat.max);
+          if (max > 0) {
+            const calc = Math.round((earned / max) * 100);
+            if (calc >= 0 && calc <= 100) {
+              pct = calc;
+            }
+          }
+        }
+        
+        return pct;
+      })
+      .filter(score => score > 0 && score <= 100);
     
-    categoryScores.forEach(cat => {
-      let score = safeNumber(cat.score || cat.earned || 0);
-      let maxScore = safeNumber(cat.maxScore || cat.max || 0);
-      let pct = safeNumber(cat.percentage || 0);
-      
-      // If we have valid score and maxScore, use them for total calculation
-      if (score > 0 && maxScore > 0) {
-        totalEarned += score;
-        totalMax += maxScore;
-      }
-      
-      // Also collect valid percentages for fallback
-      if (pct > 0 && pct <= 100) {
-        validPercentages.push(pct);
-      }
-    });
-    
-    // If we have totalEarned and totalMax, calculate percentage from them
-    if (totalEarned > 0 && totalMax > 0) {
-      const calc = Math.round((totalEarned / totalMax) * 100);
-      // If the result is between 0 and 100, use it
-      if (calc >= 0 && calc <= 100) {
-        return calc;
-      }
-    }
-    
-    // Fallback: average of valid percentages
-    if (validPercentages.length > 0) {
-      return Math.round(validPercentages.reduce((a, b) => a + b, 0) / validPercentages.length);
+    if (validScores.length > 0) {
+      return Math.round(validScores.reduce((a, b) => a + b, 0) / validScores.length);
     }
   }
   
-  // Fallback: use percentage_score
+  // STEP 3: Fallback to percentage_score
   if (report.percentage_score !== undefined && report.percentage_score !== null) {
     const val = safeNumber(report.percentage_score);
     if (val > 0 && val <= 100) {
@@ -88,7 +120,7 @@ function calculateScore(report) {
     }
   }
   
-  // Final fallback: total/max
+  // STEP 4: Final fallback to total/max
   if (report.total_score !== undefined && report.max_score !== undefined) {
     const total = safeNumber(report.total_score);
     const max = safeNumber(report.max_score);
@@ -133,7 +165,7 @@ export default function ReportsIndex() {
   const [currentSupervisor, setCurrentSupervisor] = useState(null);
   const [error, setError] = useState(null);
 
-  // 🟢 FILTER STATES
+  // FILTER STATES
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedUniversity, setSelectedUniversity] = useState('');
   const [selectedProgram, setSelectedProgram] = useState('');
@@ -144,7 +176,7 @@ export default function ReportsIndex() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
 
-  // 🟢 OPTIONS FOR FILTERS
+  // OPTIONS FOR FILTERS
   const [universityOptions, setUniversityOptions] = useState([]);
   const [programOptions, setProgramOptions] = useState([]);
   const [assessmentTypeOptions, setAssessmentTypeOptions] = useState([]);
@@ -208,6 +240,7 @@ export default function ReportsIndex() {
           report.is_national_service === true ||
           report.assessment_title === 'National Service Recruitment Assessment';
 
+        // 🟢 Use the universal calculateScore function
         const displayScore = calculateScore(report);
         
         let recommendation = report.recommendation || 'N/A';
@@ -423,7 +456,7 @@ export default function ReportsIndex() {
           </div>
         )}
 
-        {/* 🟢 FILTERS BAR */}
+        {/* FILTERS BAR */}
         <div style={styles.filtersBar}>
           <div style={styles.filtersRow}>
             <div style={styles.filterGroup}>
