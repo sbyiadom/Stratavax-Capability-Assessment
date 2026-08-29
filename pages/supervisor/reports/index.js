@@ -1,4 +1,4 @@
-// pages/supervisor/reports/index.js - WITH COMPLETE FILTERING
+// pages/supervisor/reports/index.js - COMPLETE FIXED WITH PROPER SCORING FOR ALL ASSESSMENT TYPES
 
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/router';
@@ -13,10 +13,11 @@ function safeNumber(value, fallback = 0) {
   return Number.isFinite(num) ? num : fallback;
 }
 
-// Universal score calculation
+// 🟢 PROPER UNIVERSAL SCORE CALCULATION
 function calculateScore(report) {
   let categoryScores = [];
   
+  // Extract category_scores from various locations
   if (report.category_scores && Array.isArray(report.category_scores) && report.category_scores.length > 0) {
     categoryScores = report.category_scores;
   } else if (report.categoryScores && Array.isArray(report.categoryScores) && report.categoryScores.length > 0) {
@@ -42,38 +43,44 @@ function calculateScore(report) {
   }
   
   if (categoryScores.length > 0) {
-    const validScores = categoryScores
-      .map(cat => {
-        let pct = safeNumber(cat.percentage || cat.score || 0);
-        
-        if (pct > 100 && cat.score !== undefined && cat.maxScore !== undefined) {
-          const score = safeNumber(cat.score);
-          const max = safeNumber(cat.maxScore);
-          if (max > 0) {
-            pct = Math.round((score / max) * 100);
-          }
-        }
-        
-        if (cat.earned !== undefined && cat.max !== undefined) {
-          const earned = safeNumber(cat.earned);
-          const max = safeNumber(cat.max);
-          if (max > 0) {
-            const calc = Math.round((earned / max) * 100);
-            if (calc >= 0 && calc <= 100) {
-              pct = calc;
-            }
-          }
-        }
-        
-        return pct;
-      })
-      .filter(score => score > 0 && score <= 100);
+    // 🟢 Method 1: Sum of scores / sum of maxScores (for Behavioral & Soft Skills)
+    let totalEarned = 0;
+    let totalMax = 0;
+    let validPercentages = [];
     
-    if (validScores.length > 0) {
-      return Math.round(validScores.reduce((a, b) => a + b, 0) / validScores.length);
+    categoryScores.forEach(cat => {
+      let score = safeNumber(cat.score || cat.earned || 0);
+      let maxScore = safeNumber(cat.maxScore || cat.max || 0);
+      let pct = safeNumber(cat.percentage || 0);
+      
+      // If we have valid score and maxScore, use them for total calculation
+      if (score > 0 && maxScore > 0) {
+        totalEarned += score;
+        totalMax += maxScore;
+      }
+      
+      // Also collect valid percentages for fallback
+      if (pct > 0 && pct <= 100) {
+        validPercentages.push(pct);
+      }
+    });
+    
+    // If we have totalEarned and totalMax, calculate percentage from them
+    if (totalEarned > 0 && totalMax > 0) {
+      const calc = Math.round((totalEarned / totalMax) * 100);
+      // If the result is between 0 and 100, use it
+      if (calc >= 0 && calc <= 100) {
+        return calc;
+      }
+    }
+    
+    // Fallback: average of valid percentages
+    if (validPercentages.length > 0) {
+      return Math.round(validPercentages.reduce((a, b) => a + b, 0) / validPercentages.length);
     }
   }
   
+  // Fallback: use percentage_score
   if (report.percentage_score !== undefined && report.percentage_score !== null) {
     const val = safeNumber(report.percentage_score);
     if (val > 0 && val <= 100) {
@@ -81,6 +88,7 @@ function calculateScore(report) {
     }
   }
   
+  // Final fallback: total/max
   if (report.total_score !== undefined && report.max_score !== undefined) {
     const total = safeNumber(report.total_score);
     const max = safeNumber(report.max_score);
@@ -284,13 +292,11 @@ export default function ReportsIndex() {
     });
   };
 
-  // 🟢 INTERNAL FILTER FUNCTION (used for stats calculation)
   const getFilteredReportsInternal = (reports, tab) => {
     let filtered = tab === 'national' 
       ? reports.filter(r => r.isNationalService === true)
       : reports.filter(r => r.isNationalService === false);
 
-    // Search filter
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
       filtered = filtered.filter(r => 
@@ -302,33 +308,27 @@ export default function ReportsIndex() {
       );
     }
 
-    // University filter
     if (selectedUniversity) {
       filtered = filtered.filter(r => r.candidate_university === selectedUniversity);
     }
 
-    // Program filter
     if (selectedProgram) {
       filtered = filtered.filter(r => r.candidate_programme === selectedProgram);
     }
 
-    // Assessment Type filter (for Other tab only)
     if (selectedAssessmentType && tab === 'other') {
       filtered = filtered.filter(r => r.assessment_title === selectedAssessmentType);
     }
 
-    // Score range filter
     filtered = filtered.filter(r => {
       const score = r.displayScore || 0;
       return score >= minScore && score <= maxScore;
     });
 
-    // Status filter
     if (selectedStatus) {
       filtered = filtered.filter(r => r.status === selectedStatus);
     }
 
-    // Date range filter
     if (dateFrom) {
       filtered = filtered.filter(r => r.completed_at && new Date(r.completed_at) >= new Date(dateFrom));
     }
@@ -339,12 +339,10 @@ export default function ReportsIndex() {
     return filtered;
   };
 
-  // 🟢 FILTERED REPORTS
   const filteredReports = useMemo(() => {
     return getFilteredReportsInternal(allReports, activeTab);
   }, [allReports, activeTab, searchTerm, selectedUniversity, selectedProgram, selectedAssessmentType, minScore, maxScore, selectedStatus, dateFrom, dateTo]);
 
-  // Update stats when filters change
   useEffect(() => {
     if (allReports.length > 0) {
       updateStats(allReports, activeTab);
@@ -397,7 +395,6 @@ export default function ReportsIndex() {
     router.push(`/supervisor/reports?tab=${tab}`, undefined, { shallow: true });
   };
 
-  // Count active filters
   const activeFilterCount = [searchTerm, selectedUniversity, selectedProgram, selectedAssessmentType, minScore > 0 || maxScore < 100, selectedStatus, dateFrom, dateTo].filter(Boolean).length;
 
   return (
@@ -429,7 +426,6 @@ export default function ReportsIndex() {
         {/* 🟢 FILTERS BAR */}
         <div style={styles.filtersBar}>
           <div style={styles.filtersRow}>
-            {/* Search */}
             <div style={styles.filterGroup}>
               <label style={styles.filterLabel}>🔍 Search</label>
               <input
@@ -441,7 +437,6 @@ export default function ReportsIndex() {
               />
             </div>
 
-            {/* University Filter */}
             <div style={styles.filterGroup}>
               <label style={styles.filterLabel}>🏫 University</label>
               <select
@@ -456,7 +451,6 @@ export default function ReportsIndex() {
               </select>
             </div>
 
-            {/* Program Filter */}
             <div style={styles.filterGroup}>
               <label style={styles.filterLabel}>📚 Program</label>
               <select
@@ -471,7 +465,6 @@ export default function ReportsIndex() {
               </select>
             </div>
 
-            {/* Assessment Type Filter (Only for Other tab) */}
             {activeTab === 'other' && assessmentTypeOptions.length > 0 && (
               <div style={styles.filterGroup}>
                 <label style={styles.filterLabel}>📋 Assessment Type</label>
@@ -488,7 +481,6 @@ export default function ReportsIndex() {
               </div>
             )}
 
-            {/* Score Range */}
             <div style={styles.filterGroupScore}>
               <label style={styles.filterLabel}>📊 Score Range</label>
               <div style={styles.scoreRange}>
@@ -514,7 +506,6 @@ export default function ReportsIndex() {
               </div>
             </div>
 
-            {/* Status Filter */}
             <div style={styles.filterGroup}>
               <label style={styles.filterLabel}>📌 Status</label>
               <select
@@ -529,7 +520,6 @@ export default function ReportsIndex() {
               </select>
             </div>
 
-            {/* Date Range */}
             <div style={styles.filterGroupDate}>
               <label style={styles.filterLabel}>📅 Date Range</label>
               <div style={styles.dateRange}>
@@ -538,7 +528,6 @@ export default function ReportsIndex() {
                   value={dateFrom}
                   onChange={(e) => setDateFrom(e.target.value)}
                   style={styles.dateInput}
-                  placeholder="From"
                 />
                 <span style={styles.dateSeparator}>to</span>
                 <input
@@ -546,12 +535,10 @@ export default function ReportsIndex() {
                   value={dateTo}
                   onChange={(e) => setDateTo(e.target.value)}
                   style={styles.dateInput}
-                  placeholder="To"
                 />
               </div>
             </div>
 
-            {/* Reset Button */}
             <div style={styles.filterActions}>
               <button 
                 onClick={resetFilters} 
@@ -566,7 +553,6 @@ export default function ReportsIndex() {
             </div>
           </div>
 
-          {/* Active Filters Display */}
           {activeFilterCount > 0 && (
             <div style={styles.activeFilters}>
               <span style={styles.activeFiltersLabel}>Active Filters:</span>
@@ -830,7 +816,6 @@ const styles = {
     fontSize: '14px',
     fontWeight: '600'
   },
-  // 🟢 FILTERS STYLES
   filtersBar: {
     background: 'white',
     borderRadius: '12px',
