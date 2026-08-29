@@ -1,4 +1,4 @@
-// pages/supervisor/reports/[resultId].js - FIXED
+// pages/supervisor/reports/[resultId].js - COMPLETE FIXED
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -71,6 +71,13 @@ function extractBehavioralMatrix(reportData) {
 function isValidUUID(uuid) {
   const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   return uuidRegex.test(uuid);
+}
+
+// 🟢 Helper to ensure value is always an array
+function ensureArray(value) {
+  if (Array.isArray(value)) return value;
+  if (value === null || value === undefined || value === false) return [];
+  return [value];
 }
 
 export default function SupervisorReportView() {
@@ -149,11 +156,12 @@ export default function SupervisorReportView() {
         assessmentDate: result?.completed_at ? new Date(result?.completed_at).toLocaleDateString() : 'N/A'
       };
 
-      // ✅ Ensure ALL arrays are properly set as arrays
-      const categoryScores = result?.category_scores || report?.category_scores || report?.categoryScores || [];
-      const strengths = result?.strengths || report?.strengths || [];
-      const weaknesses = result?.weaknesses || report?.weaknesses || [];
-      const recommendations = result?.recommendations || report?.recommendations || [];
+      // 🟢 FIX: Use ensureArray to guarantee arrays
+      const categoryScores = ensureArray(result?.category_scores || report?.category_scores || report?.categoryScores);
+      const strengths = ensureArray(result?.strengths || report?.strengths);
+      const weaknesses = ensureArray(result?.weaknesses || report?.weaknesses);
+      const recommendations = ensureArray(result?.recommendations || report?.recommendations);
+      const riskFactors = ensureArray(result?.risk_factors || report?.riskFactors);
 
       const displayScore = calculateScore(result);
 
@@ -189,6 +197,7 @@ export default function SupervisorReportView() {
         strengths: strengths,
         weaknesses: weaknesses,
         recommendations: recommendations,
+        riskFactors: riskFactors,
         classification: result?.classification || report?.classification || 'Standard Profile',
         riskLevel: result?.risk_level || report?.riskLevel || 'Medium',
         executiveSummary: report?.executiveSummary || '',
@@ -213,6 +222,7 @@ export default function SupervisorReportView() {
         strengths: strengths,
         weaknesses: weaknesses,
         recommendations: recommendations,
+        riskFactors: riskFactors,
         executiveSummary: reportObject.executiveSummary,
         supervisorImplication: reportObject.supervisorImplication,
         total_questions: reportObject.total_questions,
