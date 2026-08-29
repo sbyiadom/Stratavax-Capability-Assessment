@@ -1,6 +1,6 @@
-// pages/supervisor/reports/index.js - COMPLETE FINAL FIXED
+// pages/supervisor/reports/index.js - WITH FILTERING
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/router';
 import { supabase } from '../../../supabase/client';
 import AppLayout from '../../../components/AppLayout';
@@ -13,22 +13,18 @@ function safeNumber(value, fallback = 0) {
   return Number.isFinite(num) ? num : fallback;
 }
 
-// 🟢 FINAL UNIVERSAL SCORE CALCULATION - Works for ALL assessment types
+// Universal score calculation
 function calculateScore(report) {
-  // STEP 1: Extract category_scores from various possible locations
   let categoryScores = [];
   
-  // Check direct fields
   if (report.category_scores && Array.isArray(report.category_scores) && report.category_scores.length > 0) {
     categoryScores = report.category_scores;
   } else if (report.categoryScores && Array.isArray(report.categoryScores) && report.categoryScores.length > 0) {
     categoryScores = report.categoryScores;
   } else if (report.category_scores && typeof report.category_scores === 'object' && !Array.isArray(report.category_scores)) {
-    // Object format (General Assessment, Leadership Assessment)
     categoryScores = Object.values(report.category_scores);
   }
   
-  // Check inside report_data
   if (categoryScores.length === 0 && report.report_data) {
     try {
       let reportData = report.report_data;
@@ -45,13 +41,11 @@ function calculateScore(report) {
     } catch (e) {}
   }
   
-  // STEP 2: Calculate from category scores
   if (categoryScores.length > 0) {
     const validScores = categoryScores
       .map(cat => {
         let pct = safeNumber(cat.percentage || cat.score || 0);
         
-        // If percentage > 100, calculate from score/maxScore (for Behavioral & Soft Skills)
         if (pct > 100 && cat.score !== undefined && cat.maxScore !== undefined) {
           const score = safeNumber(cat.score);
           const max = safeNumber(cat.maxScore);
@@ -60,7 +54,6 @@ function calculateScore(report) {
           }
         }
         
-        // Also handle case where earned and max are used
         if (cat.earned !== undefined && cat.max !== undefined) {
           const earned = safeNumber(cat.earned);
           const max = safeNumber(cat.max);
@@ -81,7 +74,6 @@ function calculateScore(report) {
     }
   }
   
-  // STEP 3: Use percentage_score if available and valid
   if (report.percentage_score !== undefined && report.percentage_score !== null) {
     const val = safeNumber(report.percentage_score);
     if (val > 0 && val <= 100) {
@@ -89,7 +81,6 @@ function calculateScore(report) {
     }
   }
   
-  // STEP 4: Last resort - try total/max
   if (report.total_score !== undefined && report.max_score !== undefined) {
     const total = safeNumber(report.total_score);
     const max = safeNumber(report.max_score);
@@ -133,6 +124,15 @@ export default function ReportsIndex() {
   });
   const [currentSupervisor, setCurrentSupervisor] = useState(null);
   const [error, setError] = useState(null);
+
+  // 🟢 FILTER STATES
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedUniversity, setSelectedUniversity] = useState('');
+  const [selectedProgram, setSelectedProgram] = useState('');
+  const [minScore, setMinScore] = useState(0);
+  const [maxScore, setMaxScore] = useState(100);
+  const [selectedStatus, setSelectedStatus] = useState('');
+  const [selectedAssessmentType, setSelectedAssessmentType] = useState('');
 
   useEffect(() => {
     const tab = router.query.tab;
@@ -225,8 +225,11 @@ export default function ReportsIndex() {
 
       setAllReports(processedReports);
 
-      const nationalCount = processedReports.filter(r => r.isNationalService === true).length;
-      const otherCount = processedReports.filter(r => r.isNationalService === false).length;
+      // Extract unique universities and programs for filters
+      const universities = [...new Set(processedReports.map(r => r.candidate_university).filter(u => u && u !== 'Not Specified'))];
+      const programs = [...new Set(processedReports.map(r => r.candidate_programme).filter(p => p && p !== 'Not Specified'))];
+      setUniversityOptions(universities.sort());
+      setProgramOptions(programs.sort());
 
       updateStats(processedReports, activeTab);
 
@@ -274,14 +277,83 @@ export default function ReportsIndex() {
     }
   }, [activeTab, allReports]);
 
+  // 🟢 FILTER FUNCTIONS
+  const [universityOptions, setUniversityOptions] = useState([]);
+  const [programOptions, setProgramOptions] = useState([]);
+
   const getFilteredReports = () => {
     if (allReports.length === 0) return [];
-    return activeTab === 'national' 
+    
+    let filtered = activeTab === 'national' 
       ? allReports.filter(r => r.isNationalService === true)
       : allReports.filter(r => r.isNationalService === false);
+
+    // Search filter
+    if (searchTerm) {
+      const term = searchTerm.toLowerCase();
+      filtered = filtered.filter(r => 
+        r.candidate_name.toLowerCase().includes(term) ||
+        r.candidate_email.toLowerCase().includes(term) ||
+        r.assessment_title.toLowerCase().includes(term) ||
+        r.candidate_university.toLowerCase().includes(term) ||
+        r.candidate_programme.toLowerCase().includes(term)
+      );
+    }
+
+    // University filter
+    if (selectedUniversity) {
+      filtered = filtered.filter(r => r.candidate_university === selectedUniversity);
+    }
+
+    // Program filter
+    if (selectedProgram) {
+      filtered = filtered.filter(r => r.candidate_programme === selectedProgram);
+    }
+
+    // Score range filter
+    filtered = filtered.filter(r => {
+      const score = r.displayScore || 0;
+      return score >= minScore && score <= maxScore;
+    });
+
+    // Status filter
+    if (selectedStatus) {
+      filtered = filtered.filter(r => r.status === selectedStatus);
+    }
+
+    // Assessment type filter (for Other tab only)
+    if (selectedAssessmentType && activeTab === 'other') {
+      filtered = filtered.filter(r => r.assessment_title === selectedAssessmentType);
+    }
+
+    return filtered;
   };
 
   const filteredReports = getFilteredReports();
+
+  // Get unique assessment types for the filter (only for Other tab)
+  const assessmentTypeOptions = useMemo(() => {
+    if (activeTab !== 'other') return [];
+    const types = [...new Set(allReports
+      .filter(r => !r.isNationalService)
+      .map(r => r.assessment_title)
+      .filter(t => t && t !== 'Untitled Assessment')
+    )];
+    return types.sort();
+  }, [allReports, activeTab]);
+
+  // Status options
+  const statusOptions = ['Completed', 'Pending', 'In Progress', 'Failed'];
+
+  const resetFilters = () => {
+    setSearchTerm('');
+    setSelectedUniversity('');
+    setSelectedProgram('');
+    setMinScore(0);
+    setMaxScore(100);
+    setSelectedStatus('');
+    setSelectedAssessmentType('');
+  };
 
   const getStatusColor = (status) => {
     switch(status) {
@@ -313,6 +385,8 @@ export default function ReportsIndex() {
 
   const handleTabChange = (tab) => {
     setActiveTab(tab);
+    // Reset filters when switching tabs
+    resetFilters();
     router.push(`/supervisor/reports?tab=${tab}`, undefined, { shallow: true });
   };
 
@@ -342,33 +416,156 @@ export default function ReportsIndex() {
           </div>
         )}
 
+        {/* 🟢 FILTERS BAR */}
+        <div style={styles.filtersBar}>
+          <div style={styles.filtersRow}>
+            <div style={styles.filterGroup}>
+              <label style={styles.filterLabel}>Search</label>
+              <input
+                type="text"
+                placeholder="Search by name, email, assessment..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                style={styles.searchInput}
+              />
+            </div>
+
+            <div style={styles.filterGroup}>
+              <label style={styles.filterLabel}>University</label>
+              <select
+                value={selectedUniversity}
+                onChange={(e) => setSelectedUniversity(e.target.value)}
+                style={styles.select}
+              >
+                <option value="">All Universities</option>
+                {universityOptions.map(uni => (
+                  <option key={uni} value={uni}>{uni}</option>
+                ))}
+              </select>
+            </div>
+
+            <div style={styles.filterGroup}>
+              <label style={styles.filterLabel}>Program</label>
+              <select
+                value={selectedProgram}
+                onChange={(e) => setSelectedProgram(e.target.value)}
+                style={styles.select}
+              >
+                <option value="">All Programs</option>
+                {programOptions.map(prog => (
+                  <option key={prog} value={prog}>{prog}</option>
+                ))}
+              </select>
+            </div>
+
+            <div style={styles.filterGroupSmall}>
+              <label style={styles.filterLabel}>Min Score</label>
+              <input
+                type="number"
+                min="0"
+                max="100"
+                value={minScore}
+                onChange={(e) => setMinScore(Math.max(0, Math.min(100, Number(e.target.value) || 0)))}
+                style={styles.scoreInput}
+              />
+            </div>
+
+            <div style={styles.filterGroupSmall}>
+              <label style={styles.filterLabel}>Max Score</label>
+              <input
+                type="number"
+                min="0"
+                max="100"
+                value={maxScore}
+                onChange={(e) => setMaxScore(Math.max(0, Math.min(100, Number(e.target.value) || 100)))}
+                style={styles.scoreInput}
+              />
+            </div>
+
+            <div style={styles.filterGroup}>
+              <label style={styles.filterLabel}>Status</label>
+              <select
+                value={selectedStatus}
+                onChange={(e) => setSelectedStatus(e.target.value)}
+                style={styles.select}
+              >
+                <option value="">All Statuses</option>
+                {statusOptions.map(status => (
+                  <option key={status} value={status}>{status}</option>
+                ))}
+              </select>
+            </div>
+
+            {activeTab === 'other' && assessmentTypeOptions.length > 0 && (
+              <div style={styles.filterGroup}>
+                <label style={styles.filterLabel}>Assessment Type</label>
+                <select
+                  value={selectedAssessmentType}
+                  onChange={(e) => setSelectedAssessmentType(e.target.value)}
+                  style={styles.select}
+                >
+                  <option value="">All Types</option>
+                  {assessmentTypeOptions.map(type => (
+                    <option key={type} value={type}>{type}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <div style={styles.filterActions}>
+              <button onClick={resetFilters} style={styles.resetButton}>
+                Reset Filters
+              </button>
+            </div>
+          </div>
+
+          {/* Active filters display */}
+          {(searchTerm || selectedUniversity || selectedProgram || minScore > 0 || maxScore < 100 || selectedStatus || selectedAssessmentType) && (
+            <div style={styles.activeFilters}>
+              <span style={styles.activeFiltersLabel}>Active Filters:</span>
+              {searchTerm && <span style={styles.filterTag}>Search: {searchTerm}</span>}
+              {selectedUniversity && <span style={styles.filterTag}>University: {selectedUniversity}</span>}
+              {selectedProgram && <span style={styles.filterTag}>Program: {selectedProgram}</span>}
+              {(minScore > 0 || maxScore < 100) && (
+                <span style={styles.filterTag}>Score: {minScore}% - {maxScore}%</span>
+              )}
+              {selectedStatus && <span style={styles.filterTag}>Status: {selectedStatus}</span>}
+              {selectedAssessmentType && <span style={styles.filterTag}>Type: {selectedAssessmentType}</span>}
+            </div>
+          )}
+        </div>
+
         <div style={styles.statsGrid}>
           <div style={styles.statsCard}>
             <div style={styles.statsIcon}>📋</div>
             <div>
-              <div style={styles.statsValue}>{stats.totalAssessments}</div>
-              <div style={styles.statsLabel}>Total Assessments</div>
+              <div style={styles.statsValue}>{filteredReports.length}</div>
+              <div style={styles.statsLabel}>Showing {filteredReports.length} of {stats.totalAssessments}</div>
             </div>
           </div>
           <div style={styles.statsCard}>
             <div style={styles.statsIcon}>📈</div>
             <div>
-              <div style={styles.statsValue}>{stats.averageScore}%</div>
+              <div style={styles.statsValue}>
+                {filteredReports.filter(r => r.displayScore > 0).length > 0 
+                  ? Math.round(filteredReports.filter(r => r.displayScore > 0).reduce((a, b) => a + b.displayScore, 0) / filteredReports.filter(r => r.displayScore > 0).length) 
+                  : 0}%
+              </div>
               <div style={styles.statsLabel}>Average Score</div>
             </div>
           </div>
           <div style={styles.statsCard}>
             <div style={styles.statsIcon}>✅</div>
             <div>
-              <div style={styles.statsValue}>{stats.completedAssessments}</div>
+              <div style={styles.statsValue}>{filteredReports.filter(r => r.status === 'Completed').length}</div>
               <div style={styles.statsLabel}>Completed</div>
             </div>
           </div>
           <div style={styles.statsCard}>
             <div style={styles.statsIcon}>⏳</div>
             <div>
-              <div style={styles.statsValue}>{stats.pendingReview}</div>
-              <div style={styles.statsLabel}>Pending Review</div>
+              <div style={styles.statsValue}>{filteredReports.filter(r => r.status === 'Pending').length}</div>
+              <div style={styles.statsLabel}>Pending</div>
             </div>
           </div>
         </div>
@@ -411,8 +608,16 @@ export default function ReportsIndex() {
                 No {activeTab === 'national' ? 'National Service' : 'Other Assessment'} Reports Found
               </h3>
               <p style={styles.emptyText}>
-                There are no {activeTab === 'national' ? 'National Service' : 'other assessment'} reports available for your candidates yet.
+                {searchTerm || selectedUniversity || selectedProgram || selectedStatus || selectedAssessmentType
+                  ? 'No reports match your current filters. Try adjusting your search criteria.'
+                  : `There are no ${activeTab === 'national' ? 'National Service' : 'other assessment'} reports available for your candidates yet.`
+                }
               </p>
+              {(searchTerm || selectedUniversity || selectedProgram || selectedStatus || selectedAssessmentType) && (
+                <button onClick={resetFilters} style={styles.emptyButton}>
+                  Clear Filters
+                </button>
+              )}
             </div>
           ) : (
             <table style={styles.table}>
@@ -511,7 +716,7 @@ const styles = {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: '30px',
+    marginBottom: '24px',
     flexWrap: 'wrap',
     gap: '16px'
   },
@@ -573,37 +778,143 @@ const styles = {
     fontSize: '14px',
     fontWeight: '600'
   },
+  // 🟢 FILTERS STYLES
+  filtersBar: {
+    background: 'white',
+    borderRadius: '12px',
+    padding: '16px 20px',
+    marginBottom: '20px',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+    border: '1px solid #e2e8f0'
+  },
+  filtersRow: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '12px',
+    alignItems: 'flex-end'
+  },
+  filterGroup: {
+    display: 'flex',
+    flexDirection: 'column',
+    flex: '1 1 180px',
+    minWidth: '150px'
+  },
+  filterGroupSmall: {
+    display: 'flex',
+    flexDirection: 'column',
+    flex: '1 1 80px',
+    minWidth: '70px'
+  },
+  filterLabel: {
+    fontSize: '11px',
+    fontWeight: '600',
+    color: '#475569',
+    marginBottom: '4px',
+    textTransform: 'uppercase',
+    letterSpacing: '0.04em'
+  },
+  searchInput: {
+    padding: '8px 12px',
+    borderRadius: '6px',
+    border: '1px solid #e2e8f0',
+    fontSize: '13px',
+    background: 'white',
+    width: '100%',
+    transition: 'border-color 0.2s',
+    ':focus': {
+      borderColor: '#2563EB',
+      outline: 'none'
+    }
+  },
+  select: {
+    padding: '8px 12px',
+    borderRadius: '6px',
+    border: '1px solid #e2e8f0',
+    fontSize: '13px',
+    background: 'white',
+    width: '100%',
+    cursor: 'pointer'
+  },
+  scoreInput: {
+    padding: '8px 12px',
+    borderRadius: '6px',
+    border: '1px solid #e2e8f0',
+    fontSize: '13px',
+    background: 'white',
+    width: '100%'
+  },
+  filterActions: {
+    display: 'flex',
+    alignItems: 'flex-end',
+    gap: '8px'
+  },
+  resetButton: {
+    padding: '8px 16px',
+    background: '#f1f5f9',
+    border: '1px solid #e2e8f0',
+    borderRadius: '6px',
+    fontSize: '13px',
+    fontWeight: '500',
+    cursor: 'pointer',
+    color: '#475569',
+    whiteSpace: 'nowrap',
+    height: '38px'
+  },
+  activeFilters: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '8px',
+    marginTop: '12px',
+    paddingTop: '12px',
+    borderTop: '1px solid #e2e8f0'
+  },
+  activeFiltersLabel: {
+    fontSize: '12px',
+    fontWeight: '600',
+    color: '#475569',
+    marginRight: '4px'
+  },
+  filterTag: {
+    display: 'inline-block',
+    padding: '2px 10px',
+    background: '#eef2ff',
+    borderRadius: '12px',
+    fontSize: '12px',
+    color: '#2563EB',
+    fontWeight: '500'
+  },
   statsGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
     gap: '16px',
-    marginBottom: '30px'
+    marginBottom: '24px'
   },
   statsCard: {
     background: 'white',
-    padding: '20px',
+    padding: '16px 20px',
     borderRadius: '12px',
     display: 'flex',
     alignItems: 'center',
-    gap: '16px',
-    boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+    gap: '14px',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+    border: '1px solid #e2e8f0'
   },
   statsIcon: {
-    fontSize: '32px'
+    fontSize: '28px'
   },
   statsValue: {
-    fontSize: '24px',
+    fontSize: '20px',
     fontWeight: 'bold',
     color: '#0A1929'
   },
   statsLabel: {
-    fontSize: '14px',
+    fontSize: '11px',
     color: '#718096'
   },
   tabContainer: {
     display: 'flex',
     gap: '8px',
-    marginBottom: '24px',
+    marginBottom: '20px',
     background: 'white',
     padding: '8px',
     borderRadius: '12px',
@@ -628,7 +939,8 @@ const styles = {
   table: {
     width: '100%',
     borderCollapse: 'collapse',
-    fontSize: '14px'
+    fontSize: '14px',
+    minWidth: '900px'
   },
   tableHeadRow: {
     background: '#F8FAFC'
@@ -637,18 +949,21 @@ const styles = {
     padding: '12px 16px',
     textAlign: 'left',
     borderBottom: '2px solid #E2E8F0',
-    fontSize: '13px',
+    fontSize: '12px',
     fontWeight: '600',
     color: '#4A5568',
     whiteSpace: 'nowrap'
   },
   tableRow: {
-    transition: 'background 0.2s ease'
+    transition: 'background 0.2s ease',
+    ':hover': {
+      background: '#F8FAFC'
+    }
   },
   tableCell: {
     padding: '12px 16px',
     borderBottom: '1px solid #E2E8F0',
-    fontSize: '14px',
+    fontSize: '13px',
     color: '#2D3748',
     verticalAlign: 'middle'
   },
@@ -657,14 +972,14 @@ const styles = {
     color: '#1a202c'
   },
   candidateEmail: {
-    fontSize: '12px',
+    fontSize: '11px',
     color: '#94a3b8'
   },
   scoreBadge: {
     display: 'inline-block',
     padding: '2px 10px',
     borderRadius: '12px',
-    fontSize: '13px',
+    fontSize: '12px',
     fontWeight: '600',
     color: 'white'
   },
@@ -672,7 +987,7 @@ const styles = {
     display: 'inline-block',
     padding: '2px 10px',
     borderRadius: '12px',
-    fontSize: '13px',
+    fontSize: '12px',
     fontWeight: '500',
     color: '#94a3b8',
     background: '#f1f5f9'
@@ -681,7 +996,7 @@ const styles = {
     display: 'inline-block',
     padding: '4px 12px',
     borderRadius: '20px',
-    fontSize: '12px',
+    fontSize: '11px',
     fontWeight: '600',
     color: 'white'
   },
@@ -720,7 +1035,17 @@ const styles = {
   emptyText: {
     fontSize: '14px',
     color: '#94a3b8',
-    margin: 0
+    margin: '0 0 16px 0'
+  },
+  emptyButton: {
+    padding: '8px 20px',
+    background: '#0A1929',
+    color: 'white',
+    border: 'none',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    fontSize: '14px',
+    fontWeight: '500'
   },
   loadingState: {
     padding: '60px 20px',
