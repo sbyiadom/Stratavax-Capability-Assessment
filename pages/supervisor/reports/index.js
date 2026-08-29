@@ -1,4 +1,4 @@
-// pages/supervisor/reports/index.js - WITH FILTERING
+// pages/supervisor/reports/index.js - WITH COMPLETE FILTERING
 
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/router';
@@ -129,10 +129,18 @@ export default function ReportsIndex() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedUniversity, setSelectedUniversity] = useState('');
   const [selectedProgram, setSelectedProgram] = useState('');
+  const [selectedAssessmentType, setSelectedAssessmentType] = useState('');
   const [minScore, setMinScore] = useState(0);
   const [maxScore, setMaxScore] = useState(100);
   const [selectedStatus, setSelectedStatus] = useState('');
-  const [selectedAssessmentType, setSelectedAssessmentType] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+
+  // 🟢 OPTIONS FOR FILTERS
+  const [universityOptions, setUniversityOptions] = useState([]);
+  const [programOptions, setProgramOptions] = useState([]);
+  const [assessmentTypeOptions, setAssessmentTypeOptions] = useState([]);
+  const [statusOptions] = useState(['Completed', 'Pending', 'In Progress', 'Failed']);
 
   useEffect(() => {
     const tab = router.query.tab;
@@ -225,11 +233,18 @@ export default function ReportsIndex() {
 
       setAllReports(processedReports);
 
-      // Extract unique universities and programs for filters
+      // Extract unique values for filters
       const universities = [...new Set(processedReports.map(r => r.candidate_university).filter(u => u && u !== 'Not Specified'))];
       const programs = [...new Set(processedReports.map(r => r.candidate_programme).filter(p => p && p !== 'Not Specified'))];
+      const assessmentTypes = [...new Set(processedReports
+        .filter(r => !r.isNationalService)
+        .map(r => r.assessment_title)
+        .filter(t => t && t !== 'Untitled Assessment')
+      )];
+
       setUniversityOptions(universities.sort());
       setProgramOptions(programs.sort());
+      setAssessmentTypeOptions(assessmentTypes.sort());
 
       updateStats(processedReports, activeTab);
 
@@ -242,10 +257,8 @@ export default function ReportsIndex() {
   }
 
   const updateStats = (reports, tab) => {
-    const filtered = tab === 'national' 
-      ? reports.filter(r => r.isNationalService === true)
-      : reports.filter(r => r.isNationalService === false);
-
+    const filtered = getFilteredReportsInternal(reports, tab);
+    
     let totalScore = 0;
     let scoreCount = 0;
     let completed = 0;
@@ -271,22 +284,11 @@ export default function ReportsIndex() {
     });
   };
 
-  useEffect(() => {
-    if (allReports.length > 0) {
-      updateStats(allReports, activeTab);
-    }
-  }, [activeTab, allReports]);
-
-  // 🟢 FILTER FUNCTIONS
-  const [universityOptions, setUniversityOptions] = useState([]);
-  const [programOptions, setProgramOptions] = useState([]);
-
-  const getFilteredReports = () => {
-    if (allReports.length === 0) return [];
-    
-    let filtered = activeTab === 'national' 
-      ? allReports.filter(r => r.isNationalService === true)
-      : allReports.filter(r => r.isNationalService === false);
+  // 🟢 INTERNAL FILTER FUNCTION (used for stats calculation)
+  const getFilteredReportsInternal = (reports, tab) => {
+    let filtered = tab === 'national' 
+      ? reports.filter(r => r.isNationalService === true)
+      : reports.filter(r => r.isNationalService === false);
 
     // Search filter
     if (searchTerm) {
@@ -310,6 +312,11 @@ export default function ReportsIndex() {
       filtered = filtered.filter(r => r.candidate_programme === selectedProgram);
     }
 
+    // Assessment Type filter (for Other tab only)
+    if (selectedAssessmentType && tab === 'other') {
+      filtered = filtered.filter(r => r.assessment_title === selectedAssessmentType);
+    }
+
     // Score range filter
     filtered = filtered.filter(r => {
       const score = r.displayScore || 0;
@@ -321,38 +328,39 @@ export default function ReportsIndex() {
       filtered = filtered.filter(r => r.status === selectedStatus);
     }
 
-    // Assessment type filter (for Other tab only)
-    if (selectedAssessmentType && activeTab === 'other') {
-      filtered = filtered.filter(r => r.assessment_title === selectedAssessmentType);
+    // Date range filter
+    if (dateFrom) {
+      filtered = filtered.filter(r => r.completed_at && new Date(r.completed_at) >= new Date(dateFrom));
+    }
+    if (dateTo) {
+      filtered = filtered.filter(r => r.completed_at && new Date(r.completed_at) <= new Date(dateTo));
     }
 
     return filtered;
   };
 
-  const filteredReports = getFilteredReports();
+  // 🟢 FILTERED REPORTS
+  const filteredReports = useMemo(() => {
+    return getFilteredReportsInternal(allReports, activeTab);
+  }, [allReports, activeTab, searchTerm, selectedUniversity, selectedProgram, selectedAssessmentType, minScore, maxScore, selectedStatus, dateFrom, dateTo]);
 
-  // Get unique assessment types for the filter (only for Other tab)
-  const assessmentTypeOptions = useMemo(() => {
-    if (activeTab !== 'other') return [];
-    const types = [...new Set(allReports
-      .filter(r => !r.isNationalService)
-      .map(r => r.assessment_title)
-      .filter(t => t && t !== 'Untitled Assessment')
-    )];
-    return types.sort();
-  }, [allReports, activeTab]);
-
-  // Status options
-  const statusOptions = ['Completed', 'Pending', 'In Progress', 'Failed'];
+  // Update stats when filters change
+  useEffect(() => {
+    if (allReports.length > 0) {
+      updateStats(allReports, activeTab);
+    }
+  }, [allReports, activeTab, searchTerm, selectedUniversity, selectedProgram, selectedAssessmentType, minScore, maxScore, selectedStatus, dateFrom, dateTo]);
 
   const resetFilters = () => {
     setSearchTerm('');
     setSelectedUniversity('');
     setSelectedProgram('');
+    setSelectedAssessmentType('');
     setMinScore(0);
     setMaxScore(100);
     setSelectedStatus('');
-    setSelectedAssessmentType('');
+    setDateFrom('');
+    setDateTo('');
   };
 
   const getStatusColor = (status) => {
@@ -385,10 +393,12 @@ export default function ReportsIndex() {
 
   const handleTabChange = (tab) => {
     setActiveTab(tab);
-    // Reset filters when switching tabs
     resetFilters();
     router.push(`/supervisor/reports?tab=${tab}`, undefined, { shallow: true });
   };
+
+  // Count active filters
+  const activeFilterCount = [searchTerm, selectedUniversity, selectedProgram, selectedAssessmentType, minScore > 0 || maxScore < 100, selectedStatus, dateFrom, dateTo].filter(Boolean).length;
 
   return (
     <AppLayout>
@@ -419,8 +429,9 @@ export default function ReportsIndex() {
         {/* 🟢 FILTERS BAR */}
         <div style={styles.filtersBar}>
           <div style={styles.filtersRow}>
+            {/* Search */}
             <div style={styles.filterGroup}>
-              <label style={styles.filterLabel}>Search</label>
+              <label style={styles.filterLabel}>🔍 Search</label>
               <input
                 type="text"
                 placeholder="Search by name, email, assessment..."
@@ -430,8 +441,9 @@ export default function ReportsIndex() {
               />
             </div>
 
+            {/* University Filter */}
             <div style={styles.filterGroup}>
-              <label style={styles.filterLabel}>University</label>
+              <label style={styles.filterLabel}>🏫 University</label>
               <select
                 value={selectedUniversity}
                 onChange={(e) => setSelectedUniversity(e.target.value)}
@@ -444,8 +456,9 @@ export default function ReportsIndex() {
               </select>
             </div>
 
+            {/* Program Filter */}
             <div style={styles.filterGroup}>
-              <label style={styles.filterLabel}>Program</label>
+              <label style={styles.filterLabel}>📚 Program</label>
               <select
                 value={selectedProgram}
                 onChange={(e) => setSelectedProgram(e.target.value)}
@@ -458,47 +471,10 @@ export default function ReportsIndex() {
               </select>
             </div>
 
-            <div style={styles.filterGroupSmall}>
-              <label style={styles.filterLabel}>Min Score</label>
-              <input
-                type="number"
-                min="0"
-                max="100"
-                value={minScore}
-                onChange={(e) => setMinScore(Math.max(0, Math.min(100, Number(e.target.value) || 0)))}
-                style={styles.scoreInput}
-              />
-            </div>
-
-            <div style={styles.filterGroupSmall}>
-              <label style={styles.filterLabel}>Max Score</label>
-              <input
-                type="number"
-                min="0"
-                max="100"
-                value={maxScore}
-                onChange={(e) => setMaxScore(Math.max(0, Math.min(100, Number(e.target.value) || 100)))}
-                style={styles.scoreInput}
-              />
-            </div>
-
-            <div style={styles.filterGroup}>
-              <label style={styles.filterLabel}>Status</label>
-              <select
-                value={selectedStatus}
-                onChange={(e) => setSelectedStatus(e.target.value)}
-                style={styles.select}
-              >
-                <option value="">All Statuses</option>
-                {statusOptions.map(status => (
-                  <option key={status} value={status}>{status}</option>
-                ))}
-              </select>
-            </div>
-
+            {/* Assessment Type Filter (Only for Other tab) */}
             {activeTab === 'other' && assessmentTypeOptions.length > 0 && (
               <div style={styles.filterGroup}>
-                <label style={styles.filterLabel}>Assessment Type</label>
+                <label style={styles.filterLabel}>📋 Assessment Type</label>
                 <select
                   value={selectedAssessmentType}
                   onChange={(e) => setSelectedAssessmentType(e.target.value)}
@@ -512,35 +488,109 @@ export default function ReportsIndex() {
               </div>
             )}
 
+            {/* Score Range */}
+            <div style={styles.filterGroupScore}>
+              <label style={styles.filterLabel}>📊 Score Range</label>
+              <div style={styles.scoreRange}>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  placeholder="Min"
+                  value={minScore}
+                  onChange={(e) => setMinScore(Math.max(0, Math.min(100, Number(e.target.value) || 0)))}
+                  style={styles.scoreInputSmall}
+                />
+                <span style={styles.scoreSeparator}>to</span>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  placeholder="Max"
+                  value={maxScore}
+                  onChange={(e) => setMaxScore(Math.max(0, Math.min(100, Number(e.target.value) || 100)))}
+                  style={styles.scoreInputSmall}
+                />
+              </div>
+            </div>
+
+            {/* Status Filter */}
+            <div style={styles.filterGroup}>
+              <label style={styles.filterLabel}>📌 Status</label>
+              <select
+                value={selectedStatus}
+                onChange={(e) => setSelectedStatus(e.target.value)}
+                style={styles.select}
+              >
+                <option value="">All Statuses</option>
+                {statusOptions.map(status => (
+                  <option key={status} value={status}>{status}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Date Range */}
+            <div style={styles.filterGroupDate}>
+              <label style={styles.filterLabel}>📅 Date Range</label>
+              <div style={styles.dateRange}>
+                <input
+                  type="date"
+                  value={dateFrom}
+                  onChange={(e) => setDateFrom(e.target.value)}
+                  style={styles.dateInput}
+                  placeholder="From"
+                />
+                <span style={styles.dateSeparator}>to</span>
+                <input
+                  type="date"
+                  value={dateTo}
+                  onChange={(e) => setDateTo(e.target.value)}
+                  style={styles.dateInput}
+                  placeholder="To"
+                />
+              </div>
+            </div>
+
+            {/* Reset Button */}
             <div style={styles.filterActions}>
-              <button onClick={resetFilters} style={styles.resetButton}>
-                Reset Filters
+              <button 
+                onClick={resetFilters} 
+                style={{
+                  ...styles.resetButton,
+                  background: activeFilterCount > 0 ? '#2563EB' : '#f1f5f9',
+                  color: activeFilterCount > 0 ? 'white' : '#475569'
+                }}
+              >
+                Reset {activeFilterCount > 0 && `(${activeFilterCount})`}
               </button>
             </div>
           </div>
 
-          {/* Active filters display */}
-          {(searchTerm || selectedUniversity || selectedProgram || minScore > 0 || maxScore < 100 || selectedStatus || selectedAssessmentType) && (
+          {/* Active Filters Display */}
+          {activeFilterCount > 0 && (
             <div style={styles.activeFilters}>
               <span style={styles.activeFiltersLabel}>Active Filters:</span>
-              {searchTerm && <span style={styles.filterTag}>Search: {searchTerm}</span>}
-              {selectedUniversity && <span style={styles.filterTag}>University: {selectedUniversity}</span>}
-              {selectedProgram && <span style={styles.filterTag}>Program: {selectedProgram}</span>}
+              {searchTerm && <span style={styles.filterTag}>🔍 {searchTerm}</span>}
+              {selectedUniversity && <span style={styles.filterTag}>🏫 {selectedUniversity}</span>}
+              {selectedProgram && <span style={styles.filterTag}>📚 {selectedProgram}</span>}
+              {selectedAssessmentType && <span style={styles.filterTag}>📋 {selectedAssessmentType}</span>}
               {(minScore > 0 || maxScore < 100) && (
-                <span style={styles.filterTag}>Score: {minScore}% - {maxScore}%</span>
+                <span style={styles.filterTag}>📊 {minScore}% - {maxScore}%</span>
               )}
-              {selectedStatus && <span style={styles.filterTag}>Status: {selectedStatus}</span>}
-              {selectedAssessmentType && <span style={styles.filterTag}>Type: {selectedAssessmentType}</span>}
+              {selectedStatus && <span style={styles.filterTag}>📌 {selectedStatus}</span>}
+              {dateFrom && <span style={styles.filterTag}>📅 From {new Date(dateFrom).toLocaleDateString()}</span>}
+              {dateTo && <span style={styles.filterTag}>📅 To {new Date(dateTo).toLocaleDateString()}</span>}
             </div>
           )}
         </div>
 
+        {/* Stats Cards */}
         <div style={styles.statsGrid}>
           <div style={styles.statsCard}>
             <div style={styles.statsIcon}>📋</div>
             <div>
               <div style={styles.statsValue}>{filteredReports.length}</div>
-              <div style={styles.statsLabel}>Showing {filteredReports.length} of {stats.totalAssessments}</div>
+              <div style={styles.statsLabel}>Showing {filteredReports.length} of {allReports.filter(r => activeTab === 'national' ? r.isNationalService : !r.isNationalService).length}</div>
             </div>
           </div>
           <div style={styles.statsCard}>
@@ -570,6 +620,7 @@ export default function ReportsIndex() {
           </div>
         </div>
 
+        {/* Tabs */}
         <div style={styles.tabContainer}>
           <button
             onClick={() => handleTabChange('national')}
@@ -580,7 +631,7 @@ export default function ReportsIndex() {
               borderBottom: activeTab === 'national' ? '3px solid #2563EB' : '3px solid transparent'
             }}
           >
-            📋 National Service Reports
+            📋 National Service Reports ({allReports.filter(r => r.isNationalService).length})
           </button>
           <button
             onClick={() => handleTabChange('other')}
@@ -591,10 +642,11 @@ export default function ReportsIndex() {
               borderBottom: activeTab === 'other' ? '3px solid #2563EB' : '3px solid transparent'
             }}
           >
-            📊 Other Assessment Reports
+            📊 Other Assessment Reports ({allReports.filter(r => !r.isNationalService).length})
           </button>
         </div>
 
+        {/* Table */}
         <div style={styles.tableContainer}>
           {loading ? (
             <div style={styles.loadingState}>
@@ -608,14 +660,14 @@ export default function ReportsIndex() {
                 No {activeTab === 'national' ? 'National Service' : 'Other Assessment'} Reports Found
               </h3>
               <p style={styles.emptyText}>
-                {searchTerm || selectedUniversity || selectedProgram || selectedStatus || selectedAssessmentType
+                {activeFilterCount > 0
                   ? 'No reports match your current filters. Try adjusting your search criteria.'
                   : `There are no ${activeTab === 'national' ? 'National Service' : 'other assessment'} reports available for your candidates yet.`
                 }
               </p>
-              {(searchTerm || selectedUniversity || selectedProgram || selectedStatus || selectedAssessmentType) && (
+              {activeFilterCount > 0 && (
                 <button onClick={resetFilters} style={styles.emptyButton}>
-                  Clear Filters
+                  Clear All Filters
                 </button>
               )}
             </div>
@@ -799,11 +851,17 @@ const styles = {
     flex: '1 1 180px',
     minWidth: '150px'
   },
-  filterGroupSmall: {
+  filterGroupScore: {
     display: 'flex',
     flexDirection: 'column',
-    flex: '1 1 80px',
-    minWidth: '70px'
+    flex: '1 1 160px',
+    minWidth: '140px'
+  },
+  filterGroupDate: {
+    display: 'flex',
+    flexDirection: 'column',
+    flex: '1 1 220px',
+    minWidth: '200px'
   },
   filterLabel: {
     fontSize: '11px',
@@ -820,11 +878,7 @@ const styles = {
     fontSize: '13px',
     background: 'white',
     width: '100%',
-    transition: 'border-color 0.2s',
-    ':focus': {
-      borderColor: '#2563EB',
-      outline: 'none'
-    }
+    transition: 'border-color 0.2s'
   },
   select: {
     padding: '8px 12px',
@@ -835,13 +889,40 @@ const styles = {
     width: '100%',
     cursor: 'pointer'
   },
-  scoreInput: {
-    padding: '8px 12px',
+  scoreRange: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px'
+  },
+  scoreInputSmall: {
+    padding: '8px 8px',
     borderRadius: '6px',
     border: '1px solid #e2e8f0',
     fontSize: '13px',
     background: 'white',
-    width: '100%'
+    width: '60px',
+    textAlign: 'center'
+  },
+  scoreSeparator: {
+    fontSize: '12px',
+    color: '#94a3b8'
+  },
+  dateRange: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px'
+  },
+  dateInput: {
+    padding: '8px 10px',
+    borderRadius: '6px',
+    border: '1px solid #e2e8f0',
+    fontSize: '13px',
+    background: 'white',
+    width: '130px'
+  },
+  dateSeparator: {
+    fontSize: '12px',
+    color: '#94a3b8'
   },
   filterActions: {
     display: 'flex',
@@ -858,7 +939,8 @@ const styles = {
     cursor: 'pointer',
     color: '#475569',
     whiteSpace: 'nowrap',
-    height: '38px'
+    height: '38px',
+    transition: 'all 0.2s'
   },
   activeFilters: {
     display: 'flex',
@@ -955,10 +1037,7 @@ const styles = {
     whiteSpace: 'nowrap'
   },
   tableRow: {
-    transition: 'background 0.2s ease',
-    ':hover': {
-      background: '#F8FAFC'
-    }
+    transition: 'background 0.2s ease'
   },
   tableCell: {
     padding: '12px 16px',
