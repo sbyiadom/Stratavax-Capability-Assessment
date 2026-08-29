@@ -1,4 +1,4 @@
-// pages/supervisor/reports/[resultId].js - COMPLETE FIXED
+// pages/supervisor/reports/[resultId].js - COMPLETE FIXED WITH CORRECT SCORING
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -29,18 +29,93 @@ function getReportDataObject(rawReportData) {
   return {};
 }
 
+// 🟢 SAME SCORING LOGIC AS THE REPORTS LIST
 function calculateScore(result) {
+  let categoryScores = [];
+  
+  // Extract category_scores from various locations
+  if (result.category_scores && Array.isArray(result.category_scores) && result.category_scores.length > 0) {
+    categoryScores = result.category_scores;
+  } else if (result.categoryScores && Array.isArray(result.categoryScores) && result.categoryScores.length > 0) {
+    categoryScores = result.categoryScores;
+  } else if (result.category_scores && typeof result.category_scores === 'object' && !Array.isArray(result.category_scores)) {
+    categoryScores = Object.values(result.category_scores);
+  }
+  
+  if (categoryScores.length === 0 && result.report_data) {
+    try {
+      let reportData = result.report_data;
+      if (typeof reportData === 'string') {
+        reportData = JSON.parse(reportData);
+      }
+      if (reportData.categoryScores && Array.isArray(reportData.categoryScores) && reportData.categoryScores.length > 0) {
+        categoryScores = reportData.categoryScores;
+      } else if (reportData.category_scores && Array.isArray(reportData.category_scores) && reportData.category_scores.length > 0) {
+        categoryScores = reportData.category_scores;
+      } else if (reportData.category_scores && typeof reportData.category_scores === 'object') {
+        categoryScores = Object.values(reportData.category_scores);
+      }
+    } catch (e) {}
+  }
+  
+  if (categoryScores.length > 0) {
+    // 🟢 Method 1: Sum of scores / sum of maxScores (for Behavioral & Soft Skills)
+    let totalEarned = 0;
+    let totalMax = 0;
+    let validPercentages = [];
+    
+    categoryScores.forEach(cat => {
+      let score = safeNumber(cat.score || cat.earned || 0);
+      let maxScore = safeNumber(cat.maxScore || cat.max || 0);
+      let pct = safeNumber(cat.percentage || 0);
+      
+      // If we have valid score and maxScore, use them for total calculation
+      if (score > 0 && maxScore > 0) {
+        totalEarned += score;
+        totalMax += maxScore;
+      }
+      
+      // Also collect valid percentages for fallback
+      if (pct > 0 && pct <= 100) {
+        validPercentages.push(pct);
+      }
+    });
+    
+    // If we have totalEarned and totalMax, calculate percentage from them
+    if (totalEarned > 0 && totalMax > 0) {
+      const calc = Math.round((totalEarned / totalMax) * 100);
+      // If the result is between 0 and 100, use it
+      if (calc >= 0 && calc <= 100) {
+        return calc;
+      }
+    }
+    
+    // Fallback: average of valid percentages
+    if (validPercentages.length > 0) {
+      return Math.round(validPercentages.reduce((a, b) => a + b, 0) / validPercentages.length);
+    }
+  }
+  
+  // Fallback: use percentage_score
+  if (result.percentage_score !== undefined && result.percentage_score !== null) {
+    const val = safeNumber(result.percentage_score);
+    if (val > 0 && val <= 100) {
+      return val;
+    }
+  }
+  
+  // Final fallback: total/max
   if (result.total_score !== undefined && result.max_score !== undefined) {
     const total = safeNumber(result.total_score);
     const max = safeNumber(result.max_score);
     if (max > 0) {
-      return Math.round((total / max) * 100);
+      const calc = Math.round((total / max) * 100);
+      if (calc >= 0 && calc <= 100) {
+        return calc;
+      }
     }
   }
-  if (result.percentage_score !== undefined && result.percentage_score !== null) {
-    const val = safeNumber(result.percentage_score);
-    if (val > 0) return val;
-  }
+  
   return 0;
 }
 
@@ -73,7 +148,6 @@ function isValidUUID(uuid) {
   return uuidRegex.test(uuid);
 }
 
-// 🟢 Helper to ensure value is always an array
 function ensureArray(value) {
   if (Array.isArray(value)) return value;
   if (value === null || value === undefined || value === false) return [];
@@ -156,13 +230,13 @@ export default function SupervisorReportView() {
         assessmentDate: result?.completed_at ? new Date(result?.completed_at).toLocaleDateString() : 'N/A'
       };
 
-      // 🟢 FIX: Use ensureArray to guarantee arrays
       const categoryScores = ensureArray(result?.category_scores || report?.category_scores || report?.categoryScores);
       const strengths = ensureArray(result?.strengths || report?.strengths);
       const weaknesses = ensureArray(result?.weaknesses || report?.weaknesses);
       const recommendations = ensureArray(result?.recommendations || report?.recommendations);
       const riskFactors = ensureArray(result?.risk_factors || report?.riskFactors);
 
+      // 🟢 Use the updated calculateScore function
       const displayScore = calculateScore(result);
 
       let recommendation = result?.recommendation || report?.recommendation || 'N/A';
