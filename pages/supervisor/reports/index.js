@@ -1,4 +1,5 @@
 // pages/supervisor/reports/index.js - COMPLETE FIXED
+// Uses the API endpoint properly with user_id
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -13,22 +14,21 @@ function safeNumber(value, fallback = 0) {
   return Number.isFinite(num) ? num : fallback;
 }
 
-function calculateScore(result) {
-  // ALWAYS calculate from total_score and max_score
-  if (result.total_score !== undefined && result.max_score !== undefined) {
-    const total = safeNumber(result.total_score);
-    const max = safeNumber(result.max_score);
+function calculateScore(report) {
+  if (report.displayScore !== undefined && report.displayScore > 0) {
+    return report.displayScore;
+  }
+  if (report.total_score !== undefined && report.max_score !== undefined) {
+    const total = safeNumber(report.total_score);
+    const max = safeNumber(report.max_score);
     if (max > 0) {
       return Math.round((total / max) * 100);
     }
   }
-  
-  // Fallback: Use percentage_score if available
-  if (result.percentage_score !== undefined && result.percentage_score !== null) {
-    const val = safeNumber(result.percentage_score);
+  if (report.percentage_score !== undefined && report.percentage_score !== null) {
+    const val = safeNumber(report.percentage_score);
     if (val > 0) return val;
   }
-  
   return 0;
 }
 
@@ -40,22 +40,11 @@ function calculateNationalServiceRecommendation(score) {
   return 'Not Recommended';
 }
 
-function extractRecommendation(result) {
-  if (result.recommendation) {
-    const val = String(result.recommendation);
-    if (val && val !== 'Pending' && val !== 'pending') {
-      return val;
-    }
-  }
-  return 'N/A';
-}
-
-// 🟢 FIXED: Determine status based on completed_at
-function getStatus(result) {
-  if (result.completed_at) {
+function getStatus(report) {
+  if (report.completed_at) {
     return 'Completed';
   }
-  return result.status || 'Pending';
+  return report.status || 'Pending';
 }
 
 export default function ReportsIndex() {
@@ -92,140 +81,84 @@ export default function ReportsIndex() {
       setError(null);
 
       const { data: sessionData } = await supabase.auth.getSession();
-      const session = sessionData?.session;
+      const token = sessionData?.session?.access_token;
 
-      if (!session?.user) {
+      if (!token) {
         router.push('/login');
         return;
       }
 
+      // ✅ Use the API endpoint
+      const response = await fetch('/api/supervisor/reports', {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Failed to load reports');
+      }
+
+      // Get supervisor info
       const { data: profile } = await supabase
         .from('supervisor_profiles')
-        .select('id, full_name, email')
-        .eq('id', session.user.id)
+        .select('full_name, email')
+        .eq('id', sessionData.session.user.id)
         .maybeSingle();
 
       if (profile) {
         setCurrentSupervisor(profile);
       }
 
-      const { data: candidates, error: candidatesError } = await supabase
-        .from('candidate_profiles')
-        .select('id, full_name, email, university, programme')
-        .eq('supervisor_id', session.user.id);
+      // Process reports from the API
+      const reportsData = data.reports || [];
+      
+      console.log('📊 Reports from API:', reportsData.length);
 
-      if (candidatesError) {
-        console.error('Candidates error:', candidatesError);
-        setLoading(false);
-        return;
-      }
-
-      if (!candidates || candidates.length === 0) {
-        setAllReports([]);
-        setStats({
-          totalAssessments: 0,
-          averageScore: 0,
-          completedAssessments: 0,
-          pendingReview: 0,
-          failed: 0
-        });
-        setLoading(false);
-        return;
-      }
-
-      const candidateIds = candidates.map(c => c.id);
-
-      let assessmentResults = [];
-
-      try {
-        const { data, error } = await supabase
-          .from('assessment_results')
-          .select(`
-            *,
-            assessments:assessment_id (
-              id,
-              title,
-              description
-            )
-          `)
-          .in('user_id', candidateIds);
-
-        if (!error && data && data.length > 0) {
-          assessmentResults = data;
-          console.log('📊 Total assessment results found:', data.length);
-        }
-      } catch (e) {
-        console.error('Error fetching assessment_results:', e);
-      }
-
-      if (!assessmentResults || assessmentResults.length === 0) {
-        setAllReports([]);
-        setStats({
-          totalAssessments: 0,
-          averageScore: 0,
-          completedAssessments: 0,
-          pendingReview: 0,
-          failed: 0
-        });
-        setLoading(false);
-        return;
-      }
-
-      const processedReports = [];
-
-      assessmentResults.forEach((result) => {
-        const candidate = candidates.find(c => c.id === result.user_id);
-        const assessment = result.assessments || {};
-        const assessmentTitle = assessment?.title || 'Untitled Assessment';
-        const assessmentId = result.assessment_id;
-
+      const processedReports = reportsData.map(report => {
         const isNationalService = 
-          assessmentId === NATIONAL_SERVICE_ASSESSMENT_ID ||
-          assessmentTitle === 'National Service Recruitment Assessment';
+          report.assessment_id === NATIONAL_SERVICE_ASSESSMENT_ID ||
+          report.is_national_service === true ||
+          report.assessment_title === 'National Service Recruitment Assessment';
 
-        const displayScore = calculateScore(result);
+        const displayScore = calculateScore(report);
         
-        let recommendation = 'N/A';
-        if (isNationalService) {
+        let recommendation = report.recommendation || 'N/A';
+        if (isNationalService && displayScore > 0) {
           recommendation = calculateNationalServiceRecommendation(displayScore);
-        } else {
-          recommendation = extractRecommendation(result);
-          if (recommendation === 'N/A' && displayScore >= 75) {
-            recommendation = 'Recommended';
-          }
         }
 
-        // 🟢 FIXED: Use completed_at to determine status
-        const status = getStatus(result);
+        const status = getStatus(report);
 
-        console.log(`[${candidate?.full_name}] Score: ${displayScore}%, Status: ${status}, Type: ${isNationalService ? 'National Service' : 'Other'}`);
-
-        processedReports.push({
-          id: result.id,
-          candidate_name: candidate?.full_name || 'Unknown',
-          candidate_email: candidate?.email || '',
-          candidate_university: candidate?.university || 'Not Specified',
-          candidate_programme: candidate?.programme || 'Not Specified',
-          user_id: result.user_id,
-          assessment_id: assessmentId,
-          assessment_title: assessmentTitle,
-          isNationalService: isNationalService,
+        return {
+          id: report.result_id || report.id,
+          candidate_name: report.candidate_name || 'Unknown',
+          candidate_email: report.candidate_email || '',
+          candidate_university: report.university || 'Not Specified',
+          candidate_programme: report.programme || 'Not Specified',
+          assessment_id: report.assessment_id,
+          assessment_title: report.assessment_title || 'Untitled Assessment',
           displayScore: displayScore,
           recommendation: recommendation,
           status: status,
-          completed_at: result.completed_at,
-          created_at: result.created_at,
-          total_score: result.total_score,
-          max_score: result.max_score,
-          percentage_score: result.percentage_score
-        });
+          completed_at: report.completed_at,
+          created_at: report.created_at,
+          isNationalService: isNationalService,
+          total_score: report.total_score,
+          max_score: report.max_score,
+          percentage_score: report.percentage_score
+        };
       });
 
       setAllReports(processedReports);
 
       const nationalCount = processedReports.filter(r => r.isNationalService === true).length;
       const otherCount = processedReports.filter(r => r.isNationalService === false).length;
-      console.log(`\n📊 BREAKDOWN: ${nationalCount} National Service, ${otherCount} Other Assessments`);
+      console.log(`📊 BREAKDOWN: ${nationalCount} National Service, ${otherCount} Other Assessments`);
 
       updateStats(processedReports, activeTab);
 
