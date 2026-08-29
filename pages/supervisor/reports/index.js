@@ -1,4 +1,4 @@
-// pages/supervisor/reports/index.js - COMPLETE FIXED WITH CORRECT SCORES
+// pages/supervisor/reports/index.js - COMPLETE FINAL FIXED
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -13,69 +13,92 @@ function safeNumber(value, fallback = 0) {
   return Number.isFinite(num) ? num : fallback;
 }
 
-// 🟢 FIXED: Calculate score the SAME way as the detail report
+// 🟢 FINAL UNIVERSAL SCORE CALCULATION - Works for ALL assessment types
 function calculateScore(report) {
-  // First check if we have displayScore from API
-  if (report.displayScore !== undefined && report.displayScore > 0 && report.displayScore !== 100) {
-    return report.displayScore;
+  // STEP 1: Extract category_scores from various possible locations
+  let categoryScores = [];
+  
+  // Check direct fields
+  if (report.category_scores && Array.isArray(report.category_scores) && report.category_scores.length > 0) {
+    categoryScores = report.category_scores;
+  } else if (report.categoryScores && Array.isArray(report.categoryScores) && report.categoryScores.length > 0) {
+    categoryScores = report.categoryScores;
+  } else if (report.category_scores && typeof report.category_scores === 'object' && !Array.isArray(report.category_scores)) {
+    // Object format (General Assessment, Leadership Assessment)
+    categoryScores = Object.values(report.category_scores);
   }
   
-  // Try to get category scores and calculate average
-  const categoryScores = report.category_scores || report.categoryScores || [];
-  if (Array.isArray(categoryScores) && categoryScores.length > 0) {
-    const validScores = categoryScores
-      .map(cat => safeNumber(cat.percentage || cat.score || 0))
-      .filter(score => score > 0);
-    
-    if (validScores.length > 0) {
-      const avg = Math.round(validScores.reduce((a, b) => a + b, 0) / validScores.length);
-      console.log('[ReportsList] Calculated from categories:', avg, 'from', validScores.length, 'categories');
-      return avg;
-    }
-  }
-  
-  // Check if report_data has category scores
-  if (report.report_data) {
+  // Check inside report_data
+  if (categoryScores.length === 0 && report.report_data) {
     try {
       let reportData = report.report_data;
       if (typeof reportData === 'string') {
         reportData = JSON.parse(reportData);
       }
-      
-      const catScores = reportData.categoryScores || reportData.category_scores || [];
-      if (Array.isArray(catScores) && catScores.length > 0) {
-        const validScores = catScores
-          .map(cat => safeNumber(cat.percentage || cat.score || 0))
-          .filter(score => score > 0);
-        
-        if (validScores.length > 0) {
-          const avg = Math.round(validScores.reduce((a, b) => a + b, 0) / validScores.length);
-          console.log('[ReportsList] Calculated from report_data categories:', avg);
-          return avg;
-        }
+      if (reportData.categoryScores && Array.isArray(reportData.categoryScores) && reportData.categoryScores.length > 0) {
+        categoryScores = reportData.categoryScores;
+      } else if (reportData.category_scores && Array.isArray(reportData.category_scores) && reportData.category_scores.length > 0) {
+        categoryScores = reportData.category_scores;
+      } else if (reportData.category_scores && typeof reportData.category_scores === 'object') {
+        categoryScores = Object.values(reportData.category_scores);
       }
-    } catch (e) {
-      console.log('Error parsing report_data:', e);
+    } catch (e) {}
+  }
+  
+  // STEP 2: Calculate from category scores
+  if (categoryScores.length > 0) {
+    const validScores = categoryScores
+      .map(cat => {
+        let pct = safeNumber(cat.percentage || cat.score || 0);
+        
+        // If percentage > 100, calculate from score/maxScore (for Behavioral & Soft Skills)
+        if (pct > 100 && cat.score !== undefined && cat.maxScore !== undefined) {
+          const score = safeNumber(cat.score);
+          const max = safeNumber(cat.maxScore);
+          if (max > 0) {
+            pct = Math.round((score / max) * 100);
+          }
+        }
+        
+        // Also handle case where earned and max are used
+        if (cat.earned !== undefined && cat.max !== undefined) {
+          const earned = safeNumber(cat.earned);
+          const max = safeNumber(cat.max);
+          if (max > 0) {
+            const calc = Math.round((earned / max) * 100);
+            if (calc >= 0 && calc <= 100) {
+              pct = calc;
+            }
+          }
+        }
+        
+        return pct;
+      })
+      .filter(score => score > 0 && score <= 100);
+    
+    if (validScores.length > 0) {
+      return Math.round(validScores.reduce((a, b) => a + b, 0) / validScores.length);
     }
   }
   
-  // Fallback: Calculate from total_score and max_score
+  // STEP 3: Use percentage_score if available and valid
+  if (report.percentage_score !== undefined && report.percentage_score !== null) {
+    const val = safeNumber(report.percentage_score);
+    if (val > 0 && val <= 100) {
+      return val;
+    }
+  }
+  
+  // STEP 4: Last resort - try total/max
   if (report.total_score !== undefined && report.max_score !== undefined) {
     const total = safeNumber(report.total_score);
     const max = safeNumber(report.max_score);
     if (max > 0) {
       const calc = Math.round((total / max) * 100);
-      // Only use this if it's less than 100 or if we have no other option
-      if (calc < 100 || report.total_score === report.max_score) {
+      if (calc >= 0 && calc <= 100) {
         return calc;
       }
     }
-  }
-  
-  // Final fallback: Use percentage_score
-  if (report.percentage_score !== undefined && report.percentage_score !== null) {
-    const val = safeNumber(report.percentage_score);
-    if (val > 0) return val;
   }
   
   return 0;
@@ -137,7 +160,6 @@ export default function ReportsIndex() {
         return;
       }
 
-      // ✅ Use the API endpoint
       const response = await fetch('/api/supervisor/reports', {
         method: 'GET',
         headers: {
@@ -152,7 +174,6 @@ export default function ReportsIndex() {
         throw new Error(data.error || 'Failed to load reports');
       }
 
-      // Get supervisor info
       const { data: profile } = await supabase
         .from('supervisor_profiles')
         .select('full_name, email')
@@ -163,10 +184,7 @@ export default function ReportsIndex() {
         setCurrentSupervisor(profile);
       }
 
-      // Process reports from the API
       const reportsData = data.reports || [];
-      
-      console.log('📊 Reports from API:', reportsData.length);
 
       const processedReports = reportsData.map(report => {
         const isNationalService = 
@@ -174,7 +192,6 @@ export default function ReportsIndex() {
           report.is_national_service === true ||
           report.assessment_title === 'National Service Recruitment Assessment';
 
-        // 🟢 FIX: Use the same score calculation as detail report
         const displayScore = calculateScore(report);
         
         let recommendation = report.recommendation || 'N/A';
@@ -184,8 +201,6 @@ export default function ReportsIndex() {
 
         const status = getStatus(report);
 
-        console.log(`[${report.candidate_name}] Score: ${displayScore}%, Type: ${isNationalService ? 'National Service' : 'Other'}`);
-
         return {
           id: report.result_id || report.id,
           candidate_name: report.candidate_name || 'Unknown',
@@ -194,6 +209,7 @@ export default function ReportsIndex() {
           candidate_programme: report.programme || 'Not Specified',
           assessment_id: report.assessment_id,
           assessment_title: report.assessment_title || 'Untitled Assessment',
+          assessment_type: report.assessment_type || 'general',
           displayScore: displayScore,
           recommendation: recommendation,
           status: status,
@@ -211,7 +227,6 @@ export default function ReportsIndex() {
 
       const nationalCount = processedReports.filter(r => r.isNationalService === true).length;
       const otherCount = processedReports.filter(r => r.isNationalService === false).length;
-      console.log(`📊 BREAKDOWN: ${nationalCount} National Service, ${otherCount} Other Assessments`);
 
       updateStats(processedReports, activeTab);
 
