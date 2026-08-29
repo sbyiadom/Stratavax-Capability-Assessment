@@ -1,5 +1,5 @@
-// components/reports/StratavaxReport.js - FULLY CORRECTED WITH BEHAVIORAL MATRIX FIX
-// FIX: Properly extracts proctoring data from report_data.proctoring
+// components/reports/StratavaxReport.js - FIXED
+// FIX: Behavioral matrix assignment with proper nullish coalescing
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../supabase/client';
@@ -33,25 +33,21 @@ function formatAvgTime(seconds) {
 }
 
 // ============================================================
-// EXTRACT BEHAVIORAL MATRIX - FIXED
+// EXTRACT BEHAVIORAL MATRIX
 // ============================================================
 function extractBehavioralMatrix(report) {
   if (!report) return null;
 
   const reportData = report.report_data || report || {};
   
-  // 🔥 FIX: Check proctoring in report_data first (this is where the data actually is)
   let proctoringData = reportData.proctoring || report.proctoring_data || null;
   
   if (!proctoringData) {
-    console.log('[Behavioral Matrix] No proctoring data found');
     return null;
   }
 
   const summary = proctoringData.summary || proctoringData;
   
-  console.log('[Behavioral Matrix] Extracted summary:', summary);
-
   const totalSeconds = summary.duration || 0;
   const totalDurationFormatted = formatTime(totalSeconds);
   const totalQuestions = reportData.totalQuestions || report.totalQuestions || 10;
@@ -77,7 +73,6 @@ function extractBehavioralMatrix(report) {
     _raw: proctoringData
   };
 
-  console.log('[Behavioral Matrix] Extracted matrix:', matrix);
   return matrix;
 }
 
@@ -653,7 +648,7 @@ export default function StratavaxReport({
 }) {
   const [localBehavioralMatrix, setLocalBehavioralMatrix] = useState(null);
   const [localLoadingBehavioral, setLocalLoadingBehavioral] = useState(false);
-  const [showBehavioral, setShowBehavioral] = false;
+  const [showBehavioral, setShowBehavioral] = useState(false);
 
   // Extract report data
   const reportData = result?.report_data || result || {};
@@ -661,12 +656,10 @@ export default function StratavaxReport({
   // Extract behavioral matrix from report data
   const extractedMatrix = extractBehavioralMatrix(result || reportData);
   
-  const behavioralMatrix = 
-    extractedMatrix || 
-    propBehavioralMatrix !== undefined ? propBehavioralMatrix : 
-    localBehavioralMatrix;
+  // 🟢 FIX: Use nullish coalescing with proper precedence
+  const behavioralMatrix = extractedMatrix ?? propBehavioralMatrix ?? localBehavioralMatrix ?? null;
     
-  const loadingBehavioral = propLoadingBehavioral !== undefined ? propLoadingBehavioral : localLoadingBehavioral;
+  const loadingBehavioral = propLoadingBehavioral ?? localLoadingBehavioral ?? false;
   const hasBehavioralData = behavioralMatrix !== null && behavioralMatrix !== undefined;
 
   useEffect(() => {
@@ -675,7 +668,7 @@ export default function StratavaxReport({
       return;
     }
     
-    if (propBehavioralMatrix !== undefined) {
+    if (propBehavioralMatrix !== undefined && propBehavioralMatrix !== null) {
       console.log('[StratavaxReport] Using behavioralMatrix from props');
       return;
     }
@@ -757,7 +750,7 @@ export default function StratavaxReport({
   const answeredQuestions = safeNumber(result.answered_questions || result.answeredQuestions || 0);
 
   // ============================================================
-  // Generate robust analysis for each category
+  // Generate category analysis data
   // ============================================================
   const generateCategoryAnalysis = (category, score) => {
     const percentage = safeNumber(score, 0);
@@ -792,6 +785,13 @@ export default function StratavaxReport({
       })
     };
   };
+
+  const categoryAnalysis = {};
+  categoryScores.forEach(cat => {
+    const name = cat.category || cat.name || 'Unknown';
+    const score = safeNumber(cat.percentage || cat.score || 0);
+    categoryAnalysis[name] = generateCategoryAnalysis(name, score);
+  });
 
   // ============================================================
   // Generate executive summary
@@ -828,28 +828,8 @@ export default function StratavaxReport({
       summary += `No major development areas were identified below the current threshold. `;
     }
     
-    if (overallScore >= 75) {
-      summary += `This profile suggests strong potential for professional growth and increased responsibility.`;
-    } else if (overallScore >= 65) {
-      summary += `With targeted development and practical application, the candidate can strengthen their overall capability.`;
-    } else if (overallScore >= 55) {
-      summary += `Structured development and focused practice will help build a stronger foundation for professional growth.`;
-    } else {
-      summary += `Immediate intervention and comprehensive development are recommended in the identified areas.`;
-    }
-    
     return summary;
   };
-
-  // ============================================================
-  // Generate category analysis data
-  // ============================================================
-  const categoryAnalysis = {};
-  categoryScores.forEach(cat => {
-    const name = cat.category || cat.name || 'Unknown';
-    const score = safeNumber(cat.percentage || cat.score || 0);
-    categoryAnalysis[name] = generateCategoryAnalysis(name, score);
-  });
 
   // ============================================================
   // Render
@@ -1042,7 +1022,7 @@ export default function StratavaxReport({
       </div>
 
       {/* ============================================================
-          BEHAVIORAL MATRIX SECTION - WITH FIXED EXTRACTION
+          BEHAVIORAL MATRIX SECTION - FIXED
           ============================================================ */}
       <div style={styles.behavioralToggleContainer}>
         <button onClick={toggleBehavioral} style={styles.behavioralToggleButton}>
