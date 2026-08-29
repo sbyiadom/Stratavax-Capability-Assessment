@@ -13,10 +13,6 @@ function safeNumber(value, fallback = 0) {
   return Number.isFinite(num) ? num : fallback;
 }
 
-// 🟢 FIXED: ALWAYS calculate from total_score/max_score
-// This works for ALL assessments because:
-// - If max_score = 100, total_score IS the percentage
-// - If max_score = 80 (National Service), we calculate the percentage
 function calculateScore(result) {
   // ALWAYS calculate from total_score and max_score
   if (result.total_score !== undefined && result.max_score !== undefined) {
@@ -31,24 +27,6 @@ function calculateScore(result) {
   if (result.percentage_score !== undefined && result.percentage_score !== null) {
     const val = safeNumber(result.percentage_score);
     if (val > 0) return val;
-  }
-  
-  // Final fallback: Check in report_data
-  if (result.report_data) {
-    try {
-      let reportData = result.report_data;
-      if (typeof reportData === 'string') {
-        reportData = JSON.parse(reportData);
-      }
-      
-      if (reportData.totalEarned !== undefined && reportData.totalMax !== undefined) {
-        const earned = safeNumber(reportData.totalEarned);
-        const max = safeNumber(reportData.totalMax);
-        if (max > 0) {
-          return Math.round((earned / max) * 100);
-        }
-      }
-    } catch (e) {}
   }
   
   return 0;
@@ -69,23 +47,15 @@ function extractRecommendation(result) {
       return val;
     }
   }
-  
-  if (result.report_data) {
-    try {
-      let reportData = result.report_data;
-      if (typeof reportData === 'string') {
-        reportData = JSON.parse(reportData);
-      }
-      if (reportData.recommendation) {
-        const val = String(reportData.recommendation);
-        if (val && val !== 'Pending' && val !== 'pending') {
-          return val;
-        }
-      }
-    } catch (e) {}
-  }
-  
   return 'N/A';
+}
+
+// 🟢 FIXED: Determine status based on completed_at
+function getStatus(result) {
+  if (result.completed_at) {
+    return 'Completed';
+  }
+  return result.status || 'Pending';
 }
 
 export default function ReportsIndex() {
@@ -213,7 +183,6 @@ export default function ReportsIndex() {
           assessmentId === NATIONAL_SERVICE_ASSESSMENT_ID ||
           assessmentTitle === 'National Service Recruitment Assessment';
 
-        // 🟢 ALWAYS calculate from total_score/max_score
         const displayScore = calculateScore(result);
         
         let recommendation = 'N/A';
@@ -226,7 +195,10 @@ export default function ReportsIndex() {
           }
         }
 
-        console.log(`[${candidate?.full_name}] Score: ${displayScore}%, Type: ${isNationalService ? 'National Service' : 'Other'}, total: ${result.total_score}, max: ${result.max_score}`);
+        // 🟢 FIXED: Use completed_at to determine status
+        const status = getStatus(result);
+
+        console.log(`[${candidate?.full_name}] Score: ${displayScore}%, Status: ${status}, Type: ${isNationalService ? 'National Service' : 'Other'}`);
 
         processedReports.push({
           id: result.id,
@@ -240,7 +212,7 @@ export default function ReportsIndex() {
           isNationalService: isNationalService,
           displayScore: displayScore,
           recommendation: recommendation,
-          status: result.status || 'Pending',
+          status: status,
           completed_at: result.completed_at,
           created_at: result.created_at,
           total_score: result.total_score,
@@ -281,10 +253,9 @@ export default function ReportsIndex() {
         totalScore += r.displayScore;
         scoreCount++;
       }
-      const status = (r.status || '').toLowerCase();
-      if (status === 'completed' || status === 'complete') completed++;
-      else if (status === 'pending' || status === 'in progress') pending++;
-      else if (status === 'failed' || status === 'fail') failed++;
+      if (r.status === 'Completed') completed++;
+      else if (r.status === 'Pending' || r.status === 'In Progress') pending++;
+      else if (r.status === 'Failed') failed++;
     });
 
     setStats({
@@ -312,14 +283,11 @@ export default function ReportsIndex() {
   const filteredReports = getFilteredReports();
 
   const getStatusColor = (status) => {
-    const s = (status || '').toLowerCase();
-    switch(s) {
-      case 'completed': return '#48bb78';
-      case 'complete': return '#48bb78';
-      case 'pending': return '#ed8936';
-      case 'in progress': return '#4299e1';
-      case 'failed': return '#fc8181';
-      case 'fail': return '#fc8181';
+    switch(status) {
+      case 'Completed': return '#48bb78';
+      case 'Pending': return '#ed8936';
+      case 'In Progress': return '#4299e1';
+      case 'Failed': return '#fc8181';
       default: return '#a0aec0';
     }
   };
@@ -499,7 +467,7 @@ export default function ReportsIndex() {
                         ...styles.statusBadge,
                         background: getStatusColor(report.status)
                       }}>
-                        {report.status || 'Pending'}
+                        {report.status}
                       </span>
                     </td>
                     <td style={styles.tableCell}>
