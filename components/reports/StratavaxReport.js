@@ -88,6 +88,98 @@ function safeArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
+// ============================================================
+// 🟢 UPDATED UNIVERSAL SCORE CALCULATION
+// ============================================================
+function calculateScore(result) {
+  let categoryScores = [];
+  
+  // Extract category_scores from various locations
+  if (result.category_scores && Array.isArray(result.category_scores) && result.category_scores.length > 0) {
+    categoryScores = result.category_scores;
+  } else if (result.categoryScores && Array.isArray(result.categoryScores) && result.categoryScores.length > 0) {
+    categoryScores = result.categoryScores;
+  } else if (result.category_scores && typeof result.category_scores === 'object' && !Array.isArray(result.category_scores)) {
+    categoryScores = Object.values(result.category_scores);
+  }
+  
+  if (categoryScores.length === 0 && result.report_data) {
+    try {
+      let reportData = result.report_data;
+      if (typeof reportData === 'string') {
+        reportData = JSON.parse(reportData);
+      }
+      if (reportData.categoryScores && Array.isArray(reportData.categoryScores) && reportData.categoryScores.length > 0) {
+        categoryScores = reportData.categoryScores;
+      } else if (reportData.category_scores && Array.isArray(reportData.category_scores) && reportData.category_scores.length > 0) {
+        categoryScores = reportData.category_scores;
+      } else if (reportData.category_scores && typeof reportData.category_scores === 'object') {
+        categoryScores = Object.values(reportData.category_scores);
+      }
+    } catch (e) {}
+  }
+  
+  if (categoryScores.length > 0) {
+    // 🟢 Method 1: Sum of scores / sum of maxScores (for Behavioral & Soft Skills)
+    let totalEarned = 0;
+    let totalMax = 0;
+    let validPercentages = [];
+    
+    categoryScores.forEach(cat => {
+      let score = safeNumber(cat.score || cat.earned || 0);
+      let maxScore = safeNumber(cat.maxScore || cat.max || 0);
+      let pct = safeNumber(cat.percentage || 0);
+      
+      // If we have valid score and maxScore, use them for total calculation
+      if (score > 0 && maxScore > 0) {
+        totalEarned += score;
+        totalMax += maxScore;
+      }
+      
+      // Also collect valid percentages for fallback
+      if (pct > 0 && pct <= 100) {
+        validPercentages.push(pct);
+      }
+    });
+    
+    // If we have totalEarned and totalMax, calculate percentage from them
+    if (totalEarned > 0 && totalMax > 0) {
+      const calc = Math.round((totalEarned / totalMax) * 100);
+      // If the result is between 0 and 100, use it
+      if (calc >= 0 && calc <= 100) {
+        return calc;
+      }
+    }
+    
+    // Fallback: average of valid percentages
+    if (validPercentages.length > 0) {
+      return Math.round(validPercentages.reduce((a, b) => a + b, 0) / validPercentages.length);
+    }
+  }
+  
+  // Fallback: use percentage_score
+  if (result.percentage_score !== undefined && result.percentage_score !== null) {
+    const val = safeNumber(result.percentage_score);
+    if (val > 0 && val <= 100) {
+      return val;
+    }
+  }
+  
+  // Final fallback: total/max
+  if (result.total_score !== undefined && result.max_score !== undefined) {
+    const total = safeNumber(result.total_score);
+    const max = safeNumber(result.max_score);
+    if (max > 0) {
+      const calc = Math.round((total / max) * 100);
+      if (calc >= 0 && calc <= 100) {
+        return calc;
+      }
+    }
+  }
+  
+  return 0;
+}
+
 function getLevelLabel(score) {
   const value = safeNumber(score, 0);
   if (value >= 85) return 'Exceptional';
@@ -736,30 +828,8 @@ export default function StratavaxReport({
   const weaknesses = safeArray(result.weaknesses || result.developmentAreas || []);
   const recommendations = safeArray(result.recommendations || []);
   
-  // 🟢 FIX: Calculate overall score correctly
-  let overallScore = safeNumber(result.percentage_score || result.overallScore || 0);
-  
-  // If overallScore is 100 but categoryScores exist, calculate from categories
-  if ((overallScore === 100 || overallScore === 0) && categoryScores.length > 0) {
-    const validScores = categoryScores
-      .map(cat => safeNumber(cat.percentage || cat.score || 0))
-      .filter(score => score > 0);
-    
-    if (validScores.length > 0) {
-      overallScore = Math.round(validScores.reduce((a, b) => a + b, 0) / validScores.length);
-      console.log('[StratavaxReport] Calculated overall score from categories:', overallScore);
-    }
-  }
-  
-  // Also check if total_score/max_score gives a better value
-  if (overallScore === 0 && result.total_score !== undefined && result.max_score !== undefined) {
-    const total = safeNumber(result.total_score);
-    const max = safeNumber(result.max_score);
-    if (max > 0) {
-      overallScore = Math.round((total / max) * 100);
-      console.log('[StratavaxReport] Calculated overall score from total/max:', overallScore);
-    }
-  }
+  // 🟢 FIX: Use the updated calculateScore function
+  const overallScore = calculateScore(result);
   
   const classification = safeText(result.classification || 'Standard Profile');
   const riskLevel = safeText(result.riskLevel || result.risk_level || 'Medium');
