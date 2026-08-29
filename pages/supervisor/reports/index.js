@@ -1,5 +1,4 @@
-// pages/supervisor/reports/index.js - COMPLETE FIXED
-// Uses the API endpoint properly with user_id
+// pages/supervisor/reports/index.js - COMPLETE FIXED WITH CORRECT SCORES
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -14,21 +13,71 @@ function safeNumber(value, fallback = 0) {
   return Number.isFinite(num) ? num : fallback;
 }
 
+// 🟢 FIXED: Calculate score the SAME way as the detail report
 function calculateScore(report) {
-  if (report.displayScore !== undefined && report.displayScore > 0) {
+  // First check if we have displayScore from API
+  if (report.displayScore !== undefined && report.displayScore > 0 && report.displayScore !== 100) {
     return report.displayScore;
   }
+  
+  // Try to get category scores and calculate average
+  const categoryScores = report.category_scores || report.categoryScores || [];
+  if (Array.isArray(categoryScores) && categoryScores.length > 0) {
+    const validScores = categoryScores
+      .map(cat => safeNumber(cat.percentage || cat.score || 0))
+      .filter(score => score > 0);
+    
+    if (validScores.length > 0) {
+      const avg = Math.round(validScores.reduce((a, b) => a + b, 0) / validScores.length);
+      console.log('[ReportsList] Calculated from categories:', avg, 'from', validScores.length, 'categories');
+      return avg;
+    }
+  }
+  
+  // Check if report_data has category scores
+  if (report.report_data) {
+    try {
+      let reportData = report.report_data;
+      if (typeof reportData === 'string') {
+        reportData = JSON.parse(reportData);
+      }
+      
+      const catScores = reportData.categoryScores || reportData.category_scores || [];
+      if (Array.isArray(catScores) && catScores.length > 0) {
+        const validScores = catScores
+          .map(cat => safeNumber(cat.percentage || cat.score || 0))
+          .filter(score => score > 0);
+        
+        if (validScores.length > 0) {
+          const avg = Math.round(validScores.reduce((a, b) => a + b, 0) / validScores.length);
+          console.log('[ReportsList] Calculated from report_data categories:', avg);
+          return avg;
+        }
+      }
+    } catch (e) {
+      console.log('Error parsing report_data:', e);
+    }
+  }
+  
+  // Fallback: Calculate from total_score and max_score
   if (report.total_score !== undefined && report.max_score !== undefined) {
     const total = safeNumber(report.total_score);
     const max = safeNumber(report.max_score);
     if (max > 0) {
-      return Math.round((total / max) * 100);
+      const calc = Math.round((total / max) * 100);
+      // Only use this if it's less than 100 or if we have no other option
+      if (calc < 100 || report.total_score === report.max_score) {
+        return calc;
+      }
     }
   }
+  
+  // Final fallback: Use percentage_score
   if (report.percentage_score !== undefined && report.percentage_score !== null) {
     const val = safeNumber(report.percentage_score);
     if (val > 0) return val;
   }
+  
   return 0;
 }
 
@@ -125,6 +174,7 @@ export default function ReportsIndex() {
           report.is_national_service === true ||
           report.assessment_title === 'National Service Recruitment Assessment';
 
+        // 🟢 FIX: Use the same score calculation as detail report
         const displayScore = calculateScore(report);
         
         let recommendation = report.recommendation || 'N/A';
@@ -133,6 +183,8 @@ export default function ReportsIndex() {
         }
 
         const status = getStatus(report);
+
+        console.log(`[${report.candidate_name}] Score: ${displayScore}%, Type: ${isNationalService ? 'National Service' : 'Other'}`);
 
         return {
           id: report.result_id || report.id,
@@ -150,7 +202,8 @@ export default function ReportsIndex() {
           isNationalService: isNationalService,
           total_score: report.total_score,
           max_score: report.max_score,
-          percentage_score: report.percentage_score
+          percentage_score: report.percentage_score,
+          category_scores: report.category_scores || report.report_data?.categoryScores || []
         };
       });
 
