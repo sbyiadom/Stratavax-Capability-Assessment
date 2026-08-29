@@ -1,5 +1,4 @@
-// components/reports/StratavaxReport.js - COMPLETE FIXED
-// FIX: Behavioral matrix assignment with proper nullish coalescing
+// components/reports/StratavaxReport.js - COMPLETE FIXED WITH PROPER SCORE CALCULATION
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../supabase/client';
@@ -656,7 +655,7 @@ export default function StratavaxReport({
   // Extract behavioral matrix from report data
   const extractedMatrix = extractBehavioralMatrix(result || reportData);
   
-  // 🟢 FIX: Use nullish coalescing with proper precedence
+  // Use nullish coalescing with proper precedence
   const behavioralMatrix = extractedMatrix ?? propBehavioralMatrix ?? localBehavioralMatrix ?? null;
     
   const loadingBehavioral = propLoadingBehavioral ?? localLoadingBehavioral ?? false;
@@ -737,7 +736,31 @@ export default function StratavaxReport({
   const weaknesses = safeArray(result.weaknesses || result.developmentAreas || []);
   const recommendations = safeArray(result.recommendations || []);
   
-  const overallScore = safeNumber(result.percentage_score || result.overallScore || 0);
+  // 🟢 FIX: Calculate overall score correctly
+  let overallScore = safeNumber(result.percentage_score || result.overallScore || 0);
+  
+  // If overallScore is 100 but categoryScores exist, calculate from categories
+  if ((overallScore === 100 || overallScore === 0) && categoryScores.length > 0) {
+    const validScores = categoryScores
+      .map(cat => safeNumber(cat.percentage || cat.score || 0))
+      .filter(score => score > 0);
+    
+    if (validScores.length > 0) {
+      overallScore = Math.round(validScores.reduce((a, b) => a + b, 0) / validScores.length);
+      console.log('[StratavaxReport] Calculated overall score from categories:', overallScore);
+    }
+  }
+  
+  // Also check if total_score/max_score gives a better value
+  if (overallScore === 0 && result.total_score !== undefined && result.max_score !== undefined) {
+    const total = safeNumber(result.total_score);
+    const max = safeNumber(result.max_score);
+    if (max > 0) {
+      overallScore = Math.round((total / max) * 100);
+      console.log('[StratavaxReport] Calculated overall score from total/max:', overallScore);
+    }
+  }
+  
   const classification = safeText(result.classification || 'Standard Profile');
   const riskLevel = safeText(result.riskLevel || result.risk_level || 'Medium');
   
@@ -826,6 +849,16 @@ export default function StratavaxReport({
       summary += `Development opportunities include ${topWeaknesses}. `;
     } else {
       summary += `No major development areas were identified below the current threshold. `;
+    }
+    
+    if (overallScore >= 75) {
+      summary += `This profile suggests strong potential for professional growth and increased responsibility.`;
+    } else if (overallScore >= 65) {
+      summary += `With targeted development and practical application, the candidate can strengthen their overall capability.`;
+    } else if (overallScore >= 55) {
+      summary += `Structured development and focused practice will help build a stronger foundation for professional growth.`;
+    } else {
+      summary += `Immediate intervention and comprehensive development are recommended in the identified areas.`;
     }
     
     return summary;
@@ -1022,7 +1055,7 @@ export default function StratavaxReport({
       </div>
 
       {/* ============================================================
-          BEHAVIORAL MATRIX SECTION - FIXED
+          BEHAVIORAL MATRIX SECTION
           ============================================================ */}
       <div style={styles.behavioralToggleContainer}>
         <button onClick={toggleBehavioral} style={styles.behavioralToggleButton}>
