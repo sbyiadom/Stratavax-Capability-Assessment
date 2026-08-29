@@ -1,4 +1,4 @@
-// pages/supervisor/reports/index.js - COMPLETE FIXED WITH CORRECT SCORES
+// pages/supervisor/reports/index.js - COMPLETE FIXED
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -13,23 +13,12 @@ function safeNumber(value, fallback = 0) {
   return Number.isFinite(num) ? num : fallback;
 }
 
-// 🟢 FIXED: Calculate score from total_score/max_score
+// 🟢 FIXED: ALWAYS calculate from total_score/max_score
+// This works for ALL assessments because:
+// - If max_score = 100, total_score IS the percentage
+// - If max_score = 80 (National Service), we calculate the percentage
 function calculateScore(result) {
-  // First try to get percentage_score
-  if (result.percentage_score !== undefined && result.percentage_score !== null) {
-    const val = safeNumber(result.percentage_score);
-    // If percentage_score is 0 but there's a total_score, calculate from total/max
-    if (val === 0 && result.total_score !== undefined && result.max_score !== undefined) {
-      const total = safeNumber(result.total_score);
-      const max = safeNumber(result.max_score);
-      if (max > 0) {
-        return Math.round((total / max) * 100);
-      }
-    }
-    if (val > 0) return val;
-  }
-  
-  // Calculate from total_score and max_score
+  // ALWAYS calculate from total_score and max_score
   if (result.total_score !== undefined && result.max_score !== undefined) {
     const total = safeNumber(result.total_score);
     const max = safeNumber(result.max_score);
@@ -38,7 +27,13 @@ function calculateScore(result) {
     }
   }
   
-  // Check in report_data
+  // Fallback: Use percentage_score if available
+  if (result.percentage_score !== undefined && result.percentage_score !== null) {
+    const val = safeNumber(result.percentage_score);
+    if (val > 0) return val;
+  }
+  
+  // Final fallback: Check in report_data
   if (result.report_data) {
     try {
       let reportData = result.report_data;
@@ -46,7 +41,6 @@ function calculateScore(result) {
         reportData = JSON.parse(reportData);
       }
       
-      // Check for scores in report_data
       if (reportData.totalEarned !== undefined && reportData.totalMax !== undefined) {
         const earned = safeNumber(reportData.totalEarned);
         const max = safeNumber(reportData.totalMax);
@@ -54,19 +48,21 @@ function calculateScore(result) {
           return Math.round((earned / max) * 100);
         }
       }
-      
-      if (reportData.percentageScore !== undefined) {
-        const val = safeNumber(reportData.percentageScore);
-        if (val > 0) return val;
-      }
     } catch (e) {}
   }
   
   return 0;
 }
 
+function calculateNationalServiceRecommendation(score) {
+  const s = Number(score || 0);
+  if (s >= 85) return 'Highly Recommended';
+  if (s >= 75) return 'Recommended';
+  if (s >= 65) return 'Reserve Pool';
+  return 'Not Recommended';
+}
+
 function extractRecommendation(result) {
-  // First check recommendation field
   if (result.recommendation) {
     const val = String(result.recommendation);
     if (val && val !== 'Pending' && val !== 'pending') {
@@ -74,7 +70,6 @@ function extractRecommendation(result) {
     }
   }
   
-  // Check report_data
   if (result.report_data) {
     try {
       let reportData = result.report_data;
@@ -91,51 +86,6 @@ function extractRecommendation(result) {
   }
   
   return 'N/A';
-}
-
-function calculateNationalServiceScores(reportData, categoryScores, result) {
-  let workplaceReadiness = 0;
-  let intellectualCapability = 0;
-  let overallScore = 0;
-
-  if (reportData) {
-    if (reportData.workplaceReadiness) workplaceReadiness = safeNumber(reportData.workplaceReadiness);
-    else if (reportData.workplace_readiness) workplaceReadiness = safeNumber(reportData.workplace_readiness);
-    else if (reportData.dimensions?.workplaceReadiness) workplaceReadiness = safeNumber(reportData.dimensions.workplaceReadiness);
-    
-    if (reportData.intellectualCapability) intellectualCapability = safeNumber(reportData.intellectualCapability);
-    else if (reportData.intellectual_capability) intellectualCapability = safeNumber(reportData.intellectual_capability);
-    else if (reportData.dimensions?.intellectualCapability) intellectualCapability = safeNumber(reportData.dimensions.intellectualCapability);
-    
-    if (reportData.overallScore) overallScore = safeNumber(reportData.overallScore);
-    else if (reportData.percentage_score) overallScore = safeNumber(reportData.percentage_score);
-    else if (reportData.dimensions?.overallScore) overallScore = safeNumber(reportData.dimensions.overallScore);
-  }
-
-  if (!workplaceReadiness && result) {
-    workplaceReadiness = safeNumber(result.workplace_readiness);
-    intellectualCapability = safeNumber(result.intellectual_capability);
-    overallScore = safeNumber(result.percentage_score);
-  }
-
-  // If still 0, calculate from total_score/max_score
-  if (overallScore === 0 && result.total_score !== undefined && result.max_score !== undefined) {
-    const total = safeNumber(result.total_score);
-    const max = safeNumber(result.max_score);
-    if (max > 0) {
-      overallScore = Math.round((total / max) * 100);
-    }
-  }
-
-  return { workplaceReadiness, intellectualCapability, overallScore };
-}
-
-function calculateNationalServiceRecommendation(score) {
-  const s = Number(score || 0);
-  if (s >= 85) return 'Highly Recommended';
-  if (s >= 75) return 'Recommended';
-  if (s >= 65) return 'Reserve Pool';
-  return 'Not Recommended';
 }
 
 export default function ReportsIndex() {
@@ -263,35 +213,20 @@ export default function ReportsIndex() {
           assessmentId === NATIONAL_SERVICE_ASSESSMENT_ID ||
           assessmentTitle === 'National Service Recruitment Assessment';
 
-        let reportData = {};
-        try {
-          reportData = typeof result.report_data === 'string' 
-            ? JSON.parse(result.report_data) 
-            : (result.report_data || {});
-        } catch (e) {
-          reportData = {};
-        }
-
-        // 🟢 FIX: Calculate score properly
-        let displayScore = 0;
+        // 🟢 ALWAYS calculate from total_score/max_score
+        const displayScore = calculateScore(result);
+        
         let recommendation = 'N/A';
-
         if (isNationalService) {
-          // For National Service, use calculateScore which handles total/max
-          displayScore = calculateScore(result);
           recommendation = calculateNationalServiceRecommendation(displayScore);
         } else {
-          // For Other assessments, calculate from total/max
-          displayScore = calculateScore(result);
           recommendation = extractRecommendation(result);
-          
-          // If recommendation is N/A but score is high, set a default
           if (recommendation === 'N/A' && displayScore >= 75) {
             recommendation = 'Recommended';
           }
         }
 
-        console.log(`[${candidate?.full_name}] Score: ${displayScore}%, Type: ${isNationalService ? 'National Service' : 'Other'}`);
+        console.log(`[${candidate?.full_name}] Score: ${displayScore}%, Type: ${isNationalService ? 'National Service' : 'Other'}, total: ${result.total_score}, max: ${result.max_score}`);
 
         processedReports.push({
           id: result.id,
