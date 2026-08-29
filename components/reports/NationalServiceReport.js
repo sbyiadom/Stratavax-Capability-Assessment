@@ -1,5 +1,5 @@
-// components/reports/NationalServiceReport.js - FULLY CORRECTED WITH BEHAVIORAL MATRIX FIX
-// FIX: Properly extracts proctoring data from report_data.proctoring
+// components/reports/NationalServiceReport.js - COMPLETE FIXED
+// FIX: Behavioral matrix assignment with proper nullish coalescing
 
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../../supabase/client';
@@ -24,26 +24,21 @@ function formatAvgTime(seconds) {
 }
 
 // ============================================================
-// EXTRACT BEHAVIORAL MATRIX - FIXED
+// EXTRACT BEHAVIORAL MATRIX
 // ============================================================
 function extractBehavioralMatrix(report) {
   if (!report) return null;
 
   const reportData = report.report_data || report || {};
   
-  // 🔥 FIX: Check proctoring in report_data first (this is where the data actually is)
   let proctoringData = reportData.proctoring || report.proctoring_data || null;
   
   if (!proctoringData) {
-    console.log('[Behavioral Matrix] No proctoring data found');
     return null;
   }
 
-  // If proctoringData has a summary property, use it, otherwise use the data directly
   const summary = proctoringData.summary || proctoringData;
   
-  console.log('[Behavioral Matrix] Extracted summary:', summary);
-
   const totalSeconds = summary.duration || 0;
   const totalDurationFormatted = formatTime(totalSeconds);
   const totalQuestions = reportData.totalQuestions || report.totalQuestions || 10;
@@ -69,7 +64,6 @@ function extractBehavioralMatrix(report) {
     _raw: proctoringData
   };
 
-  console.log('[Behavioral Matrix] Extracted matrix:', matrix);
   return matrix;
 }
 
@@ -560,31 +554,26 @@ export default function NationalServiceReport({
 }) {
   const [localBehavioralMatrix, setLocalBehavioralMatrix] = useState(null);
   const [localLoadingBehavioral, setLocalLoadingBehavioral] = useState(false);
-  const [showBehavioral, setShowBehavioral] = useState(true);
+  const [showBehavioral, setShowBehavioral] = useState(false);
 
+  // 🟢 FIX: Use nullish coalescing with proper precedence
   const extractedMatrix = extractBehavioralMatrix(report);
-  
-  const behavioralMatrix = 
-    extractedMatrix || 
-    propBehavioralMatrix || 
-    localBehavioralMatrix || 
-    null;
-    
-  const loadingBehavioral = propLoadingBehavioral || localLoadingBehavioral || false;
+  const behavioralMatrix = extractedMatrix ?? propBehavioralMatrix ?? localBehavioralMatrix ?? null;
+  const loadingBehavioral = propLoadingBehavioral ?? localLoadingBehavioral ?? false;
 
   useEffect(() => {
     if (extractedMatrix) {
-      console.log('[Behavioral Matrix] Using extracted data from report');
+      console.log('[NationalServiceReport] Using extracted matrix from report');
       return;
     }
     if (propBehavioralMatrix) {
-      console.log('[Behavioral Matrix] Using prop data');
+      console.log('[NationalServiceReport] Using prop data');
       return;
     }
 
     const resultId = report?.resultId || report?.id || report?.result_id;
     if (resultId) {
-      console.log('[Behavioral Matrix] Fetching for resultId:', resultId);
+      console.log('[NationalServiceReport] Fetching for resultId:', resultId);
       fetchBehavioralMatrix(resultId);
     }
   }, [report, propBehavioralMatrix, extractedMatrix]);
