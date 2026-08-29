@@ -1,4 +1,4 @@
-// components/reports/StratavaxReport.js - FIXED
+// components/reports/StratavaxReport.js - COMPLETE FIXED
 // FIX: Behavioral matrix assignment with proper nullish coalescing
 
 import React, { useState, useEffect } from 'react';
