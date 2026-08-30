@@ -1,5 +1,4 @@
-// pages/supervisor/index.js
-// COMPLETE FIXED - Dashboard shows stats/charts, reports in separate tabs
+// pages/supervisor/index.js - COMPLETE FIXED WITH NORMALIZED DATA
 
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/router';
@@ -32,145 +31,129 @@ ChartJS.register(
 import Select from 'react-select';
 
 // ============================================================
-// HELPER FUNCTIONS
+// 🟢 FIXED: HELPER FUNCTIONS WITH NORMALIZATION
 // ============================================================
 
-function calculateNationalServiceRecommendation(workplace, intellectual, overall) {
-  if (workplace >= 85 && intellectual >= 85) return 'Highly Recommended';
-  if (workplace >= 75 && intellectual >= 75) return 'Recommended';
-  if (workplace >= 65 && intellectual >= 65) return 'Reserve Pool';
-  if (workplace >= 50 || intellectual >= 50 || overall >= 50) return 'Consider for Development';
-  return 'Not Recommended';
-}
-
-function calculateTrueScore(report) {
-  if (report.is_national_service || report.isNationalService) {
-    const workplace = Number(report.workplace_readiness || 0);
-    const intellectual = Number(report.intellectual_capability || 0);
-    if (workplace > 0 || intellectual > 0) {
-      return Math.round((workplace + intellectual) / 2);
-    }
-  }
-
-  const rawCategories = report.category_scores || report.report_data?.category_scores || report.report_data?.categoryBreakdown;
+// 🟢 Normalize university names to avoid duplicates
+function getUniversityKey(university) {
+  if (!university || university === 'Not Specified' || university === '') return 'Not Specified';
   
-  if (rawCategories && typeof rawCategories === 'object' && !Array.isArray(rawCategories)) {
-    const categories = Object.entries(rawCategories).map(([category, data]) => ({
-      category,
-      percentage: Math.round(data.percentage || 0)
-    }));
-    const validScores = categories.filter(cat => cat.percentage > 0);
-    if (validScores.length > 0) {
-      const sum = validScores.reduce((acc, cat) => acc + cat.percentage, 0);
-      return Math.round(sum / validScores.length);
-    }
-  }
-
-  if (Array.isArray(rawCategories) && rawCategories.length > 0) {
-    const validScores = rawCategories
-      .map(c => Number(c.percentage || c.score || 0))
-      .filter(s => s > 0);
-    if (validScores.length > 0) {
-      const sum = validScores.reduce((a, b) => a + b, 0);
-      return Math.round(sum / validScores.length);
-    }
-  }
-
-  return Math.round(Number(report.score || report.percentage_score || report.overallScore || 0));
-}
-
-// ============================================================
-// PROGRAM NORMALIZATION
-// ============================================================
-
-const ABBREVIATIONS = {
-  'bsc': 'BSc', 'b.sc': 'BSc', 'b. sc': 'BSc', 'b.s.c': 'BSc',
-  'bachelor': 'Bachelor', 'btech': 'B-Tech', 'b.tech': 'B-Tech',
-  'b-tech': 'B-Tech', 'hnd': 'HND',
-  'eng': 'Engineering', 'engr': 'Engineering',
-  'elec': 'Electrical', 'electronics': 'Electronics',
-  'electronic': 'Electronics',
-  'mech': 'Mechanical', 'mechanical': 'Mechanical',
-  'admin': 'Administration', 'adminis': 'Administration',
-  'of': 'of', 'and': 'and', 'in': 'in', 'with': 'with',
-  '&': 'and', '/': 'and', '-': ' ', '_': ' ',
-  'plant': 'Plant', 'option': 'Option',
-  'automobile': 'Automobile', 'auto': 'Automobile',
-  'production': 'Production', 'manufacturing': 'Manufacturing',
-  'technology': 'Technology', 'telecommunication': 'Telecommunication',
-  'telecom': 'Telecommunication', 'information': 'Information',
-  'it': 'Information Technology', 'computer': 'Computer',
-  'science': 'Science', 'mathematics': 'Mathematics',
-  'math': 'Mathematics', 'statistics': 'Statistics',
-  'chemical': 'Chemical', 'petroleum': 'Petroleum',
-  'renewable': 'Renewable', 'energy': 'Energy',
-  'environmental': 'Environmental', 'civil': 'Civil',
-  'geomatic': 'Geomatic', 'geological': 'Geological',
-  'minerals': 'Minerals', 'materials': 'Materials',
-  'industrial': 'Industrial', 'agricultural': 'Agricultural',
-  'marine': 'Marine', 'biomedical': 'Biomedical',
-  'mechatronics': 'Mechatronics', 'instrumentation': 'Instrumentation',
-  'control': 'Control', 'power': 'Power',
-  'communication': 'Communication', 'networking': 'Networking',
-  'business': 'Business', 'management': 'Management',
-  'marketing': 'Marketing', 'finance': 'Finance',
-  'accounting': 'Accounting', 'economics': 'Economics',
-  'human': 'Human', 'resource': 'Resource',
-  'psychology': 'Psychology', 'sociology': 'Sociology',
-  'geography': 'Geography', 'history': 'History',
-  'political': 'Political', 'education': 'Education',
-  'arts': 'Arts', 'humanities': 'Humanities'
-};
-
-function normalizeProgramName(raw) {
-  if (!raw || typeof raw !== 'string') return '';
-  let cleaned = raw
+  const normalized = university
     .toLowerCase()
-    .replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, ' ')
-    .replace(/\s+/g, ' ')
+    .replace(/university of /g, '')
+    .replace(/technical university/g, 'Tech Uni')
+    .replace(/university/g, 'Uni')
     .trim();
-  const words = cleaned.split(' ');
-  const mappedWords = words.map(word => ABBREVIATIONS[word] || word.charAt(0).toUpperCase() + word.slice(1));
-  return mappedWords.join(' ');
+  
+  const mapping = {
+    'kwame nkrumah university of science and technology': 'KNUST',
+    'kwame nkrumah uni of science and tech': 'KNUST',
+    'knust': 'KNUST',
+    'accra technical university': 'Accra Technical University',
+    'accra tech uni': 'Accra Technical University',
+    'kumasi technical university': 'Kumasi Technical University',
+    'kumasi tech uni': 'Kumasi Technical University',
+    'university of mines and technology': 'University of Mines and Technology',
+    'university of mines & technology': 'University of Mines and Technology',
+    'u mat': 'University of Mines and Technology',
+    'koforidua technical university': 'Koforidua Technical University',
+    'koforidua tech uni': 'Koforidua Technical University',
+    'regional maritime university': 'Regional Maritime University',
+    'regional maritime uni': 'Regional Maritime University',
+    'sunyani technical university': 'Sunyani Technical University',
+    'sunyani tech uni': 'Sunyani Technical University',
+    'cape coast technical university': 'Cape Coast Technical University',
+    'ho technical university': 'Ho Technical University',
+    'university of energy and natural resources': 'University of Energy and Natural Resources',
+    'uenr': 'University of Energy and Natural Resources',
+    'university of ghana': 'University of Ghana',
+    'ug': 'University of Ghana',
+    'university of cape coast': 'University of Cape Coast',
+    'ucc': 'University of Cape Coast',
+  };
+  
+  return mapping[normalized] || university;
 }
 
-function getUniqueMasterNames(rawPrograms) {
-  if (!rawPrograms || rawPrograms.length === 0) return { groups: [], masterToRawMap: {} };
-  const normalizedMap = {};
-  rawPrograms.forEach(p => { normalizedMap[p] = normalizeProgramName(p); });
-  const uniqueCleanNames = [...new Set(Object.values(normalizedMap))];
-  const groups = [];
-  const processed = new Set();
-  uniqueCleanNames.forEach(name1 => {
-    if (processed.has(name1)) return;
-    const group = [name1];
-    processed.add(name1);
-    uniqueCleanNames.forEach(name2 => {
-      if (processed.has(name2)) return;
-      const words1 = name1.split(' ');
-      const words2 = name2.split(' ');
-      const intersection = words1.filter(w => words2.includes(w)).length;
-      const union = new Set([...words1, ...words2]).size;
-      const similarity = union > 0 ? intersection / union : 0;
-      if (similarity > 0.6) { group.push(name2); processed.add(name2); }
-    });
-    const masterName = group.reduce((a, b) => a.length >= b.length ? a : b);
-    groups.push(masterName);
-  });
-  const masterToRawMap = {};
-  groups.forEach(master => {
-    masterToRawMap[master] = [];
-    rawPrograms.forEach(raw => {
-      const clean = normalizeProgramName(raw);
-      const words1 = master.split(' ');
-      const words2 = clean.split(' ');
-      const intersection = words1.filter(w => words2.includes(w)).length;
-      const union = new Set([...words1, ...words2]).size;
-      const similarity = union > 0 ? intersection / union : 0;
-      if (similarity > 0.6) { masterToRawMap[master].push(raw); }
-    });
-  });
-  return { groups, masterToRawMap };
+// 🟢 Normalize program names
+function getProgramKey(program) {
+  if (!program || program === 'Not Specified' || program === '') return 'Not Specified';
+  
+  const normalized = program
+    .toLowerCase()
+    .replace(/bsc/g, 'BSc')
+    .replace(/b.sc/g, 'BSc')
+    .replace(/bachelor/g, 'BSc')
+    .replace(/btech/g, 'B-Tech')
+    .replace(/b.tech/g, 'B-Tech')
+    .replace(/b-tech/g, 'B-Tech')
+    .replace(/hnd/g, 'HND')
+    .replace(/engineering/g, 'Eng')
+    .replace(/eng/g, 'Eng')
+    .trim();
+  
+  // Map common variations
+  const mapping = {
+    'mechanical engineering': 'BSc Mechanical Engineering',
+    'mechanical eng': 'BSc Mechanical Engineering',
+    'mech eng': 'BSc Mechanical Engineering',
+    'electrical engineering': 'B-Tech Electrical and Electronics Engineering',
+    'electrical eng': 'B-Tech Electrical and Electronics Engineering',
+    'telecommunication engineering': 'Telecommunication Engineering',
+    'telecom eng': 'Telecommunication Engineering',
+    'chemical engineering': 'Chemical Engineering',
+    'chemical eng': 'Chemical Engineering',
+    'agricultural engineering': 'BSc Agricultural Engineering',
+    'agric eng': 'BSc Agricultural Engineering',
+    'mechanical engineering plant option': 'Mechanical Engineering Plant Option',
+    'mechanical eng plant': 'Mechanical Engineering Plant Option',
+  };
+  
+  return mapping[normalized] || normalized;
+}
+
+// 🟢 Universal score calculation
+function calculateScore(report) {
+  // Behavioral & Soft Skills: use percentage_score
+  if (report.assessment_id === '671bf00f-46cc-46f5-a217-d5a90dafb9b6' ||
+      report.assessment_title === 'Behavioral & Soft Skills') {
+    if (report.percentage_score) return Number(report.percentage_score);
+  }
+  
+  // All other assessments: use category_scores
+  const categoryScores = report.category_scores || report.report_data?.categoryScores || [];
+  if (Array.isArray(categoryScores) && categoryScores.length > 0) {
+    const validScores = categoryScores
+      .map(cat => Number(cat.percentage || cat.score || 0))
+      .filter(score => score > 0 && score <= 100);
+    if (validScores.length > 0) {
+      return Math.round(validScores.reduce((a, b) => a + b, 0) / validScores.length);
+    }
+  }
+  
+  if (report.percentage_score) {
+    const val = Number(report.percentage_score);
+    if (val > 0 && val <= 100) return val;
+  }
+  
+  if (report.total_score !== undefined && report.max_score !== undefined) {
+    const total = Number(report.total_score);
+    const max = Number(report.max_score);
+    if (max > 0) {
+      const calc = Math.round((total / max) * 100);
+      if (calc >= 0 && calc <= 100) return calc;
+    }
+  }
+  
+  return 0;
+}
+
+function calculateNationalServiceRecommendation(score) {
+  const s = Number(score || 0);
+  if (s >= 85) return 'Highly Recommended';
+  if (s >= 75) return 'Recommended';
+  if (s >= 65) return 'Reserve Pool';
+  return 'Not Recommended';
 }
 
 // ============================================================
@@ -244,8 +227,16 @@ function ViewCandidatesTab({ candidates, onManageCandidate }) {
                       <div style={styles.cellSub}>ID: {candidate.id.substring(0, 8)}...</div>
                     </td>
                     <td style={styles.td}>{candidate.email || 'No email'}</td>
-                    <td style={styles.td}>{candidate.university || '—'}</td>
-                    <td style={styles.td}>{candidate.programme || '—'}</td>
+                    <td style={styles.td}>
+                      {candidate.university && candidate.university !== 'Not Specified' 
+                        ? candidate.university 
+                        : <span style={styles.naText}>—</span>}
+                    </td>
+                    <td style={styles.td}>
+                      {candidate.programme && candidate.programme !== 'Not Specified'
+                        ? candidate.programme
+                        : <span style={styles.naText}>—</span>}
+                    </td>
                     <td style={styles.td}>
                       <span style={styles.countBadge}>{completedCount}</span>
                     </td>
@@ -292,7 +283,7 @@ function AssessmentTab({ reports, getScoreColor, getScoreTextColor, onViewReport
             </thead>
             <tbody>
               {reports.map((report) => {
-                const trueScore = calculateTrueScore(report);
+                const trueScore = calculateScore(report);
                 return (
                   <tr key={report.result_id || `${report.candidate_id}-${report.assessment_id}`} style={styles.tr}>
                     <td style={styles.td}>
@@ -341,22 +332,16 @@ function NationalServiceTab({ reports, getScoreColor, getScoreTextColor, getReco
               <tr>
                 <th style={styles.th}>Candidate</th>
                 <th style={styles.th}>Status</th>
-                <th style={styles.th}>Workplace Readiness</th>
-                <th style={styles.th}>Intellectual Capability</th>
-                <th style={styles.th}>Overall Score</th>
+                <th style={styles.th}>Score</th>
                 <th style={styles.th}>Recommendation</th>
                 <th style={styles.th}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {reports.map((report) => {
-                const overallScore = Number(report.score || report.overallScore || report.percentage_score || 0);
-                const workplaceScore = Number(report.workplace_readiness || 0);
-                const intellectualScore = Number(report.intellectual_capability || 0);
-                const isCompleted = report.status === 'completed' || report.result_id !== null || (report.percentage_score !== null && report.percentage_score !== undefined);
-                const hasScores = workplaceScore > 0 || intellectualScore > 0 || overallScore > 0;
-
-                const displayRecommendation = calculateNationalServiceRecommendation(workplaceScore, intellectualScore, overallScore);
+                const overallScore = calculateScore(report);
+                const isCompleted = report.status === 'completed' || report.result_id !== null;
+                const displayRecommendation = calculateNationalServiceRecommendation(overallScore);
 
                 return (
                   <tr key={report.result_id || report.candidate_id} style={styles.tr}>
@@ -370,23 +355,13 @@ function NationalServiceTab({ reports, getScoreColor, getScoreTextColor, getReco
                       </span>
                     </td>
                     <td style={styles.td}>
-                      <span style={{ ...styles.scoreBadge, background: getScoreColor(workplaceScore), color: getScoreTextColor(workplaceScore) }}>
-                        {hasScores ? Math.round(workplaceScore) + '%' : '—'}
-                      </span>
-                    </td>
-                    <td style={styles.td}>
-                      <span style={{ ...styles.scoreBadge, background: getScoreColor(intellectualScore), color: getScoreTextColor(intellectualScore) }}>
-                        {hasScores ? Math.round(intellectualScore) + '%' : '—'}
-                      </span>
-                    </td>
-                    <td style={styles.td}>
                       <span style={{ ...styles.scoreBadge, background: getScoreColor(overallScore), color: getScoreTextColor(overallScore) }}>
-                        {hasScores ? Math.round(overallScore) + '%' : '—'}
+                        {overallScore > 0 ? overallScore + '%' : '—'}
                       </span>
                     </td>
                     <td style={styles.td}>
                       <span style={{ ...styles.recommendationBadge, color: getRecommendationColor(displayRecommendation) }}>
-                        {hasScores ? displayRecommendation : 'Pending'}
+                        {overallScore > 0 ? displayRecommendation : 'Pending'}
                       </span>
                     </td>
                     <td style={styles.td}>
@@ -431,7 +406,7 @@ function OtherAssessmentsTab({ reports, onViewReport }) {
             </thead>
             <tbody>
               {reports.map((report) => {
-                const trueScore = calculateTrueScore(report);
+                const trueScore = calculateScore(report);
                 return (
                   <tr key={report.result_id || `${report.candidate_id}-${report.assessment_id}`} style={styles.tr}>
                     <td style={styles.td}>
@@ -524,12 +499,14 @@ function DashboardTab({
           </div>
           <div style={styles.statRow}>
             <span style={styles.statRowLabel}>Number of Programs</span>
-            <span style={styles.statRowValue}>{new Set(filteredReports.map(r => r.programme).filter(Boolean)).size}</span>
+            <span style={styles.statRowValue}>{new Set(filteredReports.map(r => getProgramKey(r.programme)).filter(p => p !== 'Not Specified')).size}</span>
           </div>
           <div style={styles.topProgramContainer}>
             <div style={styles.topProgramLabel}>Most Popular Program:</div>
             <div style={styles.topProgramValue}>
-              {programmeStats.length > 0 ? programmeStats[0].name : 'N/A'}
+              {programmeStats.length > 0 && programmeStats[0].name !== 'Not Specified' 
+                ? programmeStats[0].name 
+                : 'No programs specified'}
             </div>
           </div>
         </div>
@@ -546,7 +523,6 @@ export default function SupervisorDashboard() {
   const { session, loading: authLoading } = useRequireAuth();
 
   const [loading, setLoading] = useState(true);
-  // 🟢 DEFAULT TAB IS 'dashboard'
   const [activeTab, setActiveTab] = useState(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
@@ -572,7 +548,6 @@ export default function SupervisorDashboard() {
   const [minScore, setMinScore] = useState(0);
   const [maxScore, setMaxScore] = useState(100);
 
-  // Update URL when tab changes
   useEffect(() => {
     if (typeof window !== 'undefined' && activeTab) {
       const url = new URL(window.location);
@@ -701,76 +676,81 @@ export default function SupervisorDashboard() {
 
   const COLORS = ['#1a237e', '#2e7d32', '#f57c00', '#c62828', '#1565c0', '#4a148c', '#00695c', '#bf360c', '#78909c'];
 
+  // 🟢 FIXED: Normalize university stats to remove duplicates
   const universityStats = useMemo(() => {
     const map = {};
     allReports.forEach(r => {
-      const uni = r.university || 'Not Specified';
+      const uni = getUniversityKey(r.university);
       map[uni] = (map[uni] || 0) + 1;
     });
-    return Object.entries(map).sort((a, b) => b[1] - a[1]).map(([name, value]) => ({ name, value }));
+    const sorted = Object.entries(map)
+      .sort((a, b) => b[1] - a[1])
+      .map(([name, value]) => ({ name, value }));
+    // Move "Not Specified" to the bottom
+    const notSpecified = sorted.findIndex(item => item.name === 'Not Specified');
+    if (notSpecified > -1) {
+      const item = sorted.splice(notSpecified, 1)[0];
+      sorted.push(item);
+    }
+    return sorted;
   }, [allReports]);
 
-  const rawPrograms = useMemo(() => {
-    return allReports.map(r => r.programme).filter(Boolean);
+  // 🟢 FIXED: Normalize program stats
+  const programmeStats = useMemo(() => {
+    const map = {};
+    allReports.forEach(r => {
+      const key = getProgramKey(r.programme);
+      map[key] = (map[key] || 0) + 1;
+    });
+    const sorted = Object.entries(map)
+      .sort((a, b) => b[1] - a[1])
+      .map(([name, value]) => ({ name, value }));
+    // Move "Not Specified" to the bottom
+    const notSpecified = sorted.findIndex(item => item.name === 'Not Specified');
+    if (notSpecified > -1) {
+      const item = sorted.splice(notSpecified, 1)[0];
+      sorted.push(item);
+    }
+    return sorted;
   }, [allReports]);
-
-  const { groups: uniqueProgramMasterNames, masterToRawMap } = useMemo(() => {
-    return getUniqueMasterNames(rawPrograms);
-  }, [rawPrograms]);
 
   const filterReports = (reportsToFilter) => {
     let filtered = reportsToFilter;
-
     if (selectedUniversityOption) {
-      filtered = filtered.filter(r => r.university === selectedUniversityOption.value);
+      filtered = filtered.filter(r => getUniversityKey(r.university) === selectedUniversityOption.value);
     }
-
     if (selectedProgramOptions.length > 0) {
-      const allowedRawNames = [];
-      selectedProgramOptions.forEach(opt => {
-        const rawList = masterToRawMap[opt.value] || [];
-        allowedRawNames.push(...rawList);
+      filtered = filtered.filter(r => {
+        const progKey = getProgramKey(r.programme);
+        return selectedProgramOptions.some(opt => opt.value === progKey);
       });
-      filtered = filtered.filter(r => allowedRawNames.includes(r.programme));
     }
-
     filtered = filtered.filter(r => {
-      const score = calculateTrueScore(r);
+      const score = calculateScore(r);
       return score >= Number(minScore) && score <= Number(maxScore);
     });
-
     return filtered;
   };
 
-  const filteredReports = useMemo(() => filterReports(allReports), [allReports, selectedUniversityOption, selectedProgramOptions, minScore, maxScore, masterToRawMap]);
-  const filteredNationalService = useMemo(() => filterReports(nationalServiceReports), [nationalServiceReports, selectedUniversityOption, selectedProgramOptions, minScore, maxScore, masterToRawMap]);
-  const filteredOther = useMemo(() => filterReports(otherReports), [otherReports, selectedUniversityOption, selectedProgramOptions, minScore, maxScore, masterToRawMap]);
-
-  const programmeStats = useMemo(() => {
-    const map = {};
-    filteredReports.forEach(r => {
-      const raw = r.programme || 'Not Specified';
-      let master = 'Other';
-      for (const [m, rawList] of Object.entries(masterToRawMap)) {
-        if (rawList.includes(raw)) { master = m; break; }
-      }
-      map[master] = (map[master] || 0) + 1;
-    });
-    return Object.entries(map).sort((a, b) => b[1] - a[1]).map(([name, value]) => ({ name, value }));
-  }, [filteredReports, masterToRawMap]);
+  const filteredReports = useMemo(() => filterReports(allReports), [allReports, selectedUniversityOption, selectedProgramOptions, minScore, maxScore]);
+  const filteredNationalService = useMemo(() => filterReports(nationalServiceReports), [nationalServiceReports, selectedUniversityOption, selectedProgramOptions, minScore, maxScore]);
+  const filteredOther = useMemo(() => filterReports(otherReports), [otherReports, selectedUniversityOption, selectedProgramOptions, minScore, maxScore]);
 
   const filteredAverageScore = useMemo(() => {
     const scores = filteredReports
-      .map(r => calculateTrueScore(r))
+      .map(r => calculateScore(r))
       .filter(s => s > 0);
     if (scores.length === 0) return 0;
     return Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
   }, [filteredReports]);
 
+  // 🟢 FIXED: Pie chart with clean labels
   const pieChartData = useMemo(() => {
     if (programmeStats.length === 0) return { labels: [], data: [] };
-    const top8 = programmeStats.slice(0, 8);
-    const othersCount = programmeStats.slice(8).reduce((sum, item) => sum + item.value, 0);
+    // Filter out "Not Specified" and "Others"
+    const validPrograms = programmeStats.filter(p => p.name !== 'Not Specified' && p.name !== 'Others');
+    const top8 = validPrograms.slice(0, 8);
+    const othersCount = validPrograms.slice(8).reduce((sum, item) => sum + item.value, 0);
     const labels = top8.map(item => item.name);
     const data = top8.map(item => item.value);
     if (othersCount > 0) { labels.push('Others'); data.push(othersCount); }
@@ -778,12 +758,16 @@ export default function SupervisorDashboard() {
   }, [programmeStats]);
 
   const universityOptions = useMemo(() => {
-    return universityStats.map(uni => ({ label: `${uni.name} (${uni.value})`, value: uni.name }));
+    return universityStats
+      .filter(uni => uni.name !== 'Not Specified')
+      .map(uni => ({ label: `${uni.name} (${uni.value})`, value: uni.name }));
   }, [universityStats]);
 
   const programOptions = useMemo(() => {
-    return uniqueProgramMasterNames.map(p => ({ label: p, value: p }));
-  }, [uniqueProgramMasterNames]);
+    return programmeStats
+      .filter(p => p.name !== 'Not Specified')
+      .map(p => ({ label: `${p.name} (${p.value})`, value: p.name }));
+  }, [programmeStats]);
 
   const resetFilters = () => {
     setSelectedUniversityOption(null);
@@ -831,7 +815,7 @@ export default function SupervisorDashboard() {
           <div style={styles.errorBox}><strong>Dashboard loading issue:</strong> {errorMessage}</div>
         )}
 
-        {/* 🟢 FILTERS - Only show on report tabs */}
+        {/* Filters */}
         {activeTab !== 'dashboard' && activeTab !== 'view_candidates' && (
           <div style={styles.filtersBar}>
             <div style={styles.filtersRow}>
@@ -880,7 +864,7 @@ export default function SupervisorDashboard() {
           </div>
         )}
 
-        {/* 🟢 TABS */}
+        {/* Tabs */}
         <div style={styles.tabsContainer}>
           <TabButton 
             active={activeTab === 'dashboard'} 
@@ -913,7 +897,7 @@ export default function SupervisorDashboard() {
           />
         </div>
 
-        {/* 🟢 TAB CONTENT */}
+        {/* Tab Content */}
         <div style={styles.tabContent}>
           {activeTab === 'dashboard' && (
             <DashboardTab
@@ -1266,6 +1250,7 @@ const styles = {
   recommendationBadge: { padding: '4px 12px', borderRadius: '20px', fontSize: '13px', fontWeight: '600', display: 'inline-block', background: 'white', border: '1px solid #e2e8f0' },
   viewButton: { padding: '6px 12px', background: '#1a237e', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: '500', whiteSpace: 'nowrap' },
   pendingText: { color: '#94a3b8', fontSize: '13px' },
+  naText: { color: '#94a3b8', fontSize: '13px', fontStyle: 'italic' },
   emptyState: { textAlign: 'center', padding: '30px', color: '#64748b', background: '#f8fafc', borderRadius: '8px' }
 };
 
