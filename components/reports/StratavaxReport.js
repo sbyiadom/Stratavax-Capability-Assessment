@@ -1,7 +1,6 @@
-// components/reports/StratavaxReport.js - COMPLETE FIXED
-// Added safe accessors for all behavioral matrix properties
+// components/reports/StratavaxReport.js - COMPLETE FIXED WITH NO INFINITE LOOP
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../supabase/client';
 import {
   getScorePhrase,
@@ -216,9 +215,508 @@ function formatDate(dateString) {
 }
 
 // ============================================================
-// STYLES (truncated for brevity - keep your existing styles)
+// STYLES
 // ============================================================
-const styles = { /* Keep your existing styles */ };
+const styles = {
+  container: {
+    maxWidth: '1200px',
+    margin: '0 auto',
+    padding: '20px',
+    fontFamily: 'system-ui, -apple-system, sans-serif'
+  },
+  backButton: {
+    padding: '8px 16px',
+    background: 'transparent',
+    border: '1px solid #e2e8f0',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    fontSize: '14px',
+    color: '#475569',
+    marginBottom: '20px'
+  },
+  loadingContainer: {
+    textAlign: 'center',
+    padding: '40px',
+    color: '#64748b'
+  },
+  header: {
+    background: 'linear-gradient(135deg, #0b2a4e 0%, #1b4a7a 100%)',
+    borderRadius: '12px',
+    padding: '24px 30px',
+    color: 'white',
+    marginBottom: '24px'
+  },
+  title: {
+    fontSize: '24px',
+    fontWeight: '700',
+    margin: '0 0 16px 0'
+  },
+  headerGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+    gap: '8px 20px',
+    fontSize: '14px'
+  },
+  label: {
+    opacity: 0.7,
+    marginRight: '4px'
+  },
+  value: {
+    fontWeight: '500'
+  },
+  statsGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+    gap: '16px',
+    marginBottom: '24px'
+  },
+  statCard: {
+    background: 'white',
+    padding: '20px',
+    borderRadius: '12px',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+    border: '1px solid #eef2f7',
+    textAlign: 'center'
+  },
+  statValue: {
+    fontSize: '28px',
+    fontWeight: '800',
+    color: '#0b2a4e'
+  },
+  statLabel: {
+    fontSize: '13px',
+    color: '#64748b',
+    marginTop: '4px'
+  },
+  statBadge: {
+    display: 'inline-block',
+    padding: '2px 12px',
+    borderRadius: '12px',
+    fontSize: '12px',
+    fontWeight: '600',
+    marginTop: '8px'
+  },
+  section: {
+    marginBottom: '28px'
+  },
+  sectionTitle: {
+    fontSize: '20px',
+    fontWeight: '600',
+    color: '#0b2a4e',
+    margin: '0 0 12px 0'
+  },
+  sectionSubtitle: {
+    fontSize: '14px',
+    color: '#64748b',
+    margin: '0 0 16px 0'
+  },
+  summaryBox: {
+    background: '#f8fafc',
+    padding: '20px 24px',
+    borderRadius: '12px',
+    border: '1px solid #eef2f7'
+  },
+  summaryText: {
+    fontSize: '15px',
+    lineHeight: '1.7',
+    color: '#1a202c',
+    margin: 0
+  },
+  categoryGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))',
+    gap: '16px'
+  },
+  categoryCard: {
+    background: 'white',
+    padding: '16px 20px',
+    borderRadius: '12px',
+    border: '1px solid #eef2f7',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
+  },
+  categoryHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '8px'
+  },
+  categoryName: {
+    fontSize: '15px',
+    fontWeight: '600',
+    color: '#1a202c'
+  },
+  categoryScore: {
+    fontSize: '20px',
+    fontWeight: '700'
+  },
+  categoryBar: {
+    height: '6px',
+    background: '#e2e8f0',
+    borderRadius: '3px',
+    overflow: 'hidden',
+    marginBottom: '8px'
+  },
+  categoryBarFill: {
+    height: '100%',
+    borderRadius: '3px',
+    transition: 'width 0.5s ease'
+  },
+  categoryDetail: {
+    fontSize: '12px',
+    color: '#94a3b8',
+    marginBottom: '10px'
+  },
+  categoryAnalysis: {
+    borderTop: '1px solid #eef2f7',
+    paddingTop: '10px'
+  },
+  categorySummary: {
+    fontSize: '14px',
+    lineHeight: '1.6',
+    color: '#334155',
+    margin: '0 0 6px 0'
+  },
+  categorySupervisor: {
+    fontSize: '13px',
+    color: '#475569',
+    margin: 0,
+    fontStyle: 'italic'
+  },
+  strengthGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))',
+    gap: '16px'
+  },
+  strengthCard: {
+    background: 'white',
+    padding: '16px 20px',
+    borderRadius: '12px',
+    border: '1px solid #eef2f7',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
+  },
+  strengthHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    marginBottom: '8px'
+  },
+  strengthNumber: {
+    width: '28px',
+    height: '28px',
+    background: '#2e7d32',
+    color: 'white',
+    borderRadius: '50%',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '13px',
+    fontWeight: '700',
+    flexShrink: 0
+  },
+  strengthName: {
+    flex: 1,
+    fontSize: '15px',
+    fontWeight: '600',
+    color: '#1a202c'
+  },
+  strengthScore: {
+    fontSize: '18px',
+    fontWeight: '700'
+  },
+  strengthDescription: {
+    fontSize: '14px',
+    lineHeight: '1.6',
+    color: '#334155',
+    margin: '0 0 6px 0'
+  },
+  strengthNote: {
+    fontSize: '13px',
+    color: '#475569',
+    margin: 0,
+    fontStyle: 'italic'
+  },
+  developmentGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))',
+    gap: '16px'
+  },
+  developmentCard: {
+    background: 'white',
+    padding: '16px 20px',
+    borderRadius: '12px',
+    border: '1px solid #eef2f7',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
+  },
+  developmentHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    marginBottom: '8px'
+  },
+  developmentNumber: {
+    width: '28px',
+    height: '28px',
+    background: '#c62828',
+    color: 'white',
+    borderRadius: '50%',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '13px',
+    fontWeight: '700',
+    flexShrink: 0
+  },
+  developmentName: {
+    flex: 1,
+    fontSize: '15px',
+    fontWeight: '600',
+    color: '#1a202c'
+  },
+  developmentScore: {
+    fontSize: '18px',
+    fontWeight: '700'
+  },
+  developmentDescription: {
+    fontSize: '14px',
+    lineHeight: '1.6',
+    color: '#334155',
+    margin: '0 0 6px 0'
+  },
+  developmentNote: {
+    fontSize: '13px',
+    color: '#475569',
+    margin: 0,
+    fontStyle: 'italic'
+  },
+  recommendationGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))',
+    gap: '16px'
+  },
+  recommendationCard: {
+    background: 'white',
+    padding: '16px 20px',
+    borderRadius: '12px',
+    border: '1px solid #eef2f7',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
+  },
+  recommendationHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '8px'
+  },
+  recommendationNumber: {
+    fontSize: '14px',
+    fontWeight: '600',
+    color: '#1a202c'
+  },
+  recommendationPriority: {
+    fontSize: '12px',
+    fontWeight: '600',
+    padding: '2px 12px',
+    borderRadius: '12px',
+    backgroundColor: '#f1f5f9',
+    color: '#475569'
+  },
+  recommendationText: {
+    fontSize: '14px',
+    lineHeight: '1.6',
+    color: '#334155',
+    margin: '0 0 6px 0'
+  },
+  recommendationAction: {
+    fontSize: '13px',
+    color: '#475569',
+    margin: '0 0 4px 0'
+  },
+  recommendationImpact: {
+    fontSize: '13px',
+    color: '#475569',
+    margin: 0
+  },
+  emptyState: {
+    background: '#f8fafc',
+    padding: '30px',
+    borderRadius: '12px',
+    textAlign: 'center',
+    border: '1px solid #eef2f7'
+  },
+  emptyStateSub: {
+    fontSize: '14px',
+    color: '#64748b',
+    marginTop: '8px'
+  },
+  actions: {
+    textAlign: 'center',
+    marginTop: '30px',
+    paddingTop: '20px',
+    borderTop: '1px solid #eef2f7'
+  },
+  printButton: {
+    padding: '12px 32px',
+    background: '#0b2a4e',
+    color: 'white',
+    border: 'none',
+    borderRadius: '8px',
+    fontSize: '16px',
+    fontWeight: '600',
+    cursor: 'pointer'
+  },
+  behavioralToggleContainer: {
+    marginTop: '24px',
+    textAlign: 'center'
+  },
+  behavioralToggleButton: {
+    padding: '10px 24px',
+    background: '#1a237e',
+    color: 'white',
+    border: 'none',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    fontSize: '14px',
+    fontWeight: '600'
+  },
+  behavioralSection: {
+    marginTop: '24px',
+    padding: '20px',
+    background: '#f8fafc',
+    borderRadius: '12px',
+    border: '1px solid #e2e8f0'
+  },
+  behavioralTitle: {
+    fontSize: '18px',
+    fontWeight: '600',
+    color: '#0a1929',
+    margin: '0 0 16px 0',
+    paddingBottom: '12px',
+    borderBottom: '2px solid #e2e8f0'
+  },
+  behavioralStats: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+    gap: '12px',
+    marginBottom: '16px'
+  },
+  behavioralStat: {
+    background: 'white',
+    padding: '12px 16px',
+    borderRadius: '8px',
+    border: '1px solid #e2e8f0',
+    textAlign: 'center'
+  },
+  behavioralLabel: {
+    display: 'block',
+    fontSize: '11px',
+    color: '#94a3b8',
+    textTransform: 'uppercase',
+    letterSpacing: '0.04em',
+    marginBottom: '4px'
+  },
+  behavioralValue: {
+    fontSize: '18px',
+    fontWeight: '700',
+    color: '#0a1929'
+  },
+  riskBadge: {
+    display: 'inline-block',
+    padding: '4px 12px',
+    borderRadius: '12px',
+    fontSize: '13px',
+    fontWeight: '600'
+  },
+  riskSummary: {
+    padding: '12px 16px',
+    background: 'white',
+    borderRadius: '8px',
+    border: '1px solid #e2e8f0',
+    marginBottom: '12px',
+    fontSize: '14px',
+    color: '#475569'
+  },
+  behavioralCommentary: {
+    marginTop: '16px',
+    padding: '16px',
+    background: 'white',
+    borderRadius: '8px',
+    border: '1px solid #e2e8f0'
+  },
+  commentaryTitle: {
+    fontSize: '15px',
+    fontWeight: '600',
+    color: '#0a1929',
+    margin: '0 0 12px 0',
+    paddingBottom: '8px',
+    borderBottom: '1px solid #e2e8f0'
+  },
+  commentaryMetrics: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px'
+  },
+  commentaryItem: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: '8px',
+    padding: '6px 0',
+    borderBottom: '1px solid #f8fafc'
+  },
+  commentaryLabel: {
+    fontWeight: '600',
+    color: '#475569',
+    minWidth: '120px',
+    fontSize: '13px',
+    flexShrink: 0
+  },
+  commentaryText: {
+    fontSize: '13px',
+    color: '#1a202c',
+    lineHeight: '1.5'
+  },
+  recommendationBox: {
+    marginTop: '12px',
+    padding: '12px 16px',
+    background: '#fef3c7',
+    borderRadius: '8px',
+    border: '1px solid #fcd34d'
+  },
+  recommendationTitle: {
+    fontSize: '13px',
+    fontWeight: '600',
+    color: '#92400e',
+    margin: '0 0 6px 0'
+  },
+  recommendationList: {
+    margin: '0',
+    paddingLeft: '20px',
+    fontSize: '13px',
+    color: '#78350f'
+  },
+  cleanCommentary: {
+    marginTop: '12px',
+    padding: '12px 16px',
+    background: '#dcfce7',
+    borderRadius: '8px',
+    border: '1px solid #bbf7d0',
+    fontSize: '13px',
+    color: '#166534'
+  },
+  noBehavioralData: {
+    textAlign: 'center',
+    padding: '30px 20px',
+    color: '#64748b'
+  },
+  noBehavioralSubtext: {
+    fontSize: '13px',
+    color: '#94a3b8',
+    marginTop: '8px'
+  },
+  loadingBehavioral: {
+    textAlign: 'center',
+    padding: '20px',
+    color: '#64748b'
+  }
+};
 
 // ============================================================
 // COMPONENT
@@ -234,6 +732,7 @@ export default function StratavaxReport({
   const [localBehavioralMatrix, setLocalBehavioralMatrix] = useState(null);
   const [localLoadingBehavioral, setLocalLoadingBehavioral] = useState(false);
   const [showBehavioral, setShowBehavioral] = useState(false);
+  const [hasFetched, setHasFetched] = useState(false); // 🟢 FIX: Prevent infinite loop
 
   // Extract report data
   const reportData = result?.report_data || result || {};
@@ -246,13 +745,13 @@ export default function StratavaxReport({
     
   const loadingBehavioral = propLoadingBehavioral ?? localLoadingBehavioral ?? false;
   
-  // 🟢 FIX: Check if behavioralMatrix exists and has the expected structure
+  // Check if behavioralMatrix exists and has the expected structure
   const hasBehavioralData = behavioralMatrix !== null && 
                             behavioralMatrix !== undefined && 
                             typeof behavioralMatrix === 'object' &&
                             Object.keys(behavioralMatrix).length > 0;
 
-  // 🟢 FIX: Safe accessor for behavioral matrix properties
+  // Safe accessor for behavioral matrix properties
   const getBehavioralValue = (key, fallback = '0') => {
     if (!hasBehavioralData) return fallback;
     const value = behavioralMatrix[key];
@@ -260,14 +759,15 @@ export default function StratavaxReport({
     return value;
   };
 
+  // 🟢 FIX: Only fetch once, prevent infinite loop
   useEffect(() => {
-    if (extractedMatrix) {
-      console.log('[StratavaxReport] Using extracted matrix from report');
+    // If we already have data, don't fetch
+    if (extractedMatrix || propBehavioralMatrix) {
       return;
     }
     
-    if (propBehavioralMatrix !== undefined && propBehavioralMatrix !== null) {
-      console.log('[StratavaxReport] Using behavioralMatrix from props');
+    // If we've already fetched, don't fetch again
+    if (hasFetched) {
       return;
     }
 
@@ -275,7 +775,7 @@ export default function StratavaxReport({
     if (resultId) {
       fetchBehavioralMatrix(resultId);
     }
-  }, [result, propBehavioralMatrix, extractedMatrix]);
+  }, [result?.id, result?.result_id, extractedMatrix, propBehavioralMatrix, hasFetched]);
 
   const fetchBehavioralMatrix = async (id) => {
     try {
@@ -309,6 +809,7 @@ export default function StratavaxReport({
       console.error('Error fetching behavioral matrix:', error);
     } finally {
       setLocalLoadingBehavioral(false);
+      setHasFetched(true); // 🟢 Mark as fetched
     }
   };
 
@@ -335,7 +836,7 @@ export default function StratavaxReport({
   const weaknesses = safeArray(result.weaknesses || result.developmentAreas || []);
   const recommendations = safeArray(result.recommendations || []);
   
-  // 🟢 FIX: Use the updated calculateScore function
+  // Calculate overall score
   const overallScore = calculateScore(result);
   
   const classification = safeText(result.classification || 'Standard Profile');
@@ -465,7 +966,7 @@ export default function StratavaxReport({
       );
     }
 
-    // 🟢 FIX: Use safe getters for all values
+    // Use safe getters for all values
     const totalTime = getBehavioralValue('totalTime', '00:00:00');
     const avgTimePerQuestion = getBehavioralValue('avgTimePerQuestion', '0s');
     const answerChanges = getBehavioralValue('answerChanges', 0);
