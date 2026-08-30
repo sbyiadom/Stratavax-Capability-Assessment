@@ -1,688 +1,438 @@
-// pages/supervisor/manage-candidate/[user_id].js - FIXED PERMISSION CHECK
+// pages/supervisor/reports/[resultId].js - COMPLETE FIXED
 
-import React, { useEffect, useState } from "react";
-import { useRouter } from "next/router";
-import Link from "next/link";
-import AppLayout from "../../../components/AppLayout";
-import { supabase } from "../../../supabase/client";
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/router';
+import { supabase } from '../../../supabase/client';
+import NationalServiceReport from '../../../components/reports/NationalServiceReport';
+import StratavaxReport from '../../../components/reports/StratavaxReport';
+import AppLayout from '../../../components/AppLayout';
 
-function safeArray(value) {
-  return Array.isArray(value) ? value : [];
+const NATIONAL_SERVICE_ASSESSMENT_ID = 'bdb9d46e-9fac-4d00-8478-1f649e7ac600';
+const BEHAVIORAL_ASSESSMENT_ID = '671bf00f-46cc-46f5-a217-d5a90dafb9b6';
+
+function safeNumber(value, fallback = 0) {
+  if (value === null || value === undefined || value === '') return fallback;
+  const num = Number(value);
+  return Number.isFinite(num) ? num : fallback;
 }
 
-function toNumber(value, fallback = 0) {
-  const numberValue = Number(value);
-  if (Number.isNaN(numberValue) || !Number.isFinite(numberValue)) return fallback;
-  return numberValue;
-}
-
-function cleanText(value, fallback = "") {
-  if (value === null || value === undefined || value === "") return fallback;
-  return String(value);
-}
-
-function formatDate(value) {
-  if (!value) return "N/A";
-  try {
-    return new Date(value).toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric"
-    });
-  } catch (error) {
-    return "N/A";
+function getReportDataObject(rawReportData) {
+  if (!rawReportData) return {};
+  if (typeof rawReportData === 'object') return rawReportData;
+  if (typeof rawReportData === 'string') {
+    try {
+      const parsed = JSON.parse(rawReportData);
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch { return {}; }
   }
+  return {};
 }
 
-function getPercentage(result) {
-  if (!result) return 0;
-  if (result.percentage_score !== null && result.percentage_score !== undefined) {
-    const val = toNumber(result.percentage_score, 0);
-    if (val === 0 && result.total_score !== undefined && result.max_score !== undefined) {
-      const total = toNumber(result.total_score, 0);
-      const max = toNumber(result.max_score, 0);
-      if (max > 0) {
-        return Math.round((total / max) * 100);
-      }
-    }
-    return Math.round(val);
-  }
-  const score = toNumber(result.total_score, 0);
-  const maxScore = toNumber(result.max_score, 0);
-  if (maxScore <= 0) return 0;
-  return Math.round((score / maxScore) * 100);
-}
-
-function getClassification(percentage) {
-  if (percentage >= 85) return { label: "High Potential", color: "#2e7d32", bg: "#e8f5e9" };
-  if (percentage >= 70) return { label: "Strong Performer", color: "#1565c0", bg: "#e3f2fd" };
-  if (percentage >= 55) return { label: "Developing", color: "#f57c00", bg: "#fff3e0" };
-  if (percentage >= 40) return { label: "At Risk", color: "#ef6c00", bg: "#fff3e0" };
-  if (percentage > 0) return { label: "High Risk", color: "#c62828", bg: "#ffebee" };
-  return { label: "No Data", color: "#667085", bg: "#f2f4f7" };
-}
-
-function getInitial(name, email) {
-  const source = cleanText(name, cleanText(email, "C"));
-  return source.charAt(0).toUpperCase();
-}
-
-function getReadableError(error) {
-  if (!error) return "Something went wrong.";
-  return error.message || String(error) || "Something went wrong.";
-}
-
-export default function ManageSingleCandidate() {
-  const router = useRouter();
-  const { user_id } = router.query;
-
-  const [candidate, setCandidate] = useState(null);
-  const [assessments, setAssessments] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [checkingAuth, setCheckingAuth] = useState(true);
-  const [currentSupervisor, setCurrentSupervisor] = useState(null); // ✅ Store full supervisor object
-  const [message, setMessage] = useState({ type: "", text: "" });
+function calculateScore(result) {
+  const isBehavioral = result.assessment_id === BEHAVIORAL_ASSESSMENT_ID ||
+                       result.assessment_title === 'Behavioral & Soft Skills';
   
-  // Share modal state
-  const [showShareModal, setShowShareModal] = useState(null);
-  const [availableSupervisors, setAvailableSupervisors] = useState([]);
-  const [sharingInProgress, setSharingInProgress] = useState(false);
-  const [sharedAccessList, setSharedAccessList] = useState({});
+  if (isBehavioral) {
+    if (result.percentage_score) {
+      const val = safeNumber(result.percentage_score);
+      if (val > 0 && val <= 100) return val;
+    }
+  }
+  
+  let categoryScores = [];
+  
+  if (result.category_scores && Array.isArray(result.category_scores) && result.category_scores.length > 0) {
+    categoryScores = result.category_scores;
+  } else if (result.categoryScores && Array.isArray(result.categoryScores) && result.categoryScores.length > 0) {
+    categoryScores = result.categoryScores;
+  } else if (result.category_scores && typeof result.category_scores === 'object' && !Array.isArray(result.category_scores)) {
+    categoryScores = Object.values(result.category_scores);
+  }
+  
+  if (categoryScores.length === 0 && result.report_data) {
+    try {
+      let reportData = result.report_data;
+      if (typeof reportData === 'string') reportData = JSON.parse(reportData);
+      if (reportData.categoryScores && Array.isArray(reportData.categoryScores) && reportData.categoryScores.length > 0) {
+        categoryScores = reportData.categoryScores;
+      } else if (reportData.category_scores && Array.isArray(reportData.category_scores) && reportData.category_scores.length > 0) {
+        categoryScores = reportData.category_scores;
+      } else if (reportData.category_scores && typeof reportData.category_scores === 'object') {
+        categoryScores = Object.values(reportData.category_scores);
+      }
+    } catch {}
+  }
+  
+  if (categoryScores.length > 0) {
+    const validScores = categoryScores
+      .map(cat => {
+        let pct = safeNumber(cat.percentage || cat.score || 0);
+        if (pct > 100 && cat.score !== undefined && cat.maxScore !== undefined) {
+          const score = safeNumber(cat.score);
+          const max = safeNumber(cat.maxScore);
+          if (max > 0) {
+            const calc = Math.round((score / max) * 100);
+            if (calc >= 0 && calc <= 100) pct = calc;
+          }
+        }
+        if (cat.earned !== undefined && cat.max !== undefined) {
+          const earned = safeNumber(cat.earned);
+          const max = safeNumber(cat.max);
+          if (max > 0) {
+            const calc = Math.round((earned / max) * 100);
+            if (calc >= 0 && calc <= 100) pct = calc;
+          }
+        }
+        return pct;
+      })
+      .filter(score => score > 0 && score <= 100);
+    
+    if (validScores.length > 0) {
+      return Math.round(validScores.reduce((a, b) => a + b, 0) / validScores.length);
+    }
+  }
+  
+  if (result.percentage_score) {
+    const val = safeNumber(result.percentage_score);
+    if (val > 0 && val <= 100) return val;
+  }
+  
+  if (result.total_score !== undefined && result.max_score !== undefined) {
+    const total = safeNumber(result.total_score);
+    const max = safeNumber(result.max_score);
+    if (max > 0) {
+      const calc = Math.round((total / max) * 100);
+      if (calc >= 0 && calc <= 100) return calc;
+    }
+  }
+  
+  return 0;
+}
+
+function extractBehavioralMatrix(reportData) {
+  if (!reportData) return null;
+  const proctoring = reportData.proctoring || reportData.behavioral || {};
+  if (Object.keys(proctoring).length === 0) return null;
+  return {
+    totalTime: proctoring.totalTime || '00:00:00',
+    avgTimePerQuestion: proctoring.avgTimePerQuestion || 0,
+    answerChanges: proctoring.answerChanges || 0,
+    tabSwitches: proctoring.tabSwitches || 0,
+    violations: proctoring.totalViolations || 0,
+    copyPasteAttempts: proctoring.copyPasteAttempts || 0,
+    rightClickAttempts: proctoring.rightClickAttempts || 0,
+    riskLevel: proctoring.riskLevel || 'Low Risk',
+    riskScore: proctoring.riskScore || 0,
+    riskFactors: proctoring.riskFactors || [],
+    externalUrlsVisited: proctoring.externalUrlsVisited || 0,
+    flags: {
+      violations: proctoring.totalViolations || 0,
+      tabSwitches: proctoring.tabSwitches || 0,
+      answerChanges: proctoring.answerChanges || 0
+    }
+  };
+}
+
+function isValidUUID(uuid) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(uuid);
+}
+
+function ensureArray(value) {
+  if (Array.isArray(value)) return value;
+  if (value === null || value === undefined || value === false) return [];
+  return [value];
+}
+
+export default function SupervisorReportView() {
+  const router = useRouter();
+  const { resultId } = router.query;
+
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [reportData, setReportData] = useState(null);
+  const [isNationalService, setIsNationalService] = useState(false);
+  const [behavioralMatrix, setBehavioralMatrix] = useState(null);
 
   useEffect(() => {
-    if (!router.isReady) return;
-    checkAuth();
-  }, [router.isReady]);
-
-  async function checkAuth() {
-    try {
-      setCheckingAuth(true);
-      const { data, error } = await supabase.auth.getSession();
-      if (error) throw error;
-
-      const activeSession = data?.session || null;
-      if (!activeSession?.user) {
-        router.push("/login");
-        return;
-      }
-
-      const userId = activeSession.user.id;
-      const metadataRole = activeSession.user.user_metadata?.role || null;
-
-      const { data: profile, error: profileError } = await supabase
-        .from("supervisor_profiles")
-        .select("id, full_name, email, role, is_active")
-        .eq("id", userId)
-        .maybeSingle();
-
-      if (profileError && profileError.code !== "PGRST116") throw profileError;
-
-      const resolvedRole = profile?.role || metadataRole;
-
-      if (resolvedRole !== "supervisor" && resolvedRole !== "admin") {
-        router.push("/");
-        return;
-      }
-
-      if (profile?.is_active === false) {
-        await supabase.auth.signOut();
-        router.push("/login");
-        return;
-      }
-
-      // ✅ Store the full supervisor profile
-      setCurrentSupervisor(profile);
-
-      await Promise.all([
-        fetchCandidateDetails(profile), // ✅ Pass the full profile object
-        fetchAvailableSupervisors()
-      ]);
-    } catch (error) {
-      console.error("Auth error:", error);
-      router.push("/login");
-    } finally {
-      setCheckingAuth(false);
-    }
-  }
-
-  async function fetchAvailableSupervisors() {
-    try {
-      const { data, error } = await supabase
-        .from("supervisor_profiles")
-        .select("id, full_name, email, role")
-        .eq("is_active", true)
-        .neq("id", currentSupervisor?.id);
-      
-      if (!error && data) {
-        setAvailableSupervisors(data);
-      }
-    } catch (error) {
-      console.error("Error fetching supervisors:", error);
-    }
-  }
-
-  async function fetchSharedAccess(candidateId, assessmentId) {
-    try {
-      const { data, error } = await supabase
-        .from("shared_report_access")
-        .select("granted_to, granted_by, expires_at, supervisor_profiles!granted_to(id, full_name, email)")
-        .eq("candidate_id", candidateId)
-        .eq("assessment_id", assessmentId);
-      
-      if (!error && data) {
-        setSharedAccessList(prev => ({
-          ...prev,
-          [`${candidateId}_${assessmentId}`]: data
-        }));
-      }
-    } catch (error) {
-      console.error("Error fetching shared access:", error);
-    }
-  }
-
-  // ✅ FIXED: Accept supervisorProfile object instead of ID
-  async function fetchCandidateDetails(supervisorProfile) {
-    try {
-      setLoading(true);
-      setMessage({ type: "", text: "" });
-
-      // Check if supervisor has access to this candidate
-      const { data: candidateData, error: candidateError } = await supabase
-        .from("candidate_profiles")
-        .select("*, supervisor:supervisor_profiles(id, full_name, email)")
-        .eq("id", user_id)
-        .single();
-
-      if (candidateError) {
-        setMessage({ type: "error", text: "Candidate not found." });
-        setLoading(false);
-        return;
-      }
-
-      // ✅ FIXED: Check permission using the supervisorProfile object
-      const isAdmin = supervisorProfile.role === "admin";
-      const isAssignedSupervisor = candidateData.supervisor_id === supervisorProfile.id;
-      
-      // Check shared access
-      const { data: sharedAccess } = await supabase
-        .from("shared_report_access")
-        .select("*")
-        .eq("candidate_id", user_id)
-        .eq("granted_to", supervisorProfile.id)
-        .maybeSingle();
-      
-      const hasSharedAccess = sharedAccess && (!sharedAccess.expires_at || new Date(sharedAccess.expires_at) > new Date());
-
-      if (!isAdmin && !isAssignedSupervisor && !hasSharedAccess) {
-        setMessage({ type: "error", text: "You do not have permission to view this candidate." });
-        setLoading(false);
-        return;
-      }
-
-      setCandidate(candidateData);
-
-      // Fetch assessments for this candidate
-      const [resultsResponse, accessResponse] = await Promise.all([
-        supabase
-          .from("assessment_results")
-          .select("id, assessment_id, total_score, max_score, percentage_score, completed_at, is_valid, is_auto_submitted, assessment:assessments(id, title, assessment_types(id, name, icon, gradient_start, gradient_end))")
-          .eq("user_id", user_id)
-          .order("completed_at", { ascending: false }),
-        supabase
-          .from("candidate_assessments")
-          .select("id, assessment_id, status, result_id, created_at, unblocked_at, assessments(id, title, assessment_types(id, name, icon, gradient_start, gradient_end))")
-          .eq("user_id", user_id)
-      ]);
-
-      if (resultsResponse.error) throw resultsResponse.error;
-      if (accessResponse.error) throw accessResponse.error;
-
-      const resultsMap = {};
-      safeArray(resultsResponse.data).forEach(result => {
-        resultsMap[result.assessment_id] = result;
-      });
-
-      const processedAssessments = safeArray(accessResponse.data).map(access => {
-        const result = resultsMap[access.assessment_id] || null;
-        const assessment = access.assessments || {};
-        const type = assessment.assessment_types || {};
-        
-        return {
-          id: access.id,
-          assessment_id: access.assessment_id,
-          title: assessment.title || "Unknown Assessment",
-          type_name: type.name || "General",
-          type_icon: type.icon || "📋",
-          type_gradient_start: type.gradient_start || "#0f766e",
-          type_gradient_end: type.gradient_end || "#14b8a6",
-          status: result ? "completed" : access.status,
-          result,
-          completed_at: result?.completed_at,
-          score: result?.total_score,
-          max_score: result?.max_score,
-          percentage: result?.percentage_score
-        };
-      });
-
-      setAssessments(processedAssessments);
-      
-      // Fetch shared access for each assessment
-      processedAssessments.forEach(assessment => {
-        fetchSharedAccess(user_id, assessment.assessment_id);
-      });
-
-    } catch (error) {
-      console.error("Error fetching candidate:", error);
-      setMessage({ type: "error", text: "Failed to load candidate data." });
-    } finally {
+    if (!resultId) return;
+    if (!isValidUUID(resultId)) {
+      setError('Invalid report ID format.');
       setLoading(false);
-    }
-  }
-
-  function clearMessagesAfterDelay() {
-    setTimeout(() => {
-      setMessage({ type: "", text: "" });
-    }, 5000);
-  }
-
-  async function grantReportAccess(candidateId, assessmentId, targetSupervisorId, expiresInDays, assessmentTitle, candidateName) {
-    if (!targetSupervisorId) {
-      alert("Please select a supervisor");
       return;
     }
+    fetchReport();
+  }, [resultId]);
 
-    setSharingInProgress(true);
-
+  const fetchReport = async () => {
     try {
+      setLoading(true);
+      setError(null);
+
       const { data: sessionData } = await supabase.auth.getSession();
-      const accessToken = sessionData?.session?.access_token || null;
+      const token = sessionData?.session?.access_token;
 
-      const response = await fetch("/api/supervisor/grant-report-access", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(accessToken ? { Authorization: "Bearer " + accessToken } : {})
-        },
-        body: JSON.stringify({
-          candidateId,
-          assessmentId,
-          targetSupervisorId,
-          expiresInDays: expiresInDays || 30
-        })
-      });
-
-      const result = await response.json();
-
-      if (!response.ok || !result?.success) {
-        throw new Error(result?.message || result?.error || "Failed to grant access.");
+      if (!token) {
+        setError('Please sign in to view this report.');
+        setLoading(false);
+        return;
       }
 
-      setMessage({ type: "success", text: `Report access granted to ${result.data?.granted_to_name || "supervisor"} for ${candidateName} - ${assessmentTitle}` });
-      
-      await fetchSharedAccess(candidateId, assessmentId);
-      setShowShareModal(null);
-    } catch (error) {
-      console.error("Grant access error:", error);
-      setMessage({ type: "error", text: "Failed to grant access: " + getReadableError(error) });
-    } finally {
-      setSharingInProgress(false);
-      clearMessagesAfterDelay();
-    }
-  }
-
-  async function revokeReportAccess(candidateId, assessmentId, targetSupervisorId, targetSupervisorName) {
-    if (!confirm(`Revoke report access for ${targetSupervisorName}?`)) return;
-
-    try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const accessToken = sessionData?.session?.access_token || null;
-
-      const response = await fetch("/api/supervisor/revoke-report-access", {
-        method: "DELETE",
+      const response = await fetch(`/api/assessment-report/${resultId}`, {
+        method: 'GET',
         headers: {
-          "Content-Type": "application/json",
-          ...(accessToken ? { Authorization: "Bearer " + accessToken } : {})
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          candidateId,
-          assessmentId,
-          targetSupervisorId
-        })
       });
 
-      const result = await response.json();
-
-      if (!response.ok || !result?.success) {
-        throw new Error(result?.message || result?.error || "Failed to revoke access.");
+      let data;
+      try {
+        data = await response.json();
+      } catch (parseError) {
+        throw new Error('Invalid response from server');
       }
 
-      setMessage({ type: "success", text: `Access revoked for ${targetSupervisorName}` });
-      await fetchSharedAccess(candidateId, assessmentId);
-    } catch (error) {
-      console.error("Revoke access error:", error);
-      setMessage({ type: "error", text: "Failed to revoke access: " + getReadableError(error) });
-    } finally {
-      clearMessagesAfterDelay();
-    }
-  }
+      if (!response.ok || !data.success) {
+        throw new Error(data?.error || 'Failed to load report');
+      }
 
-  function openShareModal(assessment) {
-    fetchSharedAccess(user_id, assessment.assessment_id);
-    setShowShareModal({
-      candidateId: user_id,
-      candidateName: candidate?.full_name || candidate?.email || "Candidate",
-      assessmentId: assessment.assessment_id,
-      assessmentTitle: assessment.title,
-      assessment
-    });
-  }
+      const result = data.result || {};
+      const parsedResultReportData = getReportDataObject(result.report_data);
+      let report = data.report || {};
 
-  // Navigate to report detail page
-  const handleViewReport = (resultId) => {
-    if (resultId) {
-      router.push(`/supervisor/reports/${resultId}`);
+      if (parsedResultReportData && Object.keys(parsedResultReportData).length > 0) {
+        report = { ...parsedResultReportData, ...report, report_data: parsedResultReportData };
+      }
+
+      const assessmentId = result?.assessment_id || data?.assessment_id || '';
+      const assessmentTitle = result?.assessments?.title || report?.assessmentName || data?.assessmentTitle || '';
+
+      const isNS = assessmentId === NATIONAL_SERVICE_ASSESSMENT_ID ||
+                   assessmentTitle === 'National Service Recruitment Assessment';
+
+      const profile = result?.candidate_profiles || {};
+      const candidateInfo = {
+        fullName: profile?.full_name || result?.candidate_name || data?.candidateName || 'Candidate',
+        email: profile?.email || '',
+        university: profile?.university || 'Not Specified',
+        programme: profile?.programme || 'Not Specified',
+        assessmentDate: result?.completed_at ? new Date(result?.completed_at).toLocaleDateString() : 'N/A'
+      };
+
+      const categoryScores = ensureArray(result?.category_scores || report?.category_scores || report?.categoryScores);
+      const strengths = ensureArray(result?.strengths || report?.strengths);
+      const weaknesses = ensureArray(result?.weaknesses || report?.weaknesses);
+      const recommendations = ensureArray(result?.recommendations || report?.recommendations);
+      const riskFactors = ensureArray(result?.risk_factors || report?.riskFactors);
+
+      const displayScore = calculateScore(result);
+
+      let recommendation = result?.recommendation || report?.recommendation || 'N/A';
+      if (isNS && displayScore > 0) {
+        if (displayScore >= 85) recommendation = 'Highly Recommended';
+        else if (displayScore >= 75) recommendation = 'Recommended';
+        else if (displayScore >= 65) recommendation = 'Reserve Pool';
+        else recommendation = 'Not Recommended';
+      }
+
+      const matrix = extractBehavioralMatrix(parsedResultReportData || report);
+
+      const reportObject = {
+        ...report,
+        reportType: isNS ? 'national_service' : 'stratavax',
+        candidateName: candidateInfo.fullName,
+        candidateInfo: candidateInfo,
+        category_scores: categoryScores,
+        categoryScores: categoryScores,
+        overallScore: displayScore,
+        percentage_score: displayScore,
+        score: displayScore,
+        recommendation: recommendation,
+        status: result?.completed_at ? 'Completed' : (result?.status || 'Pending'),
+        completed_at: result?.completed_at,
+        created_at: result?.created_at,
+        total_questions: result?.total_questions || 0,
+        answered_questions: result?.answered_questions || 0,
+        behavioralMatrix: matrix,
+        proctoring: parsedResultReportData?.proctoring || null,
+        strengths: strengths,
+        weaknesses: weaknesses,
+        recommendations: recommendations,
+        riskFactors: riskFactors,
+        classification: result?.classification || report?.classification || 'Standard Profile',
+        riskLevel: result?.risk_level || report?.riskLevel || 'Medium',
+        executiveSummary: report?.executiveSummary || '',
+        supervisorImplication: report?.supervisorImplication || ''
+      };
+
+      const stratavaxResult = {
+        ...result,
+        candidate_profiles: {
+          full_name: candidateInfo.fullName,
+          email: candidateInfo.email,
+          university: candidateInfo.university,
+          programme: candidateInfo.programme
+        },
+        assessments: {
+          title: assessmentTitle || 'Assessment'
+        },
+        percentage_score: displayScore,
+        classification: reportObject.classification,
+        riskLevel: reportObject.riskLevel,
+        categoryScores: categoryScores,
+        strengths: strengths,
+        weaknesses: weaknesses,
+        recommendations: recommendations,
+        riskFactors: riskFactors,
+        executiveSummary: reportObject.executiveSummary,
+        supervisorImplication: reportObject.supervisorImplication,
+        total_questions: reportObject.total_questions,
+        answered_questions: reportObject.answered_questions,
+        completed_at: result?.completed_at,
+        candidateName: candidateInfo.fullName,
+        behavioralMatrix: matrix
+      };
+
+      setReportData({
+        report: reportObject,
+        result: stratavaxResult,
+        candidateName: candidateInfo.fullName,
+        behavioralMatrix: matrix
+      });
+      setIsNationalService(isNS);
+      setBehavioralMatrix(matrix);
+      setLoading(false);
+
+    } catch (err) {
+      console.error('[Report View] Error:', err);
+      setError(err.message || 'Failed to load report');
+      setLoading(false);
     }
   };
 
-  // ✅ FIXED: Refresh with the current supervisor object
-  const handleRefresh = () => {
-    if (currentSupervisor) {
-      fetchCandidateDetails(currentSupervisor);
-    }
+  const handleBack = () => {
+    router.push('/supervisor/reports');
   };
 
-  if (checkingAuth || !router.isReady) {
+  if (loading) {
     return (
-      <div style={styles.checkingContainer}>
-        <div style={styles.spinner} />
-        <p style={styles.checkingText}>Loading...</p>
-      </div>
+      <AppLayout>
+        <div style={styles.loadingContainer}>
+          <div style={styles.loadingSpinner}></div>
+          <p>Loading report...</p>
+        </div>
+      </AppLayout>
+    );
+  }
+
+  if (error) {
+    return (
+      <AppLayout>
+        <div style={styles.errorContainer}>
+          <div style={styles.errorIcon}>⚠️</div>
+          <h2>Error Loading Report</h2>
+          <p style={styles.errorMessage}>{error}</p>
+          <div style={styles.errorButtonGroup}>
+            <button onClick={handleBack} style={styles.errorButton}>Go Back</button>
+            <button onClick={fetchReport} style={styles.retryButton}>Retry</button>
+          </div>
+        </div>
+      </AppLayout>
+    );
+  }
+
+  if (isNationalService && reportData?.report) {
+    return (
+      <AppLayout>
+        <div style={styles.breadcrumb}>
+          <button onClick={handleBack} style={styles.breadcrumbButton}>← Back to Reports</button>
+          <span style={styles.breadcrumbSeparator}>|</span>
+          <span style={styles.breadcrumbText}>National Service Report</span>
+        </div>
+        <NationalServiceReport
+          report={{ ...reportData.report, proctoring: reportData.report.proctoring, behavioralMatrix: behavioralMatrix }}
+          onBack={handleBack}
+          behavioralMatrix={behavioralMatrix}
+          loadingBehavioral={false}
+        />
+      </AppLayout>
+    );
+  }
+
+  if (!isNationalService && reportData?.result) {
+    return (
+      <AppLayout>
+        <div style={styles.breadcrumb}>
+          <button onClick={handleBack} style={styles.breadcrumbButton}>← Back to Reports</button>
+          <span style={styles.breadcrumbSeparator}>|</span>
+          <span style={styles.breadcrumbText}>Assessment Report</span>
+        </div>
+        <StratavaxReport
+          result={reportData.result}
+          candidate={reportData.result.candidate_profiles || null}
+          assessment={reportData.result.assessments || null}
+          onBack={handleBack}
+          behavioralMatrix={behavioralMatrix}
+        />
+      </AppLayout>
     );
   }
 
   return (
-    <AppLayout background="/images/supervisor-bg.jpg">
-      <div style={styles.container}>
-        <div style={styles.backButtonContainer}>
-          <button onClick={() => router.push("/supervisor/manage-candidate")} style={styles.backButton}>← Back to Candidates</button>
+    <AppLayout>
+      <div style={styles.fallbackContainer}>
+        <button onClick={handleBack} style={styles.backButton}>← Back to Reports</button>
+        <div style={styles.fallbackContent}>
+          <h2>Report Not Available</h2>
+          <p>Unable to determine the report type.</p>
         </div>
-
-        <div style={styles.header}>
-          <div>
-            <h1 style={styles.title}>Manage Candidate</h1>
-            {candidate && (
-              <p style={styles.subtitle}>
-                {candidate.full_name || "Candidate"} • {candidate.email || "No email"}
-              </p>
-            )}
-          </div>
-          <div style={styles.headerButtons}>
-            <button onClick={handleRefresh} style={styles.refreshButton}>Refresh</button>
-          </div>
-        </div>
-
-        {message.text && (
-          <div style={{
-            ...styles.message,
-            background: message.type === "success" ? "#e8f5e9" : "#ffebee",
-            color: message.type === "success" ? "#2e7d32" : "#c62828",
-            border: "1px solid " + (message.type === "success" ? "#a5d6a7" : "#ffcdd2")
-          }}>
-            {message.text}
-          </div>
-        )}
-
-        {loading ? (
-          <div style={styles.loading}>Loading assessments...</div>
-        ) : assessments.length === 0 ? (
-          <div style={styles.noDataContainer}>
-            <div style={styles.noDataIcon}>📭</div>
-            <p style={styles.noDataText}>No assessments found for this candidate.</p>
-            <button
-              onClick={() => router.push(`/supervisor/assign-assessment`)}
-              style={styles.assignButton}
-            >
-              Assign Assessment
-            </button>
-          </div>
-        ) : (
-          <div style={styles.tableContainer}>
-            <div style={styles.tableScroll}>
-              <table style={styles.table}>
-                <thead>
-                  <tr style={styles.tableHeadRow}>
-                    <th style={styles.th}>Assessment</th>
-                    <th style={styles.th}>Type</th>
-                    <th style={styles.th}>Status</th>
-                    <th style={styles.th}>Score</th>
-                    <th style={styles.th}>Completed Date</th>
-                    <th style={styles.th}>Actions</th>
-                   </tr>
-                </thead>
-                <tbody>
-                  {assessments.map((assessment) => {
-                    const percentage = getPercentage(assessment.result);
-                    const classification = getClassification(percentage);
-                    const sharedKey = `${user_id}_${assessment.assessment_id}`;
-                    const sharedWith = sharedAccessList[sharedKey] || [];
-                    const isCompleted = assessment.status === "completed" || assessment.result;
-
-                    return (
-                      <React.Fragment key={assessment.id}>
-                        <tr style={styles.tableRow}>
-                          <td style={styles.td}>
-                            <div style={styles.assessmentInfo}>
-                              <div style={{ ...styles.assessmentIcon, background: `linear-gradient(135deg, ${assessment.type_gradient_start} 0%, ${assessment.type_gradient_end} 100%)` }}>
-                                {assessment.type_icon}
-                              </div>
-                              <div>
-                                <div style={styles.assessmentTitle}>{assessment.title}</div>
-                                <div style={styles.assessmentType}>{assessment.type_name}</div>
-                              </div>
-                            </div>
-                          </td>
-                          <td style={styles.td}>{assessment.type_name}</td>
-                          <td style={styles.td}>
-                            <span style={{
-                              ...styles.statusBadge,
-                              background: isCompleted ? "#e8f5e9" : assessment.status === "unblocked" ? "#e3f2fd" : "#fff3e0",
-                              color: isCompleted ? "#2e7d32" : assessment.status === "unblocked" ? "#1565c0" : "#f57c00"
-                            }}>
-                              {isCompleted ? "Completed" : assessment.status === "unblocked" ? "Ready" : "Blocked"}
-                            </span>
-                          </td>
-                          <td style={styles.td}>
-                            {isCompleted ? (
-                              <span style={{ ...styles.scoreBadge, background: classification.bg, color: classification.color }}>
-                                {percentage}%
-                              </span>
-                            ) : (
-                              <span style={styles.noScore}>—</span>
-                            )}
-                          </td>
-                          <td style={styles.td}>
-                            {assessment.completed_at ? formatDate(assessment.completed_at) : "—"}
-                          </td>
-                          <td style={styles.td}>
-                            <div style={styles.actionGroup}>
-                              {isCompleted && assessment.result && (
-                                <button
-                                  onClick={() => handleViewReport(assessment.result.id)}
-                                  style={styles.viewButton}
-                                >
-                                  View Report
-                                </button>
-                              )}
-                              <button
-                                onClick={() => openShareModal(assessment)}
-                                style={styles.shareButton}
-                              >
-                                🔗 Share
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                        
-                        {sharedWith.length > 0 && (
-                          <tr style={styles.sharedRow}>
-                            <td colSpan="6" style={styles.sharedCell}>
-                              <div style={styles.sharedAccessList}>
-                                <div style={styles.sharedAccessHeader}>Shared with:</div>
-                                {sharedWith.map(access => (
-                                  <div key={access.granted_to} style={styles.sharedAccessItem}>
-                                    <span>{access.supervisor_profiles?.full_name || access.granted_to}</span>
-                                    <button
-                                      onClick={() => revokeReportAccess(user_id, assessment.assessment_id, access.granted_to, access.supervisor_profiles?.full_name)}
-                                      style={styles.revokeButton}
-                                    >
-                                      Revoke
-                                    </button>
-                                  </div>
-                                ))}
-                              </div>
-                            </td>
-                          </tr>
-                        )}
-                      </React.Fragment>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
       </div>
-
-      {/* Share Modal */}
-      {showShareModal && (
-        <div style={styles.modalOverlay}>
-          <div style={styles.shareModal}>
-            <div style={styles.modalHeader}>
-              <span style={styles.modalIcon}>🔗</span>
-              <h3 style={styles.modalTitle}>Share Report</h3>
-              <button onClick={() => setShowShareModal(null)} style={styles.closeButton}>×</button>
-            </div>
-            <div style={styles.modalBody}>
-              <p><strong>Candidate:</strong> {showShareModal.candidateName}</p>
-              <p><strong>Assessment:</strong> {showShareModal.assessmentTitle}</p>
-
-              <div style={styles.formGroup}>
-                <label style={styles.label}>Select Supervisor:</label>
-                <select id="supervisorSelect" style={styles.select} defaultValue="">
-                  <option value="">-- Select a supervisor --</option>
-                  {availableSupervisors.map(sup => (
-                    <option key={sup.id} value={sup.id}>{sup.full_name || sup.email} {sup.role === 'admin' ? '(Admin)' : ''}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div style={styles.formGroup}>
-                <label style={styles.label}>Access Duration:</label>
-                <select id="durationSelect" style={styles.select} defaultValue="30">
-                  <option value="7">7 days</option>
-                  <option value="30">30 days</option>
-                  <option value="90">90 days</option>
-                  <option value="">No expiration</option>
-                </select>
-              </div>
-
-              <div style={styles.noteBox}>
-                <span>💡</span>
-                <span>The supervisor will receive a notification and can view this report from their dashboard.</span>
-              </div>
-            </div>
-            <div style={styles.modalFooter}>
-              <button onClick={() => setShowShareModal(null)} style={styles.cancelButton}>Cancel</button>
-              <button
-                onClick={() => {
-                  const supervisorIdSelected = document.getElementById("supervisorSelect").value;
-                  const days = document.getElementById("durationSelect").value;
-                  if (!supervisorIdSelected) {
-                    alert("Please select a supervisor");
-                    return;
-                  }
-                  grantReportAccess(
-                    showShareModal.candidateId,
-                    showShareModal.assessmentId,
-                    supervisorIdSelected,
-                    days ? parseInt(days) : null,
-                    showShareModal.assessmentTitle,
-                    showShareModal.candidateName
-                  );
-                }}
-                disabled={sharingInProgress}
-                style={{ ...styles.grantButton, opacity: sharingInProgress ? 0.7 : 1 }}
-              >
-                {sharingInProgress ? "Granting..." : "Grant Access"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <style jsx>{`
-        @keyframes spin {
-          0% { transform: rotate(0deg); }
-          100% { transform: rotate(360deg); }
-        }
-      `}</style>
     </AppLayout>
   );
 }
 
 const styles = {
-  checkingContainer: { minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "linear-gradient(135deg, #0a1929 0%, #1a2a3a 100%)", color: "white", padding: "20px", textAlign: "center" },
-  spinner: { width: "42px", height: "42px", border: "4px solid rgba(255,255,255,0.3)", borderTop: "4px solid white", borderRadius: "50%", animation: "spin 1s linear infinite", marginBottom: "18px" },
-  checkingText: { margin: 0, color: "rgba(255,255,255,0.9)", fontSize: "14px" },
-  container: { maxWidth: "1400px", margin: "0 auto", padding: "40px 20px" },
-  backButtonContainer: { marginBottom: "20px" },
-  backButton: { display: "inline-flex", alignItems: "center", gap: "8px", padding: "10px 20px", background: "white", border: "1px solid #e2e8f0", borderRadius: "8px", fontSize: "14px", fontWeight: 700, color: "#0a1929", cursor: "pointer" },
-  header: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: "16px", marginBottom: "24px", background: "white", padding: "22px 30px", borderRadius: "16px", boxShadow: "0 4px 12px rgba(0,0,0,0.08)", flexWrap: "wrap" },
-  headerButtons: { display: "flex", gap: "12px", flexWrap: "wrap" },
-  title: { fontSize: "24px", fontWeight: 800, color: "#0a1929", margin: "0 0 5px" },
-  subtitle: { fontSize: "14px", color: "#667085", margin: 0 },
-  refreshButton: { padding: "12px 20px", background: "#1565c0", color: "white", border: "none", borderRadius: "8px", fontSize: "14px", fontWeight: 700, cursor: "pointer" },
-  message: { padding: "12px 20px", borderRadius: "8px", marginBottom: "20px", fontSize: "14px", lineHeight: 1.5 },
-  tableContainer: { background: "white", borderRadius: "16px", boxShadow: "0 4px 12px rgba(0,0,0,0.08)", overflow: "hidden" },
-  tableScroll: { overflowX: "auto" },
-  table: { width: "100%", borderCollapse: "collapse", fontSize: "13px", minWidth: "800px" },
-  tableHeadRow: { background: "#f8fafc", borderBottom: "2px solid #0a1929" },
-  th: { textAlign: "left", padding: "15px 20px", fontWeight: 800, color: "#0a1929" },
-  td: { padding: "15px 20px", borderBottom: "1px solid #e2e8f0", verticalAlign: "middle" },
-  tableRow: { background: "white" },
-  sharedRow: { background: "#f8fafc" },
-  noDataContainer: { textAlign: "center", padding: "60px 20px", background: "white", borderRadius: "16px" },
-  noDataIcon: { fontSize: "48px", marginBottom: "16px" },
-  noDataText: { fontSize: "16px", color: "#718096", marginBottom: "16px" },
-  assignButton: { padding: "10px 24px", background: "#0a1929", color: "white", borderRadius: "8px", border: "none", fontSize: "14px", fontWeight: 700, cursor: "pointer" },
-  loading: { textAlign: "center", padding: "60px", color: "#667085", background: "white", borderRadius: "16px" },
-  assessmentInfo: { display: "flex", alignItems: "center", gap: "12px" },
-  assessmentIcon: { width: "40px", height: "40px", borderRadius: "10px", color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "18px" },
-  assessmentTitle: { fontWeight: 700, color: "#0a1929", marginBottom: "2px" },
-  assessmentType: { fontSize: "11px", color: "#718096" },
-  statusBadge: { display: "inline-block", padding: "4px 10px", borderRadius: "12px", fontSize: "11px", fontWeight: 700 },
-  scoreBadge: { display: "inline-block", padding: "4px 10px", borderRadius: "12px", fontSize: "12px", fontWeight: 700 },
-  noScore: { fontSize: "12px", color: "#9e9e9e", fontStyle: "italic" },
-  actionGroup: { display: "flex", gap: "8px", flexWrap: "wrap" },
-  viewButton: { padding: "6px 12px", background: "#0a1929", color: "white", borderRadius: "6px", fontSize: "12px", border: "none", cursor: "pointer", display: "inline-block" },
-  shareButton: { padding: "6px 12px", background: "#8b5cf6", color: "white", borderRadius: "6px", fontSize: "12px", border: "none", cursor: "pointer" },
-  revokeButton: { background: "#ef4444", color: "white", border: "none", borderRadius: "4px", padding: "2px 8px", fontSize: "10px", cursor: "pointer" },
-  sharedAccessList: { display: "flex", flexWrap: "wrap", gap: "15px", alignItems: "center" },
-  sharedAccessHeader: { fontSize: "11px", color: "#667085", fontWeight: 700 },
-  sharedAccessItem: { display: "flex", alignItems: "center", gap: "8px", fontSize: "11px", background: "#e2e8f0", padding: "4px 10px", borderRadius: "20px" },
-  sharedCell: { padding: "10px 20px" },
-  modalOverlay: { position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: "20px", backdropFilter: "blur(5px)" },
-  shareModal: { background: "white", borderRadius: "20px", maxWidth: "500px", width: "100%", maxHeight: "90vh", overflow: "hidden", display: "flex", flexDirection: "column", boxShadow: "0 20px 60px rgba(0,0,0,0.3)" },
-  modalHeader: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "20px 24px", borderBottom: "2px solid #e2e8f0", background: "#f8fafc" },
-  modalIcon: { fontSize: "28px" },
-  modalTitle: { margin: 0, fontSize: "18px", color: "#0a1929" },
-  closeButton: { background: "none", border: "none", fontSize: "24px", cursor: "pointer", color: "#667085", padding: "4px 8px", borderRadius: "8px" },
-  modalBody: { padding: "24px", overflowY: "auto", flex: 1 },
-  formGroup: { marginBottom: "20px" },
-  label: { display: "block", marginBottom: "8px", fontWeight: 700, color: "#0a1929", fontSize: "14px" },
-  select: { width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1px solid #e2e8f0", fontSize: "14px", background: "white" },
-  noteBox: { marginTop: "20px", padding: "12px", background: "#e3f2fd", borderRadius: "8px", display: "flex", gap: "12px", fontSize: "13px", color: "#1565c0" },
-  modalFooter: { display: "flex", justifyContent: "flex-end", gap: "12px", padding: "16px 24px", borderTop: "1px solid #e2e8f0", background: "#f8fafc" },
-  cancelButton: { padding: "10px 24px", background: "#f1f5f9", border: "1px solid #cbd5e1", borderRadius: "8px", fontSize: "14px", fontWeight: 700, cursor: "pointer", color: "#475569" },
-  grantButton: { padding: "10px 24px", background: "#8b5cf6", color: "white", border: "none", borderRadius: "8px", fontSize: "14px", fontWeight: 800, cursor: "pointer" }
+  loadingContainer: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: '400px',
+    gap: '16px'
+  },
+  loadingSpinner: {
+    width: '40px',
+    height: '40px',
+    border: '4px solid #e2e8f0',
+    borderTop: '4px solid #1a237e',
+    borderRadius: '50%',
+    animation: 'spin 1s linear infinite'
+  },
+  errorContainer: {
+    maxWidth: '500px',
+    margin: '40px auto',
+    textAlign: 'center',
+    padding: '40px',
+    background: 'white',
+    borderRadius: '12px',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+  },
+  errorIcon: { fontSize: '48px', marginBottom: '16px' },
+  errorMessage: { color: '#dc2626', marginBottom: '20px' },
+  errorButtonGroup: { display: 'flex', gap: '8px', justifyContent: 'center', marginTop: '16px' },
+  errorButton: { padding: '10px 24px', background: '#1a237e', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', fontWeight: '500' },
+  retryButton: { padding: '10px 24px', background: '#e2e8f0', color: '#1a202c', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', fontWeight: '500' },
+  breadcrumb: { display: 'flex', alignItems: 'center', gap: '12px', padding: '16px 24px', background: 'white', borderBottom: '1px solid #e2e8f0', maxWidth: '1200px', margin: '0 auto', flexWrap: 'wrap' },
+  breadcrumbButton: { padding: '8px 16px', background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '14px', color: '#1a237e', fontWeight: '500' },
+  breadcrumbSeparator: { color: '#94a3b8' },
+  breadcrumbText: { fontSize: '14px', color: '#475569' },
+  fallbackContainer: { maxWidth: '1200px', margin: '0 auto', padding: '20px' },
+  backButton: { padding: '8px 16px', background: 'transparent', border: '1px solid #e2e8f0', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', color: '#475569', marginBottom: '20px' },
+  fallbackContent: { background: 'white', padding: '24px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }
 };
+
+if (typeof document !== 'undefined') {
+  const style = document.createElement('style');
+  style.textContent = `@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`;
+  document.head.appendChild(style);
+}
