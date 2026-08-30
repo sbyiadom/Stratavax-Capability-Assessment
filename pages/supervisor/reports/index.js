@@ -1,4 +1,4 @@
-// pages/supervisor/reports/index.js - COMPLETE FINAL FIXED FOR ALL ASSESSMENT TYPES
+// pages/supervisor/reports/index.js - COMPLETE FIXED
 
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/router';
@@ -15,7 +15,7 @@ function safeNumber(value, fallback = 0) {
 }
 
 // ============================================================
-// 🟢 UNIVERSAL SCORE CALCULATION FOR ALL ASSESSMENT TYPES
+// UNIVERSAL SCORE CALCULATION FOR ALL ASSESSMENT TYPES
 // ============================================================
 function calculateScore(report) {
   // STEP 1: Check if it's Behavioral & Soft Skills
@@ -23,7 +23,7 @@ function calculateScore(report) {
                        report.assessment_title === 'Behavioral & Soft Skills' ||
                        report.assessment_type === 'behavioral';
   
-  // 🟢 For Behavioral & Soft Skills: use percentage_score from database
+  // For Behavioral & Soft Skills: use percentage_score from database
   if (isBehavioral) {
     if (report.percentage_score !== undefined && report.percentage_score !== null) {
       const val = safeNumber(report.percentage_score);
@@ -76,7 +76,6 @@ function calculateScore(report) {
   if (categoryScores.length > 0) {
     const validScores = categoryScores
       .map(cat => {
-        // Try to get percentage from various fields
         let pct = safeNumber(cat.percentage || cat.score || 0);
         
         // If percentage > 100, try to calculate from score/maxScore
@@ -240,7 +239,6 @@ export default function ReportsIndex() {
           report.is_national_service === true ||
           report.assessment_title === 'National Service Recruitment Assessment';
 
-        // 🟢 Use the universal calculateScore function
         const displayScore = calculateScore(report);
         
         let recommendation = report.recommendation || 'N/A';
@@ -456,7 +454,6 @@ export default function ReportsIndex() {
           </div>
         )}
 
-        {/* FILTERS BAR */}
         <div style={styles.filtersBar}>
           <div style={styles.filtersRow}>
             <div style={styles.filterGroup}>
@@ -603,7 +600,6 @@ export default function ReportsIndex() {
           )}
         </div>
 
-        {/* Stats Cards */}
         <div style={styles.statsGrid}>
           <div style={styles.statsCard}>
             <div style={styles.statsIcon}>📋</div>
@@ -639,7 +635,6 @@ export default function ReportsIndex() {
           </div>
         </div>
 
-        {/* Tabs */}
         <div style={styles.tabContainer}>
           <button
             onClick={() => handleTabChange('national')}
@@ -665,7 +660,6 @@ export default function ReportsIndex() {
           </button>
         </div>
 
-        {/* Table */}
         <div style={styles.tableContainer}>
           {loading ? (
             <div style={styles.loadingState}>
