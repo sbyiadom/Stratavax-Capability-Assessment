@@ -1,9 +1,14 @@
-// pages/supervisor/manage-candidate/index.js - COMPLETE FIXED WITH ACTUAL DATA
+// pages/supervisor/manage-candidate/index.js - COMPLETE FIXED WITH REAL DATA
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import AppLayout from '../../../components/AppLayout';
 import { supabase } from '../../../supabase/client';
+
+function safeNumber(value, fallback = 0) {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : fallback;
+}
 
 export default function ManageCandidateIndex() {
   const router = useRouter();
@@ -22,7 +27,6 @@ export default function ManageCandidateIndex() {
       setLoading(true);
       setError(null);
 
-      // Get current session
       const { data: sessionData } = await supabase.auth.getSession();
       const session = sessionData?.session;
 
@@ -31,7 +35,6 @@ export default function ManageCandidateIndex() {
         return;
       }
 
-      // Get supervisor profile
       const { data: profile, error: profileError } = await supabase
         .from('supervisor_profiles')
         .select('id, full_name, email, role')
@@ -47,7 +50,6 @@ export default function ManageCandidateIndex() {
 
       setCurrentSupervisor(profile);
 
-      // Get candidates for this supervisor
       const { data: candidatesData, error: candidatesError } = await supabase
         .from('candidate_profiles')
         .select('*')
@@ -61,17 +63,14 @@ export default function ManageCandidateIndex() {
         return;
       }
 
-      // Get assessment counts for each candidate
       const enrichedCandidates = await Promise.all(
         (candidatesData || []).map(async (candidate) => {
-          // Get total assessment count
-          const { count: totalCount, error: countError } = await supabase
+          const { count: totalCount } = await supabase
             .from('assessment_results')
             .select('*', { count: 'exact', head: true })
             .eq('user_id', candidate.id);
 
-          // Get completed assessments count
-          const { count: completedCount, error: completedError } = await supabase
+          const { count: completedCount } = await supabase
             .from('assessment_results')
             .select('*', { count: 'exact', head: true })
             .eq('user_id', candidate.id)
@@ -105,7 +104,6 @@ export default function ManageCandidateIndex() {
     }
 
     try {
-      // First, delete assessment results for this candidate
       const { error: resultsError } = await supabase
         .from('assessment_results')
         .delete()
@@ -117,7 +115,6 @@ export default function ManageCandidateIndex() {
         return;
       }
 
-      // Then delete the candidate
       const { error: candidateError } = await supabase
         .from('candidate_profiles')
         .delete()
@@ -129,7 +126,6 @@ export default function ManageCandidateIndex() {
         return;
       }
 
-      // Refresh the list
       setCandidates(candidates.filter(c => c.id !== userId));
       alert('Candidate deleted successfully!');
 
@@ -203,7 +199,6 @@ export default function ManageCandidateIndex() {
           </button>
         </div>
 
-        {/* Search Bar */}
         <div style={styles.searchBar}>
           <input
             type="text"
@@ -222,7 +217,6 @@ export default function ManageCandidateIndex() {
           </span>
         </div>
 
-        {/* Candidates Table */}
         {filteredCandidates.length === 0 ? (
           <div style={styles.emptyState}>
             <div style={styles.emptyIcon}>📭</div>
@@ -366,15 +360,8 @@ const styles = {
     maxWidth: '500px',
     margin: '40px auto'
   },
-  errorIcon: {
-    fontSize: '48px',
-    display: 'block',
-    marginBottom: '16px'
-  },
-  errorMessage: {
-    color: '#dc2626',
-    marginBottom: '16px'
-  },
+  errorIcon: { fontSize: '48px', display: 'block', marginBottom: '16px' },
+  errorMessage: { color: '#dc2626', marginBottom: '16px' },
   retryButton: {
     padding: '10px 24px',
     background: '#0A1929',
@@ -394,17 +381,8 @@ const styles = {
     flexWrap: 'wrap',
     gap: '16px'
   },
-  title: {
-    fontSize: '28px',
-    fontWeight: 'bold',
-    color: '#0A1929',
-    margin: '0 0 8px 0'
-  },
-  subtitle: {
-    fontSize: '16px',
-    color: '#718096',
-    margin: 0
-  },
+  title: { fontSize: '28px', fontWeight: 'bold', color: '#0A1929', margin: '0 0 8px 0' },
+  subtitle: { fontSize: '16px', color: '#718096', margin: 0 },
   addButton: {
     padding: '10px 24px',
     background: '#0A1929',
@@ -414,7 +392,6 @@ const styles = {
     cursor: 'pointer',
     fontSize: '14px',
     fontWeight: '600',
-    transition: 'all 0.2s ease',
     whiteSpace: 'nowrap'
   },
   searchBar: {
@@ -445,11 +422,7 @@ const styles = {
     fontSize: '16px',
     color: '#94a3b8'
   },
-  searchCount: {
-    fontSize: '13px',
-    color: '#94a3b8',
-    whiteSpace: 'nowrap'
-  },
+  searchCount: { fontSize: '13px', color: '#94a3b8', whiteSpace: 'nowrap' },
   tableContainer: {
     background: 'white',
     borderRadius: '12px',
@@ -457,15 +430,8 @@ const styles = {
     boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
     border: '1px solid #e2e8f0'
   },
-  table: {
-    width: '100%',
-    borderCollapse: 'collapse',
-    fontSize: '14px',
-    minWidth: '800px'
-  },
-  tableHeadRow: {
-    background: '#F8FAFC'
-  },
+  table: { width: '100%', borderCollapse: 'collapse', fontSize: '14px', minWidth: '800px' },
+  tableHeadRow: { background: '#F8FAFC' },
   tableHeadCell: {
     padding: '12px 16px',
     textAlign: 'left',
@@ -475,9 +441,7 @@ const styles = {
     color: '#4A5568',
     whiteSpace: 'nowrap'
   },
-  tableRow: {
-    transition: 'background 0.2s ease'
-  },
+  tableRow: { transition: 'background 0.2s ease' },
   tableCell: {
     padding: '12px 16px',
     borderBottom: '1px solid #E2E8F0',
@@ -485,38 +449,13 @@ const styles = {
     color: '#2D3748',
     verticalAlign: 'middle'
   },
-  candidateName: {
-    fontWeight: '500',
-    color: '#1a202c'
-  },
-  candidateId: {
-    fontSize: '11px',
-    color: '#94a3b8',
-    marginTop: '2px'
-  },
-  candidateEmail: {
-    fontSize: '12px',
-    color: '#64748b'
-  },
-  naText: {
-    color: '#94a3b8',
-    fontStyle: 'italic'
-  },
-  assessmentCount: {
-    fontWeight: '600',
-    color: '#0A1929'
-  },
-  statusBadge: {
-    display: 'inline-block',
-    padding: '4px 12px',
-    borderRadius: '20px',
-    fontSize: '12px',
-    fontWeight: '600'
-  },
-  actionButtons: {
-    display: 'flex',
-    gap: '8px'
-  },
+  candidateName: { fontWeight: '500', color: '#1a202c' },
+  candidateId: { fontSize: '11px', color: '#94a3b8', marginTop: '2px' },
+  candidateEmail: { fontSize: '12px', color: '#64748b' },
+  naText: { color: '#94a3b8', fontStyle: 'italic' },
+  assessmentCount: { fontWeight: '600', color: '#0A1929' },
+  statusBadge: { display: 'inline-block', padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: '600' },
+  actionButtons: { display: 'flex', gap: '8px' },
   viewButton: {
     padding: '4px 12px',
     background: '#4299e1',
@@ -524,8 +463,7 @@ const styles = {
     border: 'none',
     borderRadius: '4px',
     cursor: 'pointer',
-    fontSize: '12px',
-    transition: 'background 0.2s ease'
+    fontSize: '12px'
   },
   deleteButton: {
     padding: '4px 12px',
@@ -534,32 +472,12 @@ const styles = {
     border: 'none',
     borderRadius: '4px',
     cursor: 'pointer',
-    fontSize: '12px',
-    transition: 'background 0.2s ease'
+    fontSize: '12px'
   },
-  emptyState: {
-    textAlign: 'center',
-    padding: '60px 20px',
-    background: 'white',
-    borderRadius: '12px',
-    border: '1px solid #e2e8f0'
-  },
-  emptyIcon: {
-    fontSize: '48px',
-    display: 'block',
-    marginBottom: '16px'
-  },
-  emptyTitle: {
-    fontSize: '18px',
-    fontWeight: '600',
-    color: '#0A1929',
-    margin: '0 0 8px 0'
-  },
-  emptyText: {
-    fontSize: '14px',
-    color: '#94a3b8',
-    margin: '0 0 16px 0'
-  },
+  emptyState: { textAlign: 'center', padding: '60px 20px', background: 'white', borderRadius: '12px', border: '1px solid #e2e8f0' },
+  emptyIcon: { fontSize: '48px', display: 'block', marginBottom: '16px' },
+  emptyTitle: { fontSize: '18px', fontWeight: '600', color: '#0A1929', margin: '0 0 8px 0' },
+  emptyText: { fontSize: '14px', color: '#94a3b8', margin: '0 0 16px 0' },
   emptyButton: {
     padding: '10px 24px',
     background: '#0A1929',
