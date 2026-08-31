@@ -1,6 +1,7 @@
-// components/reports/StratavaxReport.js - COMPLETE FIXED WITH NO INFINITE LOOP
+// components/reports/StratavaxReport.js - COMPLETE FIXED
+// Handles missing behavioral matrix gracefully
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from '../../supabase/client';
 import {
   getScorePhrase,
@@ -732,7 +733,7 @@ export default function StratavaxReport({
   const [localBehavioralMatrix, setLocalBehavioralMatrix] = useState(null);
   const [localLoadingBehavioral, setLocalLoadingBehavioral] = useState(false);
   const [showBehavioral, setShowBehavioral] = useState(false);
-  const [hasFetched, setHasFetched] = useState(false); // 🟢 FIX: Prevent infinite loop
+  const [hasFetched, setHasFetched] = useState(false);
 
   // Extract report data
   const reportData = result?.report_data || result || {};
@@ -745,13 +746,13 @@ export default function StratavaxReport({
     
   const loadingBehavioral = propLoadingBehavioral ?? localLoadingBehavioral ?? false;
   
-  // Check if behavioralMatrix exists and has the expected structure
+  // 🟢 FIX: Check if behavioralMatrix exists and has data
   const hasBehavioralData = behavioralMatrix !== null && 
                             behavioralMatrix !== undefined && 
                             typeof behavioralMatrix === 'object' &&
                             Object.keys(behavioralMatrix).length > 0;
 
-  // Safe accessor for behavioral matrix properties
+  // 🟢 FIX: Safe accessor for behavioral matrix properties
   const getBehavioralValue = (key, fallback = '0') => {
     if (!hasBehavioralData) return fallback;
     const value = behavioralMatrix[key];
@@ -761,12 +762,9 @@ export default function StratavaxReport({
 
   // 🟢 FIX: Only fetch once, prevent infinite loop
   useEffect(() => {
-    // If we already have data, don't fetch
     if (extractedMatrix || propBehavioralMatrix) {
       return;
     }
-    
-    // If we've already fetched, don't fetch again
     if (hasFetched) {
       return;
     }
@@ -809,7 +807,7 @@ export default function StratavaxReport({
       console.error('Error fetching behavioral matrix:', error);
     } finally {
       setLocalLoadingBehavioral(false);
-      setHasFetched(true); // 🟢 Mark as fetched
+      setHasFetched(true);
     }
   };
 
@@ -837,7 +835,31 @@ export default function StratavaxReport({
   const recommendations = safeArray(result.recommendations || []);
   
   // Calculate overall score
-  const overallScore = calculateScore(result);
+  let overallScore = 0;
+  
+  if (categoryScores.length > 0) {
+    const validScores = categoryScores
+      .map(cat => safeNumber(cat.percentage || cat.score || 0))
+      .filter(score => score > 0 && score <= 100);
+    if (validScores.length > 0) {
+      overallScore = Math.round(validScores.reduce((a, b) => a + b, 0) / validScores.length);
+    }
+  }
+  
+  if (overallScore === 0 && result.percentage_score) {
+    overallScore = safeNumber(result.percentage_score);
+  }
+  
+  if (overallScore === 0 && result.total_score !== undefined && result.max_score !== undefined) {
+    const total = safeNumber(result.total_score);
+    const max = safeNumber(result.max_score);
+    if (max > 0) {
+      const calc = Math.round((total / max) * 100);
+      if (calc >= 0 && calc <= 100) {
+        overallScore = calc;
+      }
+    }
+  }
   
   const classification = safeText(result.classification || 'Standard Profile');
   const riskLevel = safeText(result.riskLevel || result.risk_level || 'Medium');
@@ -966,7 +988,7 @@ export default function StratavaxReport({
       );
     }
 
-    // Use safe getters for all values
+    // 🟢 FIX: Use safe getters for all values
     const totalTime = getBehavioralValue('totalTime', '00:00:00');
     const avgTimePerQuestion = getBehavioralValue('avgTimePerQuestion', '0s');
     const answerChanges = getBehavioralValue('answerChanges', 0);
