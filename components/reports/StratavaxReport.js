@@ -1,4 +1,4 @@
-// components/reports/StratavaxReport.js - FIXED: Proper data extraction for strengths/weaknesses
+// components/reports/StratavaxReport.js - FIXED: Proper category name extraction
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../supabase/client';
@@ -89,7 +89,93 @@ function safeArray(value) {
 }
 
 // ============================================================
-// 🟢 FIXED: Universal Score Calculation
+// 🟢 FIXED: Extract category name from various data structures
+// ============================================================
+function getCategoryName(item) {
+  if (!item) return null;
+  
+  // If it's a string, return it
+  if (typeof item === 'string') {
+    return item.trim() || null;
+  }
+  
+  // If it's an object, check various fields
+  const possibleFields = [
+    'category',
+    'name', 
+    'category_name',
+    'label',
+    'title',
+    'area',
+    'dimension',
+    'skill',
+    'competency',
+    'attribute',
+    'key',
+    'id'
+  ];
+  
+  for (const field of possibleFields) {
+    if (item[field] && typeof item[field] === 'string' && item[field].trim() !== '') {
+      return item[field].trim();
+    }
+  }
+  
+  // If the item has an index/key in an object, try to use that
+  // This handles cases where categories are stored as object keys
+  if (item._key && typeof item._key === 'string' && item._key.trim() !== '') {
+    return item._key.trim();
+  }
+  
+  return null;
+}
+
+// ============================================================
+// 🟢 FIXED: Build category map from category scores
+// ============================================================
+function buildCategoryMap(categoryScores) {
+  const map = {};
+  
+  categoryScores.forEach((cat, index) => {
+    // Try to get the category name
+    let name = getCategoryName(cat);
+    
+    // If no name found, try to use the category field directly
+    if (!name && cat.category) {
+      name = typeof cat.category === 'string' ? cat.category.trim() : null;
+    }
+    
+    // If still no name, check if it's an object with a single key
+    if (!name && typeof cat === 'object' && !Array.isArray(cat) && cat !== null) {
+      const keys = Object.keys(cat);
+      // If there's only one key and it's not a common field name, use it as the name
+      if (keys.length === 1) {
+        const key = keys[0];
+        if (!['score', 'maxScore', 'max', 'earned', 'percentage', 'value', 'percent'].includes(key.toLowerCase())) {
+          name = key;
+        }
+      }
+    }
+    
+    // If still no name, use a fallback
+    if (!name) {
+      name = `Category ${index + 1}`;
+    }
+    
+    map[name] = {
+      ...cat,
+      name: name,
+      percentage: safeNumber(cat.percentage || cat.score || 0),
+      score: safeNumber(cat.score || cat.earned || 0),
+      maxScore: safeNumber(cat.maxScore || cat.max || 100)
+    };
+  });
+  
+  return map;
+}
+
+// ============================================================
+// Universal Score Calculation
 // ============================================================
 function calculateScore(result) {
   let categoryScores = [];
@@ -211,36 +297,6 @@ function formatDate(dateString) {
   } catch {
     return 'N/A';
   }
-}
-
-// ============================================================
-// 🟢 FIXED: Extract category name from various data structures
-// ============================================================
-function getCategoryName(item) {
-  if (!item) return 'Unknown';
-  
-  // Try various possible field names
-  const possibleNames = [
-    item.category,
-    item.name,
-    item.category_name,
-    item.label,
-    item.title,
-    item.area,
-    item.dimension,
-    item.skill,
-    item.competency,
-    item.attribute
-  ];
-  
-  // Find the first non-empty string
-  for (const name of possibleNames) {
-    if (name && typeof name === 'string' && name.trim() !== '') {
-      return name.trim();
-    }
-  }
-  
-  return 'Unknown';
 }
 
 // ============================================================
@@ -772,7 +828,6 @@ export default function StratavaxReport({
   const behavioralMatrix = extractedMatrix ?? propBehavioralMatrix ?? localBehavioralMatrix ?? null;
   const loadingBehavioral = propLoadingBehavioral ?? localLoadingBehavioral ?? false;
   
-  // Check if behavioralMatrix exists and has data
   const hasBehavioralData = behavioralMatrix !== null && 
                             behavioralMatrix !== undefined && 
                             typeof behavioralMatrix === 'object' &&
@@ -853,45 +908,124 @@ export default function StratavaxReport({
   // ============================================================
   // Extract data with proper handling
   // ============================================================
-  const categoryScores = safeArray(result.categoryScores || result.category_scores || []);
+  // Get category scores from multiple possible locations
+  let categoryScores = [];
   
-  // 🟢 FIXED: Properly extract strengths with category names
+  if (result.category_scores && Array.isArray(result.category_scores)) {
+    categoryScores = result.category_scores;
+  } else if (result.categoryScores && Array.isArray(result.categoryScores)) {
+    categoryScores = result.categoryScores;
+  } else if (result.report_data) {
+    try {
+      let reportData = result.report_data;
+      if (typeof reportData === 'string') {
+        reportData = JSON.parse(reportData);
+      }
+      if (reportData.categoryScores && Array.isArray(reportData.categoryScores)) {
+        categoryScores = reportData.categoryScores;
+      } else if (reportData.category_scores && Array.isArray(reportData.category_scores)) {
+        categoryScores = reportData.category_scores;
+      } else if (reportData.category_scores && typeof reportData.category_scores === 'object') {
+        categoryScores = Object.values(reportData.category_scores);
+      }
+    } catch (e) {
+      console.error('Error parsing report_data:', e);
+    }
+  }
+
+  // 🟢 FIXED: Build a proper category map with names
+  const categoryMap = {};
+  const categoryList = [];
+  
+  categoryScores.forEach((cat, index) => {
+    let name = null;
+    
+    // Try to get the category name
+    if (cat.category && typeof cat.category === 'string') {
+      name = cat.category.trim();
+    } else if (cat.name && typeof cat.name === 'string') {
+      name = cat.name.trim();
+    } else if (cat.category_name && typeof cat.category_name === 'string') {
+      name = cat.category_name.trim();
+    } else if (cat.label && typeof cat.label === 'string') {
+      name = cat.label.trim();
+    } else if (cat.title && typeof cat.title === 'string') {
+      name = cat.title.trim();
+    } else if (cat.area && typeof cat.area === 'string') {
+      name = cat.area.trim();
+    } else if (cat.dimension && typeof cat.dimension === 'string') {
+      name = cat.dimension.trim();
+    } else if (cat.skill && typeof cat.skill === 'string') {
+      name = cat.skill.trim();
+    }
+    
+    // If no name found, check if the object has a single key that could be the name
+    if (!name && typeof cat === 'object' && cat !== null) {
+      const keys = Object.keys(cat);
+      // Exclude common field names
+      const excludeFields = ['score', 'maxScore', 'max', 'earned', 'percentage', 'value', 'percent', 'id', 'key'];
+      for (const key of keys) {
+        if (!excludeFields.includes(key.toLowerCase()) && typeof cat[key] !== 'object' && cat[key] !== null) {
+          const val = String(cat[key]).trim();
+          if (val && !val.match(/^[\d.]+$/)) {
+            name = key;
+            break;
+          }
+        }
+      }
+    }
+    
+    // Final fallback
+    if (!name) {
+      name = `Category ${index + 1}`;
+    }
+    
+    // Store in map with proper values
+    const categoryData = {
+      name: name,
+      percentage: safeNumber(cat.percentage || cat.score || 0),
+      score: safeNumber(cat.score || cat.earned || 0),
+      maxScore: safeNumber(cat.maxScore || cat.max || 100),
+      earned: safeNumber(cat.earned || cat.score || 0),
+      max: safeNumber(cat.max || cat.maxScore || 100),
+      raw: cat
+    };
+    
+    categoryMap[name] = categoryData;
+    categoryList.push(categoryData);
+  });
+  
+  // Get strengths and weaknesses
   let strengths = safeArray(result.strengths || []);
-  // If strengths is empty, derive from category scores above 75%
-  if (strengths.length === 0 && categoryScores.length > 0) {
-    strengths = categoryScores
-      .filter(cat => {
-        const pct = safeNumber(cat.percentage || cat.score || 0);
-        return pct >= 75;
-      })
+  let weaknesses = safeArray(result.weaknesses || result.developmentAreas || []);
+  
+  // 🟢 FIXED: Derive strengths from category scores if empty or invalid
+  if (strengths.length === 0 || strengths.every(s => !getCategoryName(s))) {
+    strengths = categoryList
+      .filter(cat => cat.percentage >= 75)
       .map(cat => ({
-        category: getCategoryName(cat),
-        name: getCategoryName(cat),
-        percentage: safeNumber(cat.percentage || cat.score || 0),
-        score: safeNumber(cat.score || cat.earned || 0),
-        maxScore: safeNumber(cat.maxScore || cat.max || 100),
-        description: cat.description || cat.summary || '',
-        note: cat.note || cat.supervisorNote || ''
+        category: cat.name,
+        name: cat.name,
+        percentage: cat.percentage,
+        score: cat.score,
+        maxScore: cat.maxScore,
+        description: `${cat.name} shows strong evidence of capability.`,
+        note: `Continue to leverage this strength in appropriate assignments.`
       }));
   }
   
-  // 🟢 FIXED: Properly extract weaknesses/development areas
-  let weaknesses = safeArray(result.weaknesses || result.developmentAreas || []);
-  // If weaknesses is empty, derive from category scores below 65%
-  if (weaknesses.length === 0 && categoryScores.length > 0) {
-    weaknesses = categoryScores
-      .filter(cat => {
-        const pct = safeNumber(cat.percentage || cat.score || 0);
-        return pct < 65 && pct > 0;
-      })
+  // 🟢 FIXED: Derive weaknesses from category scores if empty or invalid
+  if (weaknesses.length === 0 || weaknesses.every(w => !getCategoryName(w))) {
+    weaknesses = categoryList
+      .filter(cat => cat.percentage < 65 && cat.percentage > 0)
       .map(cat => ({
-        category: getCategoryName(cat),
-        name: getCategoryName(cat),
-        percentage: safeNumber(cat.percentage || cat.score || 0),
-        score: safeNumber(cat.score || cat.earned || 0),
-        maxScore: safeNumber(cat.maxScore || cat.max || 100),
-        description: cat.description || cat.summary || '',
-        note: cat.note || cat.supervisorNote || ''
+        category: cat.name,
+        name: cat.name,
+        percentage: cat.percentage,
+        score: cat.score,
+        maxScore: cat.maxScore,
+        description: `${cat.name} shows opportunities for development.`,
+        note: `Consider providing additional training and support in this area.`
       }));
   }
   
@@ -900,9 +1034,9 @@ export default function StratavaxReport({
   // Calculate overall score
   let overallScore = 0;
   
-  if (categoryScores.length > 0) {
-    const validScores = categoryScores
-      .map(cat => safeNumber(cat.percentage || cat.score || 0))
+  if (categoryList.length > 0) {
+    const validScores = categoryList
+      .map(cat => cat.percentage)
       .filter(score => score > 0 && score <= 100);
     if (validScores.length > 0) {
       overallScore = Math.round(validScores.reduce((a, b) => a + b, 0) / validScores.length);
@@ -973,20 +1107,16 @@ export default function StratavaxReport({
   };
 
   const categoryAnalysis = {};
-  categoryScores.forEach(cat => {
-    const name = getCategoryName(cat);
-    const score = safeNumber(cat.percentage || cat.score || 0);
-    categoryAnalysis[name] = generateCategoryAnalysis(name, score);
+  categoryList.forEach(cat => {
+    categoryAnalysis[cat.name] = generateCategoryAnalysis(cat.name, cat.percentage);
   });
 
   // ============================================================
   // Generate executive summary
   // ============================================================
   const generateExecutiveSummary = () => {
-    const strengthCount = strengths.length;
-    const weaknessCount = weaknesses.length;
-    const strengthNames = strengths.slice(0, 3).map(s => getCategoryName(s));
-    const weaknessNames = weaknesses.slice(0, 2).map(w => getCategoryName(w));
+    const strengthNames = strengths.slice(0, 3).map(s => s.name || s.category || '');
+    const weaknessNames = weaknesses.slice(0, 2).map(w => w.name || w.category || '');
     
     let summary = '';
     
@@ -1000,28 +1130,24 @@ export default function StratavaxReport({
       summary = `${candidateName} completed the ${assessmentName} with a score of ${Math.round(overallScore)}%, indicating significant development opportunities. `;
     }
     
-    if (strengthCount > 0 && strengthNames.length > 0 && strengthNames[0] !== 'Unknown') {
-      const topStrengths = strengthNames.filter(n => n !== 'Unknown').join(', ');
+    if (strengthNames.length > 0 && strengthNames[0]) {
+      const topStrengths = strengthNames.filter(n => n && n !== 'Unknown').join(', ');
       if (topStrengths) {
         summary += `Key strengths include ${topStrengths}. `;
       } else {
         summary += `Key strengths were identified across multiple categories. `;
       }
-    } else if (strengthCount > 0) {
-      summary += `Key strengths were identified across multiple categories. `;
     } else {
       summary += `No dominant strength areas were identified above the current threshold. `;
     }
     
-    if (weaknessCount > 0 && weaknessNames.length > 0 && weaknessNames[0] !== 'Unknown') {
-      const topWeaknesses = weaknessNames.filter(n => n !== 'Unknown').join(' and ');
+    if (weaknessNames.length > 0 && weaknessNames[0]) {
+      const topWeaknesses = weaknessNames.filter(n => n && n !== 'Unknown').join(' and ');
       if (topWeaknesses) {
         summary += `Development opportunities include ${topWeaknesses}. `;
       } else {
         summary += `Development opportunities were identified in several areas. `;
       }
-    } else if (weaknessCount > 0) {
-      summary += `Development opportunities were identified in several areas. `;
     } else {
       summary += `No major development areas were identified below the current threshold. `;
     }
@@ -1243,7 +1369,7 @@ export default function StratavaxReport({
           <div style={styles.statLabel}>Questions Answered</div>
         </div>
         <div style={styles.statCard}>
-          <div style={styles.statValue}>{categoryScores.length}</div>
+          <div style={styles.statValue}>{categoryList.length}</div>
           <div style={styles.statLabel}>Categories Assessed</div>
         </div>
         <div style={styles.statCard}>
@@ -1264,11 +1390,11 @@ export default function StratavaxReport({
       <div style={styles.section}>
         <h2 style={styles.sectionTitle}>Category Analysis</h2>
         <div style={styles.categoryGrid}>
-          {categoryScores.map((cat, index) => {
-            const name = getCategoryName(cat);
-            const percentage = safeNumber(cat.percentage || cat.score || 0);
-            const maxScore = safeNumber(cat.maxScore || cat.max || 100, 100);
-            const earnedScore = safeNumber(cat.score || cat.earned || 0);
+          {categoryList.map((cat, index) => {
+            const name = cat.name;
+            const percentage = cat.percentage;
+            const maxScore = cat.maxScore;
+            const earnedScore = cat.score;
             const analysis = categoryAnalysis[name] || generateCategoryAnalysis(name, percentage);
             
             return (
@@ -1311,8 +1437,8 @@ export default function StratavaxReport({
           </p>
           <div style={styles.strengthGrid}>
             {strengths.slice(0, 5).map((strength, index) => {
-              const name = getCategoryName(strength);
-              const percentage = safeNumber(strength.percentage || strength.score || 0);
+              const name = strength.name || strength.category || 'Unknown';
+              const percentage = safeNumber(strength.percentage || 0);
               const analysis = categoryAnalysis[name] || generateCategoryAnalysis(name, percentage);
               
               return (
@@ -1346,8 +1472,8 @@ export default function StratavaxReport({
           </p>
           <div style={styles.developmentGrid}>
             {weaknesses.slice(0, 5).map((weakness, index) => {
-              const name = getCategoryName(weakness);
-              const percentage = safeNumber(weakness.percentage || weakness.score || 0);
+              const name = weakness.name || weakness.category || 'Unknown';
+              const percentage = safeNumber(weakness.percentage || 0);
               const analysis = categoryAnalysis[name] || generateCategoryAnalysis(name, percentage);
               
               return (
