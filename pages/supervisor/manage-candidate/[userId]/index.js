@@ -1,10 +1,10 @@
-// pages/supervisor/manage-candidate/[userId]/index.js - NEW FILE
+// pages/supervisor/manage-candidate/[userId]/index.js - CORRECTED
 // Candidate Report List - Shows all reports for a candidate
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
-import AppLayout from '../../../components/AppLayout';
-import { supabase } from '../../../supabase/client';
+import AppLayout from '../../../../components/AppLayout'; // Fixed: 4 levels up to root, then components
+import { supabase } from '../../../../supabase/client'; // Fixed: 4 levels up to root, then supabase
 
 // ============================================================
 // HELPER FUNCTIONS
@@ -162,6 +162,7 @@ export default function CandidateReports() {
         return;
       }
 
+      // Get supervisor profile
       const { data: profile, error: profileError } = await supabase
         .from('supervisor_profiles')
         .select('id, full_name, email, role')
@@ -190,7 +191,7 @@ export default function CandidateReports() {
       }
 
       // Check permission
-      const isAdmin = profile.role === 'admin';
+      const isAdmin = profile?.role === 'admin';
       const isTheirCandidate = candidateData.supervisor_id === session.user.id;
 
       if (!isAdmin && !isTheirCandidate) {
@@ -201,7 +202,7 @@ export default function CandidateReports() {
 
       setCandidate(candidateData);
 
-      // ✅ Get ALL assessment results for this candidate using user_id
+      // Get ALL assessment results for this candidate using user_id
       const { data: results, error: resultsError } = await supabase
         .from('assessment_results')
         .select(`
