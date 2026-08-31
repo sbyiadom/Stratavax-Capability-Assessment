@@ -1,5 +1,4 @@
-// components/reports/StratavaxReport.js - COMPLETE FIXED
-// Handles missing behavioral matrix gracefully
+// components/reports/StratavaxReport.js - FIXED: Proper data extraction for strengths/weaknesses
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../supabase/client';
@@ -90,12 +89,11 @@ function safeArray(value) {
 }
 
 // ============================================================
-// 🟢 UPDATED UNIVERSAL SCORE CALCULATION
+// 🟢 FIXED: Universal Score Calculation
 // ============================================================
 function calculateScore(result) {
   let categoryScores = [];
   
-  // Extract category_scores from various locations
   if (result.category_scores && Array.isArray(result.category_scores) && result.category_scores.length > 0) {
     categoryScores = result.category_scores;
   } else if (result.categoryScores && Array.isArray(result.categoryScores) && result.categoryScores.length > 0) {
@@ -213,6 +211,36 @@ function formatDate(dateString) {
   } catch {
     return 'N/A';
   }
+}
+
+// ============================================================
+// 🟢 FIXED: Extract category name from various data structures
+// ============================================================
+function getCategoryName(item) {
+  if (!item) return 'Unknown';
+  
+  // Try various possible field names
+  const possibleNames = [
+    item.category,
+    item.name,
+    item.category_name,
+    item.label,
+    item.title,
+    item.area,
+    item.dimension,
+    item.skill,
+    item.competency,
+    item.attribute
+  ];
+  
+  // Find the first non-empty string
+  for (const name of possibleNames) {
+    if (name && typeof name === 'string' && name.trim() !== '') {
+      return name.trim();
+    }
+  }
+  
+  return 'Unknown';
 }
 
 // ============================================================
@@ -741,18 +769,15 @@ export default function StratavaxReport({
   // Extract behavioral matrix from report data
   const extractedMatrix = extractBehavioralMatrix(result || reportData);
   
-  // Use nullish coalescing with proper precedence
   const behavioralMatrix = extractedMatrix ?? propBehavioralMatrix ?? localBehavioralMatrix ?? null;
-    
   const loadingBehavioral = propLoadingBehavioral ?? localLoadingBehavioral ?? false;
   
-  // 🟢 FIX: Check if behavioralMatrix exists and has data
+  // Check if behavioralMatrix exists and has data
   const hasBehavioralData = behavioralMatrix !== null && 
                             behavioralMatrix !== undefined && 
                             typeof behavioralMatrix === 'object' &&
                             Object.keys(behavioralMatrix).length > 0;
 
-  // 🟢 FIX: Safe accessor for behavioral matrix properties
   const getBehavioralValue = (key, fallback = '0') => {
     if (!hasBehavioralData) return fallback;
     const value = behavioralMatrix[key];
@@ -760,7 +785,6 @@ export default function StratavaxReport({
     return value;
   };
 
-  // 🟢 FIX: Only fetch once, prevent infinite loop
   useEffect(() => {
     if (extractedMatrix || propBehavioralMatrix) {
       return;
@@ -827,11 +851,50 @@ export default function StratavaxReport({
   }
 
   // ============================================================
-  // Extract data
+  // Extract data with proper handling
   // ============================================================
   const categoryScores = safeArray(result.categoryScores || result.category_scores || []);
-  const strengths = safeArray(result.strengths || []);
-  const weaknesses = safeArray(result.weaknesses || result.developmentAreas || []);
+  
+  // 🟢 FIXED: Properly extract strengths with category names
+  let strengths = safeArray(result.strengths || []);
+  // If strengths is empty, derive from category scores above 75%
+  if (strengths.length === 0 && categoryScores.length > 0) {
+    strengths = categoryScores
+      .filter(cat => {
+        const pct = safeNumber(cat.percentage || cat.score || 0);
+        return pct >= 75;
+      })
+      .map(cat => ({
+        category: getCategoryName(cat),
+        name: getCategoryName(cat),
+        percentage: safeNumber(cat.percentage || cat.score || 0),
+        score: safeNumber(cat.score || cat.earned || 0),
+        maxScore: safeNumber(cat.maxScore || cat.max || 100),
+        description: cat.description || cat.summary || '',
+        note: cat.note || cat.supervisorNote || ''
+      }));
+  }
+  
+  // 🟢 FIXED: Properly extract weaknesses/development areas
+  let weaknesses = safeArray(result.weaknesses || result.developmentAreas || []);
+  // If weaknesses is empty, derive from category scores below 65%
+  if (weaknesses.length === 0 && categoryScores.length > 0) {
+    weaknesses = categoryScores
+      .filter(cat => {
+        const pct = safeNumber(cat.percentage || cat.score || 0);
+        return pct < 65 && pct > 0;
+      })
+      .map(cat => ({
+        category: getCategoryName(cat),
+        name: getCategoryName(cat),
+        percentage: safeNumber(cat.percentage || cat.score || 0),
+        score: safeNumber(cat.score || cat.earned || 0),
+        maxScore: safeNumber(cat.maxScore || cat.max || 100),
+        description: cat.description || cat.summary || '',
+        note: cat.note || cat.supervisorNote || ''
+      }));
+  }
+  
   const recommendations = safeArray(result.recommendations || []);
   
   // Calculate overall score
@@ -911,7 +974,7 @@ export default function StratavaxReport({
 
   const categoryAnalysis = {};
   categoryScores.forEach(cat => {
-    const name = cat.category || cat.name || 'Unknown';
+    const name = getCategoryName(cat);
     const score = safeNumber(cat.percentage || cat.score || 0);
     categoryAnalysis[name] = generateCategoryAnalysis(name, score);
   });
@@ -922,8 +985,8 @@ export default function StratavaxReport({
   const generateExecutiveSummary = () => {
     const strengthCount = strengths.length;
     const weaknessCount = weaknesses.length;
-    const strengthNames = strengths.slice(0, 3).map(s => s.category || s.name || '');
-    const weaknessNames = weaknesses.slice(0, 2).map(w => w.category || w.name || '');
+    const strengthNames = strengths.slice(0, 3).map(s => getCategoryName(s));
+    const weaknessNames = weaknesses.slice(0, 2).map(w => getCategoryName(w));
     
     let summary = '';
     
@@ -937,16 +1000,28 @@ export default function StratavaxReport({
       summary = `${candidateName} completed the ${assessmentName} with a score of ${Math.round(overallScore)}%, indicating significant development opportunities. `;
     }
     
-    if (strengthCount > 0) {
-      const topStrengths = strengthNames.length > 0 ? strengthNames.join(', ') : '';
-      summary += `Key strengths include ${topStrengths}. `;
+    if (strengthCount > 0 && strengthNames.length > 0 && strengthNames[0] !== 'Unknown') {
+      const topStrengths = strengthNames.filter(n => n !== 'Unknown').join(', ');
+      if (topStrengths) {
+        summary += `Key strengths include ${topStrengths}. `;
+      } else {
+        summary += `Key strengths were identified across multiple categories. `;
+      }
+    } else if (strengthCount > 0) {
+      summary += `Key strengths were identified across multiple categories. `;
     } else {
       summary += `No dominant strength areas were identified above the current threshold. `;
     }
     
-    if (weaknessCount > 0) {
-      const topWeaknesses = weaknessNames.length > 0 ? weaknessNames.join(' and ') : '';
-      summary += `Development opportunities include ${topWeaknesses}. `;
+    if (weaknessCount > 0 && weaknessNames.length > 0 && weaknessNames[0] !== 'Unknown') {
+      const topWeaknesses = weaknessNames.filter(n => n !== 'Unknown').join(' and ');
+      if (topWeaknesses) {
+        summary += `Development opportunities include ${topWeaknesses}. `;
+      } else {
+        summary += `Development opportunities were identified in several areas. `;
+      }
+    } else if (weaknessCount > 0) {
+      summary += `Development opportunities were identified in several areas. `;
     } else {
       summary += `No major development areas were identified below the current threshold. `;
     }
@@ -965,7 +1040,7 @@ export default function StratavaxReport({
   };
 
   // ============================================================
-  // Render Behavioral Matrix Section with safe accessors
+  // Render Behavioral Matrix Section
   // ============================================================
   const renderBehavioralSection = () => {
     if (loadingBehavioral) {
@@ -988,7 +1063,6 @@ export default function StratavaxReport({
       );
     }
 
-    // 🟢 FIX: Use safe getters for all values
     const totalTime = getBehavioralValue('totalTime', '00:00:00');
     const avgTimePerQuestion = getBehavioralValue('avgTimePerQuestion', '0s');
     const answerChanges = getBehavioralValue('answerChanges', 0);
@@ -1001,7 +1075,6 @@ export default function StratavaxReport({
 
     return (
       <>
-        {/* Behavioral Stats with Time Tracking */}
         <div style={styles.behavioralStats}>
           <div style={styles.behavioralStat}>
             <span style={styles.behavioralLabel}>Total Time</span>
@@ -1047,7 +1120,6 @@ export default function StratavaxReport({
           </div>
         </div>
 
-        {/* Risk Summary */}
         <div style={styles.riskSummary}>
           <p>
             Behavioral flags: {violations} violation(s), 
@@ -1061,7 +1133,6 @@ export default function StratavaxReport({
           )}
         </div>
 
-        {/* BEHAVIORAL COMMENTARY */}
         <div style={styles.behavioralCommentary}>
           <h4 style={styles.commentaryTitle}>Assessment Integrity Analysis</h4>
 
@@ -1103,7 +1174,6 @@ export default function StratavaxReport({
             </div>
           </div>
 
-          {/* Recommendations based on behavioral flags */}
           {(violations > 0 || tabSwitches > 5) ? (
             <div style={styles.recommendationBox}>
               <h5 style={styles.recommendationTitle}>Recommendations</h5>
@@ -1195,7 +1265,7 @@ export default function StratavaxReport({
         <h2 style={styles.sectionTitle}>Category Analysis</h2>
         <div style={styles.categoryGrid}>
           {categoryScores.map((cat, index) => {
-            const name = cat.category || cat.name || 'Unknown';
+            const name = getCategoryName(cat);
             const percentage = safeNumber(cat.percentage || cat.score || 0);
             const maxScore = safeNumber(cat.maxScore || cat.max || 100, 100);
             const earnedScore = safeNumber(cat.score || cat.earned || 0);
@@ -1241,8 +1311,8 @@ export default function StratavaxReport({
           </p>
           <div style={styles.strengthGrid}>
             {strengths.slice(0, 5).map((strength, index) => {
-              const name = strength.category || strength.name || 'Unknown';
-              const percentage = safeNumber(strength.percentage || 0);
+              const name = getCategoryName(strength);
+              const percentage = safeNumber(strength.percentage || strength.score || 0);
               const analysis = categoryAnalysis[name] || generateCategoryAnalysis(name, percentage);
               
               return (
@@ -1254,8 +1324,12 @@ export default function StratavaxReport({
                       {Math.round(percentage)}%
                     </span>
                   </div>
-                  <p style={styles.strengthDescription}>{analysis.summary}</p>
-                  <p style={styles.strengthNote}><strong>Implication:</strong> {analysis.supervisorNote}</p>
+                  <p style={styles.strengthDescription}>
+                    {strength.description || analysis.summary || `${name} shows strong evidence of capability.`}
+                  </p>
+                  <p style={styles.strengthNote}>
+                    <strong>Implication:</strong> {strength.note || analysis.supervisorNote || 'Continue to leverage this strength in appropriate assignments.'}
+                  </p>
                 </div>
               );
             })}
@@ -1272,8 +1346,8 @@ export default function StratavaxReport({
           </p>
           <div style={styles.developmentGrid}>
             {weaknesses.slice(0, 5).map((weakness, index) => {
-              const name = weakness.category || weakness.name || 'Unknown';
-              const percentage = safeNumber(weakness.percentage || 0);
+              const name = getCategoryName(weakness);
+              const percentage = safeNumber(weakness.percentage || weakness.score || 0);
               const analysis = categoryAnalysis[name] || generateCategoryAnalysis(name, percentage);
               
               return (
@@ -1285,8 +1359,12 @@ export default function StratavaxReport({
                       {Math.round(percentage)}%
                     </span>
                   </div>
-                  <p style={styles.developmentDescription}>{analysis.summary}</p>
-                  <p style={styles.developmentNote}><strong>Development Focus:</strong> {analysis.supervisorNote}</p>
+                  <p style={styles.developmentDescription}>
+                    {weakness.description || analysis.summary || `${name} shows opportunities for development.`}
+                  </p>
+                  <p style={styles.developmentNote}>
+                    <strong>Development Focus:</strong> {weakness.note || analysis.supervisorNote || 'Consider providing additional training and support in this area.'}
+                  </p>
                 </div>
               );
             })}
@@ -1307,7 +1385,7 @@ export default function StratavaxReport({
                     {rec.priority || 'Medium'} Priority
                   </span>
                 </div>
-                <p style={styles.recommendationText}>{rec.recommendation || rec.text || ''}</p>
+                <p style={styles.recommendationText}>{rec.recommendation || rec.text || rec.description || ''}</p>
                 {rec.action && (
                   <p style={styles.recommendationAction}><strong>Action:</strong> {rec.action}</p>
                 )}
@@ -1325,9 +1403,7 @@ export default function StratavaxReport({
         )}
       </div>
 
-      {/* ============================================================
-          BEHAVIORAL MATRIX SECTION - FIXED WITH SAFE ACCESSORS
-          ============================================================ */}
+      {/* Behavioral Matrix */}
       <div style={styles.behavioralToggleContainer}>
         <button onClick={toggleBehavioral} style={styles.behavioralToggleButton}>
           {showBehavioral ? 'Hide Behavioral Matrix' : 'Show Behavioral Matrix'}
