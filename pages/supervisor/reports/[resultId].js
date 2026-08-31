@@ -1,4 +1,4 @@
-// pages/supervisor/reports/[resultId].js - COMPLETE FIXED WITH CORRECT SCORING
+// pages/supervisor/reports/[resultId].js - COMPLETE FIXED
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -8,6 +8,7 @@ import StratavaxReport from '../../../components/reports/StratavaxReport';
 import AppLayout from '../../../components/AppLayout';
 
 const NATIONAL_SERVICE_ASSESSMENT_ID = 'bdb9d46e-9fac-4d00-8478-1f649e7ac600';
+const BEHAVIORAL_ASSESSMENT_ID = '671bf00f-46cc-46f5-a217-d5a90dafb9b6';
 
 function safeNumber(value, fallback = 0) {
   if (value === null || value === undefined || value === '') return fallback;
@@ -22,18 +23,24 @@ function getReportDataObject(rawReportData) {
     try {
       const parsed = JSON.parse(rawReportData);
       return parsed && typeof parsed === 'object' ? parsed : {};
-    } catch (error) {
-      return {};
-    }
+    } catch { return {}; }
   }
   return {};
 }
 
-// 🟢 SAME SCORING LOGIC AS THE REPORTS LIST
 function calculateScore(result) {
+  const isBehavioral = result.assessment_id === BEHAVIORAL_ASSESSMENT_ID ||
+                       result.assessment_title === 'Behavioral & Soft Skills';
+  
+  if (isBehavioral) {
+    if (result.percentage_score) {
+      const val = safeNumber(result.percentage_score);
+      if (val > 0 && val <= 100) return val;
+    }
+  }
+  
   let categoryScores = [];
   
-  // Extract category_scores from various locations
   if (result.category_scores && Array.isArray(result.category_scores) && result.category_scores.length > 0) {
     categoryScores = result.category_scores;
   } else if (result.categoryScores && Array.isArray(result.categoryScores) && result.categoryScores.length > 0) {
@@ -45,9 +52,7 @@ function calculateScore(result) {
   if (categoryScores.length === 0 && result.report_data) {
     try {
       let reportData = result.report_data;
-      if (typeof reportData === 'string') {
-        reportData = JSON.parse(reportData);
-      }
+      if (typeof reportData === 'string') reportData = JSON.parse(reportData);
       if (reportData.categoryScores && Array.isArray(reportData.categoryScores) && reportData.categoryScores.length > 0) {
         categoryScores = reportData.categoryScores;
       } else if (reportData.category_scores && Array.isArray(reportData.category_scores) && reportData.category_scores.length > 0) {
@@ -55,11 +60,10 @@ function calculateScore(result) {
       } else if (reportData.category_scores && typeof reportData.category_scores === 'object') {
         categoryScores = Object.values(reportData.category_scores);
       }
-    } catch (e) {}
+    } catch {}
   }
   
   if (categoryScores.length > 0) {
-    // 🟢 Method 1: Sum of scores / sum of maxScores (for Behavioral & Soft Skills)
     let totalEarned = 0;
     let totalMax = 0;
     let validPercentages = [];
@@ -69,50 +73,37 @@ function calculateScore(result) {
       let maxScore = safeNumber(cat.maxScore || cat.max || 0);
       let pct = safeNumber(cat.percentage || 0);
       
-      // If we have valid score and maxScore, use them for total calculation
-      if (score > 0 && maxScore > 0) {
+      if (maxScore > 0 && score >= 0) {
         totalEarned += score;
         totalMax += maxScore;
       }
       
-      // Also collect valid percentages for fallback
       if (pct > 0 && pct <= 100) {
         validPercentages.push(pct);
       }
     });
     
-    // If we have totalEarned and totalMax, calculate percentage from them
-    if (totalEarned > 0 && totalMax > 0) {
+    if (totalMax > 0) {
       const calc = Math.round((totalEarned / totalMax) * 100);
-      // If the result is between 0 and 100, use it
-      if (calc >= 0 && calc <= 100) {
-        return calc;
-      }
+      if (calc >= 0 && calc <= 100) return calc;
     }
     
-    // Fallback: average of valid percentages
     if (validPercentages.length > 0) {
       return Math.round(validPercentages.reduce((a, b) => a + b, 0) / validPercentages.length);
     }
   }
   
-  // Fallback: use percentage_score
-  if (result.percentage_score !== undefined && result.percentage_score !== null) {
+  if (result.percentage_score) {
     const val = safeNumber(result.percentage_score);
-    if (val > 0 && val <= 100) {
-      return val;
-    }
+    if (val > 0 && val <= 100) return val;
   }
   
-  // Final fallback: total/max
   if (result.total_score !== undefined && result.max_score !== undefined) {
     const total = safeNumber(result.total_score);
     const max = safeNumber(result.max_score);
     if (max > 0) {
       const calc = Math.round((total / max) * 100);
-      if (calc >= 0 && calc <= 100) {
-        return calc;
-      }
+      if (calc >= 0 && calc <= 100) return calc;
     }
   }
   
@@ -144,8 +135,7 @@ function extractBehavioralMatrix(reportData) {
 }
 
 function isValidUUID(uuid) {
-  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  return uuidRegex.test(uuid);
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(uuid);
 }
 
 function ensureArray(value) {
@@ -156,7 +146,7 @@ function ensureArray(value) {
 
 export default function SupervisorReportView() {
   const router = useRouter();
-  const { resultId } = router.query;
+  const { resultId, returnTo } = router.query;
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -165,14 +155,14 @@ export default function SupervisorReportView() {
   const [behavioralMatrix, setBehavioralMatrix] = useState(null);
 
   useEffect(() => {
-    if (!resultId) return;
+    if (!router.isReady || !resultId) return;
     if (!isValidUUID(resultId)) {
       setError('Invalid report ID format.');
       setLoading(false);
       return;
     }
     fetchReport();
-  }, [resultId]);
+  }, [router.isReady, resultId]);
 
   const fetchReport = async () => {
     try {
@@ -236,15 +226,13 @@ export default function SupervisorReportView() {
       const recommendations = ensureArray(result?.recommendations || report?.recommendations);
       const riskFactors = ensureArray(result?.risk_factors || report?.riskFactors);
 
-      // 🟢 Use the updated calculateScore function
       const displayScore = calculateScore(result);
 
       let recommendation = result?.recommendation || report?.recommendation || 'N/A';
       if (isNS && displayScore > 0) {
-        const s = displayScore;
-        if (s >= 85) recommendation = 'Highly Recommended';
-        else if (s >= 75) recommendation = 'Recommended';
-        else if (s >= 65) recommendation = 'Reserve Pool';
+        if (displayScore >= 85) recommendation = 'Highly Recommended';
+        else if (displayScore >= 75) recommendation = 'Recommended';
+        else if (displayScore >= 65) recommendation = 'Reserve Pool';
         else recommendation = 'Not Recommended';
       }
 
@@ -324,7 +312,16 @@ export default function SupervisorReportView() {
   };
 
   const handleBack = () => {
-    router.push('/supervisor/reports');
+    // ✅ FIX: Return to candidate reports page if returnTo exists
+    if (returnTo) {
+      router.push(returnTo);
+    } else {
+      router.push('/supervisor/reports');
+    }
+  };
+
+  const handleRetry = () => {
+    fetchReport();
   };
 
   if (loading) {
@@ -347,7 +344,7 @@ export default function SupervisorReportView() {
           <p style={styles.errorMessage}>{error}</p>
           <div style={styles.errorButtonGroup}>
             <button onClick={handleBack} style={styles.errorButton}>Go Back</button>
-            <button onClick={fetchReport} style={styles.retryButton}>Retry</button>
+            <button onClick={handleRetry} style={styles.retryButton}>Retry</button>
           </div>
         </div>
       </AppLayout>
