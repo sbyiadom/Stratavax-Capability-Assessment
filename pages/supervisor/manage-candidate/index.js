@@ -1,4 +1,4 @@
-// pages/supervisor/manage-candidate/index.js - COMPLETE FIXED WITH REAL DATA
+// pages/supervisor/manage-candidate/index.js - COMPLETE FIXED
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -94,6 +94,7 @@ export default function ManageCandidateIndex() {
     }
   }
 
+  // ✅ FIX: Navigate to candidate reports page using userId
   const handleView = (userId) => {
     router.push(`/supervisor/manage-candidate/${userId}`);
   };
