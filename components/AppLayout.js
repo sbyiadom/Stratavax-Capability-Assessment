@@ -1,4 +1,4 @@
-// components/AppLayout.js - COMPLETE FIXED VERSION WITH ALL ROUTES
+// components/AppLayout.js - UPDATED WITH EXPORT DASHBOARD LINK
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
@@ -66,6 +66,10 @@ const Icons = {
   Candidate: () => (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
   ),
+  // 🆕 Export Icon
+  Export: () => (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+  ),
 };
 
 function getStoredRole() {
@@ -129,7 +133,7 @@ function isActiveRoute(pathname, href) {
 }
 
 // ============================================================
-// ROLE-BASED MENU SECTIONS - COMPLETELY FIXED WITH ALL ROUTES
+// ROLE-BASED MENU SECTIONS - UPDATED WITH EXPORT DASHBOARD
 // ============================================================
 function getMenuSections(role) {
   // Admin menu
@@ -171,6 +175,8 @@ function getMenuSections(role) {
         isSection: true,
         children: [
           { id: 'assessment-reports', label: 'Assessment Reports', icon: Icons.FileText(), href: '/admin/reports' },
+          // 🆕 Export Dashboard for Admin
+          { id: 'export-dashboard', label: '📊 Export Dashboard', icon: Icons.Export(), href: '/admin/export-dashboard' },
         ]
       },
       {
@@ -187,7 +193,7 @@ function getMenuSections(role) {
   }
 
   // ============================================================
-  // SUPERVISOR MENU - ALL ROUTES CORRECTLY MAPPED
+  // SUPERVISOR MENU - UPDATED WITH EXPORT DASHBOARD
   // ============================================================
   if (role === 'supervisor') {
     return [
@@ -224,6 +230,8 @@ function getMenuSections(role) {
           { id: 'national-service', label: 'National Service Reports', icon: Icons.FileText(), href: '/supervisor/reports?tab=national' },
           // ✅ Other Assessment Reports → /supervisor/reports?tab=other
           { id: 'other-assessments', label: 'Other Assessment Reports', icon: Icons.Reports(), href: '/supervisor/reports?tab=other' },
+          // 🆕 Export Dashboard → /supervisor/export-dashboard
+          { id: 'export-dashboard', label: '📊 Export Dashboard', icon: Icons.Export(), href: '/supervisor/export-dashboard' },
         ]
       },
     ];
