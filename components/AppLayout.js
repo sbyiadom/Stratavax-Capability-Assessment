@@ -1,4 +1,6 @@
-// components/AppLayout.js - UPDATED WITH EXPORT DASHBOARD LINK
+// components/AppLayout.js - COMPLETE FIXED VERSION
+// FIXED: Removed Reports from top navigation (they belong in sidebar only)
+// FIXED: Removed duplicate Sign Out and Role label
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
@@ -66,7 +68,6 @@ const Icons = {
   Candidate: () => (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
   ),
-  // 🆕 Export Icon
   Export: () => (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
   ),
@@ -111,15 +112,12 @@ function normalizeBackground(background) {
 function isActiveRoute(pathname, href) {
   if (!pathname || !href) return false;
   
-  // Exact match for main pages
   if (href === "/admin" && pathname === "/admin") return true;
   if (href === "/supervisor" && pathname === "/supervisor") return true;
   
-  // Check if path starts with href for sub-pages
   if (href.startsWith("/supervisor/") && pathname.startsWith(href)) return true;
   if (href.startsWith("/admin/") && pathname.startsWith(href)) return true;
   
-  // Check for query params (like ?tab=)
   if (href.includes("?tab=")) {
     const basePath = href.split("?")[0];
     if (pathname === basePath) {
@@ -133,10 +131,9 @@ function isActiveRoute(pathname, href) {
 }
 
 // ============================================================
-// ROLE-BASED MENU SECTIONS - UPDATED WITH EXPORT DASHBOARD
+// ROLE-BASED MENU SECTIONS
 // ============================================================
 function getMenuSections(role) {
-  // Admin menu
   if (role === 'admin') {
     return [
       {
@@ -175,7 +172,6 @@ function getMenuSections(role) {
         isSection: true,
         children: [
           { id: 'assessment-reports', label: 'Assessment Reports', icon: Icons.FileText(), href: '/admin/reports' },
-          // 🆕 Export Dashboard for Admin
           { id: 'export-dashboard', label: '📊 Export Dashboard', icon: Icons.Export(), href: '/admin/export-dashboard' },
         ]
       },
@@ -192,9 +188,6 @@ function getMenuSections(role) {
     ];
   }
 
-  // ============================================================
-  // SUPERVISOR MENU - UPDATED WITH EXPORT DASHBOARD
-  // ============================================================
   if (role === 'supervisor') {
     return [
       {
@@ -210,13 +203,9 @@ function getMenuSections(role) {
         icon: Icons.Users(),
         isSection: true,
         children: [
-          // ✅ View Candidates → /supervisor/manage-candidate
           { id: 'view-candidates', label: 'View Candidates', icon: Icons.UserCheck(), href: '/supervisor/manage-candidate' },
-          // ✅ Add Candidate → /supervisor/add-candidate
           { id: 'add-candidate', label: 'Add Candidate', icon: Icons.UserPlus(), href: '/supervisor/add-candidate' },
-          // ✅ Assign Assessment → /supervisor/assign-assessment
           { id: 'assign-assessment', label: 'Assign Assessment', icon: Icons.CheckSquare(), href: '/supervisor/assign-assessment' },
-          // ✅ Batch Manage → /supervisor/batch-manage
           { id: 'batch-manage', label: 'Batch Manage', icon: Icons.Layers(), href: '/supervisor/batch-manage' },
         ]
       },
@@ -226,18 +215,14 @@ function getMenuSections(role) {
         icon: Icons.FileText(),
         isSection: true,
         children: [
-          // ✅ National Service Reports → /supervisor/reports?tab=national
           { id: 'national-service', label: 'National Service Reports', icon: Icons.FileText(), href: '/supervisor/reports?tab=national' },
-          // ✅ Other Assessment Reports → /supervisor/reports?tab=other
           { id: 'other-assessments', label: 'Other Assessment Reports', icon: Icons.Reports(), href: '/supervisor/reports?tab=other' },
-          // 🆕 Export Dashboard → /supervisor/export-dashboard
           { id: 'export-dashboard', label: '📊 Export Dashboard', icon: Icons.Export(), href: '/supervisor/export-dashboard' },
         ]
       },
     ];
   }
 
-  // Candidate menu
   if (role === 'candidate') {
     return [
       {
@@ -296,19 +281,15 @@ function Sidebar({ isOpen, toggleSidebar, currentPath, handleLogout, userRole })
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  // Load expanded state from localStorage
   useEffect(() => {
     try {
       const saved = localStorage.getItem('sidebar_expanded_sections');
       if (saved) {
         setExpandedSections(JSON.parse(saved));
       }
-    } catch (e) {
-      // Ignore
-    }
+    } catch (e) {}
   }, []);
 
-  // Save expanded state to localStorage
   const toggleSection = (section) => {
     const newState = {
       ...expandedSections,
@@ -317,29 +298,18 @@ function Sidebar({ isOpen, toggleSidebar, currentPath, handleLogout, userRole })
     setExpandedSections(newState);
     try {
       localStorage.setItem('sidebar_expanded_sections', JSON.stringify(newState));
-    } catch (e) {
-      // Ignore
-    }
+    } catch (e) {}
   };
 
   const menuSections = getMenuSections(userRole);
 
-  // PROPER ACTIVE ROUTE DETECTION
   const isActive = (href) => {
     if (!currentPath) return false;
-    
-    // Exact match
     if (currentPath === href) return true;
-    
-    // Check if currentPath starts with href (for sub-pages)
     if (href !== '/supervisor' && currentPath.startsWith(href)) return true;
-    
-    // For '/supervisor' main page, only highlight if exactly '/supervisor'
     if (href === '/supervisor') {
       return currentPath === '/supervisor';
     }
-    
-    // For tab URLs
     if (href.includes('?tab=')) {
       const basePath = href.split('?')[0];
       if (currentPath === basePath) {
@@ -348,11 +318,9 @@ function Sidebar({ isOpen, toggleSidebar, currentPath, handleLogout, userRole })
         if (currentTab === targetTab) return true;
       }
     }
-    
     return false;
   };
 
-  // SECTION ACTIVE DETECTION
   const isSectionActive = (section) => {
     if (!section.children) return false;
     return section.children.some(child => {
@@ -373,10 +341,7 @@ function Sidebar({ isOpen, toggleSidebar, currentPath, handleLogout, userRole })
   return (
     <>
       {isOpen && isMobile && (
-        <div 
-          onClick={toggleSidebar}
-          style={stylesSidebar.overlay}
-        />
+        <div onClick={toggleSidebar} style={stylesSidebar.overlay} />
       )}
 
       <div style={{
@@ -395,7 +360,6 @@ function Sidebar({ isOpen, toggleSidebar, currentPath, handleLogout, userRole })
 
         <nav style={stylesSidebar.nav}>
           {menuSections.map((item) => {
-            // Main item (Dashboard, Profile, Assessments)
             if (item.isMain) {
               const active = isActive(item.href);
               return (
@@ -418,7 +382,6 @@ function Sidebar({ isOpen, toggleSidebar, currentPath, handleLogout, userRole })
               );
             }
 
-            // Section with children
             if (item.isSection) {
               const isExpanded = expandedSections[item.id] !== false;
               const sectionActive = isSectionActive(item);
@@ -443,13 +406,12 @@ function Sidebar({ isOpen, toggleSidebar, currentPath, handleLogout, userRole })
                   {isExpanded && (
                     <div style={stylesSidebar.subNav}>
                       {item.children.map((child) => {
-                        let href = child.href;
                         const childActive = isActive(child.href) || 
                           (child.href === '/supervisor' && currentPath === '/supervisor') ||
                           (currentPath.startsWith(child.href) && child.href !== '/supervisor');
                         
                         return (
-                          <Link href={href} key={child.id} legacyBehavior>
+                          <Link href={child.href} key={child.id} legacyBehavior>
                             <a
                               style={{
                                 ...stylesSidebar.subNavItem,
@@ -555,9 +517,6 @@ const stylesSidebar = {
     padding: '4px',
     display: 'flex',
     alignItems: 'center',
-    '&:hover': {
-      color: 'white',
-    },
   },
   nav: {
     flex: 1,
@@ -579,10 +538,6 @@ const stylesSidebar = {
     fontSize: '14px',
     fontWeight: 500,
     transition: 'all 0.2s',
-    '&:hover': {
-      background: 'rgba(255,255,255,0.08)',
-      color: 'white',
-    },
   },
   navIcon: {
     display: 'flex',
@@ -614,10 +569,6 @@ const stylesSidebar = {
     transition: 'all 0.2s',
     width: '100%',
     textAlign: 'left',
-    '&:hover': {
-      background: 'rgba(255,255,255,0.06)',
-      color: 'white',
-    },
   },
   sectionLabel: {
     flex: 1,
@@ -651,10 +602,6 @@ const stylesSidebar = {
     fontSize: '13px',
     fontWeight: 400,
     transition: 'all 0.2s',
-    '&:hover': {
-      background: 'rgba(255,255,255,0.06)',
-      color: 'white',
-    },
   },
   subNavIcon: {
     display: 'flex',
@@ -709,10 +656,6 @@ const stylesSidebar = {
     fontSize: '13px',
     fontWeight: 500,
     transition: 'all 0.2s',
-    '&:hover': {
-      background: 'rgba(255,255,255,0.1)',
-      color: 'white',
-    },
   },
 };
 
@@ -804,6 +747,7 @@ export default function AppLayout({ children, background, showNavigation = true 
     }
   }
 
+  // 🟢 FIXED: Removed Reports from top navigation - they belong in sidebar only
   function getNavLinks() {
     if (userRole === "admin") {
       return [
@@ -818,6 +762,7 @@ export default function AppLayout({ children, background, showNavigation = true 
         { href: "/supervisor", label: "Dashboard" },
         { href: "/supervisor/batch-manage", label: "Batch Manage" },
         { href: "/supervisor/add-candidate", label: "Add Candidate" }
+        // ❌ REMOVED: Reports - these belong in sidebar only
       ];
     }
 
