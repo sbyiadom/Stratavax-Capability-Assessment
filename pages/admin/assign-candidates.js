@@ -1,5 +1,5 @@
 // pages/admin/assign-candidates.js
-// COMPLETE FIXED VERSION - Displays ALL supervisors correctly
+// COMPLETE FIXED VERSION - Displays ALL assigned supervisors correctly
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
@@ -136,7 +136,7 @@ export default function AssignCandidates() {
       const candidateRows = candidatesResponse.data || [];
       const supervisorRows = supervisorsResponse.data || [];
 
-      // Fetch existing multiple assignments via API (using POST to avoid long URLs)
+      // Fetch existing multiple assignments via API
       const candidateIds = candidateRows.map(c => c.id);
       let multipleAssignments = {};
 
@@ -146,7 +146,6 @@ export default function AssignCandidates() {
 
         if (token) {
           try {
-            // Use POST to avoid long URL limit issues
             const response = await fetch('/api/admin/supervisor-assignments', {
               method: 'POST',
               headers: {
@@ -249,7 +248,6 @@ export default function AssignCandidates() {
       throw new Error('Not authenticated');
     }
 
-    // Deduplicate supervisorIds before sending
     const uniqueSupervisorIds = [...new Set(supervisorIds)];
 
     const response = await fetch('/api/admin/supervisors/assign-multiple', {
@@ -632,14 +630,15 @@ export default function AssignCandidates() {
                         const isAssignDisabled = candidateSelectedSupervisors.length === 0 || isProcessing;
                         const isMultiSelect = showMultiSelect[candidate.id] || false;
 
-                        // ============================================================
-                        // 🟢 FIXED: Get all supervisor names from selectedSupervisors
-                        // ============================================================
+                        // 🟢 FIXED: Get ALL supervisor names from selectedSupervisors
                         const supervisorIds = selectedSupervisors[candidate.id] || [];
                         const supervisorNames = supervisorIds
                           .map(id => supervisors.find(s => s.id === id)?.full_name || id)
                           .filter(name => name);
                         const uniqueSupervisorNames = [...new Set(supervisorNames)];
+
+                        // 🟢 FIXED: Show count badge if multiple
+                        const hasMultipleSupervisors = uniqueSupervisorNames.length > 1;
 
                         return (
                           <tr key={candidate.id} style={styles.tableRow}>
@@ -661,8 +660,18 @@ export default function AssignCandidates() {
                               {uniqueSupervisorNames.length > 0 ? (
                                 <div style={styles.assignedBadge}>
                                   {uniqueSupervisorNames.map((name, index) => (
-                                    <span key={index} style={styles.assignedName}>{name}</span>
+                                    <span key={index} style={styles.assignedName}>
+                                      {name}
+                                      {hasMultipleSupervisors && index < uniqueSupervisorNames.length - 1 && (
+                                        <span style={styles.assignedSeparator}>; </span>
+                                      )}
+                                    </span>
                                   ))}
+                                  {hasMultipleSupervisors && (
+                                    <span style={styles.multipleBadge}>
+                                      {uniqueSupervisorNames.length} supervisors
+                                    </span>
+                                  )}
                                 </div>
                               ) : (
                                 <span style={styles.unassignedBadge}>Unassigned</span>
@@ -1095,7 +1104,21 @@ const styles = {
   assignedName: {
     fontWeight: 800,
     color: "#0a1929",
-    fontSize: "14px"
+    fontSize: "14px",
+    display: "inline"
+  },
+  assignedSeparator: {
+    color: "#94a3b8"
+  },
+  multipleBadge: {
+    display: "inline-block",
+    padding: "2px 10px",
+    background: "#e3f2fd",
+    color: "#1565c0",
+    borderRadius: "12px",
+    fontSize: "11px",
+    fontWeight: 700,
+    marginTop: "4px"
   },
   unassignedBadge: {
     display: "inline-block",
