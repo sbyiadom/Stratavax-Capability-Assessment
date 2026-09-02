@@ -1,9 +1,11 @@
+// utils/categoryMapper.js
+
 /**
  * Focused Category Mapper
  *
  * Provides professional interpretations based on actual category scores.
  * Uses central scoring standards from utils/scoring.js
- * Supports all assessment types
+ * Supports all assessment types including Practical Manufacturing Assessment
  */
 
 import {
@@ -326,6 +328,70 @@ const categoryInterpretations = {
       "Structure requires priority development. The candidate may skip steps or work inconsistently without guidance.",
     critical_gap:
       "The candidate shows critical process-discipline gaps. Close supervision and SOP reinforcement are recommended."
+  },
+
+  // ============================================================
+  // PRACTICAL MANUFACTURING ASSESSMENT CATEGORIES
+  // ============================================================
+
+  "Mechanical Engineering": {
+    exceptional:
+      "The candidate demonstrates strong practical mechanical engineering knowledge, including hydraulics, pneumatics, maintenance, and troubleshooting. Ready for independent mechanical tasks.",
+    strong:
+      "The candidate shows reliable mechanical engineering knowledge suitable for standard maintenance and mechanical tasks.",
+    adequate:
+      "The candidate shows functional mechanical understanding but may need reinforcement in complex hydraulic or pneumatic systems.",
+    developing:
+      "Mechanical engineering knowledge is developing. Structured equipment training and supervised practical exposure are recommended.",
+    priority_development:
+      "Mechanical engineering requires priority development. Foundational mechanical training and close supervision are recommended.",
+    critical_gap:
+      "The candidate shows critical mechanical knowledge gaps. Basic mechanical training is required before independent equipment work."
+  },
+
+  "Electrical Engineering": {
+    exceptional:
+      "The candidate demonstrates strong practical electrical engineering knowledge, including PLCs, sensors, motor controls, and electrical diagnostics. Ready for independent electrical work.",
+    strong:
+      "The candidate shows reliable electrical engineering knowledge suitable for standard electrical maintenance and troubleshooting.",
+    adequate:
+      "The candidate shows functional electrical understanding but may need reinforcement in complex control systems or PLC programming.",
+    developing:
+      "Electrical engineering knowledge is developing. Electrical safety training and basic systems education are recommended.",
+    priority_development:
+      "Electrical engineering requires priority development. Foundational electrical training and close supervision are recommended.",
+    critical_gap:
+      "The candidate shows critical electrical knowledge gaps. Electrical safety training is required before any electrical exposure."
+  },
+
+  "Logistics & Supply Chain": {
+    exceptional:
+      "The candidate demonstrates strong practical logistics and supply chain knowledge, including inventory management, transportation, and procurement. Ready for independent logistics coordination.",
+    strong:
+      "The candidate shows reliable logistics knowledge suitable for standard supply chain coordination and inventory management.",
+    adequate:
+      "The candidate shows functional logistics understanding but may need reinforcement in complex supply chain optimization or WMS systems.",
+    developing:
+      "Logistics knowledge is developing. Supply chain fundamentals training and structured exposure are recommended.",
+    priority_development:
+      "Logistics and supply chain requires priority development. Foundational logistics training is recommended.",
+    critical_gap:
+      "The candidate shows critical logistics knowledge gaps. Basic supply chain education is required before independent coordination."
+  },
+
+  "Quality Assurance": {
+    exceptional:
+      "The candidate demonstrates strong practical quality assurance knowledge, including inspection techniques, SPC, and continuous improvement. Ready for independent quality work.",
+    strong:
+      "The candidate shows reliable quality assurance knowledge suitable for standard quality control and inspection tasks.",
+    adequate:
+      "The candidate shows functional quality understanding but may need reinforcement in statistical process control or quality tools.",
+    developing:
+      "Quality assurance knowledge is developing. Quality tools training and structured inspection practice are recommended.",
+    priority_development:
+      "Quality assurance requires priority development. Foundational quality training and close supervision are recommended.",
+    critical_gap:
+      "The candidate shows critical quality knowledge gaps. Basic quality concepts training is required before inspection duties."
   }
 };
 
@@ -508,7 +574,43 @@ const getSuitabilityAndRisks = (scores) => {
     );
   }
 
-  // Risks
+  // ============================================================
+  // PRACTICAL MANUFACTURING ASSESSMENT CATEGORIES - Suitability
+  // ============================================================
+  const mechanical = get("Mechanical Engineering");
+  const electrical = get("Electrical Engineering");
+  const logistics = get("Logistics & Supply Chain");
+  const quality = get("Quality Assurance");
+
+  if (mechanical >= 75 && quality >= 65) {
+    suitability.push(
+      "May be suitable for manufacturing engineering or maintenance roles with practical validation."
+    );
+  }
+
+  if (electrical >= 75 && mechanical >= 60) {
+    suitability.push(
+      "May be suitable for electrical technician or automation roles with appropriate supervision."
+    );
+  }
+
+  if (logistics >= 75 && quality >= 60) {
+    suitability.push(
+      "May be suitable for supply chain coordination or logistics management roles."
+    );
+  }
+
+  if (quality >= 75 && mechanical >= 65) {
+    suitability.push(
+      "May be suitable for quality engineering or process improvement roles."
+    );
+  }
+
+  // ============================================================
+  // RISKS
+  // ============================================================
+
+  // Manufacturing Baseline Risks
   if (safetyWorkEthic > 0 && safetyWorkEthic < 55) {
     risks.push(
       "Safety and work ethic require attention before production exposure. Safety training and close supervision are recommended."
@@ -584,6 +686,33 @@ const getSuitabilityAndRisks = (scores) => {
   if (structure > 0 && structure < 55) {
     risks.push(
       "Process discipline may require reinforcement through SOPs, checklists, and close supervision."
+    );
+  }
+
+  // ============================================================
+  // PRACTICAL MANUFACTURING ASSESSMENT CATEGORIES - Risks
+  // ============================================================
+  if (mechanical > 0 && mechanical < 55) {
+    risks.push(
+      "Mechanical engineering knowledge is below expected baseline. The candidate may struggle with mechanical maintenance or troubleshooting without structured training."
+    );
+  }
+
+  if (electrical > 0 && electrical < 55) {
+    risks.push(
+      "Electrical engineering knowledge is below expected baseline. Electrical safety training is recommended before any electrical exposure."
+    );
+  }
+
+  if (logistics > 0 && logistics < 55) {
+    risks.push(
+      "Logistics knowledge is below expected baseline. The candidate may need support with inventory management and supply chain coordination."
+    );
+  }
+
+  if (quality > 0 && quality < 55) {
+    risks.push(
+      "Quality assurance knowledge is below expected baseline. Quality training and inspection supervision are recommended."
     );
   }
 
