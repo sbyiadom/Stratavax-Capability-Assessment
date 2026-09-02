@@ -1,10 +1,11 @@
-// pages/supervisor/manage-candidate/[userId]/index.js - CORRECTED
+// pages/supervisor/manage-candidate/[userId]/index.js - COMPLETE FIXED
 // Candidate Report List - Shows all reports for a candidate
+// SUPPORTS MULTIPLE SUPERVISORS via junction table
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
-import AppLayout from '../../../../components/AppLayout'; // Fixed: 4 levels up to root, then components
-import { supabase } from '../../../../supabase/client'; // Fixed: 4 levels up to root, then supabase
+import AppLayout from '../../../../components/AppLayout';
+import { supabase } from '../../../../supabase/client';
 
 // ============================================================
 // HELPER FUNCTIONS
@@ -143,6 +144,7 @@ export default function CandidateReports() {
   const [reports, setReports] = useState([]);
   const [error, setError] = useState(null);
   const [currentSupervisor, setCurrentSupervisor] = useState(null);
+  const [assignedSupervisors, setAssignedSupervisors] = useState([]);
 
   useEffect(() => {
     if (!router.isReady || !userId) return;
@@ -190,11 +192,26 @@ export default function CandidateReports() {
         return;
       }
 
-      // Check permission
+      // 🟢 FIXED: Check permission - admin, legacy supervisor, OR assigned via junction table
       const isAdmin = profile?.role === 'admin';
-      const isTheirCandidate = candidateData.supervisor_id === session.user.id;
+      const isLegacySupervisor = candidateData.supervisor_id === session.user.id;
 
-      if (!isAdmin && !isTheirCandidate) {
+      // Check if current supervisor is assigned via junction table
+      const { data: supervisorAssignments, error: assignmentError } = await supabase
+        .from('candidate_supervisors')
+        .select('supervisor_id, supervisor_profiles!inner(id, full_name, email)')
+        .eq('candidate_id', userId);
+
+      if (!assignmentError && supervisorAssignments) {
+        setAssignedSupervisors(supervisorAssignments.map(s => s.supervisor_profiles).filter(Boolean));
+      }
+
+      const assignedSupervisorIds = supervisorAssignments?.map(a => a.supervisor_id) || [];
+      const isJunctionSupervisor = assignedSupervisorIds.includes(session.user.id);
+
+      const hasAccess = isAdmin || isLegacySupervisor || isJunctionSupervisor;
+
+      if (!hasAccess) {
         setError('You do not have permission to view this candidate.');
         setLoading(false);
         return;
@@ -324,9 +341,11 @@ export default function CandidateReports() {
           <button onClick={handleBack} style={styles.backButton}>
             ← Back to Candidates
           </button>
-          <button onClick={handleRetry} style={styles.refreshButton}>
-            🔄 Refresh
-          </button>
+          <div style={styles.headerActions}>
+            <button onClick={handleRetry} style={styles.refreshButton}>
+              🔄 Refresh
+            </button>
+          </div>
         </div>
 
         {/* Candidate Info */}
@@ -345,6 +364,18 @@ export default function CandidateReports() {
               </div>
             </div>
           </div>
+          {/* 🟢 Show assigned supervisors */}
+          {assignedSupervisors.length > 0 && (
+            <div style={styles.assignedSupervisors}>
+              <span style={styles.assignedLabel}>Assigned Supervisors:</span>
+              {assignedSupervisors.map((sup, index) => (
+                <span key={sup.id} style={styles.supervisorTag}>
+                  {sup.full_name || sup.email}
+                  {index < assignedSupervisors.length - 1 && ', '}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Reports Section */}
@@ -460,6 +491,10 @@ const styles = {
     alignItems: 'center',
     marginBottom: '20px'
   },
+  headerActions: {
+    display: 'flex',
+    gap: '10px'
+  },
   backButton: {
     padding: '8px 16px',
     background: 'transparent',
@@ -513,6 +548,28 @@ const styles = {
     background: '#f7fafc',
     padding: '4px 12px',
     borderRadius: '16px'
+  },
+  assignedSupervisors: {
+    marginTop: '12px',
+    paddingTop: '12px',
+    borderTop: '1px solid #eef2f7',
+    display: 'flex',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: '4px'
+  },
+  assignedLabel: {
+    fontSize: '13px',
+    fontWeight: '600',
+    color: '#475569',
+    marginRight: '8px'
+  },
+  supervisorTag: {
+    fontSize: '13px',
+    color: '#2563EB',
+    background: '#eff6ff',
+    padding: '2px 10px',
+    borderRadius: '12px'
   },
   reportsSection: {
     background: 'white',
