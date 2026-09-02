@@ -1,5 +1,6 @@
-// pages/api/supervisor/export-reports.js - FIXED
+// pages/api/supervisor/export-reports.js - COMPLETE FIXED
 // Proper score calculation and recommendation logic
+// SUPPORTS MULTIPLE SUPERVISORS via junction table
 
 import { createClient } from '@supabase/supabase-js';
 import XLSX from 'xlsx';
@@ -41,7 +42,7 @@ function getReportData(result) {
 }
 
 // ============================================================
-// 🟢 FIXED: PROPER SCORE CALCULATION
+// PROPER SCORE CALCULATION
 // ============================================================
 function calculateOverallScore(result) {
   // 1. Check if we have category scores
@@ -120,7 +121,7 @@ function calculateOverallScore(result) {
 }
 
 // ============================================================
-// 🟢 FIXED: PROPER RECOMMENDATION CALCULATION
+// PROPER RECOMMENDATION CALCULATION
 // ============================================================
 function calculateRecommendation(score) {
   const s = safeNumber(score, 0);
@@ -199,7 +200,7 @@ function extractBehavioralMatrix(result) {
 }
 
 // ============================================================
-// 🟢 FIXED: RISK ASSESSMENT
+// RISK ASSESSMENT
 // ============================================================
 function calculateRiskAssessment(behavioral) {
   if (!behavioral) return 'Low Risk - Compliant';
@@ -264,7 +265,7 @@ export default async function handler(req, res) {
     const { type, candidateId } = req.query;
 
     // ============================================================
-    // FETCH CANDIDATES
+    // 🟢 FIXED: FETCH CANDIDATES - SUPPORTS MULTIPLE SUPERVISORS
     // ============================================================
     const candidateMap = {};
     const candidateIdsSet = new Set();
@@ -281,7 +282,7 @@ export default async function handler(req, res) {
         candidateMap[candidate.id] = candidate;
       }
     } else {
-      // Legacy supervisor_id assignments
+      // 1. Legacy supervisor_id assignments
       const { data: legacyCandidates, error: legacyError } = await serviceClient
         .from('candidate_profiles')
         .select('id, full_name, email, university, programme, graduation_year, preferred_department')
@@ -296,7 +297,7 @@ export default async function handler(req, res) {
         });
       }
 
-      // Multi-supervisor assignments
+      // 2. 🟢 FIXED: Multi-supervisor assignments (junction table)
       const { data: junctionAssignments, error: junctionError } = await serviceClient
         .from('candidate_supervisors')
         .select('candidate_id')
@@ -380,7 +381,7 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // PROCESS RESULTS WITH 🟢 FIXED CALCULATIONS
+    // PROCESS RESULTS WITH FIXED CALCULATIONS
     // ============================================================
     let processedResults = allResults.map(result => {
       const candidate = candidateMap[result.user_id] || {};
@@ -390,10 +391,10 @@ export default async function handler(req, res) {
       // Extract behavioral matrix
       const behavioral = extractBehavioralMatrix(result);
       
-      // 🟢 FIXED: Calculate overall score properly
+      // Calculate overall score properly
       const overallScore = calculateOverallScore(result);
       
-      // 🟢 FIXED: Calculate recommendation based on actual score
+      // Calculate recommendation based on actual score
       const recommendation = calculateRecommendation(overallScore);
       
       // National Service Classification
@@ -425,7 +426,7 @@ export default async function handler(req, res) {
           .join('; ');
       }
 
-      // 🟢 FIXED: Risk Assessment
+      // Risk Assessment
       const riskAssessment = calculateRiskAssessment(behavioral);
 
       return {
@@ -442,7 +443,7 @@ export default async function handler(req, res) {
         'Type': isNationalService ? 'National Service' : 'Stratavax',
         'Completed Date': result.completed_at ? new Date(result.completed_at).toLocaleDateString() : 'N/A',
         
-        // 🟢 FIXED: Scores (now showing correct values)
+        // Scores
         'Overall Score (%)': overallScore,
         'Total Score': result.total_score || 0,
         'Max Score': result.max_score || 0,
@@ -452,7 +453,7 @@ export default async function handler(req, res) {
         // Category Details
         'Category Breakdown': categoryBreakdown,
         
-        // 🟢 FIXED: Recommendation
+        // Recommendation
         'Recommendation': recommendation,
         
         // Behavioral Matrix
@@ -466,7 +467,7 @@ export default async function handler(req, res) {
         'Risk Level': behavioral?.riskLevel || 'Low Risk',
         'Risk Score': behavioral?.riskScore || 0,
         'Risk Factors': (behavioral?.riskFactors || []).join('; '),
-        '🟢 Risk Assessment': riskAssessment,
+        'Risk Assessment': riskAssessment,
         'Has Behavioral Data': behavioral ? 'Yes' : 'No'
       };
     });
