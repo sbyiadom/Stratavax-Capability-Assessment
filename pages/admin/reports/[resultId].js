@@ -44,30 +44,22 @@ function getReportDataObject(rawReportData) {
 }
 
 // ============================================================
-// 🟢 BEHAVIORAL MATRIX EXTRACTOR - Reads from proctoring data
+// 🟢 BEHAVIORAL MATRIX EXTRACTOR
 // ============================================================
-
 function extractBehavioralMatrix(reportData) {
   if (!reportData) {
-    console.warn('[Behavioral Matrix] No report data provided');
     return null;
   }
 
-  // Get proctoring data from multiple possible locations
   const proctoring = reportData.proctoring || 
                      reportData.behavioral || 
                      reportData.behavioralMatrix || 
                      {};
 
-  console.log('[Behavioral Matrix] Raw proctoring data:', JSON.stringify(proctoring, null, 2));
-
-  // If no proctoring data, return null
   if (Object.keys(proctoring).length === 0) {
-    console.warn('[Behavioral Matrix] No proctoring data found');
     return null;
   }
 
-  // Calculate total time from completedAt if available
   let totalTime = '00:00:00';
   if (reportData.completedAt) {
     try {
@@ -81,12 +73,9 @@ function extractBehavioralMatrix(reportData) {
         const seconds = diffSeconds % 60;
         totalTime = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
       }
-    } catch (e) {
-      totalTime = '00:00:00';
-    }
+    } catch (e) {}
   }
 
-  // Calculate avg time per question
   let avgTimePerQuestion = 0;
   if (reportData.totalMax && reportData.totalMax > 0 && reportData.completedAt) {
     try {
@@ -96,18 +85,15 @@ function extractBehavioralMatrix(reportData) {
       if (diffMs > 0 && reportData.totalMax > 0) {
         avgTimePerQuestion = Math.round(diffMs / reportData.totalMax / 1000);
       }
-    } catch (e) {
-      avgTimePerQuestion = 0;
-    }
+    } catch (e) {}
   }
 
-  // Build the behavioral matrix
   const matrix = {
     totalTime: totalTime,
     avgTimePerQuestion: avgTimePerQuestion || proctoring.avgTimePerQuestion || 0,
     answerChanges: proctoring.answerChanges || proctoring.answer_changes || 0,
     tabSwitches: proctoring.tabSwitches || proctoring.tab_switches || 0,
-    violations: proctoring.totalViolations || proctoring.violations || proctoring.violation_count || 0,
+    violations: proctoring.totalViolations || proctoring.violations || 0,
     copyPasteAttempts: proctoring.copyPasteAttempts || proctoring.copy_paste_attempts || 0,
     rightClickAttempts: proctoring.rightClickAttempts || proctoring.right_click_attempts || 0,
     riskLevel: proctoring.riskLevel || proctoring.risk_level || 'Low Risk',
@@ -121,7 +107,6 @@ function extractBehavioralMatrix(reportData) {
     }
   };
 
-  console.log('[Behavioral Matrix] Extracted matrix:', JSON.stringify(matrix, null, 2));
   return matrix;
 }
 
@@ -213,12 +198,10 @@ function getCategoryScores(data, result, report) {
 // ============================================================
 // AUTH HELPER
 // ============================================================
-
 async function getValidAdminSession() {
   const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
   
   if (sessionError || !sessionData?.session) {
-    console.error('[Admin Report View] No valid session');
     return { session: null, error: 'No valid session. Please sign in again.' };
   }
 
@@ -232,7 +215,6 @@ async function getValidAdminSession() {
     .maybeSingle();
 
   if (profileError) {
-    console.error('[Admin Report View] Profile verification error:', profileError);
     return { session: null, error: 'Unable to verify administrator access.' };
   }
 
@@ -253,7 +235,6 @@ async function getValidAdminSession() {
 // ============================================================
 // MAIN COMPONENT
 // ============================================================
-
 export default function AdminReportView() {
   const router = useRouter();
   const { resultId } = router.query;
@@ -292,8 +273,6 @@ export default function AdminReportView() {
           return;
         }
 
-        console.log('[Admin Report View] Fetching report with authentication...');
-
         const response = await fetch(`/api/assessment-report/${resultId}`, {
           method: 'GET',
           headers: {
@@ -306,34 +285,21 @@ export default function AdminReportView() {
         try {
           data = await response.json();
         } catch (parseError) {
-          console.error('[Admin Report View] Invalid API response:', parseError);
-          throw new Error(
-            `The report server returned an invalid response. HTTP status: ${response.status}`
-          );
+          throw new Error(`The report server returned an invalid response. HTTP status: ${response.status}`);
         }
 
         if (!response.ok || !data.success) {
           if (response.status === 401) {
-            throw new Error(
-              data?.error || 'Your session is invalid or has expired. Please sign in again.'
-            );
+            throw new Error(data?.error || 'Your session is invalid or has expired. Please sign in again.');
           }
           if (response.status === 403) {
-            throw new Error(
-              data?.error || 'You do not have permission to view this report.'
-            );
+            throw new Error(data?.error || 'You do not have permission to view this report.');
           }
           if (response.status === 404) {
-            throw new Error(
-              data?.error || 'The requested assessment report could not be found.'
-            );
+            throw new Error(data?.error || 'The requested assessment report could not be found.');
           }
-          throw new Error(
-            data?.error || `Failed to load report. HTTP status: ${response.status}`
-          );
+          throw new Error(data?.error || `Failed to load report. HTTP status: ${response.status}`);
         }
-
-        console.log('[Admin Report View] Report fetched successfully');
 
         const result = data.result || {};
         const parsedResultReportData = getReportDataObject(result.report_data);
@@ -366,10 +332,7 @@ export default function AdminReportView() {
         const candidateName = candidateInfo.fullName || 'Candidate';
         const categoryScores = getCategoryScores(data, result, report);
 
-        // 🟢 EXTRACT BEHAVIORAL MATRIX FROM REPORT DATA
         const matrix = extractBehavioralMatrix(parsedResultReportData || report);
-
-        console.log('[Admin Report View] Extracted Behavioral Matrix:', JSON.stringify(matrix, null, 2));
 
         if (isNS) {
           const authoritativeScores = getAuthoritativeNationalServiceScores(data, result, report);
@@ -409,7 +372,6 @@ export default function AdminReportView() {
               totalQuestions: result.total_questions || 0,
               totalAnswered: result.answered_questions || 0
             },
-            // 🟢 INCLUDE BEHAVIORAL MATRIX IN REPORT
             proctoring: parsedResultReportData?.proctoring || report.proctoring || null,
             behavioralMatrix: matrix
           };
@@ -430,7 +392,6 @@ export default function AdminReportView() {
             recommendations: result.recommendations || report.recommendations || data.recommendations || [],
             total_questions: result.total_questions || 0,
             answered_questions: result.answered_questions || 0,
-            // 🟢 INCLUDE BEHAVIORAL MATRIX IN REPORT
             proctoring: parsedResultReportData?.proctoring || report.proctoring || null,
             behavioralMatrix: matrix
           };
@@ -462,10 +423,6 @@ export default function AdminReportView() {
   const handleBack = () => {
     router.push('/admin/reports');
   };
-
-  // ============================================================
-  // RENDER STATES
-  // ============================================================
 
   if (authLoading || loading) {
     return (
@@ -511,7 +468,6 @@ export default function AdminReportView() {
             ...reportData.report,
             proctoring: reportData.report.proctoring,
             behavioralMatrix: behavioralMatrix,
-            // Include the raw report data too
             report_data: reportData.report.report_data || {}
           }}
           onBack={handleBack}
@@ -554,7 +510,6 @@ export default function AdminReportView() {
       answered_questions: report.answered_questions || 0,
       completed_at: reportData.result?.completed_at || null,
       candidateName: report.candidateInfo?.fullName || reportData.candidateName || 'Candidate',
-      // 🟢 INCLUDE BEHAVIORAL MATRIX
       proctoring: report.proctoring,
       behavioralMatrix: behavioralMatrix
     };
@@ -590,10 +545,6 @@ export default function AdminReportView() {
     </AppLayout>
   );
 }
-
-// ============================================================
-// STYLES
-// ============================================================
 
 const styles = {
   loadingContainer: {
