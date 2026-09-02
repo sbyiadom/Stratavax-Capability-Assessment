@@ -1,5 +1,5 @@
-// pages/api/supervisor/dashboard.js
-// COMPLETE FIXED VERSION - Uses batch processing for assessment results
+// pages/api/supervisor/dashboard.js - COMPLETE FIXED
+// SUPPORTS MULTIPLE SUPERVISORS via junction table
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -224,7 +224,7 @@ export default async function handler(req, res) {
     console.log(`[Dashboard] Auth ID: ${authId}`);
 
     // ============================================================
-    // STEP 5: RESOLVE SUPERVISOR PROFILE
+    // RESOLVE SUPERVISOR PROFILE
     // ============================================================
     let supervisor = null;
 
@@ -269,11 +269,7 @@ export default async function handler(req, res) {
       return res.status(404).json({
         success: false,
         error: 'Supervisor profile not found. Please contact support.',
-        code: 'SUPERVISOR_PROFILE_NOT_FOUND',
-        debug: {
-          email: authEmail,
-          userId: authId
-        }
+        code: 'SUPERVISOR_PROFILE_NOT_FOUND'
       });
     }
 
@@ -289,7 +285,7 @@ export default async function handler(req, res) {
     console.log(`[Dashboard] Supervisor ID: ${supervisor.id}`);
 
     // ============================================================
-    // STEP 6: FETCH CANDIDATES
+    // 🟢 FIXED: FETCH CANDIDATES - SUPPORTS MULTIPLE SUPERVISORS
     // ============================================================
     const supervisorId = supervisor.id;
     let allCandidates = [];
@@ -297,6 +293,7 @@ export default async function handler(req, res) {
     let legacyCount = 0;
     let junctionCount = 0;
 
+    // 1. Get candidates from legacy supervisor_id field
     try {
       const { data: legacyCandidates, error: legacyError } = await supabase
         .from('candidate_profiles')
@@ -319,6 +316,7 @@ export default async function handler(req, res) {
       console.log('[Dashboard] Legacy field error:', err.message);
     }
 
+    // 2. 🟢 FIXED: Get candidates from multiple supervisor assignments (junction table)
     try {
       const { data: junctionAssignments, error: junctionError } = await supabase
         .from('candidate_supervisors')
@@ -354,7 +352,7 @@ export default async function handler(req, res) {
     }
 
     const totalCandidates = allCandidates.length;
-    console.log(`[Dashboard] Total candidates: ${totalCandidates}`);
+    console.log(`[Dashboard] Total candidates: ${totalCandidates} (Legacy: ${legacyCount}, Junction: ${junctionCount})`);
 
     if (totalCandidates === 0) {
       return res.status(200).json({
@@ -368,10 +366,9 @@ export default async function handler(req, res) {
         candidates: [],
         nationalServiceReports: [],
         otherReports: [],
-        debug: {
+        diagnostics: {
           supervisorId: supervisor.id,
           supervisorName: supervisor.full_name,
-          email: supervisor.email,
           message: 'No candidates assigned to this supervisor'
         }
       });
@@ -380,7 +377,7 @@ export default async function handler(req, res) {
     const candidateIds = allCandidates.map(c => c.id);
 
     // ============================================================
-    // STEP 7: FETCH ASSESSMENT RESULTS - BATCH PROCESSING
+    // FETCH ASSESSMENT RESULTS - BATCH PROCESSING
     // ============================================================
     let results = [];
     const BATCH_SIZE = 100;
@@ -388,7 +385,6 @@ export default async function handler(req, res) {
     try {
       console.log(`[Dashboard] Querying assessment_results for ${candidateIds.length} candidates in batches...`);
       
-      // Process in batches of 100
       for (let i = 0; i < candidateIds.length; i += BATCH_SIZE) {
         const batch = candidateIds.slice(i, i + BATCH_SIZE);
         console.log(`[Dashboard] Processing batch ${Math.floor(i/BATCH_SIZE) + 1}, ${batch.length} IDs`);
@@ -400,7 +396,6 @@ export default async function handler(req, res) {
 
         if (error) {
           console.error('[Dashboard] Batch error:', error);
-          // Don't fail completely - continue with other batches
           continue;
         }
         
@@ -422,7 +417,7 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 8: FETCH ASSESSMENT DETAILS
+    // FETCH ASSESSMENT DETAILS
     // ============================================================
     const assessmentIds = [...new Set(results.map(r => r.assessment_id).filter(Boolean))];
     let assessmentMap = {};
@@ -444,7 +439,7 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 9: PROCESS RESULTS
+    // PROCESS RESULTS
     // ============================================================
     const candidateMap = {};
     allCandidates.forEach(c => { candidateMap[c.id] = c; });
@@ -520,7 +515,7 @@ export default async function handler(req, res) {
     const otherReports = allReports.filter(r => !r.is_national_service);
 
     // ============================================================
-    // STEP 10: BUILD CANDIDATE ROWS
+    // BUILD CANDIDATE ROWS
     // ============================================================
     const candidateRows = allCandidates.map(c => {
       const candidateReports = allReports.filter(r => r.candidate_id === c.id);
@@ -538,7 +533,7 @@ export default async function handler(req, res) {
     });
 
     // ============================================================
-    // STEP 11: RETURN SUCCESS
+    // RETURN SUCCESS
     // ============================================================
     console.log(`[Dashboard] Success! Returning ${totalCandidates} candidates with ${allReports.length} reports`);
     console.log(`[Dashboard] Stats - Completed: ${totalCompleted}, National Service: ${nationalServiceCount}`);
@@ -556,6 +551,8 @@ export default async function handler(req, res) {
       otherReports: otherReports,
       diagnostics: {
         assignedCandidateCount: totalCandidates,
+        legacyCount: legacyCount,
+        junctionCount: junctionCount,
         resultCount: results.length,
         reportCount: allReports.length,
         orphanResultCount: results.filter(r => !candidateMap[r.user_id]).length
