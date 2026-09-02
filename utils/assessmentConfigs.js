@@ -1,390 +1,10 @@
 // utils/assessmentConfigs.js
 
 /**
- * ASSESSMENT Culture Fit", * ASSESSMENT TYPE CONFIGURATIONS
-        maxScore: 50,
-        aliases: ["Company Culture Fit"]
-      },
-      {
-        id: "diversity",
-        name: "Diversity Awareness",
-        maxScore: 50,
-        aliases: ["Diversity Awareness"]
-      },
-      {
-        id: "inclusivity",
-        name: "Inclusivity",
-        maxScore: 50,
-        aliases: ["Inclusivity"]
-      },
-      {
-        id: "respect",
-        name: "Respect",
-        maxScore: 50,
-        aliases: ["Respect"]
-      },
-      {
-        id: "integrity",
-        name: "Integrity",
-        maxScore: 50,
-        aliases: ["Integrity"]
-      },
-      {
-        id: "conduct",
-        name: "Professional Conduct",
-        maxScore: 50,
-        aliases: ["Professional Conduct"]
-      }
-    ],
-    weightage: commonWeightageNote,
-    performanceBands: sharedPerformanceBands
-  },
-
-  manufacturing_baseline: {
-    id: "manufacturing_baseline",
-    name: "Manufacturing Baseline Assessment",
-    description:
-      "Entry-level assessment for new manufacturing hires covering technical fundamentals, troubleshooting basics, numerical aptitude, and workplace safety.",
-    icon: "🏭",
-    gradient_start: "#2E7D32",
-    gradient_end: "#1B5E20",
-    categories: [
-      {
-        id: "technical_fundamentals",
-        name: "Technical Fundamentals",
-        maxScore: 20,
-        description:
-          "Basic knowledge of maintenance, sensors, motors, pneumatics, and mechanical systems",
-        aliases: ["Technical Fundamentals"]
-      },
-      {
-        id: "troubleshooting",
-        name: "Troubleshooting",
-        maxScore: 25,
-        description:
-          "Problem identification, conveyor issues, filler problems, labeler alignment, jams",
-        aliases: ["Troubleshooting"]
-      },
-      {
-        id: "numerical_aptitude",
-        name: "Numerical Aptitude",
-        maxScore: 25,
-        description:
-          "Math calculations, percentages, sequences, ratios, and production rates",
-        aliases: ["Numerical Aptitude"]
-      },
-      {
-        id: "safety_attitude",
-        name: "Safety & Work Ethic",
-        maxScore: 30,
-        description:
-          "PPE, safety reporting, SOP compliance, teamwork, and ethical behavior",
-        aliases: ["Safety & Work Ethic", "Safety &amp; Work Ethic"]
-      }
-    ],
-    weightage:
-      "Category contribution is based on allocated question count and scoring distribution. Category maxScore values represent normalized reporting weights.",
-    performanceBands: sharedPerformanceBands,
-    passThreshold: 70,
-    timeLimit: 180,
-    totalQuestions: 100,
-    rawMaxScore: 500,
-    normalizedMaxScore: 100,
-    descriptionDetailed:
-      "The Manufacturing Baseline Assessment evaluates foundational knowledge required for new manufacturing hires. Topics include basic equipment understanding, common troubleshooting, numerical reasoning, and workplace safety. This assessment is designed for entry-level manufacturing positions to establish a baseline of technical and safety competency.",
-    whatItMeasures: {
-      technical_fundamentals:
-        "Measures basic understanding of maintenance practices, sensor functions, motor operation, pneumatic systems, lubrication principles, and mechanical components.",
-      troubleshooting:
-        "Evaluates ability to identify common production issues, diagnose conveyor problems, resolve filler and labeler malfunctions, handle bottle jams, and respond to sensor and PLC faults.",
-      numerical_aptitude:
-        "Assesses mathematical ability including calculations, percentages, sequences, ratios, efficiency calculations, and production rate determination.",
-      safety_attitude:
-        "Evaluates knowledge of PPE requirements, safety reporting protocols, compliance with SOPs, teamwork capabilities, ethical judgment, and professional conduct."
-    },
-    targetAudience:
-      "Entry-level manufacturing new hires, production associates, line operators, and maintenance trainees",
-    recommendedFor: [
-      "Production Line Operators",
-      "Manufacturing Associates",
-      "Quality Control Technicians",
-      "Maintenance Trainees",
-      "Packaging Operators",
-      "Filling Line Operators"
-    ],
-    readinessRules: {
-      production_line_operator: {
-        label: "Production Line Operator",
-        minimumOverall: 70,
-        requiredCategories: {
-          safety_attitude: 70,
-          technical_fundamentals: 60,
-          troubleshooting: 55
-        },
-        supervision:
-          "Standard onboarding if thresholds are met; increased supervision if any required category is below threshold.",
-        ifBelow:
-          "Assign safety refresher, equipment familiarization, and supervised line exposure before independent production placement."
-      },
-      quality_control_technician: {
-        label: "Quality Control Technician",
-        minimumOverall: 70,
-        requiredCategories: {
-          safety_attitude: 65,
-          numerical_aptitude: 70,
-          troubleshooting: 60
-        },
-        supervision:
-          "Supervised quality checks and production tracking before independent QC tasks.",
-        ifBelow:
-          "Provide production math, quality documentation, and basic troubleshooting practice."
-      },
-      maintenance_trainee: {
-        label: "Maintenance Trainee",
-        minimumOverall: 65,
-        requiredCategories: {
-          technical_fundamentals: 70,
-          troubleshooting: 65,
-          safety_attitude: 65
-        },
-        supervision:
-          "Close technical supervision with guided practical exposure.",
-        ifBelow:
-          "Begin with foundational maintenance, equipment basics, and structured diagnostic training."
-      },
-      packaging_operator: {
-        label: "Packaging Operator",
-        minimumOverall: 65,
-        requiredCategories: {
-          safety_attitude: 70,
-          technical_fundamentals: 55,
-          troubleshooting: 55
-        },
-        supervision:
-          "Supervised packaging-line onboarding and SOP reinforcement.",
-        ifBelow:
-          "Provide SOP training, safety reinforcement, and guided line observation before independent assignment."
-      }
-    }
-  }
-};
-
-// ======================================================
-// HELPERS
-// ======================================================
-
-export const getAssessmentType = (typeId) => {
-  return assessmentTypes[typeId] || assessmentTypes.general;
-};
-
-export const getAssessmentCategories = (typeId) => {
-  return getAssessmentType(typeId).categories || [];
-};
-
-export const getAssessmentPerformanceBands = (typeId) => {
-  return getAssessmentType(typeId).performanceBands || sharedPerformanceBands;
-};
-
-export const getManufacturingBaselineCategories = () => {
-  return assessmentTypes.manufacturing_baseline?.categories || [];
-};
-
-export const getManufacturingBaselineInfo = () => {
-  return assessmentTypes.manufacturing_baseline || null;
-};
-
-export const getManufacturingReadinessRules = () => {
-  return assessmentTypes.manufacturing_baseline?.readinessRules || {};
-};
-
-export const getPersonalityTraits = () => {
-  return assessmentTypes.personality.categories;
-};
-
-export const getStrategicLeadershipDimensions = () => {
-  return assessmentTypes.strategic_leadership.categories;
-};
-
-export const getPersonalityTraitDescription = (traitId) => {
-  const trait = assessmentTypes.personality.categories.find(
-    (category) => category.id === traitId || category.name === traitId
-  );
-
-  return trait ? trait.description : "";
-};
-
-export const getStrategicLeadershipDimensionDescription = (dimensionId) => {
-  const dimension = assessmentTypes.strategic_leadership.categories.find(
-    (category) => category.id === dimensionId || category.name === dimensionId
-  );
-
-  return dimension ? dimension.description : "";
-};
-
-export const findCategoryByNameOrAlias = (assessmentTypeId, categoryName) => {
-  const assessment = getAssessmentType(assessmentTypeId);
-  const normalizedName = String(categoryName || "")
-    .replace(/&amp;/g, "&")
-    .trim()
-    .toLowerCase();
-
-  return assessment.categories.find((category) => {
-    const names = [category.name, ...(category.aliases || [])];
-
-    return names.some(
-      (name) =>
-        String(name || "")
-          .replace(/&amp;/g, "&")
-          .trim()
-          .toLowerCase() === normalizedName
-    );
-  });
-};
-
-export const getCategoryIdFromName = (assessmentTypeId, categoryName) => {
-  const category = findCategoryByNameOrAlias(assessmentTypeId, categoryName);
-  return category?.id || null;
-};
-
-export const getCategoryDisplayName = (assessmentTypeId, categoryNameOrId) => {
-  const assessment = getAssessmentType(assessmentTypeId);
-
-  const found = assessment.categories.find((category) => {
-    return (
-      category.id === categoryNameOrId ||
-      category.name === categoryNameOrId ||
-      (category.aliases || []).includes(categoryNameOrId)
-    );
-  });
-
-  return found?.name || categoryNameOrId;
-};
-
-export const getPersonalityProfileClassification = (
-  ownership,
-  collaboration,
-  action,
-  analysis,
-  risk,
-  structure
-) => {
-  if (ownership >= 75 && action >= 65) {
-    return assessmentTypes.personality.profileClassifications[
-      "High Ownership Leader"
-    ];
-  }
-
-  if (collaboration >= 75 && structure >= 65) {
-    return assessmentTypes.personality.profileClassifications[
-      "Collaborative Stabilizer"
-    ];
-  }
-
-  if (action >= 75 && risk >= 65) {
-    return assessmentTypes.personality.profileClassifications[
-      "Risk Driver / Executor"
-    ];
-  }
-
-  if (analysis >= 75 && structure >= 65) {
-    return assessmentTypes.personality.profileClassifications[
-      "Analytical Thinker"
-    ];
-  }
-
-  return assessmentTypes.personality.profileClassifications[
-    "Balanced Professional"
-  ];
-};
-
-export const getStrategicLeadershipProfile = (
-  visionStrategy,
-  peopleLeadership,
-  decisionMaking,
-  accountability,
-  emotionalIntelligence,
-  executionDrive,
-  ethics
-) => {
-  if (
-    visionStrategy >= 75 &&
-    peopleLeadership >= 75 &&
-    decisionMaking >= 75
-  ) {
-    return assessmentTypes.strategic_leadership.profileClassifications[
-      "🏆 Strategic Leader"
-    ];
-  }
-
-  if (peopleLeadership >= 80 && emotionalIntelligence >= 70) {
-    return assessmentTypes.strategic_leadership.profileClassifications[
-      "👥 People-Focused Leader"
-    ];
-  }
-
-  if (executionDrive >= 80 && accountability >= 70) {
-    return assessmentTypes.strategic_leadership.profileClassifications[
-      "⚡ Execution Leader"
-    ];
-  }
-
-  if (visionStrategy >= 80) {
-    return assessmentTypes.strategic_leadership.profileClassifications[
-      "🔭 Visionary Leader"
-    ];
-  }
-
-  if (ethics >= 80) {
-    return assessmentTypes.strategic_leadership.profileClassifications[
-      "⚖️ Ethical Leader"
-    ];
-  }
-
-  if (
-    visionStrategy >= 65 &&
-    peopleLeadership >= 65 &&
-    executionDrive >= 65
-  ) {
-    return assessmentTypes.strategic_leadership.profileClassifications[
-      "⚖️ Balanced Leader"
-    ];
-  }
-
-  return assessmentTypes.strategic_leadership.profileClassifications[
-    "📈 Developing Leader"
-  ];
-};
-
-export default {
-  assessmentTypes,
-  sharedPerformanceBands,
-  getAssessmentType,
-  getAssessmentCategories,
-  getAssessmentPerformanceBands,
-  getManufacturingBaselineCategories,
-  getManufacturingBaselineInfo,
-  getManufacturingReadinessRules,
-  getPersonalityTraits,
-  getStrategicLeadershipDimensions,
-  getPersonalityTraitDescription,
-  getStrategicLeadershipDimensionDescription,
-  findCategoryByNameOrAlias,
-  getCategoryIdFromName,
-  getCategoryDisplayName,
-  getPersonalityProfileClassification,
-  getStrategicLeadershipProfile
-};
+ * ASSESSMENT TYPE CONFIGURATIONS
  *
  * Central configuration for all assessment types.
- *
- * Corrected version:
- * - Keeps existing exports and IDs
- * - Supports all assessment types
- * - Adds shared performance bands
- * - Adds Manufacturing Baseline readiness rules
- * - Adds category aliases for safer mapping
- * - Corrects misleading weightage language
- * - Keeps compatibility with existing report files
+ * Supports all assessment types including the new Practical Manufacturing Assessment
  */
 
 export const sharedPerformanceBands = {
@@ -1135,3 +755,519 @@ export const assessmentTypes = {
       },
       {
         id: "culture",
+        name: "Culture Fit",
+        maxScore: 50,
+        aliases: ["Culture Fit"]
+      },
+      {
+        id: "integrity",
+        name: "Integrity",
+        maxScore: 50,
+        aliases: ["Integrity"]
+      },
+      {
+        id: "diversity",
+        name: "Diversity Awareness",
+        maxScore: 50,
+        aliases: ["Diversity Awareness"]
+      },
+      {
+        id: "inclusivity",
+        name: "Inclusivity",
+        maxScore: 50,
+        aliases: ["Inclusivity"]
+      },
+      {
+        id: "respect",
+        name: "Respect",
+        maxScore: 50,
+        aliases: ["Respect"]
+      },
+      {
+        id: "conduct",
+        name: "Professional Conduct",
+        maxScore: 50,
+        aliases: ["Professional Conduct"]
+      }
+    ],
+    weightage: commonWeightageNote,
+    performanceBands: sharedPerformanceBands
+  },
+
+  manufacturing_baseline: {
+    id: "manufacturing_baseline",
+    name: "Manufacturing Baseline Assessment",
+    description:
+      "Entry-level assessment for new manufacturing hires covering technical fundamentals, troubleshooting basics, numerical aptitude, and workplace safety.",
+    icon: "🏭",
+    gradient_start: "#2E7D32",
+    gradient_end: "#1B5E20",
+    categories: [
+      {
+        id: "technical_fundamentals",
+        name: "Technical Fundamentals",
+        maxScore: 20,
+        description:
+          "Basic knowledge of maintenance, sensors, motors, pneumatics, and mechanical systems",
+        aliases: ["Technical Fundamentals"]
+      },
+      {
+        id: "troubleshooting",
+        name: "Troubleshooting",
+        maxScore: 25,
+        description:
+          "Problem identification, conveyor issues, filler problems, labeler alignment, jams",
+        aliases: ["Troubleshooting"]
+      },
+      {
+        id: "numerical_aptitude",
+        name: "Numerical Aptitude",
+        maxScore: 25,
+        description:
+          "Math calculations, percentages, sequences, ratios, and production rates",
+        aliases: ["Numerical Aptitude"]
+      },
+      {
+        id: "safety_attitude",
+        name: "Safety & Work Ethic",
+        maxScore: 30,
+        description:
+          "PPE, safety reporting, SOP compliance, teamwork, and ethical behavior",
+        aliases: ["Safety & Work Ethic", "Safety &amp; Work Ethic"]
+      }
+    ],
+    weightage:
+      "Category contribution is based on allocated question count and scoring distribution. Category maxScore values represent normalized reporting weights.",
+    performanceBands: sharedPerformanceBands,
+    passThreshold: 70,
+    timeLimit: 180,
+    totalQuestions: 100,
+    rawMaxScore: 500,
+    normalizedMaxScore: 100,
+    descriptionDetailed:
+      "The Manufacturing Baseline Assessment evaluates foundational knowledge required for new manufacturing hires. Topics include basic equipment understanding, common troubleshooting, numerical reasoning, and workplace safety. This assessment is designed for entry-level manufacturing positions to establish a baseline of technical and safety competency.",
+    whatItMeasures: {
+      technical_fundamentals:
+        "Measures basic understanding of maintenance practices, sensor functions, motor operation, pneumatic systems, lubrication principles, and mechanical components.",
+      troubleshooting:
+        "Evaluates ability to identify common production issues, diagnose conveyor problems, resolve filler and labeler malfunctions, handle bottle jams, and respond to sensor and PLC faults.",
+      numerical_aptitude:
+        "Assesses mathematical ability including calculations, percentages, sequences, ratios, efficiency calculations, and production rate determination.",
+      safety_attitude:
+        "Evaluates knowledge of PPE requirements, safety reporting protocols, compliance with SOPs, teamwork capabilities, ethical judgment, and professional conduct."
+    },
+    targetAudience:
+      "Entry-level manufacturing new hires, production associates, line operators, and maintenance trainees",
+    recommendedFor: [
+      "Production Line Operators",
+      "Manufacturing Associates",
+      "Quality Control Technicians",
+      "Maintenance Trainees",
+      "Packaging Operators",
+      "Filling Line Operators"
+    ],
+    readinessRules: {
+      production_line_operator: {
+        label: "Production Line Operator",
+        minimumOverall: 70,
+        requiredCategories: {
+          safety_attitude: 70,
+          technical_fundamentals: 60,
+          troubleshooting: 55
+        },
+        supervision:
+          "Standard onboarding if thresholds are met; increased supervision if any required category is below threshold.",
+        ifBelow:
+          "Assign safety refresher, equipment familiarization, and supervised line exposure before independent production placement."
+      },
+      quality_control_technician: {
+        label: "Quality Control Technician",
+        minimumOverall: 70,
+        requiredCategories: {
+          safety_attitude: 65,
+          numerical_aptitude: 70,
+          troubleshooting: 60
+        },
+        supervision:
+          "Supervised quality checks and production tracking before independent QC tasks.",
+        ifBelow:
+          "Provide production math, quality documentation, and basic troubleshooting practice."
+      },
+      maintenance_trainee: {
+        label: "Maintenance Trainee",
+        minimumOverall: 65,
+        requiredCategories: {
+          technical_fundamentals: 70,
+          troubleshooting: 65,
+          safety_attitude: 65
+        },
+        supervision:
+          "Close technical supervision with guided practical exposure.",
+        ifBelow:
+          "Begin with foundational maintenance, equipment basics, and structured diagnostic training."
+      },
+      packaging_operator: {
+        label: "Packaging Operator",
+        minimumOverall: 65,
+        requiredCategories: {
+          safety_attitude: 70,
+          technical_fundamentals: 55,
+          troubleshooting: 55
+        },
+        supervision:
+          "Supervised packaging-line onboarding and SOP reinforcement.",
+        ifBelow:
+          "Provide SOP training, safety reinforcement, and guided line observation before independent assignment."
+      }
+    }
+  },
+
+  // ============================================================
+  // NEW: PRACTICAL MANUFACTURING ASSESSMENT (STANDALONE)
+  // ============================================================
+  practical_manufacturing: {
+    id: "practical_manufacturing",
+    name: "Practical Manufacturing Assessment",
+    description:
+      "Hands-on practical assessment covering Mechanical, Electrical, Logistics, and Quality Assurance disciplines",
+    icon: "🔧",
+    gradient_start: "#1a237e",
+    gradient_end: "#0d47a1",
+    categories: [
+      {
+        id: "mechanical_engineering",
+        name: "Mechanical Engineering",
+        maxScore: 100,
+        description:
+          "Practical mechanical systems, maintenance, hydraulics, pneumatics, and mechanical troubleshooting",
+        aliases: ["Mechanical Engineering", "Mechanical"]
+      },
+      {
+        id: "electrical_engineering",
+        name: "Electrical Engineering",
+        maxScore: 100,
+        description:
+          "Electrical systems, PLCs, sensors, motor control, and electrical troubleshooting",
+        aliases: ["Electrical Engineering", "Electrical"]
+      },
+      {
+        id: "logistics_supply_chain",
+        name: "Logistics & Supply Chain",
+        maxScore: 100,
+        description:
+          "Inventory management, warehousing, transportation, procurement, and supply chain operations",
+        aliases: ["Logistics & Supply Chain", "Logistics", "Supply Chain"]
+      },
+      {
+        id: "quality_assurance",
+        name: "Quality Assurance",
+        maxScore: 100,
+        description:
+          "Quality control, inspection, process capability, SPC, and continuous improvement",
+        aliases: ["Quality Assurance", "Quality", "QA"]
+      }
+    ],
+    weightage:
+      "Category contribution is based on allocated question count and scoring distribution.",
+    performanceBands: sharedPerformanceBands,
+    passThreshold: 70,
+    timeLimit: 180,
+    totalQuestions: 40,
+    rawMaxScore: 400,
+    normalizedMaxScore: 100,
+    descriptionDetailed:
+      "The Practical Manufacturing Assessment evaluates hands-on technical knowledge across four core manufacturing disciplines: Mechanical Engineering, Electrical Engineering, Logistics & Supply Chain, and Quality Assurance. This assessment is designed for manufacturing professionals requiring practical problem-solving skills.",
+    whatItMeasures: {
+      mechanical_engineering:
+        "Measures practical knowledge of mechanical systems, maintenance procedures, hydraulic and pneumatic systems, and mechanical troubleshooting.",
+      electrical_engineering:
+        "Measures understanding of electrical systems, PLC programming, sensor technology, motor controls, and electrical diagnostics.",
+      logistics_supply_chain:
+        "Measures knowledge of inventory management, warehousing operations, transportation logistics, procurement, and supply chain optimization.",
+      quality_assurance:
+        "Measures understanding of quality control methods, inspection techniques, process capability, statistical process control, and continuous improvement."
+    },
+    targetAudience:
+      "Manufacturing engineers, maintenance technicians, production supervisors, quality engineers, and supply chain professionals",
+    recommendedFor: [
+      "Manufacturing Engineers",
+      "Maintenance Technicians",
+      "Production Supervisors",
+      "Quality Engineers",
+      "Supply Chain Managers",
+      "Process Improvement Specialists"
+    ],
+    readinessRules: {
+      mechanical_engineer: {
+        label: "Mechanical Engineer",
+        minimumOverall: 70,
+        requiredCategories: {
+          mechanical_engineering: 70,
+          quality_assurance: 60
+        },
+        supervision:
+          "Standard supervision for mechanical tasks; peer review for cross-functional work.",
+        ifBelow:
+          "Provide mechanical fundamentals training and supervised practical exposure."
+      },
+      electrical_technician: {
+        label: "Electrical Technician",
+        minimumOverall: 70,
+        requiredCategories: {
+          electrical_engineering: 70,
+          mechanical_engineering: 55
+        },
+        supervision:
+          "Supervised electrical work; standard supervision for mechanical tasks.",
+        ifBelow:
+          "Provide electrical safety training and basic electrical systems education."
+      },
+      logistics_coordinator: {
+        label: "Logistics Coordinator",
+        minimumOverall: 65,
+        requiredCategories: {
+          logistics_supply_chain: 70,
+          quality_assurance: 55
+        },
+        supervision:
+          "Standard supervision for logistics coordination tasks.",
+        ifBelow:
+          "Provide supply chain fundamentals training and WMS familiarization."
+      },
+      quality_engineer: {
+        label: "Quality Engineer",
+        minimumOverall: 70,
+        requiredCategories: {
+          quality_assurance: 75,
+          mechanical_engineering: 60,
+          electrical_engineering: 60
+        },
+        supervision:
+          "Peer review for quality decisions; standard supervision otherwise.",
+        ifBelow:
+          "Provide quality tools training and statistical process control education."
+      }
+    }
+  }
+};
+
+// ======================================================
+// HELPERS
+// ======================================================
+
+export const getAssessmentType = (typeId) => {
+  return assessmentTypes[typeId] || assessmentTypes.general;
+};
+
+export const getAssessmentCategories = (typeId) => {
+  return getAssessmentType(typeId).categories || [];
+};
+
+export const getAssessmentPerformanceBands = (typeId) => {
+  return getAssessmentType(typeId).performanceBands || sharedPerformanceBands;
+};
+
+export const getManufacturingBaselineCategories = () => {
+  return assessmentTypes.manufacturing_baseline?.categories || [];
+};
+
+export const getManufacturingBaselineInfo = () => {
+  return assessmentTypes.manufacturing_baseline || null;
+};
+
+export const getManufacturingReadinessRules = () => {
+  return assessmentTypes.manufacturing_baseline?.readinessRules || {};
+};
+
+export const getPracticalManufacturingCategories = () => {
+  return assessmentTypes.practical_manufacturing?.categories || [];
+};
+
+export const getPracticalManufacturingInfo = () => {
+  return assessmentTypes.practical_manufacturing || null;
+};
+
+export const getPracticalManufacturingReadinessRules = () => {
+  return assessmentTypes.practical_manufacturing?.readinessRules || {};
+};
+
+export const getPersonalityTraits = () => {
+  return assessmentTypes.personality.categories;
+};
+
+export const getStrategicLeadershipDimensions = () => {
+  return assessmentTypes.strategic_leadership.categories;
+};
+
+export const getPersonalityTraitDescription = (traitId) => {
+  const trait = assessmentTypes.personality.categories.find(
+    (category) => category.id === traitId || category.name === traitId
+  );
+
+  return trait ? trait.description : "";
+};
+
+export const getStrategicLeadershipDimensionDescription = (dimensionId) => {
+  const dimension = assessmentTypes.strategic_leadership.categories.find(
+    (category) => category.id === dimensionId || category.name === dimensionId
+  );
+
+  return dimension ? dimension.description : "";
+};
+
+export const findCategoryByNameOrAlias = (assessmentTypeId, categoryName) => {
+  const assessment = getAssessmentType(assessmentTypeId);
+  const normalizedName = String(categoryName || "")
+    .replace(/&amp;/g, "&")
+    .trim()
+    .toLowerCase();
+
+  return assessment.categories.find((category) => {
+    const names = [category.name, ...(category.aliases || [])];
+
+    return names.some(
+      (name) =>
+        String(name || "")
+          .replace(/&amp;/g, "&")
+          .trim()
+          .toLowerCase() === normalizedName
+    );
+  });
+};
+
+export const getCategoryIdFromName = (assessmentTypeId, categoryName) => {
+  const category = findCategoryByNameOrAlias(assessmentTypeId, categoryName);
+  return category?.id || null;
+};
+
+export const getCategoryDisplayName = (assessmentTypeId, categoryNameOrId) => {
+  const assessment = getAssessmentType(assessmentTypeId);
+
+  const found = assessment.categories.find((category) => {
+    return (
+      category.id === categoryNameOrId ||
+      category.name === categoryNameOrId ||
+      (category.aliases || []).includes(categoryNameOrId)
+    );
+  });
+
+  return found?.name || categoryNameOrId;
+};
+
+export const getPersonalityProfileClassification = (
+  ownership,
+  collaboration,
+  action,
+  analysis,
+  risk,
+  structure
+) => {
+  if (ownership >= 75 && action >= 65) {
+    return assessmentTypes.personality.profileClassifications[
+      "High Ownership Leader"
+    ];
+  }
+
+  if (collaboration >= 75 && structure >= 65) {
+    return assessmentTypes.personality.profileClassifications[
+      "Collaborative Stabilizer"
+    ];
+  }
+
+  if (action >= 75 && risk >= 65) {
+    return assessmentTypes.personality.profileClassifications[
+      "Risk Driver / Executor"
+    ];
+  }
+
+  if (analysis >= 75 && structure >= 65) {
+    return assessmentTypes.personality.profileClassifications[
+      "Analytical Thinker"
+    ];
+  }
+
+  return assessmentTypes.personality.profileClassifications[
+    "Balanced Professional"
+  ];
+};
+
+export const getStrategicLeadershipProfile = (
+  visionStrategy,
+  peopleLeadership,
+  decisionMaking,
+  accountability,
+  emotionalIntelligence,
+  executionDrive,
+  ethics
+) => {
+  if (
+    visionStrategy >= 75 &&
+    peopleLeadership >= 75 &&
+    decisionMaking >= 75
+  ) {
+    return assessmentTypes.strategic_leadership.profileClassifications[
+      "🏆 Strategic Leader"
+    ];
+  }
+
+  if (peopleLeadership >= 80 && emotionalIntelligence >= 70) {
+    return assessmentTypes.strategic_leadership.profileClassifications[
+      "👥 People-Focused Leader"
+    ];
+  }
+
+  if (executionDrive >= 80 && accountability >= 70) {
+    return assessmentTypes.strategic_leadership.profileClassifications[
+      "⚡ Execution Leader"
+    ];
+  }
+
+  if (visionStrategy >= 80) {
+    return assessmentTypes.strategic_leadership.profileClassifications[
+      "🔭 Visionary Leader"
+    ];
+  }
+
+  if (ethics >= 80) {
+    return assessmentTypes.strategic_leadership.profileClassifications[
+      "⚖️ Ethical Leader"
+    ];
+  }
+
+  if (
+    visionStrategy >= 65 &&
+    peopleLeadership >= 65 &&
+    executionDrive >= 65
+  ) {
+    return assessmentTypes.strategic_leadership.profileClassifications[
+      "⚖️ Balanced Leader"
+    ];
+  }
+
+  return assessmentTypes.strategic_leadership.profileClassifications[
+    "📈 Developing Leader"
+  ];
+};
+
+export default {
+  assessmentTypes,
+  sharedPerformanceBands,
+  getAssessmentType,
+  getAssessmentCategories,
+  getAssessmentPerformanceBands,
+  getManufacturingBaselineCategories,
+  getManufacturingBaselineInfo,
+  getManufacturingReadinessRules,
+  getPracticalManufacturingCategories,
+  getPracticalManufacturingInfo,
+  getPracticalManufacturingReadinessRules,
+  getPersonalityTraits,
+  getStrategicLeadershipDimensions,
+  getPersonalityTraitDescription,
+  getStrategicLeadershipDimensionDescription,
+  findCategoryByNameOrAlias,
+  getCategoryIdFromName,
+  getCategoryDisplayName,
+  getPersonalityProfileClassification,
+  getStrategicLeadershipProfile
+};
