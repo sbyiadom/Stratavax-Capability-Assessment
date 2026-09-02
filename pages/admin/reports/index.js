@@ -1,5 +1,5 @@
-// pages/admin/reports/index.js - COMPLETE WITH FIXED SCORES
-// FIXED: Recommendations now dynamically calculated for National Service in the Admin List.
+// pages/admin/reports/index.js - COMPLETE WITH FIXED FILTERS
+// FIXED: Filters now work properly for all views
 
 import { useState, useEffect, Fragment } from 'react';
 import { useRouter } from 'next/router';
@@ -20,7 +20,6 @@ function calculateNationalServiceScores(reportData, categoryScores, result) {
   let intellectualCapability = 0;
   let overallScore = 0;
 
-  // Try to get from report_data first
   if (reportData) {
     if (reportData.workplaceReadiness) workplaceReadiness = safeNumber(reportData.workplaceReadiness);
     else if (reportData.workplace_readiness) workplaceReadiness = safeNumber(reportData.workplace_readiness);
@@ -35,14 +34,12 @@ function calculateNationalServiceScores(reportData, categoryScores, result) {
     else if (reportData.dimensions?.overallScore) overallScore = safeNumber(reportData.dimensions.overallScore);
   }
 
-  // Try to get from result if not found
   if (!workplaceReadiness && result) {
     workplaceReadiness = safeNumber(result.workplace_readiness);
     intellectualCapability = safeNumber(result.intellectual_capability);
     overallScore = safeNumber(result.percentage_score);
   }
 
-  // If still 0, calculate from category scores
   if (workplaceReadiness === 0 || intellectualCapability === 0 || overallScore === 0) {
     const workplaceCategories = [
       'Communication & Teamwork',
@@ -95,7 +92,6 @@ function calculateNationalServiceScores(reportData, categoryScores, result) {
   return { workplaceReadiness, intellectualCapability, overallScore };
 }
 
-// 🟢 NEW HELPER: CALCULATE RECOMMENDATION FOR NATIONAL SERVICE
 function calculateNationalServiceRecommendation(workplaceReadiness, intellectualCapability) {
   const workplace = Number(workplaceReadiness || 0);
   const intellectual = Number(intellectualCapability || 0);
@@ -153,16 +149,13 @@ export default function AdminReportsList() {
         throw new Error(data.error || 'Failed to load reports');
       }
 
-      // ============================================================
-      // Process reports to calculate correct scores for National Service
-      // ============================================================
+      // Process reports
       const processedReports = (data.reports || []).map(report => {
         const isNationalService = report.isNationalService || 
           report.assessment_id === 'bdb9d46e-9fac-4d00-8478-1f649e7ac600' ||
           report.assessment_title === 'National Service Recruitment Assessment';
 
         if (isNationalService) {
-          // Get category scores from report_data or result
           const categoryScores = report.category_scores || 
             report.report_data?.categoryScores || 
             report.report_data?.category_scores || [];
@@ -182,7 +175,6 @@ export default function AdminReportsList() {
           };
         }
 
-        // For Stratavax, use the percentage score directly
         return {
           ...report,
           displayScore: safeNumber(report.percentage_score || report.overallScore || 0)
@@ -192,6 +184,7 @@ export default function AdminReportsList() {
       setReports(processedReports);
       setStats(data.stats || { total: 0, nationalService: 0, stratavax: 0 });
       
+      // Build candidate map
       const candidateMap = {};
       processedReports.forEach(report => {
         const key = report.user_id || report.candidate_email;
@@ -267,6 +260,7 @@ export default function AdminReportsList() {
     }));
   };
 
+  // 🟢 FIXED: Get filtered candidates based on filter and search
   const getFilteredCandidates = () => {
     let filtered = candidates;
     
@@ -282,12 +276,36 @@ export default function AdminReportsList() {
       })).filter(c => c.assessments.length > 0);
     }
     
-    if (searchTerm) {
-      const term = searchTerm.toLowerCase();
+    // Apply search filter
+    if (searchTerm && searchTerm.trim()) {
+      const term = searchTerm.toLowerCase().trim();
       filtered = filtered.filter(c => 
         c.name.toLowerCase().includes(term) ||
         c.email.toLowerCase().includes(term) ||
-        c.assessments.some(a => a.assessment_title.toLowerCase().includes(term))
+        c.university.toLowerCase().includes(term) ||
+        c.assessments.some(a => (a.assessment_title || '').toLowerCase().includes(term))
+      );
+    }
+    
+    return filtered;
+  };
+
+  // 🟢 FIXED: Get filtered reports based on filter and search
+  const getFilteredReports = () => {
+    let filtered = [...reports];
+    
+    if (filter === 'national_service') {
+      filtered = filtered.filter(r => r.isNationalService === true);
+    } else if (filter === 'stratavax') {
+      filtered = filtered.filter(r => r.isNationalService !== true);
+    }
+    
+    if (searchTerm && searchTerm.trim()) {
+      const term = searchTerm.toLowerCase().trim();
+      filtered = filtered.filter(r => 
+        (r.candidate_name || '').toLowerCase().includes(term) ||
+        (r.candidate_email || '').toLowerCase().includes(term) ||
+        (r.assessment_title || '').toLowerCase().includes(term)
       );
     }
     
@@ -295,6 +313,7 @@ export default function AdminReportsList() {
   };
 
   const filteredCandidates = getFilteredCandidates();
+  const filteredReports = getFilteredReports();
 
   const handleViewReport = (resultId) => {
     router.push(`/admin/reports/${resultId}`);
@@ -319,7 +338,7 @@ export default function AdminReportsList() {
   // NATIONAL SERVICE VIEW: Simple flat list with table
   // ============================================================
   const renderNationalServiceView = () => {
-    const nsReports = reports.filter(r => r.isNationalService === true);
+    const nsReports = filteredReports.filter(r => r.isNationalService === true);
     
     return (
       <div style={styles.tableContainer}>
@@ -338,17 +357,14 @@ export default function AdminReportsList() {
             {nsReports.length === 0 ? (
               <tr>
                 <td colSpan="6" style={styles.emptyState}>
-                  No National Service assessment reports found.
+                  {searchTerm ? 'No National Service reports match your search.' : 'No National Service assessment reports found.'}
                 </td>
               </tr>
             ) : (
               nsReports.map((report) => {
-                // Use displayScore for National Service reports
                 const score = Math.round(report.displayScore || report.percentage_score || 0);
                 const workplace = report.workplaceReadiness || 0;
                 const intellectual = report.intellectualCapability || 0;
-                
-                // 🟢 FIX: Calculate recommendation dynamically
                 const displayRecommendation = calculateNationalServiceRecommendation(workplace, intellectual);
                 
                 return (
@@ -484,6 +500,14 @@ export default function AdminReportsList() {
                           <div style={styles.assessmentList}>
                             {candidate.assessments.map((assessment) => {
                               const score = Math.round(assessment.displayScore || assessment.percentage_score || 0);
+                              const isNS = assessment.isNationalService;
+                              let recommendation = assessment.recommendation || 'N/A';
+                              
+                              if (isNS) {
+                                const workplace = assessment.workplaceReadiness || 0;
+                                const intellectual = assessment.intellectualCapability || 0;
+                                recommendation = calculateNationalServiceRecommendation(workplace, intellectual);
+                              }
                               
                               return (
                                 <div key={assessment.id} style={styles.assessmentItem}>
@@ -500,7 +524,7 @@ export default function AdminReportsList() {
                                     {score}%
                                   </span>
                                   <span style={styles.assessmentRecommendation}>
-                                    {assessment.recommendation || 'N/A'}
+                                    {recommendation}
                                   </span>
                                   <button
                                     onClick={(e) => {
@@ -532,7 +556,7 @@ export default function AdminReportsList() {
   // ALL REPORTS VIEW: Unified table with type column
   // ============================================================
   const renderAllView = () => {
-    const allReports = [...reports].sort((a, b) => {
+    const allReports = [...filteredReports].sort((a, b) => {
       if (a.isNationalService && !b.isNationalService) return -1;
       if (!a.isNationalService && b.isNationalService) return 1;
       return (a.candidate_name || '').localeCompare(b.candidate_name || '');
@@ -555,7 +579,7 @@ export default function AdminReportsList() {
             {allReports.length === 0 ? (
               <tr>
                 <td colSpan="6" style={styles.emptyState}>
-                  No assessment reports found.
+                  {searchTerm ? 'No reports match your search.' : 'No assessment reports found.'}
                 </td>
               </tr>
             ) : (
@@ -563,7 +587,6 @@ export default function AdminReportsList() {
                 const isNationalService = report.isNationalService;
                 const score = Math.round(report.displayScore || report.percentage_score || 0);
                 
-                // 🟢 FIX: Calculate recommendation dynamically for National Service
                 let displayRecommendation = report.recommendation || 'N/A';
                 if (isNationalService) {
                   const workplace = report.workplaceReadiness || 0;
@@ -659,11 +682,19 @@ export default function AdminReportsList() {
           <div style={styles.searchBar}>
             <input
               type="text"
-              placeholder="Search by candidate name, email, or assessment..."
+              placeholder="Search by candidate name, email, university, or assessment..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               style={styles.searchInput}
             />
+            {searchTerm && (
+              <button 
+                onClick={() => setSearchTerm('')} 
+                style={styles.clearButton}
+              >
+                ✕
+              </button>
+            )}
           </div>
 
           <div style={styles.filterTabs}>
@@ -687,7 +718,7 @@ export default function AdminReportsList() {
                 border: filter === 'national_service' ? 'none' : '1px solid #e2e8f0'
               }}
             >
-              National Service ({stats.nationalService})
+              🇬🇭 National Service ({stats.nationalService})
             </button>
             <button
               onClick={() => setFilter('stratavax')}
@@ -698,7 +729,7 @@ export default function AdminReportsList() {
                 border: filter === 'stratavax' ? 'none' : '1px solid #e2e8f0'
               }}
             >
-              Stratavax ({stats.stratavax})
+              📋 Stratavax ({stats.stratavax})
             </button>
           </div>
 
@@ -792,23 +823,41 @@ const styles = {
     fontSize: '12px'
   },
   searchBar: {
-    marginBottom: '16px'
+    marginBottom: '16px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    position: 'relative'
   },
   searchInput: {
     width: '100%',
-    maxWidth: '400px',
-    padding: '10px 16px',
+    maxWidth: '450px',
+    padding: '10px 40px 10px 16px',
     borderRadius: '8px',
     border: '1px solid #e2e8f0',
     fontSize: '14px',
     outline: 'none',
     background: 'white',
-    fontFamily: 'inherit'
+    fontFamily: 'inherit',
+    transition: 'border-color 0.2s'
+  },
+  clearButton: {
+    position: 'absolute',
+    right: '12px',
+    top: '50%',
+    transform: 'translateY(-50%)',
+    background: 'none',
+    border: 'none',
+    color: '#94a3b8',
+    cursor: 'pointer',
+    fontSize: '16px',
+    padding: '4px 8px'
   },
   filterTabs: {
     display: 'flex',
     gap: '8px',
-    flexWrap: 'wrap'
+    flexWrap: 'wrap',
+    marginBottom: '16px'
   },
   filterTab: {
     padding: '8px 20px',
@@ -822,7 +871,7 @@ const styles = {
     border: '1px solid #e2e8f0'
   },
   exportContainer: {
-    marginTop: '12px'
+    marginTop: '4px'
   },
   exportButton: {
     padding: '10px 24px',
