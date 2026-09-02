@@ -1,5 +1,6 @@
 // pages/admin/assign-candidates.js
 // COMPLETE FIXED VERSION - Displays ALL assigned supervisors correctly
+// FIXED: Properly saves and displays multiple supervisors
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
@@ -173,13 +174,19 @@ export default function AssignCandidates() {
       setCandidates(candidateRows);
       setSupervisors(supervisorRows);
 
-      // Merge legacy supervisor_id with multi-assignments
+      // 🟢 FIXED: Merge legacy supervisor_id with multi-assignments
       const initialSelected = {};
       candidateRows.forEach((candidate) => {
         const multi = multipleAssignments[candidate.id] || [];
         const legacySupervisor = candidate.supervisor_id ? [candidate.supervisor_id] : [];
-        // Merge and deduplicate
-        initialSelected[candidate.id] = [...new Set([...multi, ...legacySupervisor])];
+        // Merge and deduplicate - keep ALL supervisors
+        const allSupervisors = [...new Set([...multi, ...legacySupervisor])];
+        initialSelected[candidate.id] = allSupervisors;
+        
+        // 🟢 FIXED: If multiple supervisors exist, show multi-select mode by default
+        if (allSupervisors.length > 1) {
+          initialShowMulti[candidate.id] = true;
+        }
       });
       setSelectedSupervisors(initialSelected);
 
@@ -447,22 +454,50 @@ export default function AssignCandidates() {
     }
   }
 
+  // 🟢 FIXED: Toggle between single and multi-select
   const toggleMultiSelect = (candidateId) => {
-    setShowMultiSelect(prev => ({
-      ...prev,
-      [candidateId]: !prev[candidateId]
-    }));
+    setShowMultiSelect(prev => {
+      const newState = !prev[candidateId];
+      
+      // If switching TO single select (from multi), keep only the first selected supervisor
+      if (!newState) {
+        const current = selectedSupervisors[candidateId] || [];
+        if (current.length > 1) {
+          // Keep only the first one when switching to single mode
+          setSelectedSupervisors(prevSelected => ({
+            ...prevSelected,
+            [candidateId]: current.slice(0, 1)
+          }));
+        }
+      }
+      
+      return {
+        ...prev,
+        [candidateId]: newState
+      };
+    });
   };
 
+  // 🟢 FIXED: Handle supervisor toggle in multi-select mode
   const handleSupervisorToggle = (candidateId, supervisorId) => {
     setSelectedSupervisors(prev => {
       const current = prev[candidateId] || [];
       if (current.includes(supervisorId)) {
+        // Remove supervisor
         return { ...prev, [candidateId]: current.filter(id => id !== supervisorId) };
       } else {
+        // Add supervisor
         return { ...prev, [candidateId]: [...current, supervisorId] };
       }
     });
+  };
+
+  // 🟢 FIXED: Handle single select change
+  const handleSingleSelectChange = (candidateId, supervisorId) => {
+    setSelectedSupervisors(prev => ({
+      ...prev,
+      [candidateId]: supervisorId ? [supervisorId] : []
+    }));
   };
 
   const visibleCandidates = filteredCandidates();
@@ -637,7 +672,6 @@ export default function AssignCandidates() {
                           .filter(name => name);
                         const uniqueSupervisorNames = [...new Set(supervisorNames)];
 
-                        // 🟢 FIXED: Show count badge if multiple
                         const hasMultipleSupervisors = uniqueSupervisorNames.length > 1;
 
                         return (
@@ -662,9 +696,6 @@ export default function AssignCandidates() {
                                   {uniqueSupervisorNames.map((name, index) => (
                                     <span key={index} style={styles.assignedName}>
                                       {name}
-                                      {hasMultipleSupervisors && index < uniqueSupervisorNames.length - 1 && (
-                                        <span style={styles.assignedSeparator}>; </span>
-                                      )}
                                     </span>
                                   ))}
                                   {hasMultipleSupervisors && (
@@ -683,20 +714,7 @@ export default function AssignCandidates() {
                                   <div style={styles.singleSelectMode}>
                                     <select
                                       value={candidateSelectedSupervisors[0] || ""}
-                                      onChange={(event) => {
-                                        const value = event.target.value;
-                                        if (value) {
-                                          setSelectedSupervisors(prev => ({
-                                            ...prev,
-                                            [candidate.id]: [value]
-                                          }));
-                                        } else {
-                                          setSelectedSupervisors(prev => ({
-                                            ...prev,
-                                            [candidate.id]: []
-                                          }));
-                                        }
-                                      }}
+                                      onChange={(e) => handleSingleSelectChange(candidate.id, e.target.value)}
                                       style={styles.assignSelect}
                                     >
                                       <option value="">Select Supervisor</option>
@@ -1105,7 +1123,7 @@ const styles = {
     fontWeight: 800,
     color: "#0a1929",
     fontSize: "14px",
-    display: "inline"
+    display: "block"
   },
   assignedSeparator: {
     color: "#94a3b8"
