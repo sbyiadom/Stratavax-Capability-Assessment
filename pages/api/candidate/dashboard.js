@@ -1,29 +1,16 @@
-// pages/api/candidate/dashboard.js - COMPLETE VERSION WITH PRACTICAL ASSESSMENTS
+// pages/api/candidate/dashboard.js - COMPLETE VERSION WITH CORRECT PRACTICAL ASSESSMENT IDs
 
 import { createClient } from '@supabase/supabase-js';
 
-// Hardcoded assessment titles as fallback (matching your database)
-const ASSESSMENT_TITLES = {
-  '17003efb-923f-49a5-bdeb-e4996c864a87': 'General Assessment',
-  'd09953bf-59cd-40ed-a9bb-308c3b5cfb7d': 'Leadership Assessment',
-  '42c1cb06-4574-4d31-8463-0147ff2a0737': 'Cognitive Ability Assessment',
-  'b9a372a1-28b4-440f-bf9a-bfb9211395aa': 'Technical Competence Assessment',
-  '24cd4e02-e43d-4228-beec-513886035c7f': 'Personality Assessment',
-  'ab4bb0b3-011e-4d37-9c08-60c60b15e88f': 'Performance Assessment',
-  '671bf00f-46cc-46f5-a217-d5a90dafb9b6': 'Behavioral & Soft Skills',
-  '192996c5-2ff4-4767-80c9-4af03aaf1b7e': 'Manufacturing Technical Skills',
-  '9f138960-671d-4edd-8044-c7d0a95cbbe9': 'Cultural & Attitudinal Fit',
-  '49980cc1-eb63-432b-895c-951722cfcc24': 'Strategic Leadership Assessment',
-  '232f7ff8-60b8-4223-81c6-4917a5fb12a3': 'Manufacturing Baseline Assessment',
-  'bdb9d46e-9fac-4d00-8478-1f649e7ac600': 'National Service Recruitment Assessment',
-  // ============================================================
-  // NEW: 4 PRACTICAL MANUFACTURING ASSESSMENTS
-  // ============================================================
-  '11111111-1111-1111-1111-111111111111': 'Practical Mechanical Assessment',
-  '22222222-2222-2222-2222-222222222222': 'Practical Electrical Assessment',
-  '33333333-3333-3333-3333-333333333333': 'Practical Logistics Assessment',
-  '44444444-4444-4444-4444-444444444444': 'Practical Quality Assessment'
-};
+// ============================================================
+// CORRECT PRACTICAL ASSESSMENT IDs
+// ============================================================
+const PRACTICAL_ASSESSMENT_IDS = [
+  'c2bc4994-1c4a-4094-a763-8d9d560b759e',  // Mechanical Technical
+  '243275ec-9bb5-43ce-9f02-1111b2ca66e0',  // Electrical Technical
+  'a6000077-095d-4115-bc4e-5936fce953e9',  // Quality Assurance
+  '928f81fc-35ea-40ac-83cb-7c3a0c1c18dc'   // Logistics & Supply Chain
+];
 
 const NATIONAL_SERVICE_ASSESSMENT_ID = 'bdb9d46e-9fac-4d00-8478-1f649e7ac600';
 
@@ -44,23 +31,13 @@ const ASSESSMENT_TYPE_CODE_MAP = {
   '232f7ff8-60b8-4223-81c6-4917a5fb12a3': 'manufacturing_baseline',
   'bdb9d46e-9fac-4d00-8478-1f649e7ac600': 'national_service',
   // ============================================================
-  // NEW: 4 PRACTICAL ASSESSMENT TYPE CODES
+  // CORRECT PRACTICAL ASSESSMENT TYPE CODES
   // ============================================================
-  '11111111-1111-1111-1111-111111111111': 'practical_mechanical',
-  '22222222-2222-2222-2222-222222222222': 'practical_electrical',
-  '33333333-3333-3333-3333-333333333333': 'practical_logistics',
-  '44444444-4444-4444-4444-444444444444': 'practical_quality'
+  'c2bc4994-1c4a-4094-a763-8d9d560b759e': 'practical_mechanical',
+  '243275ec-9bb5-43ce-9f02-1111b2ca66e0': 'practical_electrical',
+  'a6000077-095d-4115-bc4e-5936fce953e9': 'practical_quality',
+  '928f81fc-35ea-40ac-83cb-7c3a0c1c18dc': 'practical_logistics'
 };
-
-// ============================================================
-// PRACTICAL ASSESSMENT IDs FOR QUICK REFERENCE
-// ============================================================
-const PRACTICAL_ASSESSMENT_IDS = [
-  '11111111-1111-1111-1111-111111111111',
-  '22222222-2222-2222-2222-222222222222',
-  '33333333-3333-3333-3333-333333333333',
-  '44444444-4444-4444-4444-444444444444'
-];
 
 // ============================================================
 // PRACTICAL ASSESSMENT DEFAULTS
@@ -238,7 +215,7 @@ export default async function handler(req, res) {
       // ============================================================
       const typeCode = ASSESSMENT_TYPE_CODE_MAP[ca.assessment_id] || type.code || 'general';
       
-      let title = assessmentData.title || ASSESSMENT_TITLES[ca.assessment_id] || type.name || 'Assessment';
+      let title = assessmentData.title || type.name || 'Assessment';
       if (title === 'Assessment' && type.name) {
         title = type.name;
       }
