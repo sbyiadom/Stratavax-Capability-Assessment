@@ -1,11 +1,12 @@
 // pages/supervisor/manage-candidate/[userId]/index.js - COMPLETE FIXED
 // Candidate Report List - Shows all reports for a candidate
-// SUPPORTS MULTIPLE SUPERVISORS via junction table
+// SUPPORTS MULTIPLE SUPERVISORS via junction table + RESET BUTTON
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import AppLayout from '../../../../components/AppLayout';
 import { supabase } from '../../../../supabase/client';
+import ResetAssessmentButton from '../../../../components/ResetAssessmentButton';
 
 // ============================================================
 // HELPER FUNCTIONS
@@ -192,7 +193,7 @@ export default function CandidateReports() {
         return;
       }
 
-      // 🟢 FIXED: Check permission - admin, legacy supervisor, OR assigned via junction table
+      // Check permission - admin, legacy supervisor, OR assigned via junction table
       const isAdmin = profile?.role === 'admin';
       const isLegacySupervisor = candidateData.supervisor_id === session.user.id;
 
@@ -279,7 +280,6 @@ export default function CandidateReports() {
       setError('The selected report has no ID.');
       return;
     }
-    // Navigate to the report detail page with return path
     router.push({
       pathname: `/supervisor/reports/${reportId}`,
       query: { returnTo: `/supervisor/manage-candidate/${userId}` }
@@ -364,7 +364,6 @@ export default function CandidateReports() {
               </div>
             </div>
           </div>
-          {/* 🟢 Show assigned supervisors */}
           {assignedSupervisors.length > 0 && (
             <div style={styles.assignedSupervisors}>
               <span style={styles.assignedLabel}>Assigned Supervisors:</span>
@@ -431,6 +430,20 @@ export default function CandidateReports() {
                     >
                       View Report Details →
                     </button>
+                    
+                    {/* ✅ RESET BUTTON - Only for completed reports */}
+                    {report.isCompleted && (
+                      <div style={{ marginTop: '8px' }}>
+                        <ResetAssessmentButton
+                          candidateId={userId}
+                          assessmentId={report.assessment_id}
+                          assessmentName={report.assessment_title}
+                          candidateName={candidate?.full_name}
+                          onReset={loadData}
+                          variant="inline"
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}
