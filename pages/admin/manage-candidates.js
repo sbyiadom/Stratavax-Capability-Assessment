@@ -1,10 +1,11 @@
 // pages/admin/manage-candidates.js
-// COMPLETE WITH PROGRAM NORMALIZATION AND FILTERS
+// COMPLETE WITH PROGRAM NORMALIZATION AND FILTERS + RESET BUTTON
 
 import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/router";
 import AppLayout from "../../components/AppLayout";
 import { supabase } from "../../supabase/client";
+import ResetAssessmentButton from "../../components/ResetAssessmentButton";
 
 function formatDate(value) {
   if (!value) return "N/A";
@@ -169,14 +170,12 @@ const ABBREVIATIONS = {
 function normalizeProgramName(raw) {
   if (!raw || typeof raw !== 'string') return '';
   
-  // Remove extra spaces and clean
   let cleaned = raw
     .toLowerCase()
     .replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
   
-  // Split into words and map abbreviations
   const words = cleaned.split(' ');
   const mappedWords = words.map(word => {
     const lower = word.toLowerCase();
@@ -192,14 +191,12 @@ function getProgramGroups(programs) {
   const groups = [];
   const processed = new Set();
   
-  // Sort programs by length (longest first) to keep the most descriptive master
   const sortedPrograms = [...programs].sort((a, b) => b.length - a.length);
   
   sortedPrograms.forEach(p => {
     const normalized = normalizeProgramName(p);
     if (processed.has(normalized)) return;
     
-    // Find all programs similar to this one
     const group = [p];
     const master = normalized;
     processed.add(normalized);
@@ -215,14 +212,12 @@ function getProgramGroups(programs) {
       const union = new Set([...words1, ...words2]).size;
       const similarity = union > 0 ? intersection / union : 0;
       
-      // If they share more than 50% of words, group them
       if (similarity > 0.5) {
         group.push(p2);
         processed.add(norm2);
       }
     });
     
-    // Find the most common variation as the master label
     const masterLabel = group.reduce((a, b) => a.length >= b.length ? a : b);
     
     groups.push({
@@ -233,7 +228,6 @@ function getProgramGroups(programs) {
     });
   });
   
-  // Sort groups by count (most variants first) then alphabetically
   return groups.sort((a, b) => b.count - a.count || a.master.localeCompare(b.master));
 }
 
@@ -245,7 +239,6 @@ function getMasterProgramName(program, groups) {
     if (group.variants.includes(program)) {
       return group.master;
     }
-    // Also check normalized match
     if (normalized === group.master) {
       return group.master;
     }
@@ -567,7 +560,6 @@ export default function ManageCandidates() {
     return Array.from(unis).sort();
   }, [candidates]);
 
-  // 🟢 PROGRAM GROUPS (Normalized)
   const programGroups = useMemo(() => {
     const allPrograms = [];
     candidates.forEach(c => {
@@ -582,7 +574,6 @@ export default function ManageCandidates() {
   const filteredCandidates = useMemo(() => {
     let filtered = candidates;
 
-    // Search filter
     if (searchQuery.trim()) {
       const query = searchQuery.trim().toLowerCase();
       filtered = filtered.filter((c) =>
@@ -591,12 +582,10 @@ export default function ManageCandidates() {
       );
     }
 
-    // University filter
     if (selectedUniversity) {
       filtered = filtered.filter((c) => c.university === selectedUniversity);
     }
 
-    // 🟢 Program filter - matches any variant of the selected master program
     if (selectedProgram) {
       const group = programGroups.find(g => g.master === selectedProgram);
       if (group) {
@@ -607,7 +596,6 @@ export default function ManageCandidates() {
       }
     }
 
-    // Status filter
     if (selectedStatus === "completed") {
       filtered = filtered.filter((c) => c.latest !== null);
     } else if (selectedStatus === "not_started") {
@@ -716,7 +704,6 @@ export default function ManageCandidates() {
                       const scoreStyle = getScoreStyle(latestScore);
                       const isExpanded = expandedCandidate === candidate.id;
 
-                      // Determine status
                       let statusText = "Not Started";
                       let statusBg = "#FFF3E0";
                       let statusColor = "#E65100";
@@ -747,6 +734,7 @@ export default function ManageCandidates() {
                           onToggleExpand={() => toggleExpand(candidate.id)}
                           onOpenLatest={() => openLatestReport(candidate)}
                           onOpenSpecific={openSpecificReport}
+                          onRefresh={fetchCandidates}
                         />
                       );
                     })
@@ -772,7 +760,8 @@ function FragmentRow({
   statusColor,
   onToggleExpand,
   onOpenLatest,
-  onOpenSpecific
+  onOpenSpecific,
+  onRefresh
 }) {
   return (
     <>
@@ -868,6 +857,18 @@ function FragmentRow({
                 {isExpanded ? "Hide Reports" : "Show Reports"}
               </button>
             )}
+
+            {/* ✅ RESET BUTTON - Only for completed assessments */}
+            {latest && latest.completed_at && (
+              <ResetAssessmentButton
+                candidateId={candidate.id}
+                assessmentId={latest.assessment_id}
+                assessmentName={latest.assessment_title || 'Assessment'}
+                candidateName={candidate.full_name}
+                onReset={onRefresh}
+                variant="inline"
+              />
+            )}
           </div>
         </td>
       </tr>
@@ -939,6 +940,17 @@ function FragmentRow({
                           >
                             Open Report
                           </button>
+                          {/* ✅ RESET BUTTON - For each completed report */}
+                          {result.completed_at && (
+                            <ResetAssessmentButton
+                              candidateId={candidate.id}
+                              assessmentId={result.assessment_id}
+                              assessmentName={result.assessment_title || 'Assessment'}
+                              candidateName={candidate.full_name}
+                              onReset={onRefresh}
+                              variant="inline"
+                            />
+                          )}
                         </div>
                       </div>
                     );
@@ -1135,7 +1147,8 @@ const styles = {
   actionGroup: {
     display: "flex",
     gap: "8px",
-    flexWrap: "wrap"
+    flexWrap: "wrap",
+    alignItems: "center"
   },
 
   actionButtonPrimary: {
@@ -1247,6 +1260,8 @@ const styles = {
   reportActions: {
     marginTop: "12px",
     display: "flex",
-    gap: "8px"
+    gap: "8px",
+    flexWrap: "wrap",
+    alignItems: "center"
   }
 };
