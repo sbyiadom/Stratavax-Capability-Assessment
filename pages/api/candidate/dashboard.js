@@ -1,4 +1,4 @@
-// pages/api/candidate/dashboard.js - COMPLETE VERSION WITH EXPIRES_AT
+// pages/api/candidate/dashboard.js - COMPLETE VERSION WITH PRACTICAL ASSESSMENTS
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -15,10 +15,27 @@ const ASSESSMENT_TITLES = {
   '9f138960-671d-4edd-8044-c7d0a95cbbe9': 'Cultural & Attitudinal Fit',
   '49980cc1-eb63-432b-895c-951722cfcc24': 'Strategic Leadership Assessment',
   '232f7ff8-60b8-4223-81c6-4917a5fb12a3': 'Manufacturing Baseline Assessment',
-  'bdb9d46e-9fac-4d00-8478-1f649e7ac600': 'National Service Recruitment Assessment'
+  'bdb9d46e-9fac-4d00-8478-1f649e7ac600': 'National Service Recruitment Assessment',
+  // ============================================================
+  // NEW: 4 PRACTICAL MANUFACTURING ASSESSMENTS
+  // ============================================================
+  '11111111-1111-1111-1111-111111111111': 'Practical Mechanical Assessment',
+  '22222222-2222-2222-2222-222222222222': 'Practical Electrical Assessment',
+  '33333333-3333-3333-3333-333333333333': 'Practical Logistics Assessment',
+  '44444444-4444-4444-4444-444444444444': 'Practical Quality Assessment'
 };
 
 const NATIONAL_SERVICE_ASSESSMENT_ID = 'bdb9d46e-9fac-4d00-8478-1f649e7ac600';
+
+// ============================================================
+// PRACTICAL ASSESSMENT IDs FOR QUICK REFERENCE
+// ============================================================
+const PRACTICAL_ASSESSMENT_IDS = [
+  '11111111-1111-1111-1111-111111111111',
+  '22222222-2222-2222-2222-222222222222',
+  '33333333-3333-3333-3333-333333333333',
+  '44444444-4444-4444-4444-444444444444'
+];
 
 export default async function handler(req, res) {
   // Only allow GET requests
@@ -69,7 +86,7 @@ export default async function handler(req, res) {
     const candidateName = profile?.full_name || userData.user.user_metadata?.full_name || 'Candidate';
 
     // STEP 2: Get candidate assessments
-    const { data: candidateAssessments, error: caError } = await serviceClient
+    let { data: candidateAssessments, error: caError } = await serviceClient
       .from('candidate_assessments')
       .select('*')
       .eq('user_id', userId);
@@ -81,6 +98,56 @@ export default async function handler(req, res) {
         error: 'Failed to load assessments',
         details: caError.message
       });
+    }
+
+    // ============================================================
+    // FIX: Ensure practical assessments exist for this candidate
+    // If not, insert them as 'blocked' by default
+    // ============================================================
+    const existingAssessmentIds = new Set((candidateAssessments || []).map(ca => ca.assessment_id));
+    const missingPracticalIds = PRACTICAL_ASSESSMENT_IDS.filter(id => !existingAssessmentIds.has(id));
+
+    if (missingPracticalIds.length > 0) {
+      console.log('[API] Adding missing practical assessments for user:', userId);
+      
+      // Get assessment_type_id for each missing practical assessment
+      const { data: assessmentsData } = await serviceClient
+        .from('assessments')
+        .select('id, assessment_type_id')
+        .in('id', missingPracticalIds);
+
+      const assessmentTypeMap = {};
+      (assessmentsData || []).forEach(a => {
+        assessmentTypeMap[a.id] = a.assessment_type_id;
+      });
+
+      // Insert missing practical assessments as 'blocked'
+      const insertData = missingPracticalIds.map(assessmentId => ({
+        user_id: userId,
+        assessment_id: assessmentId,
+        assessment_type_id: assessmentTypeMap[assessmentId] || null,
+        status: 'blocked',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }));
+
+      if (insertData.length > 0) {
+        const { error: insertError } = await serviceClient
+          .from('candidate_assessments')
+          .insert(insertData);
+
+        if (insertError) {
+          console.error('[API] Error inserting practical assessments:', insertError);
+        } else {
+          // Re-fetch candidate assessments to include the new ones
+          const { data: refreshedData } = await serviceClient
+            .from('candidate_assessments')
+            .select('*')
+            .eq('user_id', userId);
+          
+          candidateAssessments = refreshedData || [];
+        }
+      }
     }
 
     if (!candidateAssessments || candidateAssessments.length === 0) {
@@ -156,9 +223,6 @@ export default async function handler(req, res) {
         timeLimitMinutes = assessmentData.time_limit_minutes || 120;
       }
 
-      // ============================================================
-      // INCLUDES expires_at - THE KEY FIELD FOR COUNTDOWN
-      // ============================================================
       return {
         id: ca.assessment_id,
         title: title,
@@ -170,19 +234,12 @@ export default async function handler(req, res) {
         timeLimitMinutes: timeLimitMinutes,
         attemptsAllowed: assessmentData.attempts_allowed || 1,
         isNationalService: isNationalService,
-        expires_at: assessmentData.expires_at || null,  // <-- KEY FIELD
+        expires_at: assessmentData.expires_at || null,
         completedAt: ca.completed_at || null,
         unblockedAt: ca.unblocked_at || null,
         resultId: ca.result_id || null
       };
     });
-
-    // Log expires_at for debugging
-    console.log('[API] Cards built with expires_at:', cards.map(c => ({ 
-      id: c.id, 
-      title: c.title,
-      expires_at: c.expires_at
-    })));
 
     const stats = {
       total: cards.length,
