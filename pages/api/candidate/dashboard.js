@@ -31,7 +31,6 @@ const NATIONAL_SERVICE_ASSESSMENT_ID = 'bdb9d46e-9fac-4d00-8478-1f649e7ac600';
 // MAP ASSESSMENT IDs TO THEIR CORRECT TYPE CODES
 // ============================================================
 const ASSESSMENT_TYPE_CODE_MAP = {
-  // Existing assessments with their codes
   '17003efb-923f-49a5-bdeb-e4996c864a87': 'general',
   'd09953bf-59cd-40ed-a9bb-308c3b5cfb7d': 'leadership',
   '42c1cb06-4574-4d31-8463-0147ff2a0737': 'cognitive',
@@ -62,6 +61,15 @@ const PRACTICAL_ASSESSMENT_IDS = [
   '33333333-3333-3333-3333-333333333333',
   '44444444-4444-4444-4444-444444444444'
 ];
+
+// ============================================================
+// PRACTICAL ASSESSMENT DEFAULTS
+// ============================================================
+const PRACTICAL_DEFAULTS = {
+  questionCount: 40,
+  timeLimitMinutes: 90,
+  attemptsAllowed: 1
+};
 
 export default async function handler(req, res) {
   // Only allow GET requests
@@ -241,16 +249,27 @@ export default async function handler(req, res) {
       }
 
       const isNationalService = typeCode === 'national_service' || ca.assessment_id === NATIONAL_SERVICE_ASSESSMENT_ID;
+      const isPractical = typeCode && typeCode.startsWith('practical_');
       
+      // ============================================================
+      // FIX: Set correct question count and time limit for practical assessments
+      // ============================================================
       let questionCount;
       let timeLimitMinutes;
+      let attemptsAllowed;
       
       if (isNationalService) {
         questionCount = 80;
         timeLimitMinutes = 90;
+        attemptsAllowed = 1;
+      } else if (isPractical) {
+        questionCount = assessmentData.question_count || PRACTICAL_DEFAULTS.questionCount;
+        timeLimitMinutes = assessmentData.time_limit_minutes || PRACTICAL_DEFAULTS.timeLimitMinutes;
+        attemptsAllowed = assessmentData.attempts_allowed || PRACTICAL_DEFAULTS.attemptsAllowed;
       } else {
         questionCount = assessmentData.question_count || 100;
         timeLimitMinutes = assessmentData.time_limit_minutes || 120;
+        attemptsAllowed = assessmentData.attempts_allowed || 1;
       }
 
       return {
@@ -262,7 +281,7 @@ export default async function handler(req, res) {
         status: status,
         questionCount: questionCount,
         timeLimitMinutes: timeLimitMinutes,
-        attemptsAllowed: assessmentData.attempts_allowed || 1,
+        attemptsAllowed: attemptsAllowed,
         isNationalService: isNationalService,
         expires_at: assessmentData.expires_at || null,
         completedAt: ca.completed_at || null,
@@ -291,7 +310,7 @@ export default async function handler(req, res) {
     return res.status(500).json({
       success: false,
       error: error.message || 'Internal server error',
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      stack: process.env.NEXT_PUBLIC_ENV === 'development' ? error.stack : undefined
     });
   }
 }
