@@ -1,5 +1,6 @@
 // pages/admin/manage-candidates.js
 // COMPLETE WITH PROGRAM NORMALIZATION AND FILTERS + RESET BUTTON
+// FIXED: Table now scrolls horizontally, all columns visible
 
 import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/router";
@@ -133,7 +134,6 @@ const ABBREVIATIONS = {
   'metallurgy': 'Metallurgy',
   'materials': 'Materials',
   'industrial': 'Industrial',
-  'manufacturing': 'Manufacturing',
   'automotive': 'Automotive',
   'marine': 'Marine',
   'aerospace': 'Aerospace',
@@ -671,76 +671,78 @@ export default function ManageCandidates() {
               totalCandidates={candidates.length}
             />
 
-            <div style={styles.tableContainer}>
-              <table style={styles.table}>
-                <thead>
-                  <tr>
-                    <th style={styles.th}>Candidate</th>
-                    <th style={styles.th}>Email</th>
-                    <th style={styles.th}>University</th>
-                    <th style={styles.th}>Program</th>
-                    <th style={styles.th}>Reports</th>
-                    <th style={styles.th}>Latest Score</th>
-                    <th style={styles.th}>Status</th>
-                    <th style={styles.th}>Actions</th>
-                  </tr>
-                </thead>
-
-                <tbody>
-                  {filteredCandidates.length === 0 ? (
+            <div style={styles.tableWrapper}>
+              <div style={styles.tableContainer}>
+                <table style={styles.table}>
+                  <thead>
                     <tr>
-                      <td colSpan="8" style={styles.noData}>
-                        {searchQuery || selectedUniversity || selectedProgram || selectedStatus !== "all"
-                          ? "No candidates match your filters."
-                          : "No candidates found."}
-                      </td>
+                      <th style={{ ...styles.th, width: '180px' }}>Candidate</th>
+                      <th style={{ ...styles.th, width: '200px' }}>Email</th>
+                      <th style={{ ...styles.th, width: '180px' }}>University</th>
+                      <th style={{ ...styles.th, width: '160px' }}>Program</th>
+                      <th style={{ ...styles.th, width: '70px', textAlign: 'center' }}>Reports</th>
+                      <th style={{ ...styles.th, width: '120px' }}>Latest Score</th>
+                      <th style={{ ...styles.th, width: '100px' }}>Status</th>
+                      <th style={{ ...styles.th, width: '220px' }}>Actions</th>
                     </tr>
-                  ) : (
-                    filteredCandidates.map((candidate) => {
-                      const latest = candidate.latest;
-                      const latestScore = latest
-                        ? Math.round(toNumber(latest.percentage_score, 0))
-                        : 0;
-                      const scoreStyle = getScoreStyle(latestScore);
-                      const isExpanded = expandedCandidate === candidate.id;
+                  </thead>
 
-                      let statusText = "Not Started";
-                      let statusBg = "#FFF3E0";
-                      let statusColor = "#E65100";
+                  <tbody>
+                    {filteredCandidates.length === 0 ? (
+                      <tr>
+                        <td colSpan="8" style={styles.noData}>
+                          {searchQuery || selectedUniversity || selectedProgram || selectedStatus !== "all"
+                            ? "No candidates match your filters."
+                            : "No candidates found."}
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredCandidates.map((candidate) => {
+                        const latest = candidate.latest;
+                        const latestScore = latest
+                          ? Math.round(toNumber(latest.percentage_score, 0))
+                          : 0;
+                        const scoreStyle = getScoreStyle(latestScore);
+                        const isExpanded = expandedCandidate === candidate.id;
 
-                      if (latest) {
-                        if (latest.completed_at) {
-                          statusText = "Completed";
-                          statusBg = "#E8F5E9";
-                          statusColor = "#2E7D32";
-                        } else {
-                          statusText = "In Progress";
-                          statusBg = "#FFF8E1";
-                          statusColor = "#F57F17";
+                        let statusText = "Not Started";
+                        let statusBg = "#FFF3E0";
+                        let statusColor = "#E65100";
+
+                        if (latest) {
+                          if (latest.completed_at) {
+                            statusText = "Completed";
+                            statusBg = "#E8F5E9";
+                            statusColor = "#2E7D32";
+                          } else {
+                            statusText = "In Progress";
+                            statusBg = "#FFF8E1";
+                            statusColor = "#F57F17";
+                          }
                         }
-                      }
 
-                      return (
-                        <FragmentRow
-                          key={candidate.id}
-                          candidate={candidate}
-                          latest={latest}
-                          latestScore={latestScore}
-                          scoreStyle={scoreStyle}
-                          isExpanded={isExpanded}
-                          statusText={statusText}
-                          statusBg={statusBg}
-                          statusColor={statusColor}
-                          onToggleExpand={() => toggleExpand(candidate.id)}
-                          onOpenLatest={() => openLatestReport(candidate)}
-                          onOpenSpecific={openSpecificReport}
-                          onRefresh={fetchCandidates}
-                        />
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
+                        return (
+                          <FragmentRow
+                            key={candidate.id}
+                            candidate={candidate}
+                            latest={latest}
+                            latestScore={latestScore}
+                            scoreStyle={scoreStyle}
+                            isExpanded={isExpanded}
+                            statusText={statusText}
+                            statusBg={statusBg}
+                            statusColor={statusColor}
+                            onToggleExpand={() => toggleExpand(candidate.id)}
+                            onOpenLatest={() => openLatestReport(candidate)}
+                            onOpenSpecific={openSpecificReport}
+                            onRefresh={fetchCandidates}
+                          />
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </>
         )}
@@ -792,7 +794,7 @@ function FragmentRow({
 
         <td style={styles.td}>{candidate.programme || "—"}</td>
 
-        <td style={styles.td}>
+        <td style={{ ...styles.td, textAlign: 'center' }}>
           <span style={styles.countBadge}>{candidate.results.length}</span>
         </td>
 
@@ -966,13 +968,14 @@ function FragmentRow({
 }
 
 // ============================================================
-// STYLES
+// STYLES - FIXED WITH SCROLLING
 // ============================================================
 const styles = {
   container: {
-    maxWidth: "1400px",
+    maxWidth: "100%",
     margin: "0 auto",
-    padding: "40px 20px"
+    padding: "40px 20px",
+    overflowX: "hidden",
   },
 
   header: {
@@ -983,20 +986,22 @@ const styles = {
     background: "white",
     padding: "20px 30px",
     borderRadius: "16px",
-    boxShadow: "0 4px 12px rgba(0,0,0,0.05)"
+    boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
+    flexWrap: "wrap",
+    gap: "12px",
   },
 
   title: {
     fontSize: "24px",
     fontWeight: 600,
     color: "#0A1929",
-    margin: "0 0 5px 0"
+    margin: "0 0 5px 0",
   },
 
   subtitle: {
     fontSize: "14px",
     color: "#666",
-    margin: 0
+    margin: 0,
   },
 
   refreshButton: {
@@ -1007,43 +1012,60 @@ const styles = {
     borderRadius: "8px",
     fontSize: "14px",
     fontWeight: 600,
-    cursor: "pointer"
+    cursor: "pointer",
+    whiteSpace: "nowrap",
+  },
+
+  tableWrapper: {
+    width: "100%",
+    overflow: "hidden",
+    borderRadius: "16px",
   },
 
   tableContainer: {
     background: "white",
     borderRadius: "16px",
     boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
-    overflow: "hidden"
+    overflowX: "auto",
+    overflowY: "visible",
+    width: "100%",
+    maxWidth: "100%",
+    WebkitOverflowScrolling: "touch",
   },
 
   table: {
     width: "100%",
+    minWidth: "1100px",
     borderCollapse: "collapse",
-    fontSize: "14px"
+    fontSize: "14px",
+    tableLayout: "fixed",
   },
 
   th: {
     textAlign: "left",
-    padding: "15px 20px",
+    padding: "12px 14px",
     background: "#F8FAFC",
     borderBottom: "2px solid #0A1929",
     fontWeight: 600,
-    color: "#0A1929"
+    color: "#0A1929",
+    fontSize: "12px",
+    whiteSpace: "nowrap",
   },
 
   td: {
-    padding: "15px 20px",
+    padding: "12px 14px",
     borderBottom: "1px solid #E2E8F0",
     color: "#2D3748",
-    verticalAlign: "top"
+    verticalAlign: "top",
+    fontSize: "13px",
+    wordBreak: "break-word",
   },
 
   noData: {
     padding: "40px",
     textAlign: "center",
     color: "#718096",
-    fontStyle: "italic"
+    fontStyle: "italic",
   },
 
   loading: {
@@ -1051,7 +1073,7 @@ const styles = {
     padding: "60px",
     color: "#666",
     background: "white",
-    borderRadius: "16px"
+    borderRadius: "16px",
   },
 
   errorMessage: {
@@ -1060,18 +1082,18 @@ const styles = {
     color: "#C62828",
     borderRadius: "8px",
     marginBottom: "20px",
-    fontSize: "14px"
+    fontSize: "14px",
   },
 
   dataRow: {
     cursor: "pointer",
-    transition: "background 0.15s"
+    transition: "background 0.15s",
   },
 
   candidateInfo: {
     display: "flex",
     alignItems: "center",
-    gap: "10px"
+    gap: "10px",
   },
 
   avatar: {
@@ -1085,18 +1107,18 @@ const styles = {
     justifyContent: "center",
     fontSize: "14px",
     fontWeight: 600,
-    flexShrink: 0
+    flexShrink: 0,
   },
 
   candidateName: {
-    fontWeight: 600
+    fontWeight: 600,
   },
 
   candidateMeta: {
     fontSize: "11px",
     color: "#667085",
     marginTop: "2px",
-    wordBreak: "break-all"
+    wordBreak: "break-all",
   },
 
   countBadge: {
@@ -1107,7 +1129,7 @@ const styles = {
     background: "#EEF4FF",
     color: "#3538CD",
     textAlign: "center",
-    fontWeight: 600
+    fontWeight: 600,
   },
 
   statusBadge: {
@@ -1115,7 +1137,7 @@ const styles = {
     borderRadius: "20px",
     fontSize: "12px",
     fontWeight: 600,
-    display: "inline-block"
+    display: "inline-block",
   },
 
   scoreBadge: {
@@ -1123,7 +1145,7 @@ const styles = {
     borderRadius: "20px",
     fontSize: "12px",
     fontWeight: 600,
-    display: "inline-block"
+    display: "inline-block",
   },
 
   progressTrack: {
@@ -1131,121 +1153,127 @@ const styles = {
     background: "#E2E8F0",
     borderRadius: "999px",
     marginTop: "8px",
-    overflow: "hidden"
+    overflow: "hidden",
   },
 
   progressFill: {
     height: "100%",
     borderRadius: "999px",
-    transition: "width 0.3s ease"
+    transition: "width 0.3s ease",
   },
 
   noValue: {
-    color: "#98A2B3"
+    color: "#98A2B3",
   },
 
   actionGroup: {
     display: "flex",
-    gap: "8px",
+    gap: "6px",
     flexWrap: "wrap",
-    alignItems: "center"
+    alignItems: "center",
   },
 
   actionButtonPrimary: {
-    padding: "6px 12px",
+    padding: "5px 10px",
     border: "none",
-    borderRadius: "8px",
+    borderRadius: "6px",
     cursor: "pointer",
-    fontSize: "12px",
+    fontSize: "11px",
     fontWeight: 600,
     color: "white",
-    background: "#0A1929"
+    background: "#0A1929",
+    whiteSpace: "nowrap",
   },
 
   actionButtonMuted: {
-    padding: "6px 12px",
+    padding: "5px 10px",
     border: "none",
-    borderRadius: "8px",
-    fontSize: "12px",
+    borderRadius: "6px",
+    fontSize: "11px",
     fontWeight: 600,
     color: "#98A2B3",
     background: "#F2F4F7",
-    cursor: "not-allowed"
+    cursor: "not-allowed",
+    whiteSpace: "nowrap",
   },
 
   expandButton: {
-    padding: "6px 12px",
+    padding: "5px 10px",
     border: "1px solid #CBD5E1",
-    borderRadius: "8px",
+    borderRadius: "6px",
     cursor: "pointer",
-    fontSize: "12px",
+    fontSize: "11px",
     fontWeight: 600,
     background: "white",
-    color: "#334155"
+    color: "#334155",
+    whiteSpace: "nowrap",
   },
 
   expandCell: {
     padding: "0",
-    background: "#F8FAFC"
+    background: "#F8FAFC",
   },
 
   expandPanel: {
-    padding: "20px"
+    padding: "20px",
   },
 
   expandHeader: {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: "14px"
+    marginBottom: "14px",
+    flexWrap: "wrap",
+    gap: "8px",
   },
 
   expandTitle: {
     margin: 0,
     fontSize: "16px",
     fontWeight: 600,
-    color: "#0A1929"
+    color: "#0A1929",
   },
 
   expandSubtext: {
     fontSize: "12px",
-    color: "#667085"
+    color: "#667085",
   },
 
   emptyExpand: {
     padding: "12px 0",
-    color: "#667085"
+    color: "#667085",
   },
 
   reportList: {
     display: "grid",
-    gap: "12px"
+    gap: "12px",
   },
 
   reportCard: {
     background: "white",
     border: "1px solid #E2E8F0",
     borderRadius: "10px",
-    padding: "14px"
+    padding: "14px",
   },
 
   reportCardTop: {
     display: "flex",
     justifyContent: "space-between",
     gap: "12px",
-    marginBottom: "8px"
+    marginBottom: "8px",
+    flexWrap: "wrap",
   },
 
   reportTitle: {
     fontWeight: 600,
     color: "#0A1929",
     marginBottom: "4px",
-    wordBreak: "break-word"
+    wordBreak: "break-word",
   },
 
   reportDate: {
     fontSize: "12px",
-    color: "#667085"
+    color: "#667085",
   },
 
   reportMetaRow: {
@@ -1254,7 +1282,7 @@ const styles = {
     flexWrap: "wrap",
     fontSize: "12px",
     color: "#475467",
-    marginTop: "8px"
+    marginTop: "8px",
   },
 
   reportActions: {
@@ -1262,6 +1290,6 @@ const styles = {
     display: "flex",
     gap: "8px",
     flexWrap: "wrap",
-    alignItems: "center"
-  }
+    alignItems: "center",
+  },
 };
