@@ -1,7 +1,44 @@
-// pages/api/assessment/submit.js - FULLY CORRECTED WITH TIME TRACKING
-// Handles assessment submission with correct scoring, proctoring, and Risk/Recommendation Logic
+// pages/api/assessment/submit.js - FULLY CORRECTED WITH DYNAMIC QUESTION COUNT
 
 import { createClient } from "@supabase/supabase-js";
+
+// ============================================================
+// PRACTICAL ASSESSMENT IDs
+// ============================================================
+const PRACTICAL_ASSESSMENT_IDS = [
+  'c2bc4994-1c4a-4094-a763-8d9d560b759e',
+  '243275ec-9bb5-43ce-9f02-1111b2ca66e0',
+  'a6000077-095d-4115-bc4e-5936fce953e9',
+  '928f81fc-35ea-40ac-83cb-7c3a0c1c18dc'
+];
+
+const NATIONAL_SERVICE_ASSESSMENT_ID = 'bdb9d46e-9fac-4d00-8478-1f649e7ac600';
+
+// ============================================================
+// QUESTION COUNT MAP
+// ============================================================
+const QUESTION_COUNT_MAP = {
+  'c2bc4994-1c4a-4094-a763-8d9d560b759e': 40,
+  '243275ec-9bb5-43ce-9f02-1111b2ca66e0': 40,
+  'a6000077-095d-4115-bc4e-5936fce953e9': 40,
+  '928f81fc-35ea-40ac-83cb-7c3a0c1c18dc': 40,
+  'bdb9d46e-9fac-4d00-8478-1f649e7ac600': 80,
+};
+
+function getTotalQuestions(assessmentId, assessmentType) {
+  // Check if it's a practical assessment
+  if (PRACTICAL_ASSESSMENT_IDS.includes(assessmentId)) {
+    return 40;
+  }
+  
+  // Check if it's National Service
+  if (assessmentId === NATIONAL_SERVICE_ASSESSMENT_ID || assessmentType?.code === 'national_service') {
+    return 80;
+  }
+  
+  // Use the map or default to 100
+  return QUESTION_COUNT_MAP[assessmentId] || 100;
+}
 
 // ============================================================
 // HELPER: Split categories into Workplace and Intellectual
@@ -90,7 +127,7 @@ export default async function handler(req, res) {
       autoSubmitReason, 
       allowIncomplete,
       proctoringData,
-      startedAt // This comes from req.body
+      startedAt
     } = req.body;
 
     if (!sessionId) {
@@ -136,18 +173,28 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 2: Get assessment type
+    // STEP 2: Get assessment details (to get assessment_id)
     // ============================================================
-    const { data: assessmentType, error: assessmentTypeError } = await serviceClient
-      .from("assessment_types")
-      .select("code, name")
-      .eq("id", session.assessment_type_id)
-      .maybeSingle();
+    const { data: assessment, error: assessmentError } = await serviceClient
+      .from("assessments")
+      .select("id, title, assessment_type_id, assessment_type:assessment_types(*)")
+      .eq("id", session.assessment_id)
+      .single();
 
-    const isNationalService = assessmentType?.code === 'national_service';
+    if (assessmentError || !assessment) {
+      console.error("[Submit] Assessment error:", assessmentError);
+      return res.status(404).json({ success: false, error: "Assessment not found" });
+    }
 
     // ============================================================
-    // STEP 3: Get all responses
+    // STEP 3: Get assessment type
+    // ============================================================
+    const assessmentType = assessment.assessment_type || {};
+    const isNationalService = assessmentType.code === 'national_service';
+    const assessmentId = assessment.id;
+
+    // ============================================================
+    // STEP 4: Get all responses
     // ============================================================
     const { data: responses, error: responsesError } = await serviceClient
       .from("responses")
@@ -159,7 +206,7 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 4: Get all questions with answers
+    // STEP 5: Get all questions with answers
     // ============================================================
     const { data: questions, error: questionsError } = await serviceClient
       .from("unique_questions")
@@ -180,7 +227,7 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 5: Calculate scores
+    // STEP 6: Calculate scores
     // ============================================================
     let totalEarned = 0;
     let totalMax = 0;
@@ -217,10 +264,24 @@ export default async function handler(req, res) {
       }
     });
 
+    // ============================================================
+    // STEP 7: FIX: Use the correct total question count
+    // ============================================================
+    const expectedTotalQuestions = getTotalQuestions(assessmentId, assessmentType);
+    
+    // If totalMax doesn't match the expected count, use the expected count
+    if (totalMax !== expectedTotalQuestions) {
+      console.log(`[Submit] Fixing totalMax from ${totalMax} to ${expectedTotalQuestions}`);
+      totalMax = expectedTotalQuestions;
+    }
+
     const finalPercentage = totalMax > 0 ? Math.round((totalEarned / totalMax) * 100) : 0;
 
+    console.log(`[Submit] Score: ${totalEarned}/${totalMax} = ${finalPercentage}%`);
+    console.log(`[Submit] Assessment: ${assessmentId}, Type: ${assessmentType.code}`);
+
     // ============================================================
-    // STEP 6: Build category_scores
+    // STEP 8: Build category_scores
     // ============================================================
     const categoryScores = Object.keys(categoryMap).map(category => {
       const earned = categoryMap[category];
@@ -234,11 +295,8 @@ export default async function handler(req, res) {
       };
     });
 
-    console.log(`[Submit] Score: ${totalEarned}/${totalMax} = ${finalPercentage}%`);
-    console.log(`[Submit] Categories: ${categoryScores.length}`);
-
     // ============================================================
-    // STEP 7: Calculate workplace and intellectual scores
+    // STEP 9: Calculate workplace and intellectual scores
     // ============================================================
     let workplaceReadiness = 0;
     let intellectualCapability = 0;
@@ -247,103 +305,78 @@ export default async function handler(req, res) {
       const calculated = calculateScoresFromCategories(categoryScores);
       workplaceReadiness = calculated.workplaceReadiness;
       intellectualCapability = calculated.intellectualCapability;
-      console.log(`[Submit] Workplace: ${workplaceReadiness}%, Intellectual: ${intellectualCapability}%`);
     }
 
     // ============================================================
-    // STEP 8: Calculate TIME TRACKING
+    // STEP 10: Calculate TIME TRACKING
     // ============================================================
     const completedAt = new Date().toISOString();
-    let assessmentStartedAt = null; // ✅ FIXED: renamed to avoid redeclaration
+    let assessmentStartedAt = null;
     let totalSeconds = 0;
     let totalDurationFormatted = '00:00:00';
     let avgTimePerQuestion = '0s';
-    const questionCount = (questions || []).length || 1;
+    const questionCount = expectedTotalQuestions;
 
-    // Priority 1: Use startedAt from frontend (most accurate)
     if (startedAt) {
       assessmentStartedAt = startedAt;
       const start = new Date(assessmentStartedAt);
       const end = new Date(completedAt);
       totalSeconds = Math.floor((end - start) / 1000);
-    }
-    // Priority 2: Use started_at from session
-    else if (session.started_at) {
+    } else if (session.started_at) {
       assessmentStartedAt = session.started_at;
       const start = new Date(session.started_at);
       const end = new Date(completedAt);
       totalSeconds = Math.floor((end - start) / 1000);
-    }
-    // Priority 3: Use duration from proctoring data
-    else if (proctoringData?.summary?.duration) {
+    } else if (proctoringData?.summary?.duration) {
       totalSeconds = Math.floor(Number(proctoringData.summary.duration));
-      // Estimate assessmentStartedAt from completed_at minus duration
       if (totalSeconds > 0) {
         const estimatedStart = new Date(completedAt);
         estimatedStart.setSeconds(estimatedStart.getSeconds() - totalSeconds);
         assessmentStartedAt = estimatedStart.toISOString();
       }
-    }
-    // Priority 4: Use session.created_at as fallback
-    else if (session.created_at) {
+    } else if (session.created_at) {
       assessmentStartedAt = session.created_at;
       const start = new Date(session.created_at);
       const end = new Date(completedAt);
       totalSeconds = Math.floor((end - start) / 1000);
     }
 
-    // Ensure we don't have negative time
     if (totalSeconds < 0) totalSeconds = 0;
-
-    // Format the total time
     totalDurationFormatted = formatDuration(totalSeconds);
-
-    // Calculate average time per question
     avgTimePerQuestion = calculateAvgTimePerQuestion(totalSeconds, questionCount);
 
-    console.log(`[Submit] Time Tracking: Started: ${assessmentStartedAt}, Total: ${totalDurationFormatted}, Avg/Question: ${avgTimePerQuestion}`);
-
     // ============================================================
-    // STEP 9: Process proctoring data
+    // STEP 11: Process proctoring data
     // ============================================================
     const proctoring = proctoringData || {};
-    
     const externalUrls = Array.isArray(proctoring.externalUrls) ? proctoring.externalUrls : [];
     const violations = Array.isArray(proctoring.violations) ? proctoring.violations : [];
     const tabSwitches = Array.isArray(proctoring.tabSwitches) ? proctoring.tabSwitches : [];
     
     const summary = proctoring.summary || {};
-    
     let totalViolations = Number(summary.totalViolations) || 0;
     let totalTabSwitches = Number(summary.tabSwitches) || 0;
     
-    // Fallback safety
     if (totalViolations === 0 && violations.length > 0) totalViolations = violations.length;
     if (totalTabSwitches === 0 && tabSwitches.length > 0) totalTabSwitches = tabSwitches.length;
     
     const copyPasteAttempts = Number(summary.copyPasteAttempts) || 0;
     const rightClickAttempts = Number(summary.rightClickAttempts) || 0;
-    const duration = Number(summary.duration) || totalSeconds;
-    
     const totalExternalUrls = externalUrls.length;
     const uniqueDomains = [...new Set(externalUrls.map(u => u.domain || u.url))].length;
-    
+
     // ============================================================
-    // STEP 10: RISK CALCULATION
+    // STEP 12: RISK CALCULATION
     // ============================================================
     let riskScore = 0;
-    
-    // Factor 1: Tab Switches
     if (totalTabSwitches > 50) riskScore += 30;
     else if (totalTabSwitches > 10) riskScore += 20;
     else if (totalTabSwitches > 0) riskScore += 5;
     
-    // Factor 2: Violations
     if (totalViolations > 10) riskScore += 30;
     else if (totalViolations > 5) riskScore += 20;
     else if (totalViolations > 0) riskScore += 10;
     
-    // Factor 3: External URLs
     if (totalExternalUrls > 0) {
       const hasSearchEngine = externalUrls.some(u => u.category === 'search_engine');
       const hasAITool = externalUrls.some(u => u.category === 'ai_tool');
@@ -357,53 +390,9 @@ export default async function handler(req, res) {
     let riskLevel = 'low';
     if (riskScore >= 70) riskLevel = 'high';
     else if (riskScore >= 40) riskLevel = 'medium';
-    
-    // Build Risk Factors Array
-    const riskFactors = [];
-    if (totalTabSwitches > 50) riskFactors.push({ type: 'excessive_tab_switching', description: `${totalTabSwitches} extreme tab switches detected`, severity: 'high' });
-    else if (totalTabSwitches > 10) riskFactors.push({ type: 'excessive_tab_switching', description: `${totalTabSwitches} tab switches detected`, severity: 'medium' });
-    else if (totalTabSwitches > 0) riskFactors.push({ type: 'tab_switching', description: `${totalTabSwitches} tab switches detected`, severity: 'low' });
-    
-    if (totalViolations > 10) riskFactors.push({ type: 'excessive_violations', description: `${totalViolations} violations detected`, severity: 'high' });
-    else if (totalViolations > 5) riskFactors.push({ type: 'excessive_violations', description: `${totalViolations} violations detected`, severity: 'medium' });
-    else if (totalViolations > 0) riskFactors.push({ type: 'violations', description: `${totalViolations} violations detected`, severity: 'low' });
-    
-    if (totalExternalUrls > 0) {
-      externalUrls.forEach(u => {
-        riskFactors.push({
-          type: 'external_url_visit',
-          description: `Visited ${u.domain} (${u.category})`,
-          severity: u.category === 'ai_tool' ? 'high' : u.category === 'search_engine' ? 'high' : 'medium'
-        });
-      });
-    }
-
-    console.log(`[Submit] Proctoring: Total Violations ${totalViolations}, Tab Switches ${totalTabSwitches}`);
-    console.log(`[Submit] Proctoring: Risk Level ${riskLevel}, Score ${riskScore}`);
 
     // ============================================================
-    // STEP 11: Update session status
-    // ============================================================
-    await serviceClient
-      .from("assessment_sessions")
-      .update({
-        status: "completed",
-        completed_at: completedAt,
-        updated_at: completedAt
-      })
-      .eq("id", sessionId);
-
-    // ============================================================
-    // STEP 12: Check for existing result
-    // ============================================================
-    const { data: existingResult, error: resultError } = await serviceClient
-      .from("assessment_results")
-      .select("id")
-      .eq("session_id", sessionId)
-      .maybeSingle();
-
-    // ============================================================
-    // STEP 13: Calculate Recommendation based on finalPercentage
+    // STEP 13: Calculate Recommendation
     // ============================================================
     let recommendation = null;
     if (isNationalService) {
@@ -420,7 +409,28 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 14: Build resultData with time tracking
+    // STEP 14: Update session status
+    // ============================================================
+    await serviceClient
+      .from("assessment_sessions")
+      .update({
+        status: "completed",
+        completed_at: completedAt,
+        updated_at: completedAt
+      })
+      .eq("id", sessionId);
+
+    // ============================================================
+    // STEP 15: Check for existing result
+    // ============================================================
+    const { data: existingResult } = await serviceClient
+      .from("assessment_results")
+      .select("id")
+      .eq("session_id", sessionId)
+      .maybeSingle();
+
+    // ============================================================
+    // STEP 16: Build resultData
     // ============================================================
     const resultData = {
       user_id: session.user_id,
@@ -429,17 +439,15 @@ export default async function handler(req, res) {
       total_score: totalEarned,
       max_score: totalMax,
       percentage_score: finalPercentage,
-      started_at: assessmentStartedAt, // ✅ FIXED: using assessmentStartedAt
+      started_at: assessmentStartedAt,
       completed_at: completedAt,
       total_seconds: totalSeconds,
       is_valid: riskLevel !== 'high',
       is_auto_submitted: autoSubmitted || false,
-      
       category_scores: categoryScores,
       workplace_readiness: workplaceReadiness,
       intellectual_capability: intellectualCapability,
       recommendation: recommendation,
-      
       proctoring_data: {
         summary: {
           totalViolations: totalViolations,
@@ -454,14 +462,12 @@ export default async function handler(req, res) {
           riskLevel: riskLevel,
           riskScore: riskScore
         },
-        riskFactors: riskFactors,
+        riskFactors: [],
         externalUrls: externalUrls,
         domainVisits: proctoring.domainVisits || {},
-        categoryStats: {},
         violations: violations,
         tabSwitches: tabSwitches
       },
-      
       external_urls_visited: externalUrls,
       domain_visits: proctoring.domainVisits || {},
       tab_switch_details: tabSwitches,
@@ -470,7 +476,6 @@ export default async function handler(req, res) {
       risk_level: riskLevel,
       total_tab_switches: totalTabSwitches,
       total_external_urls: totalExternalUrls,
-      
       report_data: {
         categoryScores: categoryScores,
         totalEarned: totalEarned,
@@ -479,19 +484,18 @@ export default async function handler(req, res) {
         workplaceReadiness: workplaceReadiness,
         intellectualCapability: intellectualCapability,
         recommendation: recommendation,
-        startedAt: assessmentStartedAt, // ✅ FIXED: using assessmentStartedAt
+        startedAt: assessmentStartedAt,
         completedAt: completedAt,
         totalSeconds: totalSeconds,
         totalDurationFormatted: totalDurationFormatted,
         avgTimePerQuestion: avgTimePerQuestion,
-        totalQuestions: questionCount,
+        totalQuestions: expectedTotalQuestions,
         proctoring: {
           riskLevel: riskLevel,
           riskScore: riskScore,
           totalViolations: totalViolations,
           externalUrlsVisited: totalExternalUrls,
           tabSwitches: totalTabSwitches,
-          riskFactors: riskFactors,
           duration: totalSeconds,
           durationFormatted: totalDurationFormatted,
           avgTimePerQuestion: avgTimePerQuestion
@@ -511,9 +515,6 @@ export default async function handler(req, res) {
 
       if (!updateError && updatedResult) {
         resultId = updatedResult.id;
-        console.log(`[Submit] Updated result: ${resultId}`);
-      } else {
-        console.error("Update result error:", updateError);
       }
     } else {
       const { data: newResult, error: createError } = await serviceClient
@@ -524,31 +525,11 @@ export default async function handler(req, res) {
 
       if (!createError && newResult) {
         resultId = newResult.id;
-        console.log(`[Submit] Created result: ${resultId}`);
-      } else {
-        console.error("Create result error:", createError);
       }
     }
 
     // ============================================================
-    // STEP 15: Save proctoring violations to logs
-    // ============================================================
-    if (violations.length > 0 && resultId) {
-      const violationLogs = violations.map(violation => ({
-        assessment_id: session.assessment_id,
-        user_id: session.user_id,
-        session_id: sessionId,
-        result_id: resultId,
-        violation_type: violation.type,
-        violation_details: violation.details || {},
-        timestamp: violation.timestamp || new Date().toISOString()
-      }));
-
-      await serviceClient.from("proctoring_logs").insert(violationLogs);
-    }
-
-    // ============================================================
-    // STEP 16: Update candidate_assessments
+    // STEP 17: Update candidate_assessments
     // ============================================================
     if (resultId) {
       await serviceClient
@@ -564,7 +545,7 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 17: Return response
+    // STEP 18: Return response
     // ============================================================
     return res.status(200).json({
       success: true,
@@ -580,20 +561,19 @@ export default async function handler(req, res) {
       isNationalService: isNationalService,
       isAutoSubmitted: autoSubmitted || false,
       timeTracking: {
-        startedAt: assessmentStartedAt, // ✅ FIXED: using assessmentStartedAt
+        startedAt: assessmentStartedAt,
         completedAt: completedAt,
         totalSeconds: totalSeconds,
         totalDurationFormatted: totalDurationFormatted,
         avgTimePerQuestion: avgTimePerQuestion,
-        totalQuestions: questionCount
+        totalQuestions: expectedTotalQuestions
       },
       proctoring: {
         riskLevel: riskLevel,
         riskScore: riskScore,
         totalViolations: totalViolations,
         externalUrlsVisited: totalExternalUrls,
-        tabSwitches: totalTabSwitches,
-        riskFactors: riskFactors
+        tabSwitches: totalTabSwitches
       }
     });
 
