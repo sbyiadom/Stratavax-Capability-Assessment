@@ -200,7 +200,7 @@ export default function CandidateDashboard() {
         "Risk Tolerance",
         "Structure"
       ],
-      strategic: [
+      strategic_leadership: [
         "Vision / Strategy",
         "People Leadership",
         "Decision Making",
@@ -224,8 +224,16 @@ export default function CandidateDashboard() {
         "Numerical Aptitude",
         "Safety & Work Ethic"
       ],
+      manufacturing_technical: [
+        "CIP & Maintenance",
+        "Conveyors & Line Efficiency",
+        "Filling & Bottling",
+        "Packaging & Labeling",
+        "Safety & Efficiency",
+        "Water Treatment & Quality"
+      ],
       // ============================================================
-      // NEW: PRACTICAL ASSESSMENT AREAS
+      // PRACTICAL ASSESSMENT AREAS
       // ============================================================
       practical_mechanical: [
         "Hydraulics & Pneumatics",
@@ -281,6 +289,14 @@ export default function CandidateDashboard() {
       ]
     };
 
+    // ============================================================
+    // CHECK typeCode FIRST (more reliable)
+    // ============================================================
+    if (typeCode && areasByType[typeCode]) {
+      return areasByType[typeCode];
+    }
+
+    // Fall back to title-based detection
     const titleLower = (title || '').toLowerCase();
     if (titleLower.includes('national service')) return areasByType.national_service;
     if (titleLower.includes('cognitive')) return areasByType.cognitive;
@@ -289,10 +305,10 @@ export default function CandidateDashboard() {
     if (titleLower.includes('performance')) return areasByType.performance;
     if (titleLower.includes('cultural')) return areasByType.cultural;
     if (titleLower.includes('personality')) return areasByType.personality;
-    if (titleLower.includes('strategic')) return areasByType.strategic;
+    if (titleLower.includes('strategic')) return areasByType.strategic_leadership;
     if (titleLower.includes('behavioral')) return areasByType.behavioral;
     if (titleLower.includes('manufacturing baseline')) return areasByType.manufacturing_baseline;
-    // NEW: Practical assessment title checks
+    // Practical assessment title checks
     if (titleLower.includes('practical mechanical') || titleLower.includes('practical_mechanical')) 
       return areasByType.practical_mechanical;
     if (titleLower.includes('practical electrical') || titleLower.includes('practical_electrical')) 
@@ -302,7 +318,7 @@ export default function CandidateDashboard() {
     if (titleLower.includes('practical quality') || titleLower.includes('practical_quality')) 
       return areasByType.practical_quality;
 
-    return areasByType[typeCode] || areasByType.general;
+    return areasByType.general;
   };
 
   const getShortName = (title, isNationalService) => {
@@ -322,7 +338,7 @@ export default function CandidateDashboard() {
       'Manufacturing Baseline Assessment': 'Baseline',
       'National Service Recruitment Assessment': 'National Service',
       // ============================================================
-      // NEW: PRACTICAL ASSESSMENT SHORT NAMES
+      // PRACTICAL ASSESSMENT SHORT NAMES
       // ============================================================
       'Practical Mechanical Assessment': 'Practical Mechanical',
       'Practical Electrical Assessment': 'Practical Electrical',
@@ -370,7 +386,7 @@ export default function CandidateDashboard() {
         hover: 'rgba(20, 184, 166, 0.15)',
         glow: 'rgba(20, 184, 166, 0.25)'
       },
-      strategic: { 
+      strategic_leadership: { 
         gradient: 'linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%)', 
         border: '#1e40af', 
         light: 'rgba(30, 64, 175, 0.08)',
@@ -405,6 +421,13 @@ export default function CandidateDashboard() {
         hover: 'rgba(34, 197, 94, 0.15)',
         glow: 'rgba(34, 197, 94, 0.25)'
       },
+      manufacturing_technical: { 
+        gradient: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)', 
+        border: '#ef4444', 
+        light: 'rgba(239, 68, 68, 0.08)',
+        hover: 'rgba(239, 68, 68, 0.15)',
+        glow: 'rgba(239, 68, 68, 0.25)'
+      },
       national_service: { 
         gradient: 'linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%)', 
         border: '#1d4ed8', 
@@ -413,7 +436,7 @@ export default function CandidateDashboard() {
         glow: 'rgba(29, 78, 216, 0.25)'
       },
       // ============================================================
-      // NEW: PRACTICAL ASSESSMENT COLORS
+      // PRACTICAL ASSESSMENT COLORS
       // ============================================================
       practical_mechanical: { 
         gradient: 'linear-gradient(135deg, #1a237e 0%, #0d47a1 100%)', 
