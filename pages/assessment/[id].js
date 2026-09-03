@@ -1,7 +1,4 @@
-// pages/assessment/[id].js - FULL DEPLOYMENT READY VERSION
-// Includes proctoring data submission to /api/assessment/submit
-// AND real-time violation_count updates to Supabase
-// AND detailed tab switch tracking with URLs
+// pages/assessment/[id].js - FULLY CORRECTED WITH SUBMIT FIXES
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
@@ -40,7 +37,6 @@ function countAnswered(answerMap) {
   }).length;
 }
 
-// National Service: ALWAYS single selection
 function isMultipleCorrectQuestion(question, assessmentTypeCode) {
   if (assessmentTypeCode === 'national_service') {
     return false;
@@ -50,7 +46,6 @@ function isMultipleCorrectQuestion(question, assessmentTypeCode) {
   return correctAnswers.length > 1;
 }
 
-// National Service: 90 minutes, others: 120 minutes
 function getAssessmentDuration(assessmentTypeCode) {
   if (assessmentTypeCode === 'national_service') {
     return 90;
@@ -58,9 +53,6 @@ function getAssessmentDuration(assessmentTypeCode) {
   return 120;
 }
 
-// ============================================================
-// URL TRACKING HELPERS
-// ============================================================
 function extractDomain(url) {
   if (!url) return null;
   try {
@@ -104,7 +96,6 @@ function getUrlCategory(url) {
   return 'other';
 }
 
-// API HELPERS
 async function apiCall(endpoint, options = {}) {
   const { data: sessionData } = await supabase.auth.getSession();
   const token = sessionData?.session?.access_token;
@@ -166,10 +157,9 @@ async function saveAnswer(sessionId, questionId, answer, metadata) {
 }
 
 // ============================================================
-// FIXED: ROUTE TO THE CORRECT ENDPOINT
+// FIXED: submitAssessment now includes assessmentId
 // ============================================================
-async function submitAssessment(sessionId, autoSubmitted, autoSubmitReason, allowIncomplete, proctoringData) {
-  // CRITICAL FIX: Ensure we hit /api/assessment/submit, NOT /api/submit-assessment
+async function submitAssessment(sessionId, autoSubmitted, autoSubmitReason, allowIncomplete, proctoringData, assessmentId) {
   const result = await apiCall('/api/assessment/submit', {
     method: 'POST',
     body: JSON.stringify({ 
@@ -177,15 +167,13 @@ async function submitAssessment(sessionId, autoSubmitted, autoSubmitReason, allo
       autoSubmitted, 
       autoSubmitReason, 
       allowIncomplete,
-      proctoringData 
+      proctoringData,
+      assessmentId 
     })
   });
   return result;
 }
 
-// ============================================================
-// MAIN COMPONENT
-// ============================================================
 function AssessmentContent() {
   const router = useRouter();
   const assessmentId = router.query.id || router.query.assessment_id;
@@ -209,9 +197,6 @@ function AssessmentContent() {
   const [timeLimitSeconds, setTimeLimitSeconds] = useState(7200);
   const [questionStartTime, setQuestionStartTime] = useState(Date.now());
 
-  // ============================================================
-  // BEHAVIORAL TRACKING STATE
-  // ============================================================
   const [tabSwitchCount, setTabSwitchCount] = useState(0);
   const [copyAttempts, setCopyAttempts] = useState(0);
   const [pasteAttempts, setPasteAttempts] = useState(0);
@@ -221,9 +206,6 @@ function AssessmentContent() {
   const [showViolationWarning, setShowViolationWarning] = useState(false);
   const [questionStartTimes, setQuestionStartTimes] = useState({});
 
-  // ============================================================
-  // URL TRACKING STATE
-  // ============================================================
   const [externalUrlVisits, setExternalUrlVisits] = useState([]);
   const [domainVisits, setDomainVisits] = useState({});
   const [currentExternalUrl, setCurrentExternalUrl] = useState(null);
@@ -231,9 +213,6 @@ function AssessmentContent() {
   const [urlVisitStartTime, setUrlVisitStartTime] = useState(null);
   const [previousUrl, setPreviousUrl] = useState(null);
   
-  // ============================================================
-  // 🟢 NEW: DETAILED TAB SWITCH HISTORY STATE
-  // ============================================================
   const [tabSwitchDetails, setTabSwitchDetails] = useState([]);
 
   const [accessDenied, setAccessDenied] = useState(false);
@@ -284,13 +263,9 @@ function AssessmentContent() {
     setTimeout(() => setShowViolationWarning(false), 3000);
   }
 
-  // ============================================================
-  // URL TRACKING FUNCTIONS
-  // ============================================================
   function trackUrlChange() {
     const currentUrl = window.location.href;
     const currentDomain = extractDomain(currentUrl);
-    const assessmentDomain = window.location.hostname;
     
     if (!previousUrl) {
       setPreviousUrl(currentUrl);
@@ -303,7 +278,6 @@ function AssessmentContent() {
     const duration = urlVisitStartTime ? (Date.now() - urlVisitStartTime) / 1000 : null;
     const category = getUrlCategory(currentUrl);
     
-    // Track domain visit
     if (currentDomain) {
       setDomainVisits(prev => ({
         ...prev,
@@ -312,7 +286,6 @@ function AssessmentContent() {
     }
     
     if (isExternal && currentDomain) {
-      // External URL visited
       const visit = {
         url: currentUrl,
         domain: currentDomain,
@@ -325,33 +298,21 @@ function AssessmentContent() {
       setExternalUrlVisits(prev => [...prev, visit]);
       setCurrentExternalUrl(currentUrl);
       setShowUrlWarning(true);
-      
-      // Log violation for external site visit
       logViolation(`Visited external site: ${currentDomain} (${category})`);
-      
-      console.log(`[URL Track] External: ${currentDomain} (${category})`);
     } else {
-      // Internal navigation
       setShowUrlWarning(false);
       setCurrentExternalUrl(null);
-      console.log(`[URL Track] Internal: ${currentUrl}`);
     }
     
     setPreviousUrl(currentUrl);
     setUrlVisitStartTime(Date.now());
   }
 
-  // ============================================================
-  // LOG VIOLATION - UPDATED WITH URL CONTEXT AND DB SYNC
-  // ============================================================
   async function logViolation(violationType) {
     if (!sessionIdRef.current || alreadySubmitted || isAutoSubmitting || isTimeExpired) return;
     const newCount = violationCount + 1;
     setViolationCount(newCount);
     
-    // ============================================================
-    // 🟢 CRITICAL FIX: UPDATE DATABASE LIVE WHEN VIOLATION OCCURS
-    // ============================================================
     try {
       await supabase
         .from("assessment_sessions")
@@ -360,9 +321,7 @@ function AssessmentContent() {
     } catch (err) {
       console.error("Failed to sync violation count to DB:", err);
     }
-    // ============================================================
     
-    // Include current external URL in violation message
     let message = violationType;
     if (currentExternalUrl) {
       const domain = extractDomain(currentExternalUrl);
@@ -390,7 +349,6 @@ function AssessmentContent() {
       setIsAutoSubmitting(true);
       setIsTimeExpired(true);
 
-      // Clear URL check interval
       if (urlCheckIntervalRef.current) {
         clearInterval(urlCheckIntervalRef.current);
         urlCheckIntervalRef.current = null;
@@ -424,7 +382,6 @@ function AssessmentContent() {
 
       await Promise.all(answerPromises.filter(p => p !== null));
 
-      // ✅ Include proctoring data in auto-submit
       const proctoringData = {
         summary: {
           tabSwitches: tabSwitchCount,
@@ -437,13 +394,20 @@ function AssessmentContent() {
           riskScore: Math.min(violationCount * 25 + externalUrlVisits.length * 10, 100)
         },
         violations: [], 
-        tabSwitches: tabSwitchDetails, // 🟢 SENDING THE DETAILED ARRAY
+        tabSwitches: tabSwitchDetails,
         externalUrls: externalUrlVisits,
         domainVisits: domainVisits,
         sessionId: sessionIdRef.current
       };
 
-      await submitAssessment(sessionIdRef.current, true, reason || 'Auto-submitted because the assessment timer expired.', true, proctoringData);
+      await submitAssessment(
+        sessionIdRef.current, 
+        true, 
+        reason || 'Auto-submitted because the assessment timer expired.', 
+        true, 
+        proctoringData,
+        assessmentId
+      );
 
       setAlreadySubmitted(true);
       setShowSuccessModal(true);
@@ -465,9 +429,6 @@ function AssessmentContent() {
     }
   }
 
-  // ============================================================
-  // HANDLE ANSWER SELECT - UPDATED WITH URL DATA
-  // ============================================================
   async function handleAnswerSelect(questionId, answerId, multipleCorrect) {
     if (isTimeExpired || elapsedSeconds >= timeLimitSeconds) {
       alert("Time has expired! The assessment is being submitted automatically.");
@@ -563,7 +524,6 @@ function AssessmentContent() {
   // BEHAVIORAL TRACKING EFFECTS
   // ============================================================
   
-  // Track tab switches
   useEffect(() => {
     if (loading || alreadySubmitted || accessDenied || !session || isTimeExpired) return;
 
@@ -572,7 +532,6 @@ function AssessmentContent() {
         const newCount = tabSwitchCount + 1;
         setTabSwitchCount(newCount);
         
-        // Track the URL when tab is hidden
         const currentUrl = window.location.href;
         let switchDetail = {
           timestamp: new Date().toISOString(),
@@ -592,7 +551,6 @@ function AssessmentContent() {
           logViolation("Tab switch");
         }
 
-        // 🟢 Push the detail into the history array
         setTabSwitchDetails(prev => [...prev, switchDetail]);
       }
     };
@@ -618,7 +576,6 @@ function AssessmentContent() {
         logViolation(`Page hide to external site: ${domain} (${category})`);
       }
 
-      // 🟢 Push the detail into the history array
       setTabSwitchDetails(prev => [...prev, switchDetail]);
     };
 
@@ -631,7 +588,6 @@ function AssessmentContent() {
     };
   }, [loading, alreadySubmitted, accessDenied, session, isTimeExpired, tabSwitchCount]);
 
-  // Track right-click attempts
   useEffect(() => {
     if (loading || alreadySubmitted || accessDenied || !session || isTimeExpired) return;
 
@@ -649,7 +605,6 @@ function AssessmentContent() {
     };
   }, [loading, alreadySubmitted, accessDenied, session, isTimeExpired]);
 
-  // Track question start times
   useEffect(() => {
     if (currentQuestion.id && !questionStartTimes[currentQuestion.id]) {
       setQuestionStartTimes(prev => ({
@@ -659,26 +614,19 @@ function AssessmentContent() {
     }
   }, [currentQuestion.id]);
 
-  // ============================================================
-  // URL TRACKING EFFECT
-  // ============================================================
   useEffect(() => {
     if (loading || alreadySubmitted || accessDenied || !session || isTimeExpired) return;
 
-    // Set initial URL
     setPreviousUrl(window.location.href);
     setUrlVisitStartTime(Date.now());
 
-    // Track URL changes
     const handleUrlChange = () => {
       trackUrlChange();
     };
 
-    // Listen for popstate and hashchange
     window.addEventListener('popstate', handleUrlChange);
     window.addEventListener('hashchange', handleUrlChange);
 
-    // Also check URL periodically (for SPA navigation)
     urlCheckIntervalRef.current = setInterval(() => {
       const currentUrl = window.location.href;
       if (previousUrl !== currentUrl) {
@@ -686,7 +634,6 @@ function AssessmentContent() {
       }
     }, 1000);
 
-    // Track external link clicks
     const handleLinkClick = (e) => {
       const target = e.target.closest('a');
       if (target && target.href) {
@@ -743,7 +690,7 @@ function AssessmentContent() {
         setRightClickAttempts(0);
         setExternalUrlVisits([]);
         setDomainVisits({});
-        setTabSwitchDetails([]); // 🟢 Reset details on init
+        setTabSwitchDetails([]);
         setIsTimeExpired(false);
         sessionIdRef.current = null;
         submittingRef.current = false;
@@ -808,7 +755,6 @@ function AssessmentContent() {
           sessionIdRef.current = sessionData.id;
         }
 
-        // Restore timer from localStorage after session is set
         if (sessionData && sessionData.id) {
           const savedTimer = localStorage.getItem(`timer_${sessionData.id}`);
           if (savedTimer) {
@@ -894,9 +840,6 @@ function AssessmentContent() {
     return () => clearInterval(timer);
   }, [loading, alreadySubmitted, accessDenied, session, isAutoSubmitting, timeLimitSeconds, isTimeExpired]);
 
-  // ============================================================
-  // TIMER CLEANUP
-  // ============================================================
   useEffect(() => {
     if ((alreadySubmitted || isTimeExpired) && sessionIdRef.current) {
       localStorage.removeItem(`timer_${sessionIdRef.current}`);
@@ -990,7 +933,7 @@ function AssessmentContent() {
   }
 
   // ============================================================
-  // ✅ FIXED: HANDLE SUBMIT WITH PROCTORING DATA
+  // FIXED: handleSubmit now passes assessmentId
   // ============================================================
   async function handleSubmit() {
     if (!session || !session.id) {
@@ -1028,9 +971,6 @@ function AssessmentContent() {
       setIsSubmitting(true);
       setShowSubmitModal(false);
 
-      // ============================================================
-      // ✅ COLLECT PROCTORING DATA
-      // ============================================================
       const proctoringData = {
         summary: {
           tabSwitches: tabSwitchCount,
@@ -1043,7 +983,7 @@ function AssessmentContent() {
           riskScore: Math.min(violationCount * 25 + externalUrlVisits.length * 10, 100)
         },
         violations: [], 
-        tabSwitches: tabSwitchDetails, // 🟢 SENDING THE DETAILED ARRAY
+        tabSwitches: tabSwitchDetails,
         externalUrls: externalUrlVisits,
         domainVisits: domainVisits,
         sessionId: sessionIdRef.current
@@ -1057,15 +997,13 @@ function AssessmentContent() {
         tabSwitchDetailsCount: tabSwitchDetails.length
       });
 
-      // ============================================================
-      // ✅ SUBMIT WITH PROCTORING DATA (CALLING THE CORRECT ENDPOINT)
-      // ============================================================
       const result = await submitAssessment(
         sessionIdRef.current, 
         false, 
         null, 
         false, 
-        proctoringData
+        proctoringData,
+        assessmentId  // ← PASS ASSESSMENT ID HERE
       );
 
       console.log('[Assessment] Submit result:', result);
@@ -1093,7 +1031,9 @@ function AssessmentContent() {
 
   const isDisabled = alreadySubmitted || isAutoSubmitting || isTimeExpired;
 
-  // LOADING / ERROR STATES
+  // ============================================================
+  // RENDER STATES
+  // ============================================================
   if (loading) return <div style={styles.loadingContainer}><div style={styles.loadingSpinner} /><h2>Loading Assessment...</h2><p>Preparing your questions</p></div>;
   if (accessDenied) return <div style={styles.messageContainer}><div style={styles.messageCard}><div style={styles.errorIcon}>🔒</div><h2>Access Denied</h2><p>This assessment is not currently available for your account.</p><button onClick={() => router.push("/candidate/dashboard")} style={styles.primaryButton}>← Go to Dashboard</button></div></div>;
   if (alreadySubmitted && !showSuccessModal) return <div style={styles.messageContainer}><div style={styles.messageCard}><div style={styles.successIcon}>✅</div><h2>Assessment Completed</h2><p>This assessment has already been submitted.</p><button onClick={() => router.push("/candidate/dashboard")} style={styles.primaryButton}>← Go to Dashboard</button></div></div>;
@@ -1112,7 +1052,7 @@ function AssessmentContent() {
   }
 
   // ============================================================
-  // RENDER - WITH URL WARNING BANNER
+  // RENDER
   // ============================================================
   return (
     <>
@@ -1123,7 +1063,6 @@ function AssessmentContent() {
         </div>
       )}
       
-      {/* URL Warning Banner */}
       {showUrlWarning && currentExternalUrl && (
         <div style={styles.urlWarningBanner}>
           <span>🔴</span>
@@ -1260,7 +1199,6 @@ function AssessmentContent() {
                 <span style={{ ...styles.headerMetaItem, color: accentColor, fontWeight: 600 }}>Select all that apply</span>
               </>
             )}
-            {/* Show external site count in header */}
             {externalUrlVisits.length > 0 && (
               <>
                 <span style={styles.headerMetaDivider}>•</span>
@@ -1292,7 +1230,6 @@ function AssessmentContent() {
               </div>
             </div>
 
-            {/* External Sites Summary */}
             {externalUrlVisits.length > 0 && (
               <div style={{ ...styles.metaCard, background: '#fff5f5', borderColor: '#fecaca' }}>
                 <div style={{ fontSize: '12px', fontWeight: 600, color: '#dc2626', marginBottom: '6px' }}>
