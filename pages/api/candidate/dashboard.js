@@ -28,6 +28,32 @@ const ASSESSMENT_TITLES = {
 const NATIONAL_SERVICE_ASSESSMENT_ID = 'bdb9d46e-9fac-4d00-8478-1f649e7ac600';
 
 // ============================================================
+// MAP ASSESSMENT IDs TO THEIR CORRECT TYPE CODES
+// ============================================================
+const ASSESSMENT_TYPE_CODE_MAP = {
+  // Existing assessments with their codes
+  '17003efb-923f-49a5-bdeb-e4996c864a87': 'general',
+  'd09953bf-59cd-40ed-a9bb-308c3b5cfb7d': 'leadership',
+  '42c1cb06-4574-4d31-8463-0147ff2a0737': 'cognitive',
+  'b9a372a1-28b4-440f-bf9a-bfb9211395aa': 'technical',
+  '24cd4e02-e43d-4228-beec-513886035c7f': 'personality',
+  'ab4bb0b3-011e-4d37-9c08-60c60b15e88f': 'performance',
+  '671bf00f-46cc-46f5-a217-d5a90dafb9b6': 'behavioral',
+  '192996c5-2ff4-4767-80c9-4af03aaf1b7e': 'manufacturing_technical',
+  '9f138960-671d-4edd-8044-c7d0a95cbbe9': 'cultural',
+  '49980cc1-eb63-432b-895c-951722cfcc24': 'strategic_leadership',
+  '232f7ff8-60b8-4223-81c6-4917a5fb12a3': 'manufacturing_baseline',
+  'bdb9d46e-9fac-4d00-8478-1f649e7ac600': 'national_service',
+  // ============================================================
+  // NEW: 4 PRACTICAL ASSESSMENT TYPE CODES
+  // ============================================================
+  '11111111-1111-1111-1111-111111111111': 'practical_mechanical',
+  '22222222-2222-2222-2222-222222222222': 'practical_electrical',
+  '33333333-3333-3333-3333-333333333333': 'practical_logistics',
+  '44444444-4444-4444-4444-444444444444': 'practical_quality'
+};
+
+// ============================================================
 // PRACTICAL ASSESSMENT IDs FOR QUICK REFERENCE
 // ============================================================
 const PRACTICAL_ASSESSMENT_IDS = [
@@ -198,7 +224,11 @@ export default async function handler(req, res) {
     const cards = candidateAssessments.map(ca => {
       const assessmentData = typeMap[ca.assessment_id] || {};
       const type = assessmentData.type || {};
-      const typeCode = type.code || 'general';
+      
+      // ============================================================
+      // FIX: Use the assessment type code map for correct typeCode
+      // ============================================================
+      const typeCode = ASSESSMENT_TYPE_CODE_MAP[ca.assessment_id] || type.code || 'general';
       
       let title = assessmentData.title || ASSESSMENT_TITLES[ca.assessment_id] || type.name || 'Assessment';
       if (title === 'Assessment' && type.name) {
