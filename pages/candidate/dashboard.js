@@ -242,9 +242,6 @@ export default function CandidateDashboard() {
         "Safety & Efficiency",
         "Water Treatment & Quality"
       ],
-      // ============================================================
-      // PRACTICAL ASSESSMENT AREAS
-      // ============================================================
       practical_mechanical: [
         "Hydraulics & Pneumatics",
         "Mechanical Maintenance",
@@ -299,14 +296,10 @@ export default function CandidateDashboard() {
       ]
     };
 
-    // ============================================================
-    // CHECK typeCode FIRST (more reliable)
-    // ============================================================
     if (typeCode && areasByType[typeCode]) {
       return areasByType[typeCode];
     }
 
-    // Fall back to title-based detection
     const titleLower = (title || '').toLowerCase();
     if (titleLower.includes('national service')) return areasByType.national_service;
     if (titleLower.includes('cognitive')) return areasByType.cognitive;
@@ -318,7 +311,6 @@ export default function CandidateDashboard() {
     if (titleLower.includes('strategic')) return areasByType.strategic_leadership;
     if (titleLower.includes('behavioral')) return areasByType.behavioral;
     if (titleLower.includes('manufacturing baseline')) return areasByType.manufacturing_baseline;
-    // Practical assessment title checks
     if (titleLower.includes('mechanical') || titleLower.includes('practical_mechanical')) 
       return areasByType.practical_mechanical;
     if (titleLower.includes('electrical') || titleLower.includes('practical_electrical')) 
@@ -332,7 +324,7 @@ export default function CandidateDashboard() {
   };
 
   // ============================================================
-  // FIXED: getShortName - Now returns the actual title for ALL assessments
+  // FIXED: getShortName - Returns cleaned title without generic fallback
   // ============================================================
   const getShortName = (title, isNationalService) => {
     // National Service gets a special label
@@ -341,38 +333,27 @@ export default function CandidateDashboard() {
     // If title is missing, return a fallback
     if (!title) return 'Assessment';
     
-    // If title is exactly "Assessment" or "General", return it as-is
-    if (title === 'Assessment' || title === 'General') return title;
+    const originalTitle = typeof title === 'string' ? title.trim() : '';
     
-    // Remove common suffixes for cleaner display, but keep the core name
-    let shortName = title;
+    if (!originalTitle) return 'Assessment';
     
-    // Remove "Assessment" suffix for cleaner display
-    if (shortName.endsWith(' Assessment')) {
-      shortName = shortName.slice(0, -11);
+    // Remove common suffixes for cleaner display
+    const suffixes = [
+      ' Recruitment Assessment',
+      ' Technical Assessment',
+      ' Competence Assessment',
+      ' Assessment'
+    ];
+    
+    let shortName = originalTitle;
+    for (const suffix of suffixes) {
+      if (shortName.endsWith(suffix)) {
+        shortName = shortName.slice(0, -suffix.length).trim();
+        break;
+      }
     }
     
-    // Remove "Technical" suffix for cleaner display
-    if (shortName.endsWith(' Technical')) {
-      shortName = shortName.slice(0, -10);
-    }
-    
-    // Remove " & Supply Chain" suffix
-    if (shortName.includes(' & Supply Chain')) {
-      shortName = shortName.replace(' & Supply Chain', '');
-    }
-    
-    // Remove " Assurance" suffix
-    if (shortName.includes(' Assurance')) {
-      shortName = shortName.replace(' Assurance', '');
-    }
-    
-    // If the result is empty, use the original title
-    if (!shortName || shortName.trim() === '') {
-      return title;
-    }
-    
-    return shortName.trim();
+    return shortName || originalTitle;
   };
 
   const getAssessmentColor = (typeCode) => {
@@ -461,9 +442,6 @@ export default function CandidateDashboard() {
         hover: 'rgba(29, 78, 216, 0.15)',
         glow: 'rgba(29, 78, 216, 0.25)'
       },
-      // ============================================================
-      // PRACTICAL ASSESSMENT COLORS
-      // ============================================================
       practical_mechanical: { 
         gradient: 'linear-gradient(135deg, #1a237e 0%, #0d47a1 100%)', 
         border: '#1a237e', 
