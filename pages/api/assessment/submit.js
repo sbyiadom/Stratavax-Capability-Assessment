@@ -1,4 +1,5 @@
-// pages/api/assessment/submit.js - COMPLETE FILE
+// pages/api/assessment/submit.js - FULLY CORRECTED
+// Uses assessment_id from session, scores direct questions
 
 import { createClient } from "@supabase/supabase-js";
 
@@ -15,26 +16,8 @@ const PRACTICAL_ASSESSMENT_IDS = [
 const NATIONAL_SERVICE_ASSESSMENT_ID = 'bdb9d46e-9fac-4d00-8478-1f649e7ac600';
 
 // ============================================================
-// QUESTION COUNT MAP
+// HELPER: Format duration
 // ============================================================
-function getTotalQuestions(assessmentId, assessmentType) {
-  if (PRACTICAL_ASSESSMENT_IDS.includes(assessmentId)) {
-    return 40;
-  }
-  if (assessmentId === NATIONAL_SERVICE_ASSESSMENT_ID || assessmentType?.code === 'national_service') {
-    return 80;
-  }
-  return 100;
-}
-
-// ============================================================
-// HELPER FUNCTIONS
-// ============================================================
-function cleanText(value, fallback = "") {
-  if (!value) return fallback;
-  return String(value).toLowerCase().replace(/\s+/g, '_');
-}
-
 function formatDuration(seconds) {
   if (!seconds || seconds <= 0) return '00:00:00';
   const hours = Math.floor(seconds / 3600);
@@ -44,76 +27,18 @@ function formatDuration(seconds) {
 }
 
 function calculateAvgTimePerQuestion(totalSeconds, questionCount) {
-  if (!totalSeconds || totalSeconds <= 0 || !questionCount || questionCount <= 0) {
-    return '0s';
-  }
+  if (!totalSeconds || totalSeconds <= 0 || !questionCount || questionCount <= 0) return '0s';
   const avgSeconds = Math.round(totalSeconds / questionCount);
-  if (avgSeconds < 60) {
-    return `${avgSeconds}s`;
-  }
+  if (avgSeconds < 60) return `${avgSeconds}s`;
   const minutes = Math.floor(avgSeconds / 60);
   const seconds = avgSeconds % 60;
   return `${minutes}m ${seconds}s`;
 }
 
-const WORKPLACE_KEYWORDS = [
-  'safety', 'risk_awareness', 'risk', 'hazard',
-  'technical_fundamentals', 'technical',
-  'problem_solving', 'troubleshooting',
-  'communication', 'teamwork', 'collaboration',
-  'ownership', 'integrity', 'accountability',
-  'professional_conduct', 'work_ethic', 'ethics',
-  'workplace', 'workplace_readiness', 'readiness',
-  'learning_agility', 'agility', 'adaptability'
-];
-
-const INTELLECTUAL_KEYWORDS = [
-  'numerical_reasoning', 'numerical_aptitude', 'numerical', 'math',
-  'logical_reasoning', 'logic', 'reasoning',
-  'measurement', 'engineering_units', 'units',
-  'spatial_reasoning', 'spatial',
-  'analysis',
-  'critical_thinking', 'analytical', 'decision_making',
-  'intellectual', 'cognitive', 'capability'
-];
-
-function isWorkplaceCategory(category) {
-  const normalized = cleanText(category, '');
-  return WORKPLACE_KEYWORDS.some(key => normalized.includes(key));
-}
-
-function isIntellectualCategory(category) {
-  const normalized = cleanText(category, '');
-  return INTELLECTUAL_KEYWORDS.some(key => normalized.includes(key));
-}
-
-function calculateScoresFromCategories(categoryScores) {
-  let workplaceTotal = 0;
-  let workplaceCount = 0;
-  let intellectualTotal = 0;
-  let intellectualCount = 0;
-
-  if (!Array.isArray(categoryScores) || categoryScores.length === 0) {
-    return { workplaceReadiness: 0, intellectualCapability: 0 };
-  }
-
-  categoryScores.forEach(cat => {
-    const name = (cat.category || cat.name || '').toLowerCase();
-    const percentage = Number(cat.percentage || cat.score || 0);
-    
-    if (isWorkplaceCategory(name)) {
-      workplaceTotal += percentage;
-      workplaceCount++;
-    } else if (isIntellectualCategory(name)) {
-      intellectualTotal += percentage;
-      intellectualCount++;
-    }
-  });
-
-  const workplaceReadiness = workplaceCount > 0 ? Math.round(workplaceTotal / workplaceCount) : 0;
-  const intellectualCapability = intellectualCount > 0 ? Math.round(intellectualTotal / intellectualCount) : 0;
-
-  return { workplaceReadiness, intellectualCapability };
+function getTotalQuestions(assessmentId) {
+  if (PRACTICAL_ASSESSMENT_IDS.includes(assessmentId)) return 40;
+  if (assessmentId === NATIONAL_SERVICE_ASSESSMENT_ID) return 80;
+  return 100;
 }
 
 export default async function handler(req, res) {
@@ -122,13 +47,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { 
-      sessionId, 
-      autoSubmitted, 
-      proctoringData,
-      startedAt,
-      assessmentId
-    } = req.body;
+    const { sessionId, autoSubmitted, proctoringData, startedAt } = req.body;
 
     if (!sessionId) {
       return res.status(400).json({ success: false, error: "Missing sessionId" });
@@ -158,7 +77,7 @@ export default async function handler(req, res) {
     const userId = userData.user.id;
 
     // ============================================================
-    // STEP 1: Get session details
+    // STEP 1: Get session - MUST have assessment_id
     // ============================================================
     const { data: session, error: sessionError } = await serviceClient
       .from("assessment_sessions")
@@ -168,96 +87,50 @@ export default async function handler(req, res) {
       .single();
 
     if (sessionError || !session) {
-      console.error("[Submit] Session not found:", { sessionId, userId });
       return res.status(404).json({ success: false, error: "Session not found" });
     }
 
     // ============================================================
-    // STEP 2: Get assessment details
-    // Priority 1: Use assessmentId from request body
-    // Priority 2: Use assessment_id from session
-    // Priority 3: Use assessment_type_id from session
+    // STEP 2: Validate session has assessment_id
     // ============================================================
-    let assessment = null;
-    let assessmentIdUsed = null;
-
-    // Try 1: Use assessmentId from request body
-    if (assessmentId) {
-      console.log("[Submit] Looking up assessment by client-provided ID:", assessmentId);
-      const { data, error } = await serviceClient
-        .from("assessments")
-        .select("id, title, assessment_type_id, assessment_type:assessment_types(*)")
-        .eq("id", assessmentId)
-        .single();
-      
-      if (!error && data) {
-        assessment = data;
-        assessmentIdUsed = assessmentId;
-        console.log("[Submit] Found assessment by client ID:", assessment.id);
-      } else {
-        console.log("[Submit] Client ID lookup failed:", error?.message);
-      }
-    }
-
-    // Try 2: Use assessment_id from session
-    if (!assessment && session.assessment_id) {
-      console.log("[Submit] Looking up assessment by session.assessment_id:", session.assessment_id);
-      const { data, error } = await serviceClient
-        .from("assessments")
-        .select("id, title, assessment_type_id, assessment_type:assessment_types(*)")
-        .eq("id", session.assessment_id)
-        .single();
-      
-      if (!error && data) {
-        assessment = data;
-        assessmentIdUsed = session.assessment_id;
-        console.log("[Submit] Found assessment by session assessment_id:", assessment.id);
-      }
-    }
-
-    // Try 3: Use assessment_type_id from session
-    if (!assessment && session.assessment_type_id) {
-      console.log("[Submit] Looking up assessment by assessment_type_id:", session.assessment_type_id);
-      const { data, error } = await serviceClient
-        .from("assessments")
-        .select("id, title, assessment_type_id, assessment_type:assessment_types(*)")
-        .eq("assessment_type_id", session.assessment_type_id)
-        .maybeSingle();
-      
-      if (!error && data) {
-        assessment = data;
-        assessmentIdUsed = data.id;
-        console.log("[Submit] Found assessment by assessment_type_id:", assessment.id);
-      }
-    }
-
-    if (!assessment) {
-      console.error("[Submit] Assessment not found. Session details:", {
-        sessionId: session.id,
-        clientAssessmentId: assessmentId,
-        sessionAssessmentId: session.assessment_id,
-        sessionAssessmentTypeId: session.assessment_type_id
+    if (!session.assessment_id) {
+      console.error("[Submit] Session missing assessment_id:", session.id);
+      return res.status(409).json({
+        success: false,
+        error: "Session is missing assessment_id. Please start a new assessment session."
       });
-      return res.status(404).json({ 
-        success: false, 
+    }
+
+    // ============================================================
+    // STEP 3: Get assessment by assessment_id (NO FALLBACK)
+    // ============================================================
+    const { data: assessment, error: assessmentError } = await serviceClient
+      .from("assessments")
+      .select("id, title, assessment_type_id, assessment_type:assessment_types(*)")
+      .eq("id", session.assessment_id)
+      .single();
+
+    if (assessmentError || !assessment) {
+      console.error("[Submit] Assessment lookup failed:", assessmentError);
+      return res.status(404).json({
+        success: false,
         error: "Assessment not found"
       });
     }
 
     const assessmentType = assessment.assessment_type || {};
-    const isNationalService = assessmentType.code === 'national_service' || 
-                             assessmentIdUsed === NATIONAL_SERVICE_ASSESSMENT_ID;
+    const isNationalService = assessmentType.code === 'national_service' ||
+                             session.assessment_id === NATIONAL_SERVICE_ASSESSMENT_ID;
     const finalAssessmentId = assessment.id;
 
-    console.log("[Submit] Using assessment:", {
+    console.log("[Submit] Assessment found:", {
       id: finalAssessmentId,
       title: assessment.title,
-      typeId: assessment.assessment_type_id,
-      typeCode: assessmentType.code
+      typeId: assessment.assessment_type_id
     });
 
     // ============================================================
-    // STEP 3: Get all responses
+    // STEP 4: Get responses
     // ============================================================
     const { data: responses, error: responsesError } = await serviceClient
       .from("responses")
@@ -269,32 +142,71 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 4: Get all questions with answers
+    // STEP 5: Get questions DIRECTLY from questions table
     // ============================================================
     const { data: questions, error: questionsError } = await serviceClient
-      .from("unique_questions")
+      .from("questions")
       .select(`
         id,
         question_text,
         section,
-        unique_answers (
+        answers (
           id,
           answer_text,
-          score
+          score,
+          is_active
         )
       `)
-      .eq("assessment_type_id", session.assessment_type_id);
+      .eq("assessment_id", finalAssessmentId)
+      .eq("is_active", true)
+      .order("question_order", { ascending: true });
 
     if (questionsError) {
       console.error("Questions error:", questionsError);
     }
 
-    // ============================================================
-    // STEP 5: Calculate scores
-    // ============================================================
-    let totalEarned = 0;
-    let totalMax = 0;
+    // If direct questions not found, try unique_questions as fallback
+    let fallbackUsed = false;
+    let questionsData = questions || [];
 
+    if (questionsData.length === 0) {
+      console.log("[Submit] No direct questions found, trying unique_questions");
+      fallbackUsed = true;
+      
+      const { data: fallbackQuestions, error: fallbackError } = await serviceClient
+        .from("unique_questions")
+        .select(`
+          id,
+          question_text,
+          section,
+          unique_answers (
+            id,
+            answer_text,
+            score
+          )
+        `)
+        .eq("assessment_type_id", session.assessment_type_id);
+
+      if (!fallbackError && fallbackQuestions) {
+        questionsData = fallbackQuestions.map(q => ({
+          id: q.id,
+          question_text: q.question_text,
+          section: q.section,
+          answers: q.unique_answers || []
+        }));
+      }
+    }
+
+    if (questionsData.length === 0) {
+      return res.status(409).json({
+        success: false,
+        error: "No questions found for this assessment"
+      });
+    }
+
+    // ============================================================
+    // STEP 6: Calculate scores
+    // ============================================================
     const responseMap = {};
     (responses || []).forEach(r => {
       responseMap[r.question_id] = r.answer_id;
@@ -302,9 +214,11 @@ export default async function handler(req, res) {
 
     const categoryMap = {};
     const categoryMaxMap = {};
+    let totalEarned = 0;
+    let totalMax = 0;
 
-    (questions || []).forEach(q => {
-      const answers = q.unique_answers || [];
+    questionsData.forEach(q => {
+      const answers = q.answers || [];
       const maxScore = 1;
       totalMax += maxScore;
 
@@ -328,12 +242,13 @@ export default async function handler(req, res) {
     });
 
     // ============================================================
-    // STEP 6: Use the correct total question count
+    // STEP 7: Validate question count
     // ============================================================
-    const expectedTotalQuestions = getTotalQuestions(finalAssessmentId, assessmentType);
-    
+    const expectedTotalQuestions = getTotalQuestions(finalAssessmentId);
+
     if (totalMax !== expectedTotalQuestions) {
-      console.log(`[Submit] Fixing totalMax from ${totalMax} to ${expectedTotalQuestions}`);
+      console.warn(`[Submit] Question count mismatch: expected ${expectedTotalQuestions}, found ${totalMax}`);
+      // Use the expected count for scoring denominator
       totalMax = expectedTotalQuestions;
     }
 
@@ -342,7 +257,7 @@ export default async function handler(req, res) {
     console.log(`[Submit] Score: ${totalEarned}/${totalMax} = ${finalPercentage}%`);
 
     // ============================================================
-    // STEP 7: Build category_scores
+    // STEP 8: Build category_scores
     // ============================================================
     const categoryScores = Object.keys(categoryMap).map(category => {
       const earned = categoryMap[category];
@@ -357,103 +272,7 @@ export default async function handler(req, res) {
     });
 
     // ============================================================
-    // STEP 8: Calculate workplace and intellectual scores
-    // ============================================================
-    let workplaceReadiness = 0;
-    let intellectualCapability = 0;
-
-    if (isNationalService && categoryScores.length > 0) {
-      const calculated = calculateScoresFromCategories(categoryScores);
-      workplaceReadiness = calculated.workplaceReadiness;
-      intellectualCapability = calculated.intellectualCapability;
-    }
-
-    // ============================================================
-    // STEP 9: Calculate TIME TRACKING
-    // ============================================================
-    const completedAt = new Date().toISOString();
-    let assessmentStartedAt = null;
-    let totalSeconds = 0;
-    let totalDurationFormatted = '00:00:00';
-    let avgTimePerQuestion = '0s';
-    const questionCount = expectedTotalQuestions;
-
-    if (startedAt) {
-      assessmentStartedAt = startedAt;
-      const start = new Date(assessmentStartedAt);
-      const end = new Date(completedAt);
-      totalSeconds = Math.floor((end - start) / 1000);
-    } else if (session.started_at) {
-      assessmentStartedAt = session.started_at;
-      const start = new Date(session.started_at);
-      const end = new Date(completedAt);
-      totalSeconds = Math.floor((end - start) / 1000);
-    } else if (proctoringData?.summary?.duration) {
-      totalSeconds = Math.floor(Number(proctoringData.summary.duration));
-      if (totalSeconds > 0) {
-        const estimatedStart = new Date(completedAt);
-        estimatedStart.setSeconds(estimatedStart.getSeconds() - totalSeconds);
-        assessmentStartedAt = estimatedStart.toISOString();
-      }
-    } else if (session.created_at) {
-      assessmentStartedAt = session.created_at;
-      const start = new Date(session.created_at);
-      const end = new Date(completedAt);
-      totalSeconds = Math.floor((end - start) / 1000);
-    }
-
-    if (totalSeconds < 0) totalSeconds = 0;
-    totalDurationFormatted = formatDuration(totalSeconds);
-    avgTimePerQuestion = calculateAvgTimePerQuestion(totalSeconds, questionCount);
-
-    // ============================================================
-    // STEP 10: Process proctoring data
-    // ============================================================
-    const proctoring = proctoringData || {};
-    const externalUrls = Array.isArray(proctoring.externalUrls) ? proctoring.externalUrls : [];
-    const violations = Array.isArray(proctoring.violations) ? proctoring.violations : [];
-    const tabSwitches = Array.isArray(proctoring.tabSwitches) ? proctoring.tabSwitches : [];
-    
-    const summary = proctoring.summary || {};
-    let totalViolations = Number(summary.totalViolations) || 0;
-    let totalTabSwitches = Number(summary.tabSwitches) || 0;
-    
-    if (totalViolations === 0 && violations.length > 0) totalViolations = violations.length;
-    if (totalTabSwitches === 0 && tabSwitches.length > 0) totalTabSwitches = tabSwitches.length;
-    
-    const copyPasteAttempts = Number(summary.copyPasteAttempts) || 0;
-    const rightClickAttempts = Number(summary.rightClickAttempts) || 0;
-    const totalExternalUrls = externalUrls.length;
-    const uniqueDomains = [...new Set(externalUrls.map(u => u.domain || u.url))].length;
-
-    // ============================================================
-    // STEP 11: RISK CALCULATION
-    // ============================================================
-    let riskScore = 0;
-    if (totalTabSwitches > 50) riskScore += 30;
-    else if (totalTabSwitches > 10) riskScore += 20;
-    else if (totalTabSwitches > 0) riskScore += 5;
-    
-    if (totalViolations > 10) riskScore += 30;
-    else if (totalViolations > 5) riskScore += 20;
-    else if (totalViolations > 0) riskScore += 10;
-    
-    if (totalExternalUrls > 0) {
-      const hasSearchEngine = externalUrls.some(u => u.category === 'search_engine');
-      const hasAITool = externalUrls.some(u => u.category === 'ai_tool');
-      if (hasAITool) riskScore += 35;
-      else if (hasSearchEngine) riskScore += 30;
-      else riskScore += 15;
-    }
-    
-    riskScore = Math.min(riskScore, 100);
-    
-    let riskLevel = 'low';
-    if (riskScore >= 70) riskLevel = 'high';
-    else if (riskScore >= 40) riskLevel = 'medium';
-
-    // ============================================================
-    // STEP 12: Calculate Recommendation
+    // STEP 9: Calculate recommendation
     // ============================================================
     let recommendation = null;
     if (isNationalService) {
@@ -470,7 +289,55 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 13: Update session status
+    // STEP 10: Calculate risk
+    // ============================================================
+    const proctoring = proctoringData || {};
+    const summary = proctoring.summary || {};
+    let totalViolations = Number(summary.totalViolations) || 0;
+    let totalTabSwitches = Number(summary.tabSwitches) || 0;
+    const totalExternalUrls = Array.isArray(proctoring.externalUrls) ? proctoring.externalUrls.length : 0;
+
+    let riskScore = 0;
+    if (totalTabSwitches > 50) riskScore += 30;
+    else if (totalTabSwitches > 10) riskScore += 20;
+    else if (totalTabSwitches > 0) riskScore += 5;
+    
+    if (totalViolations > 10) riskScore += 30;
+    else if (totalViolations > 5) riskScore += 20;
+    else if (totalViolations > 0) riskScore += 10;
+    
+    if (totalExternalUrls > 0) riskScore += 25;
+    
+    riskScore = Math.min(riskScore, 100);
+    
+    let riskLevel = 'low';
+    if (riskScore >= 70) riskLevel = 'high';
+    else if (riskScore >= 40) riskLevel = 'medium';
+
+    // ============================================================
+    // STEP 11: Time tracking
+    // ============================================================
+    const completedAt = new Date().toISOString();
+    let assessmentStartedAt = null;
+    let totalSeconds = 0;
+
+    if (startedAt) {
+      assessmentStartedAt = startedAt;
+      totalSeconds = Math.floor((new Date(completedAt) - new Date(startedAt)) / 1000);
+    } else if (session.started_at) {
+      assessmentStartedAt = session.started_at;
+      totalSeconds = Math.floor((new Date(completedAt) - new Date(session.started_at)) / 1000);
+    } else if (session.created_at) {
+      assessmentStartedAt = session.created_at;
+      totalSeconds = Math.floor((new Date(completedAt) - new Date(session.created_at)) / 1000);
+    }
+
+    if (totalSeconds < 0) totalSeconds = 0;
+    const totalDurationFormatted = formatDuration(totalSeconds);
+    const avgTimePerQuestion = calculateAvgTimePerQuestion(totalSeconds, expectedTotalQuestions);
+
+    // ============================================================
+    // STEP 12: Update session
     // ============================================================
     await serviceClient
       .from("assessment_sessions")
@@ -482,7 +349,7 @@ export default async function handler(req, res) {
       .eq("id", sessionId);
 
     // ============================================================
-    // STEP 14: Check for existing result
+    // STEP 13: Check existing result
     // ============================================================
     const { data: existingResult } = await serviceClient
       .from("assessment_results")
@@ -491,7 +358,7 @@ export default async function handler(req, res) {
       .maybeSingle();
 
     // ============================================================
-    // STEP 15: Build resultData
+    // STEP 14: Build result data
     // ============================================================
     const resultData = {
       user_id: session.user_id,
@@ -506,45 +373,18 @@ export default async function handler(req, res) {
       is_valid: riskLevel !== 'high',
       is_auto_submitted: autoSubmitted || false,
       category_scores: categoryScores,
-      workplace_readiness: workplaceReadiness,
-      intellectual_capability: intellectualCapability,
+      workplace_readiness: 0,
+      intellectual_capability: 0,
       recommendation: recommendation,
       risk_level: riskLevel,
       risk_score: riskScore,
       total_questions: expectedTotalQuestions,
       answered_questions: (responses || []).length,
-      proctoring_data: {
-        summary: {
-          totalViolations: totalViolations,
-          tabSwitches: totalTabSwitches,
-          externalUrlsVisited: totalExternalUrls,
-          uniqueDomains: uniqueDomains,
-          copyPasteAttempts: copyPasteAttempts,
-          rightClickAttempts: rightClickAttempts,
-          duration: totalSeconds,
-          durationFormatted: totalDurationFormatted,
-          avgTimePerQuestion: avgTimePerQuestion,
-          riskLevel: riskLevel,
-          riskScore: riskScore
-        },
-        externalUrls: externalUrls,
-        domainVisits: proctoring.domainVisits || {},
-        violations: violations,
-        tabSwitches: tabSwitches
-      },
-      external_urls_visited: externalUrls,
-      domain_visits: proctoring.domainVisits || {},
-      tab_switch_details: tabSwitches,
-      violations: violations,
-      total_tab_switches: totalTabSwitches,
-      total_external_urls: totalExternalUrls,
       report_data: {
         categoryScores: categoryScores,
         totalEarned: totalEarned,
         totalMax: totalMax,
         percentageScore: finalPercentage,
-        workplaceReadiness: workplaceReadiness,
-        intellectualCapability: intellectualCapability,
         recommendation: recommendation,
         startedAt: assessmentStartedAt,
         completedAt: completedAt,
@@ -557,10 +397,7 @@ export default async function handler(req, res) {
           riskScore: riskScore,
           totalViolations: totalViolations,
           externalUrlsVisited: totalExternalUrls,
-          tabSwitches: totalTabSwitches,
-          duration: totalSeconds,
-          durationFormatted: totalDurationFormatted,
-          avgTimePerQuestion: avgTimePerQuestion
+          tabSwitches: totalTabSwitches
         }
       }
     };
@@ -591,7 +428,7 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 16: Update candidate_assessments
+    // STEP 15: Update candidate_assessments
     // ============================================================
     if (resultId) {
       await serviceClient
@@ -608,7 +445,7 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 17: Return response
+    // STEP 16: Return response
     // ============================================================
     return res.status(200).json({
       success: true,
@@ -618,8 +455,6 @@ export default async function handler(req, res) {
       totalEarned: totalEarned,
       totalMax: totalMax,
       categoryScores: categoryScores,
-      workplaceReadiness: workplaceReadiness,
-      intellectualCapability: intellectualCapability,
       recommendation: recommendation,
       isNationalService: isNationalService,
       isAutoSubmitted: autoSubmitted || false,
