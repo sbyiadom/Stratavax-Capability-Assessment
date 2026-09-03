@@ -1,4 +1,4 @@
-// pages/api/assessment/submit.js - FULLY CORRECTED WITH FALLBACK ASSESSMENT LOOKUP
+// pages/api/assessment/submit.js - FULLY CORRECTED WITH PROPER ASSESSMENT LOOKUP
 
 import { createClient } from "@supabase/supabase-js";
 
@@ -17,14 +17,6 @@ const NATIONAL_SERVICE_ASSESSMENT_ID = 'bdb9d46e-9fac-4d00-8478-1f649e7ac600';
 // ============================================================
 // QUESTION COUNT MAP
 // ============================================================
-const QUESTION_COUNT_MAP = {
-  'c2bc4994-1c4a-4094-a763-8d9d560b759e': 40,
-  '243275ec-9bb5-43ce-9f02-1111b2ca66e0': 40,
-  'a6000077-095d-4115-bc4e-5936fce953e9': 40,
-  '928f81fc-35ea-40ac-83cb-7c3a0c1c18dc': 40,
-  'bdb9d46e-9fac-4d00-8478-1f649e7ac600': 80,
-};
-
 function getTotalQuestions(assessmentId, assessmentType) {
   if (PRACTICAL_ASSESSMENT_IDS.includes(assessmentId)) {
     return 40;
@@ -32,7 +24,7 @@ function getTotalQuestions(assessmentId, assessmentType) {
   if (assessmentId === NATIONAL_SERVICE_ASSESSMENT_ID || assessmentType?.code === 'national_service') {
     return 80;
   }
-  return QUESTION_COUNT_MAP[assessmentId] || 100;
+  return 100;
 }
 
 // ============================================================
@@ -142,7 +134,8 @@ export default async function handler(req, res) {
       autoSubmitReason, 
       allowIncomplete,
       proctoringData,
-      startedAt
+      startedAt,
+      assessmentId  // ← This comes from the frontend
     } = req.body;
 
     if (!sessionId) {
@@ -184,17 +177,40 @@ export default async function handler(req, res) {
       .single();
 
     if (sessionError || !session) {
+      console.error("[Submit] Session not found:", { sessionId, userId });
       return res.status(404).json({ success: false, error: "Session not found" });
     }
 
     // ============================================================
-    // STEP 2: Get assessment details with fallback
+    // STEP 2: Get assessment details
+    // Priority 1: Use assessmentId from request body
+    // Priority 2: Use assessment_id from session
+    // Priority 3: Use assessment_type_id from session
     // ============================================================
     let assessment = null;
-    let assessmentError = null;
+    let assessmentIdUsed = null;
 
-    // First try: use assessment_id from session
-    if (session.assessment_id) {
+    // Try 1: Use assessmentId from request body
+    if (assessmentId) {
+      console.log("[Submit] Looking up assessment by client-provided ID:", assessmentId);
+      const { data, error } = await serviceClient
+        .from("assessments")
+        .select("id, title, assessment_type_id, assessment_type:assessment_types(*)")
+        .eq("id", assessmentId)
+        .single();
+      
+      if (!error && data) {
+        assessment = data;
+        assessmentIdUsed = assessmentId;
+        console.log("[Submit] Found assessment by client ID:", assessment.id);
+      } else {
+        console.log("[Submit] Client ID lookup failed:", error?.message);
+      }
+    }
+
+    // Try 2: Use assessment_id from session
+    if (!assessment && session.assessment_id) {
+      console.log("[Submit] Looking up assessment by session.assessment_id:", session.assessment_id);
       const { data, error } = await serviceClient
         .from("assessments")
         .select("id, title, assessment_type_id, assessment_type:assessment_types(*)")
@@ -203,12 +219,16 @@ export default async function handler(req, res) {
       
       if (!error && data) {
         assessment = data;
-        console.log("[Submit] Found assessment by assessment_id:", assessment.id);
+        assessmentIdUsed = session.assessment_id;
+        console.log("[Submit] Found assessment by session assessment_id:", assessment.id);
+      } else {
+        console.log("[Submit] Session assessment_id lookup failed:", error?.message);
       }
     }
 
-    // Second try: use assessment_type_id from session
+    // Try 3: Use assessment_type_id from session
     if (!assessment && session.assessment_type_id) {
+      console.log("[Submit] Looking up assessment by assessment_type_id:", session.assessment_type_id);
       const { data, error } = await serviceClient
         .from("assessments")
         .select("id, title, assessment_type_id, assessment_type:assessment_types(*)")
@@ -217,23 +237,43 @@ export default async function handler(req, res) {
       
       if (!error && data) {
         assessment = data;
+        assessmentIdUsed = data.id;
         console.log("[Submit] Found assessment by assessment_type_id:", assessment.id);
+      } else {
+        console.log("[Submit] assessment_type_id lookup failed:", error?.message);
       }
     }
 
+    // Final check: If still no assessment, return error
     if (!assessment) {
-      console.error("[Submit] Assessment not found for session:", {
+      console.error("[Submit] Assessment not found. Session details:", {
         sessionId: session.id,
-        assessment_id: session.assessment_id,
-        assessment_type_id: session.assessment_type_id
+        clientAssessmentId: assessmentId,
+        sessionAssessmentId: session.assessment_id,
+        sessionAssessmentTypeId: session.assessment_type_id
       });
-      return res.status(404).json({ success: false, error: "Assessment not found" });
+      return res.status(404).json({ 
+        success: false, 
+        error: "Assessment not found",
+        debug: {
+          clientAssessmentId: assessmentId,
+          sessionAssessmentId: session.assessment_id,
+          sessionAssessmentTypeId: session.assessment_type_id
+        }
+      });
     }
 
     const assessmentType = assessment.assessment_type || {};
     const isNationalService = assessmentType.code === 'national_service' || 
-                             session.assessment_id === NATIONAL_SERVICE_ASSESSMENT_ID;
-    const assessmentId = assessment.id;
+                             assessmentIdUsed === NATIONAL_SERVICE_ASSESSMENT_ID;
+    const finalAssessmentId = assessment.id;
+
+    console.log("[Submit] Using assessment:", {
+      id: finalAssessmentId,
+      title: assessment.title,
+      typeId: assessment.assessment_type_id,
+      typeCode: assessmentType.code
+    });
 
     // ============================================================
     // STEP 3: Get all responses
@@ -309,7 +349,7 @@ export default async function handler(req, res) {
     // ============================================================
     // STEP 6: Use the correct total question count
     // ============================================================
-    const expectedTotalQuestions = getTotalQuestions(assessmentId, assessmentType);
+    const expectedTotalQuestions = getTotalQuestions(finalAssessmentId, assessmentType);
     
     if (totalMax !== expectedTotalQuestions) {
       console.log(`[Submit] Fixing totalMax from ${totalMax} to ${expectedTotalQuestions}`);
@@ -319,7 +359,6 @@ export default async function handler(req, res) {
     const finalPercentage = totalMax > 0 ? Math.round((totalEarned / totalMax) * 100) : 0;
 
     console.log(`[Submit] Score: ${totalEarned}/${totalMax} = ${finalPercentage}%`);
-    console.log(`[Submit] Assessment: ${assessmentId}, Type: ${assessmentType.code || 'unknown'}`);
 
     // ============================================================
     // STEP 7: Build category_scores
@@ -475,7 +514,7 @@ export default async function handler(req, res) {
     // ============================================================
     const resultData = {
       user_id: session.user_id,
-      assessment_id: assessmentId,
+      assessment_id: finalAssessmentId,
       session_id: sessionId,
       total_score: totalEarned,
       max_score: totalMax,
@@ -584,7 +623,7 @@ export default async function handler(req, res) {
           score: totalEarned
         })
         .eq("user_id", session.user_id)
-        .eq("assessment_id", assessmentId);
+        .eq("assessment_id", finalAssessmentId);
     }
 
     // ============================================================
