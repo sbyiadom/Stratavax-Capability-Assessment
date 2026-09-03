@@ -1,12 +1,13 @@
 // pages/supervisor/index.js - COMPLETE FIXED
-// FIXED: Removed duplicate tabs - sidebar handles navigation
 // Dashboard only shows summary stats and charts
+// ADDED: Reset Assessment button in Quick Navigation
 
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/router';
 import { supabase } from '../../supabase/client';
 import { useRequireAuth } from '../../utils/requireAuth';
 import AppLayout from '../../components/AppLayout';
+import ResetAssessmentButton from '../../components/ResetAssessmentButton';
 
 import {
   Chart as ChartJS,
@@ -479,6 +480,13 @@ export default function SupervisorDashboard() {
             </button>
             <button onClick={() => router.push('/supervisor/export-dashboard')} style={styles.quickNavButton}>
               📊 Export Dashboard
+            </button>
+            {/* ✅ RESET ASSESSMENT - Quick navigation */}
+            <button 
+              onClick={() => router.push('/supervisor/manage-candidate')} 
+              style={{...styles.quickNavButton, background: '#fee2e2', borderColor: '#fecaca'}}
+            >
+              🔄 Reset Assessment
             </button>
           </div>
         </div>
