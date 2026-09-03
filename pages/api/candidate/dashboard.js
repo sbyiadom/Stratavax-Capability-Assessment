@@ -1,5 +1,5 @@
-// pages/api/candidate/dashboard.js - CORRECTED API ROUTE
-// Removed client-side imports that cause build errors
+// pages/api/candidate/dashboard.js - FULLY CORRECTED
+// Uses assessment_type's question_count and time_limit_minutes
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -24,7 +24,7 @@ const ASSESSMENT_TYPE_CODE_MAP = {
   '42c1cb06-4574-4d31-8463-0147ff2a0737': 'cognitive',
   'b9a372a1-28b4-440f-bf9a-bfb9211395aa': 'technical',
   '24cd4e02-e43d-4228-beec-513886035c7f': 'personality',
-  'ab4bb0b3-011e-4d37-09c08-60c60b15e88f': 'performance',
+  'ab4bb0b3-011e-4d37-9c08-60c60b15e88f': 'performance',
   '671bf00f-46cc-46f5-a217-d5a90dafb9b6': 'behavioral',
   '192996c5-2ff4-4767-80c9-4af03aaf1b7e': 'manufacturing_technical',
   '9f138960-671d-4edd-8044-c7d0a95cbbe9': 'cultural',
@@ -60,7 +60,7 @@ const ASSESSMENT_TITLE_MAP = {
 };
 
 // ============================================================
-// PRACTICAL ASSESSMENT DEFAULTS
+// PRACTICAL ASSESSMENT DEFAULTS (fallback only)
 // ============================================================
 const PRACTICAL_DEFAULTS = {
   questionCount: 40,
@@ -193,7 +193,7 @@ export default async function handler(req, res) {
     if (assessmentIds.length > 0) {
       const { data: assessments, error: aError } = await serviceClient
         .from('assessments')
-        .select('id, title, description, question_count, time_limit_minutes, attempts_allowed, assessment_type_id, expires_at')
+        .select('id, title, description, assessment_type_id, expires_at')
         .in('id', assessmentIds);
 
       if (!aError && assessments) {
@@ -214,14 +214,14 @@ export default async function handler(req, res) {
       console.warn('[Candidate Dashboard API] Assessment IDs not found:', missingAssessmentIds);
     }
 
-    // STEP 4: Get assessment types
+    // STEP 4: Get assessment types with question_count and time_limit_minutes
     let typeMap = {};
     const typeIds = Object.values(assessmentDataMap).map(a => a.assessment_type_id).filter(Boolean);
     
     if (typeIds.length > 0) {
       const { data: types, error: tError } = await serviceClient
         .from('assessment_types')
-        .select('id, code, name')
+        .select('id, code, name, question_count, time_limit_minutes')
         .in('id', typeIds);
 
       if (!tError && types) {
@@ -231,7 +231,7 @@ export default async function handler(req, res) {
       }
     }
 
-    // STEP 5: Build cards with FIXED title resolution
+    // STEP 5: Build cards with FIXED title resolution and question_count
     const cards = candidateAssessments.map(ca => {
       const assessmentData = assessmentDataMap[ca.assessment_id] || {};
       const type = typeMap[assessmentData.assessment_type_id] || {};
@@ -265,6 +265,9 @@ export default async function handler(req, res) {
       const isNationalService = typeCode === 'national_service' || ca.assessment_id === NATIONAL_SERVICE_ASSESSMENT_ID;
       const isPractical = typeCode && typeCode.startsWith('practical_');
       
+      // ============================================================
+      // FIXED: question_count and time_limit_minutes from assessment_type
+      // ============================================================
       let questionCount;
       let timeLimitMinutes;
       let attemptsAllowed;
@@ -274,13 +277,14 @@ export default async function handler(req, res) {
         timeLimitMinutes = 90;
         attemptsAllowed = 1;
       } else if (isPractical) {
-        questionCount = assessmentData.question_count || PRACTICAL_DEFAULTS.questionCount;
-        timeLimitMinutes = assessmentData.time_limit_minutes || PRACTICAL_DEFAULTS.timeLimitMinutes;
-        attemptsAllowed = assessmentData.attempts_allowed || PRACTICAL_DEFAULTS.attemptsAllowed;
+        // Use assessment_type's question_count, fallback to defaults
+        questionCount = type.question_count || PRACTICAL_DEFAULTS.questionCount;
+        timeLimitMinutes = type.time_limit_minutes || PRACTICAL_DEFAULTS.timeLimitMinutes;
+        attemptsAllowed = 1;
       } else {
-        questionCount = assessmentData.question_count || 100;
-        timeLimitMinutes = assessmentData.time_limit_minutes || 120;
-        attemptsAllowed = assessmentData.attempts_allowed || 1;
+        questionCount = type.question_count || 100;
+        timeLimitMinutes = type.time_limit_minutes || 120;
+        attemptsAllowed = 1;
       }
 
       // FIXED: Type name resolution
