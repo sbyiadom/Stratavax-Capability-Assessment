@@ -1,4 +1,4 @@
-// pages/candidate/dashboard.js - FULL CORRECTED VERSION WITH PRACTICAL ASSESSMENTS
+// pages/candidate/dashboard.js - FULLY CORRECTED WITH ALL ASSESSMENT NAMES
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
@@ -319,44 +319,60 @@ export default function CandidateDashboard() {
     if (titleLower.includes('behavioral')) return areasByType.behavioral;
     if (titleLower.includes('manufacturing baseline')) return areasByType.manufacturing_baseline;
     // Practical assessment title checks
-    if (titleLower.includes('practical mechanical') || titleLower.includes('practical_mechanical')) 
+    if (titleLower.includes('mechanical') || titleLower.includes('practical_mechanical')) 
       return areasByType.practical_mechanical;
-    if (titleLower.includes('practical electrical') || titleLower.includes('practical_electrical')) 
+    if (titleLower.includes('electrical') || titleLower.includes('practical_electrical')) 
       return areasByType.practical_electrical;
-    if (titleLower.includes('practical logistics') || titleLower.includes('practical_logistics')) 
+    if (titleLower.includes('logistics') || titleLower.includes('practical_logistics')) 
       return areasByType.practical_logistics;
-    if (titleLower.includes('practical quality') || titleLower.includes('practical_quality')) 
+    if (titleLower.includes('quality') || titleLower.includes('practical_quality')) 
       return areasByType.practical_quality;
 
     return areasByType.general;
   };
 
+  // ============================================================
+  // FIXED: getShortName - Now returns the actual title for ALL assessments
+  // ============================================================
   const getShortName = (title, isNationalService) => {
+    // National Service gets a special label
     if (isNationalService) return 'National Service';
     
-    const shortNames = {
-      'General Assessment': 'General',
-      'Leadership Assessment': 'Leadership',
-      'Cognitive Ability Assessment': 'Cognitive',
-      'Technical Competence Assessment': 'Technical',
-      'Personality Assessment': 'Personality',
-      'Performance Assessment': 'Performance',
-      'Behavioral & Soft Skills': 'Behavioral',
-      'Manufacturing Technical Skills': 'Manufacturing',
-      'Cultural & Attitudinal Fit': 'Cultural',
-      'Strategic Leadership Assessment': 'Strategic',
-      'Manufacturing Baseline Assessment': 'Baseline',
-      'National Service Recruitment Assessment': 'National Service',
-      // ============================================================
-      // PRACTICAL ASSESSMENT SHORT NAMES
-      // ============================================================
-      'Practical Mechanical Assessment': 'Practical Mechanical',
-      'Practical Electrical Assessment': 'Practical Electrical',
-      'Practical Logistics Assessment': 'Practical Logistics',
-      'Practical Quality Assessment': 'Practical Quality'
-    };
+    // If title is missing, return a fallback
+    if (!title) return 'Assessment';
     
-    return shortNames[title] || title;
+    // If title is exactly "Assessment" or "General", return it as-is
+    if (title === 'Assessment' || title === 'General') return title;
+    
+    // Remove common suffixes for cleaner display, but keep the core name
+    let shortName = title;
+    
+    // Remove "Assessment" suffix for cleaner display
+    if (shortName.endsWith(' Assessment')) {
+      shortName = shortName.slice(0, -11);
+    }
+    
+    // Remove "Technical" suffix for cleaner display
+    if (shortName.endsWith(' Technical')) {
+      shortName = shortName.slice(0, -10);
+    }
+    
+    // Remove " & Supply Chain" suffix
+    if (shortName.includes(' & Supply Chain')) {
+      shortName = shortName.replace(' & Supply Chain', '');
+    }
+    
+    // Remove " Assurance" suffix
+    if (shortName.includes(' Assurance')) {
+      shortName = shortName.replace(' Assurance', '');
+    }
+    
+    // If the result is empty, use the original title
+    if (!shortName || shortName.trim() === '') {
+      return title;
+    }
+    
+    return shortName.trim();
   };
 
   const getAssessmentColor = (typeCode) => {
