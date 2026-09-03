@@ -1,4 +1,4 @@
-// pages/api/assessment/submit.js - FULLY CORRECTED WITH PROPER ASSESSMENT LOOKUP
+// pages/api/assessment/submit.js - COMPLETE FILE
 
 import { createClient } from "@supabase/supabase-js";
 
@@ -28,8 +28,34 @@ function getTotalQuestions(assessmentId, assessmentType) {
 }
 
 // ============================================================
-// HELPER: Split categories into Workplace and Intellectual
+// HELPER FUNCTIONS
 // ============================================================
+function cleanText(value, fallback = "") {
+  if (!value) return fallback;
+  return String(value).toLowerCase().replace(/\s+/g, '_');
+}
+
+function formatDuration(seconds) {
+  if (!seconds || seconds <= 0) return '00:00:00';
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = seconds % 60;
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+}
+
+function calculateAvgTimePerQuestion(totalSeconds, questionCount) {
+  if (!totalSeconds || totalSeconds <= 0 || !questionCount || questionCount <= 0) {
+    return '0s';
+  }
+  const avgSeconds = Math.round(totalSeconds / questionCount);
+  if (avgSeconds < 60) {
+    return `${avgSeconds}s`;
+  }
+  const minutes = Math.floor(avgSeconds / 60);
+  const seconds = avgSeconds % 60;
+  return `${minutes}m ${seconds}s`;
+}
+
 const WORKPLACE_KEYWORDS = [
   'safety', 'risk_awareness', 'risk', 'hazard',
   'technical_fundamentals', 'technical',
@@ -50,11 +76,6 @@ const INTELLECTUAL_KEYWORDS = [
   'critical_thinking', 'analytical', 'decision_making',
   'intellectual', 'cognitive', 'capability'
 ];
-
-function cleanText(value, fallback = "") {
-  if (!value) return fallback;
-  return String(value).toLowerCase().replace(/\s+/g, '_');
-}
 
 function isWorkplaceCategory(category) {
   const normalized = cleanText(category, '');
@@ -95,33 +116,6 @@ function calculateScoresFromCategories(categoryScores) {
   return { workplaceReadiness, intellectualCapability };
 }
 
-// ============================================================
-// HELPER: Format seconds to HH:MM:SS
-// ============================================================
-function formatDuration(seconds) {
-  if (!seconds || seconds <= 0) return '00:00:00';
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const secs = seconds % 60;
-  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-}
-
-// ============================================================
-// HELPER: Calculate average time per question
-// ============================================================
-function calculateAvgTimePerQuestion(totalSeconds, questionCount) {
-  if (!totalSeconds || totalSeconds <= 0 || !questionCount || questionCount <= 0) {
-    return '0s';
-  }
-  const avgSeconds = Math.round(totalSeconds / questionCount);
-  if (avgSeconds < 60) {
-    return `${avgSeconds}s`;
-  }
-  const minutes = Math.floor(avgSeconds / 60);
-  const seconds = avgSeconds % 60;
-  return `${minutes}m ${seconds}s`;
-}
-
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ success: false, error: "Method not allowed" });
@@ -131,11 +125,9 @@ export default async function handler(req, res) {
     const { 
       sessionId, 
       autoSubmitted, 
-      autoSubmitReason, 
-      allowIncomplete,
       proctoringData,
       startedAt,
-      assessmentId  // ← This comes from the frontend
+      assessmentId
     } = req.body;
 
     if (!sessionId) {
@@ -158,7 +150,6 @@ export default async function handler(req, res) {
       auth: { persistSession: false, autoRefreshToken: false }
     });
 
-    // Verify user
     const { data: userData, error: userError } = await serviceClient.auth.getUser(token);
     if (userError || !userData?.user) {
       return res.status(401).json({ success: false, error: "Invalid token" });
@@ -221,8 +212,6 @@ export default async function handler(req, res) {
         assessment = data;
         assessmentIdUsed = session.assessment_id;
         console.log("[Submit] Found assessment by session assessment_id:", assessment.id);
-      } else {
-        console.log("[Submit] Session assessment_id lookup failed:", error?.message);
       }
     }
 
@@ -239,12 +228,9 @@ export default async function handler(req, res) {
         assessment = data;
         assessmentIdUsed = data.id;
         console.log("[Submit] Found assessment by assessment_type_id:", assessment.id);
-      } else {
-        console.log("[Submit] assessment_type_id lookup failed:", error?.message);
       }
     }
 
-    // Final check: If still no assessment, return error
     if (!assessment) {
       console.error("[Submit] Assessment not found. Session details:", {
         sessionId: session.id,
@@ -254,12 +240,7 @@ export default async function handler(req, res) {
       });
       return res.status(404).json({ 
         success: false, 
-        error: "Assessment not found",
-        debug: {
-          clientAssessmentId: assessmentId,
-          sessionAssessmentId: session.assessment_id,
-          sessionAssessmentTypeId: session.assessment_type_id
-        }
+        error: "Assessment not found"
       });
     }
 
