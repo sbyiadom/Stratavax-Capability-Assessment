@@ -120,15 +120,25 @@ export default function CandidateDashboard() {
     return assessment?.isNationalService || assessment?.typeCode === 'national_service';
   };
 
+  const isPracticalAssessment = (assessment) => {
+    return assessment?.typeCode && assessment.typeCode.startsWith('practical_');
+  };
+
   const getDisplayQuestionCount = (assessment) => {
     if (isNationalServiceAssessment(assessment)) {
       return assessment.questionCount || 80;
+    }
+    if (isPracticalAssessment(assessment)) {
+      return assessment.questionCount || 40;
     }
     return assessment.questionCount || 100;
   };
 
   const getDisplayTimeLimitMinutes = (assessment) => {
     if (isNationalServiceAssessment(assessment)) {
+      return assessment.timeLimitMinutes || 90;
+    }
+    if (isPracticalAssessment(assessment)) {
       return assessment.timeLimitMinutes || 90;
     }
     return assessment.timeLimitMinutes || 120;
@@ -301,7 +311,7 @@ export default function CandidateDashboard() {
     if (titleLower.includes('national service')) return areasByType.national_service;
     if (titleLower.includes('cognitive')) return areasByType.cognitive;
     if (titleLower.includes('leadership')) return areasByType.leadership;
-    if (titleLower.includes('technical')) return areasByType.technical;
+    if (titleLower.includes('technical') && !titleLower.includes('practical')) return areasByType.technical;
     if (titleLower.includes('performance')) return areasByType.performance;
     if (titleLower.includes('cultural')) return areasByType.cultural;
     if (titleLower.includes('personality')) return areasByType.personality;
