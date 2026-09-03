@@ -1,4 +1,4 @@
-// pages/api/candidate/dashboard.js - COMPLETE VERSION WITH CORRECT PRACTICAL ASSESSMENT IDs
+// pages/api/candidate/dashboard.js - FIXED VERSION
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -31,7 +31,7 @@ const ASSESSMENT_TYPE_CODE_MAP = {
   '232f7ff8-60b8-4223-81c6-4917a5fb12a3': 'manufacturing_baseline',
   'bdb9d46e-9fac-4d00-8478-1f649e7ac600': 'national_service',
   // ============================================================
-  // CORRECT PRACTICAL ASSESSMENT TYPE CODES
+  // PRACTICAL ASSESSMENT TYPE CODES
   // ============================================================
   'c2bc4994-1c4a-4094-a763-8d9d560b759e': 'practical_mechanical',
   '243275ec-9bb5-43ce-9f02-1111b2ca66e0': 'practical_electrical',
@@ -121,7 +121,6 @@ export default async function handler(req, res) {
     if (missingPracticalIds.length > 0) {
       console.log('[API] Adding missing practical assessments for user:', userId);
       
-      // Get assessment_type_id for each missing practical assessment
       const { data: assessmentsData } = await serviceClient
         .from('assessments')
         .select('id, assessment_type_id')
@@ -132,7 +131,6 @@ export default async function handler(req, res) {
         assessmentTypeMap[a.id] = a.assessment_type_id;
       });
 
-      // Insert missing practical assessments as 'blocked'
       const insertData = missingPracticalIds.map(assessmentId => ({
         user_id: userId,
         assessment_id: assessmentId,
@@ -150,7 +148,6 @@ export default async function handler(req, res) {
         if (insertError) {
           console.error('[API] Error inserting practical assessments:', insertError);
         } else {
-          // Re-fetch candidate assessments to include the new ones
           const { data: refreshedData } = await serviceClient
             .from('candidate_assessments')
             .select('*')
@@ -171,10 +168,12 @@ export default async function handler(req, res) {
       });
     }
 
-    // STEP 3: Get assessment types with expires_at
+    // STEP 3: Get assessment details - FIXED to properly fetch titles
     const assessmentIds = candidateAssessments.map(ca => ca.assessment_id).filter(Boolean);
-    let typeMap = {};
-
+    
+    // Create a map of assessment data
+    let assessmentDataMap = {};
+    
     if (assessmentIds.length > 0) {
       const { data: assessments, error: aError } = await serviceClient
         .from('assessments')
@@ -182,40 +181,44 @@ export default async function handler(req, res) {
         .in('id', assessmentIds);
 
       if (!aError && assessments) {
-        const typeIds = assessments.map(a => a.assessment_type_id).filter(Boolean);
-        if (typeIds.length > 0) {
-          const { data: types, error: tError } = await serviceClient
-            .from('assessment_types')
-            .select('id, code, name')
-            .in('id', typeIds);
-
-          if (!tError && types) {
-            types.forEach(t => {
-              typeMap[t.id] = t;
-            });
-          }
-        }
-
         assessments.forEach(a => {
-          typeMap[a.id] = {
-            ...a,
-            type: typeMap[a.assessment_type_id] || null
-          };
+          assessmentDataMap[a.id] = a;
+        });
+        console.log('[API] Found assessments:', assessments.map(a => ({ id: a.id, title: a.title })));
+      } else if (aError) {
+        console.error('[API] Error fetching assessments:', aError);
+      }
+    }
+
+    // STEP 4: Get assessment types
+    let typeMap = {};
+    const typeIds = Object.values(assessmentDataMap).map(a => a.assessment_type_id).filter(Boolean);
+    
+    if (typeIds.length > 0) {
+      const { data: types, error: tError } = await serviceClient
+        .from('assessment_types')
+        .select('id, code, name')
+        .in('id', typeIds);
+
+      if (!tError && types) {
+        types.forEach(t => {
+          typeMap[t.id] = t;
         });
       }
     }
 
-    // STEP 4: Build cards with expires_at
+    // STEP 5: Build cards - FIXED title logic
     const cards = candidateAssessments.map(ca => {
-      const assessmentData = typeMap[ca.assessment_id] || {};
-      const type = assessmentData.type || {};
+      const assessmentData = assessmentDataMap[ca.assessment_id] || {};
+      const type = typeMap[assessmentData.assessment_type_id] || {};
       
-      // ============================================================
-      // FIX: Use the assessment type code map for correct typeCode
-      // ============================================================
+      // Get the type code from the map or fallback to type.code or 'general'
       const typeCode = ASSESSMENT_TYPE_CODE_MAP[ca.assessment_id] || type.code || 'general';
       
+      // FIXED: Get the title from the assessment data, or fallback to type name
       let title = assessmentData.title || type.name || 'Assessment';
+      
+      // If title is still 'Assessment' and we have a type name, use that
       if (title === 'Assessment' && type.name) {
         title = type.name;
       }
@@ -228,9 +231,6 @@ export default async function handler(req, res) {
       const isNationalService = typeCode === 'national_service' || ca.assessment_id === NATIONAL_SERVICE_ASSESSMENT_ID;
       const isPractical = typeCode && typeCode.startsWith('practical_');
       
-      // ============================================================
-      // FIX: Set correct question count and time limit for practical assessments
-      // ============================================================
       let questionCount;
       let timeLimitMinutes;
       let attemptsAllowed;
@@ -265,6 +265,14 @@ export default async function handler(req, res) {
         unblockedAt: ca.unblocked_at || null,
         resultId: ca.result_id || null
       };
+    });
+
+    // Sort cards: show ready/unblocked first, then in_progress, then blocked, then completed
+    const sortOrder = { 'unblocked': 0, 'in_progress': 1, 'blocked': 2, 'completed': 3 };
+    cards.sort((a, b) => {
+      const orderA = sortOrder[a.status] !== undefined ? sortOrder[a.status] : 99;
+      const orderB = sortOrder[b.status] !== undefined ? sortOrder[b.status] : 99;
+      return orderA - orderB;
     });
 
     const stats = {
