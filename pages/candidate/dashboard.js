@@ -1,4 +1,4 @@
-// pages/candidate/dashboard.js - FULL CORRECTED VERSION WITH COUNTDOWN
+// pages/candidate/dashboard.js - FULL CORRECTED VERSION WITH PRACTICAL ASSESSMENTS
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
@@ -83,7 +83,7 @@ export default function CandidateDashboard() {
   }
 
   // ============================================================
-  // ✅ FIXED: EXPIRATION COUNTDOWN HELPERS
+  // EXPIRATION COUNTDOWN HELPERS
   // ============================================================
   const getDaysRemaining = (expiresAt) => {
     if (!expiresAt) return null;
@@ -224,6 +224,49 @@ export default function CandidateDashboard() {
         "Numerical Aptitude",
         "Safety & Work Ethic"
       ],
+      // ============================================================
+      // NEW: PRACTICAL ASSESSMENT AREAS
+      // ============================================================
+      practical_mechanical: [
+        "Hydraulics & Pneumatics",
+        "Mechanical Maintenance",
+        "Pumps & Compressors",
+        "Welding & Fabrication",
+        "Mechanical Troubleshooting",
+        "Preventive Maintenance",
+        "Piping Systems",
+        "Rotating Equipment"
+      ],
+      practical_electrical: [
+        "PLC Programming",
+        "Motor Controls",
+        "Sensors & Instrumentation",
+        "Electrical Troubleshooting",
+        "VFD & Soft Starters",
+        "Control Circuits",
+        "Power Distribution",
+        "Electrical Safety"
+      ],
+      practical_logistics: [
+        "Inventory Management",
+        "Warehousing Operations",
+        "Transportation Logistics",
+        "Procurement",
+        "Supply Chain Optimization",
+        "Material Handling",
+        "Distribution Planning",
+        "Supply Chain Analytics"
+      ],
+      practical_quality: [
+        "Quality Control",
+        "Process Capability",
+        "Inspection Techniques",
+        "Statistical Process Control",
+        "Continuous Improvement",
+        "Root Cause Analysis",
+        "Quality Management Systems",
+        "Measurement Systems Analysis"
+      ],
       general: [
         "Cognitive Ability",
         "Communication",
@@ -248,7 +291,16 @@ export default function CandidateDashboard() {
     if (titleLower.includes('personality')) return areasByType.personality;
     if (titleLower.includes('strategic')) return areasByType.strategic;
     if (titleLower.includes('behavioral')) return areasByType.behavioral;
-    if (titleLower.includes('manufacturing')) return areasByType.manufacturing_baseline;
+    if (titleLower.includes('manufacturing baseline')) return areasByType.manufacturing_baseline;
+    // NEW: Practical assessment title checks
+    if (titleLower.includes('practical mechanical') || titleLower.includes('practical_mechanical')) 
+      return areasByType.practical_mechanical;
+    if (titleLower.includes('practical electrical') || titleLower.includes('practical_electrical')) 
+      return areasByType.practical_electrical;
+    if (titleLower.includes('practical logistics') || titleLower.includes('practical_logistics')) 
+      return areasByType.practical_logistics;
+    if (titleLower.includes('practical quality') || titleLower.includes('practical_quality')) 
+      return areasByType.practical_quality;
 
     return areasByType[typeCode] || areasByType.general;
   };
@@ -268,7 +320,14 @@ export default function CandidateDashboard() {
       'Cultural & Attitudinal Fit': 'Cultural',
       'Strategic Leadership Assessment': 'Strategic',
       'Manufacturing Baseline Assessment': 'Baseline',
-      'National Service Recruitment Assessment': 'National Service'
+      'National Service Recruitment Assessment': 'National Service',
+      // ============================================================
+      // NEW: PRACTICAL ASSESSMENT SHORT NAMES
+      // ============================================================
+      'Practical Mechanical Assessment': 'Practical Mechanical',
+      'Practical Electrical Assessment': 'Practical Electrical',
+      'Practical Logistics Assessment': 'Practical Logistics',
+      'Practical Quality Assessment': 'Practical Quality'
     };
     
     return shortNames[title] || title;
@@ -352,6 +411,37 @@ export default function CandidateDashboard() {
         light: 'rgba(29, 78, 216, 0.08)',
         hover: 'rgba(29, 78, 216, 0.15)',
         glow: 'rgba(29, 78, 216, 0.25)'
+      },
+      // ============================================================
+      // NEW: PRACTICAL ASSESSMENT COLORS
+      // ============================================================
+      practical_mechanical: { 
+        gradient: 'linear-gradient(135deg, #1a237e 0%, #0d47a1 100%)', 
+        border: '#1a237e', 
+        light: 'rgba(26, 35, 126, 0.08)',
+        hover: 'rgba(26, 35, 126, 0.15)',
+        glow: 'rgba(26, 35, 126, 0.25)'
+      },
+      practical_electrical: { 
+        gradient: 'linear-gradient(135deg, #b71c1c 0%, #880e4f 100%)', 
+        border: '#b71c1c', 
+        light: 'rgba(183, 28, 28, 0.08)',
+        hover: 'rgba(183, 28, 28, 0.15)',
+        glow: 'rgba(183, 28, 28, 0.25)'
+      },
+      practical_logistics: { 
+        gradient: 'linear-gradient(135deg, #e65100 0%, #bf360c 100%)', 
+        border: '#e65100', 
+        light: 'rgba(230, 81, 0, 0.08)',
+        hover: 'rgba(230, 81, 0, 0.15)',
+        glow: 'rgba(230, 81, 0, 0.25)'
+      },
+      practical_quality: { 
+        gradient: 'linear-gradient(135deg, #1b5e20 0%, #004d40 100%)', 
+        border: '#1b5e20', 
+        light: 'rgba(27, 94, 32, 0.08)',
+        hover: 'rgba(27, 94, 32, 0.15)',
+        glow: 'rgba(27, 94, 32, 0.25)'
       }
     };
     return colors[typeCode] || colors.general;
@@ -505,7 +595,6 @@ export default function CandidateDashboard() {
                     const isNationalService = assessment.isNationalService || assessment.typeCode === 'national_service';
                     const displayName = getShortName(assessment.title, isNationalService);
                     
-                    // ✅ FIXED: Get expiration status with days
                     const expiryStatus = getExpirationStatus(assessment.expires_at);
                     const isExpired = expiryStatus.status === 'expired';
 
@@ -555,7 +644,6 @@ export default function CandidateDashboard() {
                             {isNationalService && (
                               <span style={styles.compactNsTag}>NS</span>
                             )}
-                            {/* ✅ FIXED: Show days remaining on compact card */}
                             {assessment.expires_at && expiryStatus.status !== 'expired' && expiryStatus.status !== 'no_expiry' && (
                               <span style={{
                                 ...styles.compactExpiry,
@@ -622,9 +710,6 @@ export default function CandidateDashboard() {
                         <span style={styles.detailNsBadge}>National Service (Always Available)</span>
                       )}
                       
-                      {/* ============================================================
-                          ✅ FIXED: EXPIRATION COUNTDOWN - PROMINENT DISPLAY
-                          ============================================================ */}
                       {selectedAssessment.expires_at && (() => {
                         const expiryStatus = getExpirationStatus(selectedAssessment.expires_at);
                         if (expiryStatus.status === 'expired') {
@@ -669,7 +754,6 @@ export default function CandidateDashboard() {
 
                     <p style={styles.detailDescription}>{selectedAssessment.description}</p>
 
-                    {/* ✅ FIXED: Deadline Notice for National Service */}
                     {selectedAssessment.isNationalService && selectedAssessment.expires_at && (() => {
                       const expiryStatus = getExpirationStatus(selectedAssessment.expires_at);
                       if (expiryStatus.status !== 'expired' && expiryStatus.status !== 'no_expiry') {
