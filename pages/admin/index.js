@@ -1,4 +1,4 @@
-// pages/admin/index.js - CLEAN DASHBOARD (Action Cards Removed)
+// pages/admin/index.js - CLEAN DASHBOARD WITH SCROLLING FIX
 // All navigation is now in the sidebar
 
 import { useEffect, useState, useMemo, Fragment } from "react";
@@ -565,6 +565,7 @@ const stylesSidebar = {
     display: 'flex',
     flexDirection: 'column',
     gap: '4px',
+    overflowY: 'auto',
   },
   navItem: {
     display: 'flex',
@@ -1002,10 +1003,7 @@ export default function AdminDashboard() {
       />
 
       {/* Main Content */}
-      <div style={{
-        ...stylesModern.mainContent,
-        marginLeft: sidebarOpen ? '250px' : '0',
-      }}>
+      <div style={stylesModern.mainContent}>
         {/* Top Bar */}
         <div style={stylesModern.topBar}>
           <div style={stylesModern.topBarLeft}>
@@ -1322,8 +1320,6 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* 🟢 REMOVED: Action Cards - Now in Sidebar */}
-
         {/* Assessment Expiration */}
         <AssessmentExpiration />
       </div>
@@ -1339,20 +1335,24 @@ export default function AdminDashboard() {
 }
 
 // ============================================================
-// MODERN STYLES
+// MODERN STYLES - WITH SCROLLING FIX
 // ============================================================
 const stylesModern = {
   appContainer: {
     minHeight: '100vh',
     background: COLORS.background,
     display: 'flex',
+    overflow: 'hidden',  // Prevents double scrollbars
   },
   mainContent: {
     flex: 1,
-    padding: '20px 24px',
+    padding: '20px 24px 40px 24px',  // Added bottom padding
     transition: 'margin-left 0.3s ease',
     minHeight: '100vh',
+    maxHeight: '100vh',
     maxWidth: 'calc(100vw - 250px)',
+    overflowY: 'auto',     // ENABLES SCROLLING
+    overflowX: 'hidden',   // Prevents horizontal scroll
   },
   loadingContainer: {
     minHeight: '100vh',
