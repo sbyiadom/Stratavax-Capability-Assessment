@@ -1,337 +1,1310 @@
-// pages/api/candidate/dashboard.js - FULLY FIXED WITH TITLE MAP
+// pages/candidate/dashboard.js - FULLY CORRECTED WITH ALL ASSESSMENT NAMES
 
-import { createClient } from '@supabase/supabase-js';
+import { useState, useEffect } from "react";
+import { useRouter } from "next/router";
+import Image from "next/image";
+import Link from "next/link";
+import { useRequireAuth } from "../../utils/requireAuth";
+import { supabase } from "../../supabase/client";
 
-// ============================================================
-// CORRECT PRACTICAL ASSESSMENT IDs
-// ============================================================
-const PRACTICAL_ASSESSMENT_IDS = [
-  'c2bc4994-1c4a-4094-a763-8d9d560b759e',
-  '243275ec-9bb5-43ce-9f02-1111b2ca66e0',
-  'a6000077-095d-4115-bc4e-5936fce953e9',
-  '928f81fc-35ea-40ac-83cb-7c3a0c1c18dc'
-];
+export default function CandidateDashboard() {
+  const router = useRouter();
+  const { session, loading: authLoading } = useRequireAuth();
 
-const NATIONAL_SERVICE_ASSESSMENT_ID = 'bdb9d46e-9fac-4d00-8478-1f649e7ac600';
+  const [loading, setLoading] = useState(true);
+  const [userName, setUserName] = useState("Candidate");
+  const [assessments, setAssessments] = useState([]);
+  const [selectedAssessment, setSelectedAssessment] = useState(null);
+  const [error, setError] = useState(null);
+  const [stats, setStats] = useState({ total: 0, completed: 0, ready: 0, inProgress: 0, blocked: 0 });
+  const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
 
-// ============================================================
-// ASSESSMENT TYPE CODE MAP
-// ============================================================
-const ASSESSMENT_TYPE_CODE_MAP = {
-  '17003efb-923f-49a5-bdeb-e4996c864a87': 'general',
-  'd09953bf-59cd-40ed-a9bb-308c3b5cfb7d': 'leadership',
-  '42c1cb06-4574-4d31-8463-0147ff2a0737': 'cognitive',
-  'b9a372a1-28b4-440f-bf9a-bfb9211395aa': 'technical',
-  '24cd4e02-e43d-4228-beec-513886035c7f': 'personality',
-  'ab4bb0b3-011e-4d37-9c08-60c60b15e88f': 'performance',
-  '671bf00f-46cc-46f5-a217-d5a90dafb9b6': 'behavioral',
-  '192996c5-2ff4-4767-80c9-4af03aaf1b7e': 'manufacturing_technical',
-  '9f138960-671d-4edd-8044-c7d0a95cbbe9': 'cultural',
-  '49980cc1-eb63-432b-895c-951722cfcc24': 'strategic_leadership',
-  '232f7ff8-60b8-4223-81c6-4917a5fb12a3': 'manufacturing_baseline',
-  'bdb9d46e-9fac-4d00-8478-1f649e7ac600': 'national_service',
-  'c2bc4994-1c4a-4094-a763-8d9d560b759e': 'practical_mechanical',
-  '243275ec-9bb5-43ce-9f02-1111b2ca66e0': 'practical_electrical',
-  'a6000077-095d-4115-bc4e-5936fce953e9': 'practical_quality',
-  '928f81fc-35ea-40ac-83cb-7c3a0c1c18dc': 'practical_logistics'
-};
+  useEffect(() => {
+    if (!session?.user) return;
+    fetchDashboardData();
+  }, [session]);
 
-// ============================================================
-// ASSESSMENT TITLE MAP - Deterministic fallback for known IDs
-// ============================================================
-const ASSESSMENT_TITLE_MAP = {
-  '17003efb-923f-49a5-bdeb-e4996c864a87': 'General Assessment',
-  'd09953bf-59cd-40ed-a9bb-308c3b5cfb7d': 'Leadership Assessment',
-  '42c1cb06-4574-4d31-8463-0147ff2a0737': 'Cognitive Ability Assessment',
-  'b9a372a1-28b4-440f-bf9a-bfb9211395aa': 'Technical Competence Assessment',
-  '24cd4e02-e43d-4228-beec-513886035c7f': 'Personality Assessment',
-  'ab4bb0b3-011e-4d37-9c08-60c60b15e88f': 'Performance Assessment',
-  '671bf00f-46cc-46f5-a217-d5a90dafb9b6': 'Behavioral & Soft Skills Assessment',
-  '192996c5-2ff4-4767-80c9-4af03aaf1b7e': 'Manufacturing Technical Skills Assessment',
-  '9f138960-671d-4edd-8044-c7d0a95cbbe9': 'Cultural & Attitudinal Fit Assessment',
-  '49980cc1-eb63-432b-895c-951722cfcc24': 'Strategic Leadership Assessment',
-  '232f7ff8-60b8-4223-81c6-4917a5fb12a3': 'Manufacturing Baseline Assessment',
-  'bdb9d46e-9fac-4d00-8478-1f649e7ac600': 'National Service Recruitment Assessment',
-  'c2bc4994-1c4a-4094-a763-8d9d560b759e': 'Mechanical Technical Assessment',
-  '243275ec-9bb5-43ce-9f02-1111b2ca66e0': 'Electrical Technical Assessment',
-  'a6000077-095d-4115-bc4e-5936fce953e9': 'Quality Assurance Assessment',
-  '928f81fc-35ea-40ac-83cb-7c3a0c1c18dc': 'Logistics & Supply Chain Assessment'
-};
+  async function fetchDashboardData() {
+    try {
+      setLoading(true);
+      setError(null);
 
-// ============================================================
-// PRACTICAL ASSESSMENT DEFAULTS
-// ============================================================
-const PRACTICAL_DEFAULTS = {
-  questionCount: 40,
-  timeLimitMinutes: 90,
-  attemptsAllowed: 1
-};
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
 
-export default async function handler(req, res) {
-  if (req.method !== 'GET') {
-    return res.status(405).json({ success: false, error: 'Method not allowed' });
+      if (!token) {
+        setError("Not authenticated");
+        setLoading(false);
+        return;
+      }
+
+      const response = await fetch('/api/candidate/dashboard', {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Failed to load dashboard');
+      }
+
+      setUserName(data.candidateName || "Candidate");
+      setAssessments(data.assessmentCards || []);
+      setStats(data.stats || { total: 0, completed: 0, ready: 0, inProgress: 0, blocked: 0 });
+      
+      if (data.assessmentCards && data.assessmentCards.length > 0) {
+        setSelectedAssessment(data.assessmentCards[0]);
+      }
+      
+      setLoading(false);
+
+    } catch (err) {
+      console.error('Error:', err);
+      setError(err.message || 'Failed to load dashboard');
+      setLoading(false);
+    }
   }
 
-  try {
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  function handleStartAssessment(assessmentId) {
+    router.push(`/assessment/${assessmentId}`);
+  }
 
-    if (!supabaseUrl || !serviceRoleKey) {
-      console.error('[API] Missing environment variables');
-      return res.status(500).json({
-        success: false,
-        error: 'Server configuration error'
-      });
-    }
+  async function handleSignOut() {
+    await supabase.auth.signOut();
+    router.push("/login");
+  }
 
-    const token = req.headers.authorization?.replace('Bearer ', '');
-    if (!token) {
-      return res.status(401).json({ success: false, error: 'Unauthorized' });
-    }
+  function handleSelectAssessment(assessment) {
+    setSelectedAssessment(assessment);
+  }
 
-    const serviceClient = createClient(supabaseUrl, serviceRoleKey, {
-      auth: { persistSession: false }
-    });
+  // ============================================================
+  // EXPIRATION COUNTDOWN HELPERS
+  // ============================================================
+  const getDaysRemaining = (expiresAt) => {
+    if (!expiresAt) return null;
+    const now = new Date();
+    const expiry = new Date(expiresAt);
+    const diffTime = expiry - now;
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return diffDays;
+  };
 
-    const { data: userData, error: userError } = await serviceClient.auth.getUser(token);
-    if (userError || !userData?.user) {
-      console.error('[API] Auth error:', userError);
-      return res.status(401).json({ success: false, error: 'Invalid token' });
-    }
-
-    const userId = userData.user.id;
-
-    // STEP 1: Get candidate profile
-    const { data: profile } = await serviceClient
-      .from('candidate_profiles')
-      .select('full_name')
-      .eq('id', userId)
-      .maybeSingle();
-
-    const candidateName = profile?.full_name || userData.user.user_metadata?.full_name || 'Candidate';
-
-    // STEP 2: Get candidate assessments
-    let { data: candidateAssessments, error: caError } = await serviceClient
-      .from('candidate_assessments')
-      .select('*')
-      .eq('user_id', userId);
-
-    if (caError) {
-      console.error('[API] Candidate assessments error:', caError);
-      return res.status(500).json({
-        success: false,
-        error: 'Failed to load assessments',
-        details: caError.message
-      });
-    }
-
-    // Ensure practical assessments exist
-    const existingAssessmentIds = new Set((candidateAssessments || []).map(ca => ca.assessment_id));
-    const missingPracticalIds = PRACTICAL_ASSESSMENT_IDS.filter(id => !existingAssessmentIds.has(id));
-
-    if (missingPracticalIds.length > 0) {
-      console.log('[API] Adding missing practical assessments for user:', userId);
-      
-      const { data: assessmentsData } = await serviceClient
-        .from('assessments')
-        .select('id, assessment_type_id')
-        .in('id', missingPracticalIds);
-
-      const assessmentTypeMap = {};
-      (assessmentsData || []).forEach(a => {
-        assessmentTypeMap[a.id] = a.assessment_type_id;
-      });
-
-      const insertData = missingPracticalIds.map(assessmentId => ({
-        user_id: userId,
-        assessment_id: assessmentId,
-        assessment_type_id: assessmentTypeMap[assessmentId] || null,
-        status: 'blocked',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      }));
-
-      if (insertData.length > 0) {
-        const { error: insertError } = await serviceClient
-          .from('candidate_assessments')
-          .insert(insertData);
-
-        if (insertError) {
-          console.error('[API] Error inserting practical assessments:', insertError);
-        } else {
-          const { data: refreshedData } = await serviceClient
-            .from('candidate_assessments')
-            .select('*')
-            .eq('user_id', userId);
-          
-          candidateAssessments = refreshedData || [];
-        }
-      }
-    }
-
-    if (!candidateAssessments || candidateAssessments.length === 0) {
-      return res.status(200).json({
-        success: true,
-        candidateName,
-        assessmentTypes: [],
-        assessmentCards: [],
-        stats: { total: 0, completed: 0, ready: 0, inProgress: 0, blocked: 0 }
-      });
-    }
-
-    // STEP 3: Get assessment details
-    const assessmentIds = candidateAssessments.map(ca => ca.assessment_id).filter(Boolean);
+  const getExpirationStatus = (expiresAt) => {
+    if (!expiresAt) return { status: 'no_expiry', label: '', color: '', days: null };
     
-    let assessmentDataMap = {};
+    const now = new Date();
+    const expiry = new Date(expiresAt);
+    const diffTime = expiry - now;
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
     
-    if (assessmentIds.length > 0) {
-      const { data: assessments, error: aError } = await serviceClient
-        .from('assessments')
-        .select('id, title, description, question_count, time_limit_minutes, attempts_allowed, assessment_type_id, expires_at')
-        .in('id', assessmentIds);
-
-      if (!aError && assessments) {
-        assessments.forEach(a => {
-          assessmentDataMap[a.id] = a;
-        });
-      } else if (aError) {
-        console.error('[API] Error fetching assessments:', aError);
-      }
+    if (diffDays < 0) {
+      return { status: 'expired', label: 'EXPIRED', color: '#dc2626', days: diffDays };
+    } else if (diffDays === 0) {
+      return { status: 'today', label: 'Expires Today', color: '#f59e0b', days: 0 };
+    } else if (diffDays <= 7) {
+      return { status: 'soon', label: `${diffDays} days remaining`, color: '#f59e0b', days: diffDays };
+    } else {
+      return { status: 'ok', label: `${diffDays} days remaining`, color: '#16a34a', days: diffDays };
     }
+  };
 
-    // Log missing assessment IDs for debugging
-    const missingAssessmentIds = assessmentIds.filter(
-      assessmentId => !assessmentDataMap[assessmentId]
-    );
+  // ============================================================
+  // Helper functions for display values
+  // ============================================================
+  const isNationalServiceAssessment = (assessment) => {
+    return assessment?.isNationalService || assessment?.typeCode === 'national_service';
+  };
 
-    if (missingAssessmentIds.length > 0) {
-      console.warn('[Candidate Dashboard API] Assessment IDs not found:', missingAssessmentIds);
+  const isPracticalAssessment = (assessment) => {
+    return assessment?.typeCode && assessment.typeCode.startsWith('practical_');
+  };
+
+  const getDisplayQuestionCount = (assessment) => {
+    if (isNationalServiceAssessment(assessment)) {
+      return assessment.questionCount || 80;
     }
-
-    // STEP 4: Get assessment types
-    let typeMap = {};
-    const typeIds = Object.values(assessmentDataMap).map(a => a.assessment_type_id).filter(Boolean);
-    
-    if (typeIds.length > 0) {
-      const { data: types, error: tError } = await serviceClient
-        .from('assessment_types')
-        .select('id, code, name')
-        .in('id', typeIds);
-
-      if (!tError && types) {
-        types.forEach(t => {
-          typeMap[t.id] = t;
-        });
-      }
+    if (isPracticalAssessment(assessment)) {
+      return assessment.questionCount || 40;
     }
+    return assessment.questionCount || 100;
+  };
 
-    // STEP 5: Build cards with FIXED title resolution
-    const cards = candidateAssessments.map(ca => {
-      const assessmentData = assessmentDataMap[ca.assessment_id] || {};
-      const type = typeMap[assessmentData.assessment_type_id] || {};
-      
-      const typeCode = ASSESSMENT_TYPE_CODE_MAP[ca.assessment_id] || type.code || 'general';
-      
-      // ============================================================
-      // FIXED: Title resolution in correct order
-      // 1. Database title (trimmed)
-      // 2. UUID title map (fallback)
-      // 3. Type name
-      // 4. 'Assessment' (final fallback)
-      // ============================================================
-      const databaseTitle = typeof assessmentData?.title === 'string'
-        ? assessmentData.title.trim()
-        : '';
-      
-      const mappedTitle = ASSESSMENT_TITLE_MAP[ca.assessment_id] || '';
-      
-      const resolvedTypeName = typeof type?.name === 'string'
-        ? type.name.trim()
-        : '';
-      
-      const title = databaseTitle || mappedTitle || resolvedTypeName || 'Assessment';
+  const getDisplayTimeLimitMinutes = (assessment) => {
+    if (isNationalServiceAssessment(assessment)) {
+      return assessment.timeLimitMinutes || 90;
+    }
+    if (isPracticalAssessment(assessment)) {
+      return assessment.timeLimitMinutes || 90;
+    }
+    return assessment.timeLimitMinutes || 120;
+  };
 
-      let status = ca.status || 'blocked';
-      if (ca.status === 'completed' || ca.result_id) {
-        status = 'completed';
-      }
-
-      const isNationalService = typeCode === 'national_service' || ca.assessment_id === NATIONAL_SERVICE_ASSESSMENT_ID;
-      const isPractical = typeCode && typeCode.startsWith('practical_');
-      
-      let questionCount;
-      let timeLimitMinutes;
-      let attemptsAllowed;
-      
-      if (isNationalService) {
-        questionCount = 80;
-        timeLimitMinutes = 90;
-        attemptsAllowed = 1;
-      } else if (isPractical) {
-        questionCount = assessmentData.question_count || PRACTICAL_DEFAULTS.questionCount;
-        timeLimitMinutes = assessmentData.time_limit_minutes || PRACTICAL_DEFAULTS.timeLimitMinutes;
-        attemptsAllowed = assessmentData.attempts_allowed || PRACTICAL_DEFAULTS.attemptsAllowed;
-      } else {
-        questionCount = assessmentData.question_count || 100;
-        timeLimitMinutes = assessmentData.time_limit_minutes || 120;
-        attemptsAllowed = assessmentData.attempts_allowed || 1;
-      }
-
-      // FIXED: Type name resolution
-      const fallbackTypeName = typeCode
-        .replace(/^practical_/, '')
-        .replace(/_/g, ' ')
-        .replace(/\b\w/g, char => char.toUpperCase());
-      
-      const typeName = resolvedTypeName || mappedTitle || fallbackTypeName;
-
-      return {
-        id: ca.assessment_id,
-        title: title,
-        description: assessmentData.description || 'Complete this assessment to demonstrate your capabilities.',
-        typeCode: typeCode,
-        typeName: typeName,
-        status: status,
-        questionCount: questionCount,
-        timeLimitMinutes: timeLimitMinutes,
-        attemptsAllowed: attemptsAllowed,
-        isNationalService: isNationalService,
-        expires_at: assessmentData.expires_at || null,
-        completedAt: ca.completed_at || null,
-        unblockedAt: ca.unblocked_at || null,
-        resultId: ca.result_id || null
-      };
-    });
-
-    // Sort cards
-    const sortOrder = { 'unblocked': 0, 'in_progress': 1, 'blocked': 2, 'completed': 3 };
-    cards.sort((a, b) => {
-      const orderA = sortOrder[a.status] !== undefined ? sortOrder[a.status] : 99;
-      const orderB = sortOrder[b.status] !== undefined ? sortOrder[b.status] : 99;
-      return orderA - orderB;
-    });
-
-    const stats = {
-      total: cards.length,
-      completed: cards.filter(c => c.status === 'completed').length,
-      ready: cards.filter(c => c.status === 'unblocked').length,
-      inProgress: cards.filter(c => c.status === 'in_progress').length,
-      blocked: cards.filter(c => c.status === 'blocked').length
+  // ============================================================
+  // ASSESSMENT-SPECIFIC CATEGORY MAPPINGS
+  // ============================================================
+  const getAssessmentAreas = (typeCode, title) => {
+    const areasByType = {
+      national_service: [
+        "Workplace Readiness",
+        "Intellectual Capability",
+        "Safety & Risk Awareness",
+        "Problem Solving",
+        "Technical Fundamentals",
+        "Communication",
+        "Teamwork",
+        "Professional Conduct"
+      ],
+      cognitive: [
+        "Logical / Abstract Reasoning",
+        "Mechanical Reasoning",
+        "Memory & Attention",
+        "Numerical Reasoning",
+        "Perceptual Speed & Accuracy",
+        "Spatial Reasoning",
+        "Verbal Reasoning"
+      ],
+      leadership: [
+        "Change Leadership & Agility",
+        "Communication & Influence",
+        "Cultural Alignment",
+        "Decision-Making & Problem-Solving",
+        "Execution & Results Orientation",
+        "People Management & Coaching",
+        "Resilience & Stress Management",
+        "Role Readiness",
+        "Vision & Strategic Thinking"
+      ],
+      technical: [
+        "CIP & Maintenance",
+        "Conveyors & Line Efficiency",
+        "Filling & Bottling",
+        "Packaging & Labeling",
+        "Safety & Efficiency",
+        "Water Treatment & Quality"
+      ],
+      performance: [
+        "Employee Engagement and Behavior",
+        "Financial and Operational Performance",
+        "Goal Achievement and Strategic Alignment",
+        "Productivity and Efficiency",
+        "Work Quality and Effectiveness"
+      ],
+      cultural: [
+        "Attitude",
+        "Core Values",
+        "Environmental Fit",
+        "Interpersonal",
+        "Leadership",
+        "Work Style"
+      ],
+      personality: [
+        "Ownership",
+        "Collaboration",
+        "Action",
+        "Analysis",
+        "Risk Tolerance",
+        "Structure"
+      ],
+      strategic_leadership: [
+        "Vision / Strategy",
+        "People Leadership",
+        "Decision Making",
+        "Accountability",
+        "Emotional Intelligence",
+        "Execution Drive",
+        "Ethics"
+      ],
+      behavioral: [
+        "Adaptability",
+        "Clinical",
+        "Collaboration",
+        "Communication Style",
+        "Decision-Making",
+        "FBA",
+        "Leadership"
+      ],
+      manufacturing_baseline: [
+        "Technical Fundamentals",
+        "Troubleshooting",
+        "Numerical Aptitude",
+        "Safety & Work Ethic"
+      ],
+      manufacturing_technical: [
+        "CIP & Maintenance",
+        "Conveyors & Line Efficiency",
+        "Filling & Bottling",
+        "Packaging & Labeling",
+        "Safety & Efficiency",
+        "Water Treatment & Quality"
+      ],
+      practical_mechanical: [
+        "Hydraulics & Pneumatics",
+        "Mechanical Maintenance",
+        "Pumps & Compressors",
+        "Welding & Fabrication",
+        "Mechanical Troubleshooting",
+        "Preventive Maintenance",
+        "Piping Systems",
+        "Rotating Equipment"
+      ],
+      practical_electrical: [
+        "PLC Programming",
+        "Motor Controls",
+        "Sensors & Instrumentation",
+        "Electrical Troubleshooting",
+        "VFD & Soft Starters",
+        "Control Circuits",
+        "Power Distribution",
+        "Electrical Safety"
+      ],
+      practical_logistics: [
+        "Inventory Management",
+        "Warehousing Operations",
+        "Transportation Logistics",
+        "Procurement",
+        "Supply Chain Optimization",
+        "Material Handling",
+        "Distribution Planning",
+        "Supply Chain Analytics"
+      ],
+      practical_quality: [
+        "Quality Control",
+        "Process Capability",
+        "Inspection Techniques",
+        "Statistical Process Control",
+        "Continuous Improvement",
+        "Root Cause Analysis",
+        "Quality Management Systems",
+        "Measurement Systems Analysis"
+      ],
+      general: [
+        "Cognitive Ability",
+        "Communication",
+        "Cultural & Attitudinal Fit",
+        "Emotional Intelligence",
+        "Ethics & Integrity",
+        "Leadership & Management",
+        "Performance Metrics",
+        "Personality & Behavioral",
+        "Problem-Solving",
+        "Technical & Manufacturing"
+      ]
     };
 
-    return res.status(200).json({
-      success: true,
-      candidateName,
-      assessmentCards: cards,
-      stats
-    });
+    if (typeCode && areasByType[typeCode]) {
+      return areasByType[typeCode];
+    }
 
-  } catch (error) {
-    console.error('[API] Error:', error);
-    return res.status(500).json({
-      success: false,
-      error: error.message || 'Internal server error',
-      stack: process.env.NEXT_PUBLIC_ENV === 'development' ? error.stack : undefined
-    });
+    const titleLower = (title || '').toLowerCase();
+    if (titleLower.includes('national service')) return areasByType.national_service;
+    if (titleLower.includes('cognitive')) return areasByType.cognitive;
+    if (titleLower.includes('leadership')) return areasByType.leadership;
+    if (titleLower.includes('technical') && !titleLower.includes('practical')) return areasByType.technical;
+    if (titleLower.includes('performance')) return areasByType.performance;
+    if (titleLower.includes('cultural')) return areasByType.cultural;
+    if (titleLower.includes('personality')) return areasByType.personality;
+    if (titleLower.includes('strategic')) return areasByType.strategic_leadership;
+    if (titleLower.includes('behavioral')) return areasByType.behavioral;
+    if (titleLower.includes('manufacturing baseline')) return areasByType.manufacturing_baseline;
+    if (titleLower.includes('mechanical') || titleLower.includes('practical_mechanical')) 
+      return areasByType.practical_mechanical;
+    if (titleLower.includes('electrical') || titleLower.includes('practical_electrical')) 
+      return areasByType.practical_electrical;
+    if (titleLower.includes('logistics') || titleLower.includes('practical_logistics')) 
+      return areasByType.practical_logistics;
+    if (titleLower.includes('quality') || titleLower.includes('practical_quality')) 
+      return areasByType.practical_quality;
+
+    return areasByType.general;
+  };
+
+  // ============================================================
+  // FIXED: getShortName - Returns cleaned title without generic fallback
+  // ============================================================
+  const getShortName = (title, isNationalService) => {
+    // National Service gets a special label
+    if (isNationalService) return 'National Service';
+    
+    // If title is missing, return a fallback
+    if (!title) return 'Assessment';
+    
+    const originalTitle = typeof title === 'string' ? title.trim() : '';
+    
+    if (!originalTitle) return 'Assessment';
+    
+    // Remove common suffixes for cleaner display
+    const suffixes = [
+      ' Recruitment Assessment',
+      ' Technical Assessment',
+      ' Competence Assessment',
+      ' Assessment'
+    ];
+    
+    let shortName = originalTitle;
+    for (const suffix of suffixes) {
+      if (shortName.endsWith(suffix)) {
+        shortName = shortName.slice(0, -suffix.length).trim();
+        break;
+      }
+    }
+    
+    return shortName || originalTitle;
+  };
+
+  const getAssessmentColor = (typeCode) => {
+    const colors = {
+      general: { 
+        gradient: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)', 
+        border: '#6366f1', 
+        light: 'rgba(99, 102, 241, 0.08)',
+        hover: 'rgba(99, 102, 241, 0.15)',
+        glow: 'rgba(99, 102, 241, 0.25)'
+      },
+      leadership: { 
+        gradient: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)', 
+        border: '#8b5cf6', 
+        light: 'rgba(139, 92, 246, 0.08)',
+        hover: 'rgba(139, 92, 246, 0.15)',
+        glow: 'rgba(139, 92, 246, 0.25)'
+      },
+      cognitive: { 
+        gradient: 'linear-gradient(135deg, #06b6d4 0%, #0891b2 100%)', 
+        border: '#06b6d4', 
+        light: 'rgba(6, 182, 212, 0.08)',
+        hover: 'rgba(6, 182, 212, 0.15)',
+        glow: 'rgba(6, 182, 212, 0.25)'
+      },
+      cultural: { 
+        gradient: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', 
+        border: '#10b981', 
+        light: 'rgba(16, 185, 129, 0.08)',
+        hover: 'rgba(16, 185, 129, 0.15)',
+        glow: 'rgba(16, 185, 129, 0.25)'
+      },
+      personality: { 
+        gradient: 'linear-gradient(135deg, #14b8a6 0%, #0d9488 100%)', 
+        border: '#14b8a6', 
+        light: 'rgba(20, 184, 166, 0.08)',
+        hover: 'rgba(20, 184, 166, 0.15)',
+        glow: 'rgba(20, 184, 166, 0.25)'
+      },
+      strategic_leadership: { 
+        gradient: 'linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%)', 
+        border: '#1e40af', 
+        light: 'rgba(30, 64, 175, 0.08)',
+        hover: 'rgba(30, 64, 175, 0.15)',
+        glow: 'rgba(30, 64, 175, 0.25)'
+      },
+      performance: { 
+        gradient: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)', 
+        border: '#f59e0b', 
+        light: 'rgba(245, 158, 11, 0.08)',
+        hover: 'rgba(245, 158, 11, 0.15)',
+        glow: 'rgba(245, 158, 11, 0.25)'
+      },
+      technical: { 
+        gradient: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)', 
+        border: '#ef4444', 
+        light: 'rgba(239, 68, 68, 0.08)',
+        hover: 'rgba(239, 68, 68, 0.15)',
+        glow: 'rgba(239, 68, 68, 0.25)'
+      },
+      behavioral: { 
+        gradient: 'linear-gradient(135deg, #a855f7 0%, #9333ea 100%)', 
+        border: '#a855f7', 
+        light: 'rgba(168, 85, 247, 0.08)',
+        hover: 'rgba(168, 85, 247, 0.15)',
+        glow: 'rgba(168, 85, 247, 0.25)'
+      },
+      manufacturing_baseline: { 
+        gradient: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)', 
+        border: '#22c55e', 
+        light: 'rgba(34, 197, 94, 0.08)',
+        hover: 'rgba(34, 197, 94, 0.15)',
+        glow: 'rgba(34, 197, 94, 0.25)'
+      },
+      manufacturing_technical: { 
+        gradient: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)', 
+        border: '#ef4444', 
+        light: 'rgba(239, 68, 68, 0.08)',
+        hover: 'rgba(239, 68, 68, 0.15)',
+        glow: 'rgba(239, 68, 68, 0.25)'
+      },
+      national_service: { 
+        gradient: 'linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%)', 
+        border: '#1d4ed8', 
+        light: 'rgba(29, 78, 216, 0.08)',
+        hover: 'rgba(29, 78, 216, 0.15)',
+        glow: 'rgba(29, 78, 216, 0.25)'
+      },
+      practical_mechanical: { 
+        gradient: 'linear-gradient(135deg, #1a237e 0%, #0d47a1 100%)', 
+        border: '#1a237e', 
+        light: 'rgba(26, 35, 126, 0.08)',
+        hover: 'rgba(26, 35, 126, 0.15)',
+        glow: 'rgba(26, 35, 126, 0.25)'
+      },
+      practical_electrical: { 
+        gradient: 'linear-gradient(135deg, #b71c1c 0%, #880e4f 100%)', 
+        border: '#b71c1c', 
+        light: 'rgba(183, 28, 28, 0.08)',
+        hover: 'rgba(183, 28, 28, 0.15)',
+        glow: 'rgba(183, 28, 28, 0.25)'
+      },
+      practical_logistics: { 
+        gradient: 'linear-gradient(135deg, #e65100 0%, #bf360c 100%)', 
+        border: '#e65100', 
+        light: 'rgba(230, 81, 0, 0.08)',
+        hover: 'rgba(230, 81, 0, 0.15)',
+        glow: 'rgba(230, 81, 0, 0.25)'
+      },
+      practical_quality: { 
+        gradient: 'linear-gradient(135deg, #1b5e20 0%, #004d40 100%)', 
+        border: '#1b5e20', 
+        light: 'rgba(27, 94, 32, 0.08)',
+        hover: 'rgba(27, 94, 32, 0.15)',
+        glow: 'rgba(27, 94, 32, 0.25)'
+      }
+    };
+    return colors[typeCode] || colors.general;
+  };
+
+  if (authLoading || loading) {
+    return (
+      <div style={styles.loadingContainer}>
+        <div style={styles.loadingBackground} />
+        <div style={styles.loadingContent}>
+          <div style={styles.loadingLogo}>Stratavax</div>
+          <div style={styles.loadingSpinner} />
+          <div style={styles.loadingText}>Loading your dashboard...</div>
+        </div>
+      </div>
+    );
   }
+
+  if (!session) return null;
+
+  const getStatusInfo = (status) => {
+    switch(status) {
+      case 'unblocked': 
+        return { bg: 'rgba(34, 197, 94, 0.15)', color: '#16a34a', label: 'Ready to Start' };
+      case 'in_progress': 
+        return { bg: 'rgba(251, 191, 36, 0.15)', color: '#d97706', label: 'In Progress' };
+      case 'completed': 
+        return { bg: 'rgba(59, 130, 246, 0.15)', color: '#2563eb', label: 'Completed' };
+      default: 
+        return { bg: 'rgba(148, 163, 184, 0.15)', color: '#64748b', label: 'Blocked' };
+    }
+  };
+
+  return (
+    <div style={styles.pageContainer}>
+      <div style={styles.pageBackground} />
+      
+      <div style={styles.content}>
+        {/* Header */}
+        <header style={styles.header}>
+          <div style={styles.headerContent}>
+            <div style={styles.headerLeft}>
+              <div style={styles.logoWrapper}>
+                <Image 
+                  src="/images/stratavax-logo.png" 
+                  alt="Stratavax" 
+                  width={40} 
+                  height={40}
+                  priority
+                />
+                <span style={styles.headerTitle}>STRATAVAX</span>
+              </div>
+              <span style={styles.headerDivider}>|</span>
+              <span style={styles.headerSubtitle}>Assessment Portal</span>
+            </div>
+            <div style={styles.headerRight}>
+              <Link href="/candidate/profile" style={styles.profileButton}>
+                <span style={styles.profileAvatar}>{userName.charAt(0).toUpperCase()}</span>
+                <span>{userName}</span>
+              </Link>
+              <button onClick={handleSignOut} style={styles.logoutButton}>Sign Out</button>
+            </div>
+          </div>
+        </header>
+
+        {/* Welcome Banner */}
+        <div style={styles.welcomeSection}>
+          <div style={styles.welcomeContent}>
+            <div>
+              <h2 style={styles.welcomeTitle}>
+                Welcome back, <span style={styles.welcomeName}>{userName}</span>
+              </h2>
+              <p style={styles.welcomeText}>
+                {stats.ready + stats.inProgress > 0
+                  ? `You have ${stats.ready + stats.inProgress} assessment(s) ready or in progress.`
+                  : "All assessments are currently blocked. Contact your supervisor to unlock assessments."}
+              </p>
+            </div>
+            <div style={styles.progressBadge}>
+              <span style={styles.progressCount}>{stats.completed}</span>
+              <span style={styles.progressTotal}>/{stats.total}</span>
+              <span style={styles.progressLabel}>Completed</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Stats Cards */}
+        <div style={styles.statsBar}>
+          <div style={styles.statsGrid}>
+            <div style={{ ...styles.statCard, background: '#16a34a', borderColor: '#16a34a' }}>
+              <div style={{ ...styles.statIcon, color: '#ffffff' }}>✔</div>
+              <div>
+                <div style={styles.statNumber}>{stats.completed}</div>
+                <div style={styles.statLabel}>Completed</div>
+              </div>
+            </div>
+            <div style={{ ...styles.statCard, background: '#2563eb', borderColor: '#2563eb' }}>
+              <div style={{ ...styles.statIcon, color: '#ffffff' }}>▢</div>
+              <div>
+                <div style={styles.statNumber}>{stats.ready}</div>
+                <div style={styles.statLabel}>Ready</div>
+              </div>
+            </div>
+            <div style={{ ...styles.statCard, background: '#d97706', borderColor: '#d97706' }}>
+              <div style={{ ...styles.statIcon, color: '#ffffff' }}>◉</div>
+              <div>
+                <div style={styles.statNumber}>{stats.inProgress}</div>
+                <div style={styles.statLabel}>In Progress</div>
+              </div>
+            </div>
+            <div style={{ ...styles.statCard, background: '#64748b', borderColor: '#64748b' }}>
+              <div style={{ ...styles.statIcon, color: '#ffffff' }}>●</div>
+              <div>
+                <div style={styles.statNumber}>{stats.blocked}</div>
+                <div style={styles.statLabel}>Blocked</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Main Content */}
+        <div style={styles.mainContent}>
+          {error && (
+            <div style={styles.errorBox}>
+              {error}
+              <button onClick={fetchDashboardData} style={styles.retryButton}>Retry</button>
+            </div>
+          )}
+
+          {/* Compact Assessment Cards */}
+          <div style={styles.section}>
+            <div style={styles.sectionHeader}>
+              <div>
+                <h3 style={styles.sectionTitle}>Your Assessments</h3>
+                <p style={styles.sectionSubtitle}>Select an assessment to view details</p>
+              </div>
+              <span style={styles.sectionCount}>{assessments.length} available</span>
+            </div>
+            
+            {assessments.length === 0 ? (
+              <div style={styles.emptyState}>
+                <p style={styles.emptyTitle}>No assessments available</p>
+                <p style={styles.emptySub}>Contact your supervisor to get assessments assigned to you.</p>
+              </div>
+            ) : (
+              <>
+                <div style={styles.compactGrid}>
+                  {assessments.map((assessment) => {
+                    const colors = getAssessmentColor(assessment.typeCode);
+                    const isSelected = selectedAssessment?.id === assessment.id;
+                    const isNationalService = assessment.isNationalService || assessment.typeCode === 'national_service';
+                    const displayName = getShortName(assessment.title, isNationalService);
+                    
+                    const expiryStatus = getExpirationStatus(assessment.expires_at);
+                    const isExpired = expiryStatus.status === 'expired';
+
+                    return (
+                      <div 
+                        key={assessment.id} 
+                        style={{
+                          ...styles.compactCard,
+                          background: isSelected ? colors.light : 'white',
+                          border: isSelected ? `2px solid ${colors.border}` : '1px solid rgba(226, 232, 240, 0.6)',
+                          boxShadow: isSelected 
+                            ? `0 8px 32px ${colors.glow}` 
+                            : '0 2px 8px rgba(0,0,0,0.04)',
+                          transform: isSelected ? 'translateY(-2px)' : 'translateY(0)',
+                          transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                          opacity: isExpired ? 0.5 : 1
+                        }}
+                        onClick={() => !isExpired && handleSelectAssessment(assessment)}
+                        onMouseEnter={(e) => {
+                          if (!isSelected && !isExpired) {
+                            e.currentTarget.style.transform = 'translateY(-2px)';
+                            e.currentTarget.style.boxShadow = '0 8px 25px rgba(0,0,0,0.08)';
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          if (!isSelected) {
+                            e.currentTarget.style.transform = 'translateY(0)';
+                            e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.04)';
+                          }
+                        }}
+                      >
+                        <div style={{ ...styles.compactGradient, background: colors.gradient }} />
+                        <div style={styles.compactContent}>
+                          <div style={styles.compactLeft}>
+                            <span style={styles.compactIcon}>{isNationalService ? 'NS' : 'AS'}</span>
+                            <span style={{ 
+                              ...styles.compactName, 
+                              color: isSelected ? colors.border : '#0a1929',
+                              fontWeight: isSelected ? '600' : '500',
+                              textDecoration: isExpired ? 'line-through' : 'none'
+                            }}>{displayName}</span>
+                            {isExpired && (
+                              <span style={styles.expiredTag}>EXPIRED</span>
+                            )}
+                          </div>
+                          <div style={styles.compactRight}>
+                            {isNationalService && (
+                              <span style={styles.compactNsTag}>NS</span>
+                            )}
+                            {assessment.expires_at && expiryStatus.status !== 'expired' && expiryStatus.status !== 'no_expiry' && (
+                              <span style={{
+                                ...styles.compactExpiry,
+                                color: expiryStatus.status === 'soon' ? '#f59e0b' : '#64748b'
+                              }}>
+                                {expiryStatus.days}d
+                              </span>
+                            )}
+                            <span style={{ 
+                              ...styles.compactArrow, 
+                              color: isSelected ? colors.border : '#94a3b8',
+                              transform: isSelected ? 'rotate(180deg)' : 'rotate(0)'
+                            }}>▾</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {selectedAssessment && (
+                  <div style={styles.detailSection}>
+                    <div style={styles.detailHeader}>
+                      <div style={styles.detailHeaderLeft}>
+                        <h3 style={styles.detailTitle}>{selectedAssessment.title}</h3>
+                        <span style={styles.detailType}>{selectedAssessment.typeName}</span>
+                      </div>
+                      <div style={styles.detailActions}>
+                        {selectedAssessment.status === 'unblocked' || selectedAssessment.status === 'in_progress' ? (
+                          <button
+                            onClick={() => handleStartAssessment(selectedAssessment.id)}
+                            style={styles.detailStartButton}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.transform = 'translateY(-2px)';
+                              e.currentTarget.style.boxShadow = '0 8px 25px rgba(26, 35, 126, 0.25)';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.transform = 'translateY(0)';
+                              e.currentTarget.style.boxShadow = '0 4px 12px rgba(26, 35, 126, 0.2)';
+                            }}
+                          >
+                            {selectedAssessment.status === 'in_progress' ? 'Continue Assessment' : 'Start Assessment'}
+                          </button>
+                        ) : selectedAssessment.status === 'completed' ? (
+                          <span style={styles.detailCompleted}>Completed</span>
+                        ) : (
+                          <span style={styles.detailBlocked}>
+                            {selectedAssessment.isNationalService ? 'Contact support' : 'Contact supervisor to unlock'}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div style={styles.detailStatusRow}>
+                      {(() => {
+                        const status = getStatusInfo(selectedAssessment.status);
+                        return (
+                          <span style={{ ...styles.detailStatusBadge, background: status.bg, color: status.color }}>
+                            {status.label}
+                          </span>
+                        );
+                      })()}
+                      {selectedAssessment.isNationalService && (
+                        <span style={styles.detailNsBadge}>National Service (Always Available)</span>
+                      )}
+                      
+                      {selectedAssessment.expires_at && (() => {
+                        const expiryStatus = getExpirationStatus(selectedAssessment.expires_at);
+                        if (expiryStatus.status === 'expired') {
+                          return (
+                            <span style={styles.detailExpiredBadge}>EXPIRED - Assessment No Longer Available</span>
+                          );
+                        } else if (expiryStatus.status !== 'no_expiry') {
+                          const isUrgent = expiryStatus.status === 'soon' || expiryStatus.status === 'today';
+                          return (
+                            <span style={{
+                              ...styles.detailExpiryBadge,
+                              background: isUrgent ? 'rgba(220, 38, 38, 0.12)' : 'rgba(22, 163, 74, 0.12)',
+                              color: isUrgent ? '#dc2626' : '#16a34a',
+                              border: isUrgent ? '1px solid #dc2626' : '1px solid #16a34a',
+                              padding: '6px 16px',
+                              borderRadius: '8px',
+                              fontSize: '13px',
+                              fontWeight: '700',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '8px'
+                            }}>
+                              {expiryStatus.status === 'today' ? 'Expires Today' : `${expiryStatus.days} days remaining`}
+                              {isUrgent && (
+                                <span style={{
+                                  background: '#dc2626',
+                                  color: 'white',
+                                  padding: '2px 8px',
+                                  borderRadius: '4px',
+                                  fontSize: '10px',
+                                  fontWeight: '700'
+                                }}>
+                                  URGENT
+                                </span>
+                              )}
+                            </span>
+                          );
+                        }
+                        return null;
+                      })()}
+                    </div>
+
+                    <p style={styles.detailDescription}>{selectedAssessment.description}</p>
+
+                    {selectedAssessment.isNationalService && selectedAssessment.expires_at && (() => {
+                      const expiryStatus = getExpirationStatus(selectedAssessment.expires_at);
+                      if (expiryStatus.status !== 'expired' && expiryStatus.status !== 'no_expiry') {
+                        const isUrgent = expiryStatus.status === 'soon' || expiryStatus.status === 'today';
+                        return (
+                          <div style={{
+                            ...styles.deadlineNotice,
+                            background: isUrgent ? 'rgba(220, 38, 38, 0.08)' : 'rgba(59, 130, 246, 0.08)',
+                            border: isUrgent ? '2px solid #dc2626' : '2px solid #3b82f6',
+                            borderRadius: '12px',
+                            padding: '16px 20px',
+                            marginBottom: '16px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '12px',
+                            flexWrap: 'wrap'
+                          }}>
+                            <div style={{ fontSize: '28px', lineHeight: '1' }}>
+                              {isUrgent ? '⚠️' : '📅'}
+                            </div>
+                            <div style={{ flex: 1 }}>
+                              <div style={{
+                                fontSize: '16px',
+                                fontWeight: '700',
+                                color: isUrgent ? '#dc2626' : '#1e40af',
+                                marginBottom: '2px'
+                              }}>
+                                {isUrgent ? 'IMPORTANT: Assessment Deadline Approaching' : 'Assessment Available Until'}
+                              </div>
+                              <div style={{
+                                fontSize: '14px',
+                                color: isUrgent ? '#991b1b' : '#475569'
+                              }}>
+                                {expiryStatus.status === 'today' 
+                                  ? 'This assessment expires TODAY. Please complete it now.' 
+                                  : `You have ${expiryStatus.days} days remaining to complete this assessment.`}
+                              </div>
+                              <div style={{
+                                fontSize: '13px',
+                                color: '#64748b',
+                                marginTop: '4px'
+                              }}>
+                                Deadline: {selectedAssessment.expires_at ? new Date(selectedAssessment.expires_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : 'N/A'}
+                              </div>
+                            </div>
+                            {isUrgent && (
+                              <button
+                                onClick={() => handleStartAssessment(selectedAssessment.id)}
+                                style={{
+                                  padding: '8px 20px',
+                                  background: '#dc2626',
+                                  color: 'white',
+                                  border: 'none',
+                                  borderRadius: '8px',
+                                  fontSize: '14px',
+                                  fontWeight: '600',
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                Take Now
+                              </button>
+                            )}
+                          </div>
+                        );
+                      }
+                      return null;
+                    })()}
+
+                    {/* Assessment Areas */}
+                    <div style={styles.detailAreas}>
+                      <h4 style={styles.detailAreasTitle}>Assessment Areas</h4>
+                      <div style={styles.detailAreasGrid}>
+                        {getAssessmentAreas(selectedAssessment.typeCode, selectedAssessment.title).map((area, index) => (
+                          <div key={index} style={styles.detailAreaItem}>
+                            <span style={styles.detailAreaBullet}>•</span>
+                            <span style={styles.detailAreaText}>{area}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div style={styles.detailInfo}>
+                      <div style={styles.detailInfoItem}>
+                        <span style={styles.detailInfoLabel}>Time Limit</span>
+                        <span style={styles.detailInfoValue}>{getDisplayTimeLimitMinutes(selectedAssessment)} minutes</span>
+                      </div>
+                      <div style={styles.detailInfoItem}>
+                        <span style={styles.detailInfoLabel}>Questions</span>
+                        <span style={styles.detailInfoValue}>{getDisplayQuestionCount(selectedAssessment)}</span>
+                      </div>
+                      <div style={styles.detailInfoItem}>
+                        <span style={styles.detailInfoLabel}>Attempts</span>
+                        <span style={styles.detailInfoValue}>{selectedAssessment.attemptsAllowed === 1 ? 'Single attempt' : `${selectedAssessment.attemptsAllowed} attempts`}</span>
+                      </div>
+                      <div style={styles.detailInfoItem}>
+                        <span style={styles.detailInfoLabel}>Type</span>
+                        <span style={styles.detailInfoValue}>{selectedAssessment.typeName}</span>
+                      </div>
+                      {selectedAssessment.expires_at && (() => {
+                        const expiryStatus = getExpirationStatus(selectedAssessment.expires_at);
+                        if (expiryStatus.status !== 'no_expiry') {
+                          return (
+                            <div style={styles.detailInfoItem}>
+                              <span style={styles.detailInfoLabel}>Expires</span>
+                              <span style={{
+                                ...styles.detailInfoValue,
+                                color: expiryStatus.status === 'expired' ? '#dc2626' : 
+                                       expiryStatus.status === 'soon' ? '#d97706' : '#0a1929',
+                                fontWeight: expiryStatus.status === 'expired' || expiryStatus.status === 'soon' ? '700' : '500'
+                              }}>
+                                {expiryStatus.status === 'expired' ? 'EXPIRED' : 
+                                 expiryStatus.status === 'today' ? 'Today' : 
+                                 `${expiryStatus.days} days remaining`}
+                              </span>
+                            </div>
+                          );
+                        }
+                        return null;
+                      })()}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
+          <div style={styles.guidelinesSection}>
+            <h3 style={styles.guidelinesTitle}>Assessment Guidelines</h3>
+            <div style={styles.guidelinesGrid}>
+              <div style={styles.guidelineCard}>
+                <div style={styles.guidelineIcon}>⏱</div>
+                <div>
+                  <h4 style={styles.guidelineCardTitle}>Time Limit</h4>
+                  <p style={styles.guidelineCardText}>Assessment time limits depend on the assessment type. National Service is 90 minutes; other assessments are 120 minutes.</p>
+                </div>
+              </div>
+              <div style={styles.guidelineCard}>
+                <div style={styles.guidelineIcon}>↻</div>
+                <div>
+                  <h4 style={styles.guidelineCardTitle}>Single Attempt</h4>
+                  <p style={styles.guidelineCardText}>Each assessment can only be taken once. Results are final upon submission.</p>
+                </div>
+              </div>
+              <div style={styles.guidelineCard}>
+                <div style={styles.guidelineIcon}>◉</div>
+                <div>
+                  <h4 style={styles.guidelineCardTitle}>Supervisor Approval</h4>
+                  <p style={styles.guidelineCardText}>Most assessments require supervisor approval. National Service is always available.</p>
+                </div>
+              </div>
+              <div style={styles.guidelineCard}>
+                <div style={styles.guidelineIcon}>◈</div>
+                <div>
+                  <h4 style={styles.guidelineCardTitle}>Auto-Save</h4>
+                  <p style={styles.guidelineCardText}>Your answers are automatically saved. Resume in-progress assessments anytime.</p>
+                </div>
+              </div>
+              <div style={styles.guidelineCard}>
+                <div style={styles.guidelineIcon}>◒</div>
+                <div>
+                  <h4 style={styles.guidelineCardTitle}>Data Privacy</h4>
+                  <p style={styles.guidelineCardText}>Your assessment data is encrypted. Results are only shared with authorized supervisors.</p>
+                </div>
+              </div>
+              <div style={styles.guidelineCard}>
+                <div style={styles.guidelineIcon}>◐</div>
+                <div>
+                  <h4 style={styles.guidelineCardTitle}>Fair Assessment</h4>
+                  <p style={styles.guidelineCardText}>All candidates are assessed using the same standardized criteria.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div style={styles.infoNote}>
+            <span style={styles.infoIcon}>i</span>
+            <span>
+              <strong>Note:</strong> The <strong>National Service Assessment</strong> is always available to all candidates. 
+              Other assessments must be <strong>unblocked by your supervisor</strong> before starting. 
+              If an assessment has been reset, refresh the dashboard and it will show as ready.
+            </span>
+          </div>
+        </div>
+
+        <footer style={styles.footer}>
+          <div style={styles.footerContent}>
+            <div style={styles.footerLeft}>
+              <span style={styles.footerBrand}>Stratavax</span>
+              <span style={styles.footerDivider}>|</span>
+              <span style={styles.footerText}>Talent Assessment Platform</span>
+            </div>
+            <div style={styles.footerCenter}>
+              <span style={styles.footerText}>© {currentYear} Stratavax. All rights reserved.</span>
+            </div>
+            <div style={styles.footerRight}>
+              <Link href="/privacy" style={styles.footerLink}>Privacy Policy</Link>
+              <span style={styles.footerDot}>•</span>
+              <Link href="/terms" style={styles.footerLink}>Terms of Service</Link>
+              <span style={styles.footerDot}>•</span>
+              <Link href="/support" style={styles.footerLink}>Support</Link>
+            </div>
+          </div>
+        </footer>
+      </div>
+
+      <style jsx>{`
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(10px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
+    </div>
+  );
 }
+
+const styles = {
+  pageContainer: { position: "relative", minHeight: "100vh", width: "100%", overflow: "hidden" },
+  pageBackground: { position: "fixed", top: 0, left: 0, right: 0, bottom: 0, backgroundImage: "url(/images/dashboard1-bg.jpg)", backgroundSize: "cover", backgroundPosition: "center", zIndex: -1 },
+  content: { position: "relative", zIndex: 1, minHeight: "100vh", width: "100%", display: "flex", flexDirection: "column" },
+  
+  loadingContainer: { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", position: "relative", overflow: "hidden" },
+  loadingBackground: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundImage: "url(/images/loading-bg.jpg)", backgroundSize: "cover", backgroundPosition: "center", filter: "brightness(0.7)", zIndex: 0 },
+  loadingContent: { position: "relative", textAlign: "center", color: "white", zIndex: 1, textShadow: "2px 2px 4px rgba(0,0,0,0.5)" },
+  loadingLogo: { fontSize: "32px", fontWeight: "700", marginBottom: "20px", letterSpacing: "2px", color: "white" },
+  loadingSpinner: { width: "50px", height: "50px", border: "4px solid rgba(255,255,255,0.2)", borderTop: "4px solid white", borderRadius: "50%", animation: "spin 1s linear infinite", margin: "0 auto 20px" },
+  loadingText: { fontSize: "16px", opacity: 0.9 },
+  
+  header: { padding: "16px 32px", background: "rgba(255,255,255,0.08)", backdropFilter: "blur(20px)", borderBottom: "1px solid rgba(255,255,255,0.1)" },
+  headerContent: { maxWidth: "1280px", margin: "0 auto", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "16px", flexWrap: "wrap" },
+  headerLeft: { display: "flex", alignItems: "center", gap: "12px" },
+  logoWrapper: { display: "flex", alignItems: "center", gap: "10px" },
+  headerTitle: { fontSize: "20px", fontWeight: "700", color: "white", letterSpacing: "1px", textShadow: "0 2px 4px rgba(0,0,0,0.2)" },
+  headerDivider: { color: "rgba(255,255,255,0.4)", fontSize: "18px", fontWeight: "300" },
+  headerSubtitle: { fontSize: "15px", color: "rgba(255,255,255,0.8)", fontWeight: "400" },
+  headerRight: { display: "flex", alignItems: "center", gap: "12px" },
+  profileButton: { 
+    display: "flex", 
+    alignItems: "center", 
+    gap: "10px",
+    padding: "6px 16px 6px 6px",
+    background: "rgba(255,255,255,0.1)",
+    border: "1px solid rgba(255,255,255,0.2)",
+    borderRadius: "50px",
+    cursor: "pointer",
+    fontSize: "14px",
+    fontWeight: "500",
+    color: "white",
+    backdropFilter: "blur(10px)",
+    textDecoration: "none",
+    transition: "all 0.2s"
+  },
+  profileAvatar: { 
+    width: "32px", 
+    height: "32px", 
+    borderRadius: "50%", 
+    background: "linear-gradient(135deg, #6366f1, #4f46e5)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: "14px",
+    fontWeight: "600",
+    color: "white"
+  },
+  logoutButton: { 
+    padding: "8px 20px", 
+    background: "rgba(255,255,255,0.08)", 
+    color: "white", 
+    border: "1px solid rgba(255,255,255,0.15)", 
+    borderRadius: "50px", 
+    cursor: "pointer", 
+    fontSize: "13px", 
+    fontWeight: "500", 
+    backdropFilter: "blur(10px)",
+    transition: "all 0.2s"
+  },
+  
+  welcomeSection: { maxWidth: "1280px", margin: "32px auto 20px", padding: "0 32px" },
+  welcomeContent: { 
+    display: "flex", 
+    justifyContent: "space-between", 
+    alignItems: "center", 
+    gap: "20px", 
+    flexWrap: "wrap",
+    background: "rgba(255,255,255,0.06)",
+    backdropFilter: "blur(20px)",
+    padding: "20px 28px",
+    borderRadius: "16px",
+    border: "1px solid rgba(255,255,255,0.08)"
+  },
+  welcomeTitle: { fontSize: "24px", fontWeight: "600", margin: "0 0 4px 0", color: "white", textShadow: "0 2px 4px rgba(0,0,0,0.2)" },
+  welcomeName: { color: "#ffd700" },
+  welcomeText: { fontSize: "14px", color: "rgba(255,255,255,0.8)", margin: 0 },
+  progressBadge: { 
+    background: "rgba(255,255,255,0.1)", 
+    padding: "8px 20px", 
+    borderRadius: "50px", 
+    display: "flex", 
+    alignItems: "baseline", 
+    gap: "4px", 
+    border: "1px solid rgba(255,255,255,0.1)",
+    backdropFilter: "blur(10px)"
+  },
+  progressCount: { fontSize: "20px", fontWeight: "700", color: "white" },
+  progressTotal: { fontSize: "14px", color: "rgba(255,255,255,0.6)" },
+  progressLabel: { fontSize: "13px", color: "rgba(255,255,255,0.6)", marginLeft: "8px" },
+  
+  statsBar: { maxWidth: "1280px", margin: "0 auto 24px", padding: "0 32px" },
+  statsGrid: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "12px" },
+  
+  statCard: { 
+    padding: "18px 22px", 
+    borderRadius: "14px", 
+    display: "flex", 
+    alignItems: "center", 
+    gap: "16px", 
+    border: "2px solid", 
+    transition: "all 0.3s", 
+    boxShadow: "0 10px 25px rgba(0,0,0,0.18)", 
+    minHeight: "86px" 
+  },
+  
+  statIcon: { 
+    fontSize: "32px", 
+    color: "#ffffff", 
+    fontWeight: "700", 
+    lineHeight: "1" 
+  },
+  
+  statNumber: { 
+    fontSize: "34px", 
+    fontWeight: "800", 
+    color: "#ffffff", 
+    lineHeight: "1" 
+  },
+  
+  statLabel: { 
+    fontSize: "14px", 
+    color: "#ffffff", 
+    fontWeight: "700", 
+    marginTop: "4px", 
+    letterSpacing: "0.2px" 
+  },
+  
+  mainContent: { maxWidth: "1280px", margin: "0 auto", padding: "0 32px 40px", flex: 1 },
+  errorBox: { marginBottom: "16px", padding: "12px 16px", borderRadius: "12px", background: "rgba(239, 68, 68, 0.1)", border: "1px solid rgba(239, 68, 68, 0.2)", color: "#ef4444", display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: "14px" },
+  retryButton: { padding: "4px 16px", background: "#ef4444", color: "white", border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "12px" },
+  
+  section: { marginBottom: "28px" },
+  sectionHeader: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "16px", flexWrap: "wrap", gap: "8px" },
+  sectionTitle: { fontSize: "18px", fontWeight: "600", color: "white", margin: 0, textShadow: "0 2px 4px rgba(0,0,0,0.2)" },
+  sectionSubtitle: { fontSize: "13px", color: "rgba(255,255,255,0.6)", margin: "2px 0 0 0" },
+  sectionCount: { fontSize: "13px", color: "rgba(255,255,255,0.7)", padding: "4px 16px", background: "rgba(255,255,255,0.08)", borderRadius: "50px", border: "1px solid rgba(255,255,255,0.06)" },
+  
+  compactGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "10px", marginBottom: "24px" },
+  compactCard: { 
+    position: "relative",
+    borderRadius: "12px", 
+    overflow: "hidden",
+    transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+    cursor: "pointer",
+    height: "44px"
+  },
+  compactGradient: { 
+    position: "absolute", 
+    top: 0, 
+    left: 0, 
+    right: 0, 
+    height: "3px" 
+  },
+  compactContent: { 
+    padding: "8px 16px", 
+    display: "flex", 
+    justifyContent: "space-between", 
+    alignItems: "center", 
+    height: "100%"
+  },
+  compactLeft: { display: "flex", alignItems: "center", gap: "8px" },
+  compactIcon: { fontSize: "14px" },
+  compactName: { fontSize: "13px", fontWeight: "500", color: "#0a1929", transition: "color 0.3s" },
+  compactRight: { display: "flex", alignItems: "center", gap: "8px" },
+  compactNsTag: { 
+    fontSize: "9px", 
+    fontWeight: "700", 
+    padding: "2px 6px", 
+    background: "rgba(29, 78, 216, 0.15)", 
+    color: "#1d4ed8", 
+    borderRadius: "4px" 
+  },
+  compactExpiry: {
+    fontSize: "9px",
+    fontWeight: "700",
+    padding: "2px 6px",
+    borderRadius: "4px",
+    background: "rgba(0,0,0,0.06)",
+    marginRight: "4px",
+    fontFamily: "monospace"
+  },
+  compactArrow: { fontSize: "12px", transition: "transform 0.3s" },
+  expiredTag: {
+    fontSize: "8px",
+    fontWeight: "700",
+    padding: "2px 6px",
+    background: "#dc2626",
+    color: "white",
+    borderRadius: "4px",
+    marginLeft: "6px"
+  },
+  
+  detailSection: { 
+    background: "rgba(255,255,255,0.95)", 
+    backdropFilter: "blur(20px)",
+    borderRadius: "16px", 
+    padding: "24px 28px", 
+    boxShadow: "0 20px 60px rgba(0,0,0,0.15)",
+    border: "1px solid rgba(255,255,255,0.2)",
+    marginTop: "4px",
+    animation: "fadeIn 0.4s ease"
+  },
+  detailHeader: { 
+    display: "flex", 
+    justifyContent: "space-between", 
+    alignItems: "center", 
+    flexWrap: "wrap", 
+    gap: "12px",
+    marginBottom: "12px",
+    paddingBottom: "12px",
+    borderBottom: "2px solid #f1f5f9"
+  },
+  detailHeaderLeft: { display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" },
+  detailTitle: { fontSize: "20px", fontWeight: "600", color: "#0a1929", margin: 0 },
+  detailType: { fontSize: "12px", color: "#64748b", padding: "2px 12px", background: "#f1f5f9", borderRadius: "12px" },
+  detailActions: { display: "flex", alignItems: "center", gap: "12px" },
+  detailStartButton: { 
+    padding: "10px 28px", 
+    background: "linear-gradient(135deg, #1a237e, #4f46e5)", 
+    color: "white", 
+    border: "none", 
+    borderRadius: "10px", 
+    cursor: "pointer", 
+    fontSize: "14px", 
+    fontWeight: "600", 
+    fontFamily: "inherit", 
+    transition: "all 0.3s",
+    boxShadow: "0 4px 12px rgba(26, 35, 126, 0.2)"
+  },
+  detailBlocked: { fontSize: "13px", color: "#94a3b8", fontWeight: "500" },
+  detailCompleted: { fontSize: "13px", color: "#16a34a", fontWeight: "600" },
+  
+  detailStatusRow: { display: "flex", alignItems: "center", gap: "10px", marginBottom: "10px", flexWrap: "wrap" },
+  detailStatusBadge: { padding: "4px 14px", borderRadius: "50px", fontSize: "12px", fontWeight: "600" },
+  detailNsBadge: { fontSize: "11px", fontWeight: "600", padding: "2px 12px", background: "#dbeafe", color: "#1e40af", borderRadius: "50px" },
+  detailExpiryBadge: {
+    padding: "6px 16px",
+    borderRadius: "8px",
+    fontSize: "13px",
+    fontWeight: "700",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "8px"
+  },
+  detailExpiredBadge: {
+    padding: "4px 14px",
+    borderRadius: "50px",
+    fontSize: "12px",
+    fontWeight: "600",
+    background: "rgba(220, 38, 38, 0.15)",
+    color: "#dc2626"
+  },
+  deadlineNotice: {
+    padding: "16px 20px",
+    borderRadius: "12px",
+    marginBottom: "16px",
+    display: "flex",
+    alignItems: "center",
+    gap: "12px",
+    flexWrap: "wrap"
+  },
+  detailDescription: { fontSize: "14px", color: "#64748b", margin: "0 0 16px 0", lineHeight: "1.6" },
+  
+  detailAreas: { marginBottom: "16px" },
+  detailAreasTitle: { fontSize: "14px", fontWeight: "600", color: "#0a1929", margin: "0 0 10px 0" },
+  detailAreasGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "6px" },
+  detailAreaItem: { display: "flex", alignItems: "center", gap: "8px", padding: "4px 12px", background: "#f8fafc", borderRadius: "8px", border: "1px solid #f1f5f9" },
+  detailAreaBullet: { color: "#6366f1", fontSize: "14px", fontWeight: "bold" },
+  detailAreaText: { fontSize: "13px", color: "#334155" },
+  
+  detailInfo: { 
+    display: "grid", 
+    gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", 
+    gap: "12px",
+    paddingTop: "14px",
+    borderTop: "1px solid #f1f5f9"
+  },
+  detailInfoItem: { display: "flex", flexDirection: "column", gap: "1px" },
+  detailInfoLabel: { fontSize: "11px", color: "#94a3b8" },
+  detailInfoValue: { fontSize: "14px", fontWeight: "500", color: "#0a1929" },
+  
+  emptyState: { textAlign: "center", padding: "60px 40px", background: "rgba(255,255,255,0.08)", backdropFilter: "blur(20px)", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.06)" },
+  emptyTitle: { fontSize: "18px", fontWeight: "600", color: "white", margin: "0 0 8px 0", textShadow: "0 2px 4px rgba(0,0,0,0.2)" },
+  emptySub: { fontSize: "14px", color: "rgba(255,255,255,0.6)", margin: 0 },
+  
+  guidelinesSection: { marginTop: "20px", marginBottom: "24px", background: "rgba(255,255,255,0.06)", backdropFilter: "blur(20px)", borderRadius: "16px", padding: "24px", border: "1px solid rgba(255,255,255,0.06)" },
+  guidelinesTitle: { fontSize: "16px", fontWeight: "600", color: "white", margin: "0 0 16px 0", textShadow: "0 2px 4px rgba(0,0,0,0.2)" },
+  guidelinesGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: "12px" },
+  guidelineCard: { display: "flex", alignItems: "flex-start", gap: "12px", padding: "12px 16px", background: "rgba(255,255,255,0.05)", borderRadius: "10px", border: "1px solid rgba(255,255,255,0.06)" },
+  guidelineIcon: { fontSize: "22px", flexShrink: 0 },
+  guidelineCardTitle: { fontSize: "13px", fontWeight: "600", color: "white", margin: "0 0 2px 0" },
+  guidelineCardText: { fontSize: "12px", color: "rgba(255,255,255,0.6)", margin: 0, lineHeight: "1.4" },
+  
+  infoNote: { padding: "12px 20px", background: "rgba(59, 130, 246, 0.08)", backdropFilter: "blur(10px)", borderRadius: "12px", display: "flex", alignItems: "center", gap: "10px", color: "#93c5fd", fontSize: "13px", border: "1px solid rgba(59, 130, 246, 0.1)" },
+  infoIcon: { fontSize: "18px" },
+  
+  footer: { marginTop: "auto", padding: "16px 32px", background: "rgba(10,22,40,0.8)", backdropFilter: "blur(20px)", borderTop: "1px solid rgba(255,255,255,0.05)" },
+  footerContent: { maxWidth: "1280px", margin: "0 auto", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", flexWrap: "wrap" },
+  footerLeft: { display: "flex", alignItems: "center", gap: "8px" },
+  footerBrand: { fontSize: "13px", fontWeight: "600", color: "white" },
+  footerDivider: { color: "rgba(255,255,255,0.2)" },
+  footerText: { fontSize: "12px", color: "rgba(255,255,255,0.4)" },
+  footerCenter: { display: "flex", alignItems: "center", gap: "8px" },
+  footerRight: { display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" },
+  footerLink: { fontSize: "12px", color: "rgba(255,255,255,0.4)", textDecoration: "none", transition: "color 0.2s" },
+  footerDot: { fontSize: "12px", color: "rgba(255,255,255,0.2)" }
+};
