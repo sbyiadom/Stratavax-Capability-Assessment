@@ -1,4 +1,4 @@
-// pages/api/candidate/dashboard.js - FIXED VERSION
+// pages/api/candidate/dashboard.js - FULLY FIXED WITH TITLE MAP
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -6,16 +6,16 @@ import { createClient } from '@supabase/supabase-js';
 // CORRECT PRACTICAL ASSESSMENT IDs
 // ============================================================
 const PRACTICAL_ASSESSMENT_IDS = [
-  'c2bc4994-1c4a-4094-a763-8d9d560b759e',  // Mechanical Technical
-  '243275ec-9bb5-43ce-9f02-1111b2ca66e0',  // Electrical Technical
-  'a6000077-095d-4115-bc4e-5936fce953e9',  // Quality Assurance
-  '928f81fc-35ea-40ac-83cb-7c3a0c1c18dc'   // Logistics & Supply Chain
+  'c2bc4994-1c4a-4094-a763-8d9d560b759e',
+  '243275ec-9bb5-43ce-9f02-1111b2ca66e0',
+  'a6000077-095d-4115-bc4e-5936fce953e9',
+  '928f81fc-35ea-40ac-83cb-7c3a0c1c18dc'
 ];
 
 const NATIONAL_SERVICE_ASSESSMENT_ID = 'bdb9d46e-9fac-4d00-8478-1f649e7ac600';
 
 // ============================================================
-// MAP ASSESSMENT IDs TO THEIR CORRECT TYPE CODES
+// ASSESSMENT TYPE CODE MAP
 // ============================================================
 const ASSESSMENT_TYPE_CODE_MAP = {
   '17003efb-923f-49a5-bdeb-e4996c864a87': 'general',
@@ -30,13 +30,32 @@ const ASSESSMENT_TYPE_CODE_MAP = {
   '49980cc1-eb63-432b-895c-951722cfcc24': 'strategic_leadership',
   '232f7ff8-60b8-4223-81c6-4917a5fb12a3': 'manufacturing_baseline',
   'bdb9d46e-9fac-4d00-8478-1f649e7ac600': 'national_service',
-  // ============================================================
-  // PRACTICAL ASSESSMENT TYPE CODES
-  // ============================================================
   'c2bc4994-1c4a-4094-a763-8d9d560b759e': 'practical_mechanical',
   '243275ec-9bb5-43ce-9f02-1111b2ca66e0': 'practical_electrical',
   'a6000077-095d-4115-bc4e-5936fce953e9': 'practical_quality',
   '928f81fc-35ea-40ac-83cb-7c3a0c1c18dc': 'practical_logistics'
+};
+
+// ============================================================
+// ASSESSMENT TITLE MAP - Deterministic fallback for known IDs
+// ============================================================
+const ASSESSMENT_TITLE_MAP = {
+  '17003efb-923f-49a5-bdeb-e4996c864a87': 'General Assessment',
+  'd09953bf-59cd-40ed-a9bb-308c3b5cfb7d': 'Leadership Assessment',
+  '42c1cb06-4574-4d31-8463-0147ff2a0737': 'Cognitive Ability Assessment',
+  'b9a372a1-28b4-440f-bf9a-bfb9211395aa': 'Technical Competence Assessment',
+  '24cd4e02-e43d-4228-beec-513886035c7f': 'Personality Assessment',
+  'ab4bb0b3-011e-4d37-9c08-60c60b15e88f': 'Performance Assessment',
+  '671bf00f-46cc-46f5-a217-d5a90dafb9b6': 'Behavioral & Soft Skills Assessment',
+  '192996c5-2ff4-4767-80c9-4af03aaf1b7e': 'Manufacturing Technical Skills Assessment',
+  '9f138960-671d-4edd-8044-c7d0a95cbbe9': 'Cultural & Attitudinal Fit Assessment',
+  '49980cc1-eb63-432b-895c-951722cfcc24': 'Strategic Leadership Assessment',
+  '232f7ff8-60b8-4223-81c6-4917a5fb12a3': 'Manufacturing Baseline Assessment',
+  'bdb9d46e-9fac-4d00-8478-1f649e7ac600': 'National Service Recruitment Assessment',
+  'c2bc4994-1c4a-4094-a763-8d9d560b759e': 'Mechanical Technical Assessment',
+  '243275ec-9bb5-43ce-9f02-1111b2ca66e0': 'Electrical Technical Assessment',
+  'a6000077-095d-4115-bc4e-5936fce953e9': 'Quality Assurance Assessment',
+  '928f81fc-35ea-40ac-83cb-7c3a0c1c18dc': 'Logistics & Supply Chain Assessment'
 };
 
 // ============================================================
@@ -49,13 +68,11 @@ const PRACTICAL_DEFAULTS = {
 };
 
 export default async function handler(req, res) {
-  // Only allow GET requests
   if (req.method !== 'GET') {
     return res.status(405).json({ success: false, error: 'Method not allowed' });
   }
 
   try {
-    // Get environment variables
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -67,18 +84,15 @@ export default async function handler(req, res) {
       });
     }
 
-    // Get token from Authorization header
     const token = req.headers.authorization?.replace('Bearer ', '');
     if (!token) {
       return res.status(401).json({ success: false, error: 'Unauthorized' });
     }
 
-    // Create Supabase client with service role key
     const serviceClient = createClient(supabaseUrl, serviceRoleKey, {
       auth: { persistSession: false }
     });
 
-    // Verify the user
     const { data: userData, error: userError } = await serviceClient.auth.getUser(token);
     if (userError || !userData?.user) {
       console.error('[API] Auth error:', userError);
@@ -111,10 +125,7 @@ export default async function handler(req, res) {
       });
     }
 
-    // ============================================================
-    // FIX: Ensure practical assessments exist for this candidate
-    // If not, insert them as 'blocked' by default
-    // ============================================================
+    // Ensure practical assessments exist
     const existingAssessmentIds = new Set((candidateAssessments || []).map(ca => ca.assessment_id));
     const missingPracticalIds = PRACTICAL_ASSESSMENT_IDS.filter(id => !existingAssessmentIds.has(id));
 
@@ -168,10 +179,9 @@ export default async function handler(req, res) {
       });
     }
 
-    // STEP 3: Get assessment details - FIXED to properly fetch titles
+    // STEP 3: Get assessment details
     const assessmentIds = candidateAssessments.map(ca => ca.assessment_id).filter(Boolean);
     
-    // Create a map of assessment data
     let assessmentDataMap = {};
     
     if (assessmentIds.length > 0) {
@@ -184,10 +194,18 @@ export default async function handler(req, res) {
         assessments.forEach(a => {
           assessmentDataMap[a.id] = a;
         });
-        console.log('[API] Found assessments:', assessments.map(a => ({ id: a.id, title: a.title })));
       } else if (aError) {
         console.error('[API] Error fetching assessments:', aError);
       }
+    }
+
+    // Log missing assessment IDs for debugging
+    const missingAssessmentIds = assessmentIds.filter(
+      assessmentId => !assessmentDataMap[assessmentId]
+    );
+
+    if (missingAssessmentIds.length > 0) {
+      console.warn('[Candidate Dashboard API] Assessment IDs not found:', missingAssessmentIds);
     }
 
     // STEP 4: Get assessment types
@@ -207,21 +225,31 @@ export default async function handler(req, res) {
       }
     }
 
-    // STEP 5: Build cards - FIXED title logic
+    // STEP 5: Build cards with FIXED title resolution
     const cards = candidateAssessments.map(ca => {
       const assessmentData = assessmentDataMap[ca.assessment_id] || {};
       const type = typeMap[assessmentData.assessment_type_id] || {};
       
-      // Get the type code from the map or fallback to type.code or 'general'
       const typeCode = ASSESSMENT_TYPE_CODE_MAP[ca.assessment_id] || type.code || 'general';
       
-      // FIXED: Get the title from the assessment data, or fallback to type name
-      let title = assessmentData.title || type.name || 'Assessment';
+      // ============================================================
+      // FIXED: Title resolution in correct order
+      // 1. Database title (trimmed)
+      // 2. UUID title map (fallback)
+      // 3. Type name
+      // 4. 'Assessment' (final fallback)
+      // ============================================================
+      const databaseTitle = typeof assessmentData?.title === 'string'
+        ? assessmentData.title.trim()
+        : '';
       
-      // If title is still 'Assessment' and we have a type name, use that
-      if (title === 'Assessment' && type.name) {
-        title = type.name;
-      }
+      const mappedTitle = ASSESSMENT_TITLE_MAP[ca.assessment_id] || '';
+      
+      const resolvedTypeName = typeof type?.name === 'string'
+        ? type.name.trim()
+        : '';
+      
+      const title = databaseTitle || mappedTitle || resolvedTypeName || 'Assessment';
 
       let status = ca.status || 'blocked';
       if (ca.status === 'completed' || ca.result_id) {
@@ -249,12 +277,20 @@ export default async function handler(req, res) {
         attemptsAllowed = assessmentData.attempts_allowed || 1;
       }
 
+      // FIXED: Type name resolution
+      const fallbackTypeName = typeCode
+        .replace(/^practical_/, '')
+        .replace(/_/g, ' ')
+        .replace(/\b\w/g, char => char.toUpperCase());
+      
+      const typeName = resolvedTypeName || mappedTitle || fallbackTypeName;
+
       return {
         id: ca.assessment_id,
         title: title,
         description: assessmentData.description || 'Complete this assessment to demonstrate your capabilities.',
         typeCode: typeCode,
-        typeName: type.name || 'General',
+        typeName: typeName,
         status: status,
         questionCount: questionCount,
         timeLimitMinutes: timeLimitMinutes,
@@ -267,7 +303,7 @@ export default async function handler(req, res) {
       };
     });
 
-    // Sort cards: show ready/unblocked first, then in_progress, then blocked, then completed
+    // Sort cards
     const sortOrder = { 'unblocked': 0, 'in_progress': 1, 'blocked': 2, 'completed': 3 };
     cards.sort((a, b) => {
       const orderA = sortOrder[a.status] !== undefined ? sortOrder[a.status] : 99;
