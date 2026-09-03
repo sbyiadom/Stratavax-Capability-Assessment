@@ -1,12 +1,14 @@
 // pages/supervisor/[user_id].js - COMPLETE FIXED FILE
 // FIXED: Correct API endpoint (/api/supervisor/reports)
 // FIXED: Proper authentication with Authorization header
+// ADDED: Reset Assessment Button
 
 import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import AppLayout from "../../components/AppLayout";
 import { supabase } from "../../supabase/client";
+import ResetAssessmentButton from "../../components/ResetAssessmentButton";
 
 function safeObject(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
@@ -260,7 +262,6 @@ export default function SupervisorUserReportPage() {
         return;
       }
 
-      // ✅ FIX: Use the correct API endpoint with Authorization header
       const url = `/api/supervisor/reports?user_id=${userId}${assessmentId ? `&assessment_id=${assessmentId}` : ''}`;
       console.log("[Supervisor Report] Fetching from URL:", url);
 
@@ -302,7 +303,6 @@ export default function SupervisorUserReportPage() {
 
       // Check if we got a single report (when assessment_id is provided)
       if (assessmentId && data.generatedReport) {
-        // Single report format
         const loadedReport = data.generatedReport;
         const loadedCandidate = data.candidate || null;
         const loadedAssessment = data.assessment || null;
@@ -772,6 +772,21 @@ export default function SupervisorUserReportPage() {
                 <span style={getBadgeStyle(riskLevel)}>{riskLevel}</span>
               </div>
               <p style={styles.scorePanelMeta}>Responses: {safeNumber(responseCount, 0)}</p>
+              
+              {/* ✅ RESET ASSESSMENT BUTTON */}
+              {report && (
+                <div style={{ marginTop: '12px' }}>
+                  <ResetAssessmentButton
+                    candidateId={userId}
+                    assessmentId={assessmentId}
+                    assessmentName={assessmentName}
+                    candidateName={candidateName}
+                    onReset={loadReport}
+                    variant="button"
+                  />
+                </div>
+              )}
+              
               <button 
                 type="button" 
                 style={pdfLoading ? styles.buttonDisabled : styles.downloadButton} 
