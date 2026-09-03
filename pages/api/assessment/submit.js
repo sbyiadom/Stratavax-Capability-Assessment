@@ -1,22 +1,23 @@
-// pages/api/assessment/submit.js - FULLY CORRECTED
-// Uses assessment_id from session, scores direct questions
+// pages/api/assessment/submit.js - FINAL CORRECTED VERSION
+// Version: submit-direct-questions-v4
+// - Separate assessment and type lookups
+// - Direct questions scoring by assessment_id
+// - Proper error handling and logging
+// - Deployment marker for verification
 
 import { createClient } from "@supabase/supabase-js";
 
-// ============================================================
-// PRACTICAL ASSESSMENT IDs
-// ============================================================
+const SUBMIT_BUILD = "submit-direct-questions-v4";
 const PRACTICAL_ASSESSMENT_IDS = [
   'c2bc4994-1c4a-4094-a763-8d9d560b759e',
   '243275ec-9bb5-43ce-9f02-1111b2ca66e0',
   'a6000077-095d-4115-bc4e-5936fce953e9',
   '928f81fc-35ea-40ac-83cb-7c3a0c1c18dc'
 ];
-
 const NATIONAL_SERVICE_ASSESSMENT_ID = 'bdb9d46e-9fac-4d00-8478-1f649e7ac600';
 
 // ============================================================
-// HELPER: Format duration
+// HELPERS
 // ============================================================
 function formatDuration(seconds) {
   if (!seconds || seconds <= 0) return '00:00:00';
@@ -41,13 +42,21 @@ function getTotalQuestions(assessmentId) {
   return 100;
 }
 
+// ============================================================
+// MAIN HANDLER
+// ============================================================
 export default async function handler(req, res) {
+  console.log(`[Submit] Build: ${SUBMIT_BUILD}`);
+  console.log(`[Submit] Method: ${req.method}`);
+
   if (req.method !== "POST") {
     return res.status(405).json({ success: false, error: "Method not allowed" });
   }
 
   try {
     const { sessionId, autoSubmitted, proctoringData, startedAt } = req.body;
+
+    console.log(`[Submit] SessionId: ${sessionId}`);
 
     if (!sessionId) {
       return res.status(400).json({ success: false, error: "Missing sessionId" });
@@ -57,6 +66,7 @@ export default async function handler(req, res) {
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
     if (!supabaseUrl || !supabaseKey) {
+      console.error("[Submit] Missing environment variables");
       return res.status(500).json({ success: false, error: "Server configuration error" });
     }
 
@@ -69,15 +79,18 @@ export default async function handler(req, res) {
       auth: { persistSession: false, autoRefreshToken: false }
     });
 
+    // ============================================================
+    // STEP 1: Verify user
+    // ============================================================
     const { data: userData, error: userError } = await serviceClient.auth.getUser(token);
     if (userError || !userData?.user) {
+      console.error("[Submit] Auth error:", userError);
       return res.status(401).json({ success: false, error: "Invalid token" });
     }
-
     const userId = userData.user.id;
 
     // ============================================================
-    // STEP 1: Get session - MUST have assessment_id
+    // STEP 2: Get session
     // ============================================================
     const { data: session, error: sessionError } = await serviceClient
       .from("assessment_sessions")
@@ -87,50 +100,86 @@ export default async function handler(req, res) {
       .single();
 
     if (sessionError || !session) {
-      return res.status(404).json({ success: false, error: "Session not found" });
+      console.error("[Submit] Session error:", sessionError);
+      return res.status(404).json({
+        success: false,
+        error: "Session not found",
+        diagnosticCode: sessionError?.code || "SESSION_NOT_FOUND"
+      });
     }
 
+    console.log(`[Submit] Session found: ${session.id}, assessment_id: ${session.assessment_id}`);
+
     // ============================================================
-    // STEP 2: Validate session has assessment_id
+    // STEP 3: Validate session has assessment_id
     // ============================================================
     if (!session.assessment_id) {
-      console.error("[Submit] Session missing assessment_id:", session.id);
+      console.error("[Submit] Session missing assessment_id");
       return res.status(409).json({
         success: false,
-        error: "Session is missing assessment_id. Please start a new assessment session."
+        error: "Session is missing assessment_id. Please start a new assessment session.",
+        diagnosticCode: "MISSING_ASSESSMENT_ID"
       });
     }
 
     // ============================================================
-    // STEP 3: Get assessment by assessment_id (NO FALLBACK)
+    // STEP 4: Get assessment (SEPARATE LOOKUP - NO EMBEDDED RELATIONSHIP)
     // ============================================================
+    console.log(`[Submit] Looking up assessment: ${session.assessment_id}`);
     const { data: assessment, error: assessmentError } = await serviceClient
       .from("assessments")
-      .select("id, title, assessment_type_id, assessment_type:assessment_types(*)")
+      .select("id, title, assessment_type_id")
       .eq("id", session.assessment_id)
       .single();
 
     if (assessmentError || !assessment) {
-      console.error("[Submit] Assessment lookup failed:", assessmentError);
-      return res.status(404).json({
+      console.error("[Submit] Assessment lookup failed:", {
+        assessmentId: session.assessment_id,
+        code: assessmentError?.code,
+        message: assessmentError?.message,
+        details: assessmentError?.details,
+        hint: assessmentError?.hint
+      });
+      return res.status(500).json({
         success: false,
-        error: "Assessment not found"
+        error: "Assessment lookup failed",
+        diagnosticCode: assessmentError?.code || "ASSESSMENT_NOT_FOUND",
+        debug: {
+          assessmentId: session.assessment_id,
+          code: assessmentError?.code,
+          message: assessmentError?.message
+        }
       });
     }
 
-    const assessmentType = assessment.assessment_type || {};
-    const isNationalService = assessmentType.code === 'national_service' ||
-                             session.assessment_id === NATIONAL_SERVICE_ASSESSMENT_ID;
-    const finalAssessmentId = assessment.id;
-
-    console.log("[Submit] Assessment found:", {
-      id: finalAssessmentId,
-      title: assessment.title,
-      typeId: assessment.assessment_type_id
-    });
+    console.log(`[Submit] Assessment found: ${assessment.id} - ${assessment.title}`);
 
     // ============================================================
-    // STEP 4: Get responses
+    // STEP 5: Get assessment type (SEPARATE LOOKUP)
+    // ============================================================
+    console.log(`[Submit] Looking up assessment type: ${assessment.assessment_type_id}`);
+    const { data: assessmentType, error: typeError } = await serviceClient
+      .from("assessment_types")
+      .select("id, code, name, question_count")
+      .eq("id", assessment.assessment_type_id)
+      .single();
+
+    if (typeError || !assessmentType) {
+      console.error("[Submit] Assessment type lookup failed:", {
+        typeId: assessment.assessment_type_id,
+        code: typeError?.code,
+        message: typeError?.message
+      });
+      // Continue without type - we'll use direct question count
+    } else {
+      console.log(`[Submit] Assessment type: ${assessmentType.code} (${assessmentType.id})`);
+    }
+
+    const isNationalService = assessmentType?.code === 'national_service' ||
+                             session.assessment_id === NATIONAL_SERVICE_ASSESSMENT_ID;
+
+    // ============================================================
+    // STEP 6: Get responses
     // ============================================================
     const { data: responses, error: responsesError } = await serviceClient
       .from("responses")
@@ -138,13 +187,14 @@ export default async function handler(req, res) {
       .eq("session_id", sessionId);
 
     if (responsesError) {
-      console.error("Responses error:", responsesError);
+      console.error("[Submit] Responses error:", responsesError);
     }
+    console.log(`[Submit] Found ${responses?.length || 0} responses`);
 
     // ============================================================
-    // STEP 5: Get questions DIRECTLY from questions table
+    // STEP 7: Get questions DIRECTLY from questions table
     // ============================================================
-    const { data: questions, error: questionsError } = await serviceClient
+    const { data: questionsData, error: questionsError } = await serviceClient
       .from("questions")
       .select(`
         id,
@@ -157,19 +207,19 @@ export default async function handler(req, res) {
           is_active
         )
       `)
-      .eq("assessment_id", finalAssessmentId)
+      .eq("assessment_id", assessment.id)
       .eq("is_active", true)
       .order("question_order", { ascending: true });
 
     if (questionsError) {
-      console.error("Questions error:", questionsError);
+      console.error("[Submit] Questions error:", questionsError);
     }
 
     // If direct questions not found, try unique_questions as fallback
     let fallbackUsed = false;
-    let questionsData = questions || [];
+    let questions = questionsData || [];
 
-    if (questionsData.length === 0) {
+    if (questions.length === 0) {
       console.log("[Submit] No direct questions found, trying unique_questions");
       fallbackUsed = true;
       
@@ -185,10 +235,10 @@ export default async function handler(req, res) {
             score
           )
         `)
-        .eq("assessment_type_id", session.assessment_type_id);
+        .eq("assessment_type_id", assessment.assessment_type_id);
 
       if (!fallbackError && fallbackQuestions) {
-        questionsData = fallbackQuestions.map(q => ({
+        questions = fallbackQuestions.map(q => ({
           id: q.id,
           question_text: q.question_text,
           section: q.section,
@@ -197,15 +247,19 @@ export default async function handler(req, res) {
       }
     }
 
-    if (questionsData.length === 0) {
+    if (questions.length === 0) {
+      console.error("[Submit] No questions found for assessment:", assessment.id);
       return res.status(409).json({
         success: false,
-        error: "No questions found for this assessment"
+        error: "No questions found for this assessment",
+        diagnosticCode: "NO_QUESTIONS_FOUND"
       });
     }
 
+    console.log(`[Submit] Questions found: ${questions.length} (fallback: ${fallbackUsed})`);
+
     // ============================================================
-    // STEP 6: Calculate scores
+    // STEP 8: Calculate scores
     // ============================================================
     const responseMap = {};
     (responses || []).forEach(r => {
@@ -217,7 +271,7 @@ export default async function handler(req, res) {
     let totalEarned = 0;
     let totalMax = 0;
 
-    questionsData.forEach(q => {
+    questions.forEach(q => {
       const answers = q.answers || [];
       const maxScore = 1;
       totalMax += maxScore;
@@ -242,14 +296,31 @@ export default async function handler(req, res) {
     });
 
     // ============================================================
-    // STEP 7: Validate question count
+    // STEP 9: Validate question count
     // ============================================================
-    const expectedTotalQuestions = getTotalQuestions(finalAssessmentId);
+    let expectedTotalQuestions = 0;
+    
+    // Priority 1: Use assessment_type.question_count
+    if (assessmentType?.question_count && assessmentType.question_count > 0) {
+      expectedTotalQuestions = assessmentType.question_count;
+    } 
+    // Priority 2: Use direct question count
+    else if (questions.length > 0) {
+      expectedTotalQuestions = questions.length;
+    }
+    // Priority 3: Use hardcoded map
+    else {
+      expectedTotalQuestions = getTotalQuestions(assessment.id);
+    }
 
-    if (totalMax !== expectedTotalQuestions) {
-      console.warn(`[Submit] Question count mismatch: expected ${expectedTotalQuestions}, found ${totalMax}`);
-      // Use the expected count for scoring denominator
-      totalMax = expectedTotalQuestions;
+    console.log(`[Submit] Expected: ${expectedTotalQuestions}, Actual: ${questions.length}`);
+
+    // If mismatch, use the actual question count for scoring
+    // but log the mismatch for debugging
+    if (questions.length !== expectedTotalQuestions) {
+      console.warn(`[Submit] Question count mismatch: expected ${expectedTotalQuestions}, found ${questions.length}`);
+      // Use the actual count for scoring
+      totalMax = questions.length;
     }
 
     const finalPercentage = totalMax > 0 ? Math.round((totalEarned / totalMax) * 100) : 0;
@@ -257,7 +328,7 @@ export default async function handler(req, res) {
     console.log(`[Submit] Score: ${totalEarned}/${totalMax} = ${finalPercentage}%`);
 
     // ============================================================
-    // STEP 8: Build category_scores
+    // STEP 10: Build category_scores
     // ============================================================
     const categoryScores = Object.keys(categoryMap).map(category => {
       const earned = categoryMap[category];
@@ -272,7 +343,7 @@ export default async function handler(req, res) {
     });
 
     // ============================================================
-    // STEP 9: Calculate recommendation
+    // STEP 11: Calculate recommendation
     // ============================================================
     let recommendation = null;
     if (isNationalService) {
@@ -289,7 +360,7 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 10: Calculate risk
+    // STEP 12: Calculate risk
     // ============================================================
     const proctoring = proctoringData || {};
     const summary = proctoring.summary || {};
@@ -315,7 +386,7 @@ export default async function handler(req, res) {
     else if (riskScore >= 40) riskLevel = 'medium';
 
     // ============================================================
-    // STEP 11: Time tracking
+    // STEP 13: Time tracking
     // ============================================================
     const completedAt = new Date().toISOString();
     let assessmentStartedAt = null;
@@ -334,12 +405,12 @@ export default async function handler(req, res) {
 
     if (totalSeconds < 0) totalSeconds = 0;
     const totalDurationFormatted = formatDuration(totalSeconds);
-    const avgTimePerQuestion = calculateAvgTimePerQuestion(totalSeconds, expectedTotalQuestions);
+    const avgTimePerQuestion = calculateAvgTimePerQuestion(totalSeconds, totalMax);
 
     // ============================================================
-    // STEP 12: Update session
+    // STEP 14: Update session
     // ============================================================
-    await serviceClient
+    const { error: sessionUpdateError } = await serviceClient
       .from("assessment_sessions")
       .update({
         status: "completed",
@@ -348,21 +419,34 @@ export default async function handler(req, res) {
       })
       .eq("id", sessionId);
 
+    if (sessionUpdateError) {
+      console.error("[Submit] Session update error:", sessionUpdateError);
+      return res.status(500).json({
+        success: false,
+        error: "Failed to update session",
+        diagnosticCode: "SESSION_UPDATE_FAILED"
+      });
+    }
+
     // ============================================================
-    // STEP 13: Check existing result
+    // STEP 15: Check existing result
     // ============================================================
-    const { data: existingResult } = await serviceClient
+    const { data: existingResult, error: existingResultError } = await serviceClient
       .from("assessment_results")
       .select("id")
       .eq("session_id", sessionId)
       .maybeSingle();
 
+    if (existingResultError) {
+      console.error("[Submit] Existing result error:", existingResultError);
+    }
+
     // ============================================================
-    // STEP 14: Build result data
+    // STEP 16: Build result data
     // ============================================================
     const resultData = {
       user_id: session.user_id,
-      assessment_id: finalAssessmentId,
+      assessment_id: assessment.id,
       session_id: sessionId,
       total_score: totalEarned,
       max_score: totalMax,
@@ -378,7 +462,7 @@ export default async function handler(req, res) {
       recommendation: recommendation,
       risk_level: riskLevel,
       risk_score: riskScore,
-      total_questions: expectedTotalQuestions,
+      total_questions: totalMax,
       answered_questions: (responses || []).length,
       report_data: {
         categoryScores: categoryScores,
@@ -391,7 +475,7 @@ export default async function handler(req, res) {
         totalSeconds: totalSeconds,
         totalDurationFormatted: totalDurationFormatted,
         avgTimePerQuestion: avgTimePerQuestion,
-        totalQuestions: expectedTotalQuestions,
+        totalQuestions: totalMax,
         proctoring: {
           riskLevel: riskLevel,
           riskScore: riskScore,
@@ -412,9 +496,15 @@ export default async function handler(req, res) {
         .select()
         .single();
 
-      if (!updateError && updatedResult) {
-        resultId = updatedResult.id;
+      if (updateError) {
+        console.error("[Submit] Result update error:", updateError);
+        return res.status(500).json({
+          success: false,
+          error: "Failed to update result",
+          diagnosticCode: "RESULT_UPDATE_FAILED"
+        });
       }
+      resultId = updatedResult?.id;
     } else {
       const { data: newResult, error: createError } = await serviceClient
         .from("assessment_results")
@@ -422,16 +512,24 @@ export default async function handler(req, res) {
         .select()
         .single();
 
-      if (!createError && newResult) {
-        resultId = newResult.id;
+      if (createError) {
+        console.error("[Submit] Result create error:", createError);
+        return res.status(500).json({
+          success: false,
+          error: "Failed to save result",
+          diagnosticCode: "RESULT_CREATE_FAILED"
+        });
       }
+      resultId = newResult?.id;
     }
 
+    console.log(`[Submit] Result saved: ${resultId}`);
+
     // ============================================================
-    // STEP 15: Update candidate_assessments
+    // STEP 17: Update candidate_assessments
     // ============================================================
     if (resultId) {
-      await serviceClient
+      const { error: caUpdateError } = await serviceClient
         .from("candidate_assessments")
         .update({
           result_id: resultId,
@@ -441,11 +539,16 @@ export default async function handler(req, res) {
           score: totalEarned
         })
         .eq("user_id", session.user_id)
-        .eq("assessment_id", finalAssessmentId);
+        .eq("assessment_id", assessment.id);
+
+      if (caUpdateError) {
+        console.error("[Submit] Candidate assessment update error:", caUpdateError);
+        // Don't fail the submission, just log it
+      }
     }
 
     // ============================================================
-    // STEP 16: Return response
+    // STEP 18: Return response
     // ============================================================
     return res.status(200).json({
       success: true,
@@ -458,13 +561,14 @@ export default async function handler(req, res) {
       recommendation: recommendation,
       isNationalService: isNationalService,
       isAutoSubmitted: autoSubmitted || false,
+      submitBuild: SUBMIT_BUILD,
       timeTracking: {
         startedAt: assessmentStartedAt,
         completedAt: completedAt,
         totalSeconds: totalSeconds,
         totalDurationFormatted: totalDurationFormatted,
         avgTimePerQuestion: avgTimePerQuestion,
-        totalQuestions: expectedTotalQuestions
+        totalQuestions: totalMax
       },
       proctoring: {
         riskLevel: riskLevel,
@@ -476,10 +580,11 @@ export default async function handler(req, res) {
     });
 
   } catch (error) {
-    console.error("Error submitting assessment:", error);
+    console.error("[Submit] Unhandled error:", error);
     return res.status(500).json({
       success: false,
-      error: error.message || "Internal server error"
+      error: error.message || "Internal server error",
+      diagnosticCode: "UNHANDLED_ERROR"
     });
   }
 }
