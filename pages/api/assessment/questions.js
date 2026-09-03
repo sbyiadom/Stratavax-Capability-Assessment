@@ -1,149 +1,210 @@
-// pages/api/assessment/questions.js - FULL RANDOMIZATION
+// pages/api/assessment/questions.js - FULLY CORRECTED WITH 40-QUESTION LIMIT
 
-import { createClient } from "@supabase/supabase-js";
+import { createClient } from '@supabase/supabase-js';
 
 // ============================================================
-// HELPER: Shuffle array using Fisher-Yates algorithm
+// PRACTICAL ASSESSMENT IDs - ONLY 40 QUESTIONS
 // ============================================================
+const PRACTICAL_ASSESSMENT_IDS = [
+  'c2bc4994-1c4a-4094-a763-8d9d560b759e',
+  '243275ec-9bb5-43ce-9f02-1111b2ca66e0',
+  'a6000077-095d-4115-bc4e-5936fce953e9',
+  '928f81fc-35ea-40ac-83cb-7c3a0c1c18dc'
+];
+
+// ============================================================
+// NATIONAL SERVICE ASSESSMENT ID - 80 QUESTIONS
+// ============================================================
+const NATIONAL_SERVICE_ASSESSMENT_ID = 'bdb9d46e-9fac-4d00-8478-1f649e7ac600';
+
+// ============================================================
+// QUESTION COUNT DEFAULTS BY ASSESSMENT TYPE
+// ============================================================
+const QUESTION_COUNT_MAP = {
+  'c2bc4994-1c4a-4094-a763-8d9d560b759e': 40,
+  '243275ec-9bb5-43ce-9f02-1111b2ca66e0': 40,
+  'a6000077-095d-4115-bc4e-5936fce953e9': 40,
+  '928f81fc-35ea-40ac-83cb-7c3a0c1c18dc': 40,
+  'bdb9d46e-9fac-4d00-8478-1f649e7ac600': 80,
+  '232f7ff8-60b8-4223-81c6-4917a5fb12a3': 100,
+};
+
+// ============================================================
+// HELPERS
+// ============================================================
+function safeArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
 function shuffleArray(array) {
+  if (!Array.isArray(array)) return [];
   const shuffled = [...array];
-  for (let i = shuffled.length - 1; i > 0; i--) {
+  for (let i = shuffled.length - 1; i > 0; i -= 1) {
     const j = Math.floor(Math.random() * (i + 1));
-    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    const temp = shuffled[i];
+    shuffled[i] = shuffled[j];
+    shuffled[j] = temp;
   }
   return shuffled;
 }
 
-// ============================================================
-// HELPER: Randomize answers for a question
-// ============================================================
 function randomizeAnswers(question) {
-  if (!question || !Array.isArray(question.answers) || question.answers.length === 0) {
+  if (!question || !question.answers || !Array.isArray(question.answers)) {
     return question;
   }
-
-  // Find which answers are correct (score === 1)
-  const correctAnswerIds = new Set(
-    question.answers.filter(a => a.score === 1).map(a => a.id)
-  );
-
-  // If no correct answers found, return original
-  if (correctAnswerIds.size === 0) {
-    return question;
-  }
-
-  // Shuffle ALL answers
   const shuffledAnswers = shuffleArray(question.answers);
-
-  // Reset scores based on shuffled positions
-  const randomizedAnswers = shuffledAnswers.map(answer => ({
+  const updatedAnswers = shuffledAnswers.map((answer, index) => ({
     ...answer,
-    score: correctAnswerIds.has(answer.id) ? 1 : 0
+    display_order: index + 1,
   }));
+  return { ...question, answers: updatedAnswers };
+}
 
-  return {
-    ...question,
-    answers: randomizedAnswers
-  };
+function getRequiredQuestionCount(assessmentId, assessmentTypeCode) {
+  // Check if it's a practical assessment
+  if (PRACTICAL_ASSESSMENT_IDS.includes(assessmentId)) {
+    return 40;
+  }
+  
+  // Check if it's National Service
+  if (assessmentId === NATIONAL_SERVICE_ASSESSMENT_ID || assessmentTypeCode === 'national_service') {
+    return 80;
+  }
+  
+  // Use the map or default to 100
+  return QUESTION_COUNT_MAP[assessmentId] || 100;
 }
 
 export default async function handler(req, res) {
-  if (req.method !== "GET") {
-    return res.status(405).json({ success: false, error: "Method not allowed" });
+  // Only allow GET requests
+  if (req.method !== 'GET') {
+    return res.status(405).json({ success: false, error: 'Method not allowed' });
   }
 
   try {
-    const { assessmentTypeId, assessmentTypeCode } = req.query;
-    if (!assessmentTypeId) {
-      return res.status(400).json({ success: false, error: "Missing assessmentTypeId" });
-    }
-
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-    if (!supabaseUrl || !supabaseKey) {
-      return res.status(500).json({ success: false, error: "Server configuration error" });
+    if (!supabaseUrl || !serviceRoleKey) {
+      console.error('[API] Missing environment variables');
+      return res.status(500).json({
+        success: false,
+        error: 'Server configuration error'
+      });
     }
 
-    const token = req.headers.authorization?.replace("Bearer ", "");
-    if (!token) {
-      return res.status(401).json({ success: false, error: "Unauthorized" });
+    // Get parameters from query
+    const { assessmentTypeId, assessmentTypeCode, assessmentId } = req.query;
+    
+    if (!assessmentTypeId) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Missing assessmentTypeId parameter' 
+      });
     }
 
-    const serviceClient = createClient(supabaseUrl, supabaseKey, {
-      auth: { persistSession: false, autoRefreshToken: false }
+    console.log(`[API] Fetching questions - TypeId: ${assessmentTypeId}, Code: ${assessmentTypeCode || 'unknown'}, AssessmentId: ${assessmentId || 'unknown'}`);
+
+    // Get required question count
+    const requiredCount = getRequiredQuestionCount(assessmentId, assessmentTypeCode);
+    console.log(`[API] Required question count: ${requiredCount}`);
+
+    // Create Supabase client
+    const serviceClient = createClient(supabaseUrl, serviceRoleKey, {
+      auth: { persistSession: false }
     });
 
-    // Get user from token
-    const { data: userData, error: userError } = await serviceClient.auth.getUser(token);
-    if (userError || !userData?.user) {
-      return res.status(401).json({ success: false, error: "Invalid token" });
-    }
-
-    // ============================================================
-    // STEP 1: Get questions with their answers
-    // ============================================================
-    const { data: questions, error: questionsError } = await serviceClient
-      .from("unique_questions")
-      .select(`
-        id,
-        question_text,
-        section,
-        subsection,
-        display_order,
-        unique_answers (
-          id,
-          answer_text,
-          score,
-          display_order
-        )
-      `)
-      .eq("assessment_type_id", parseInt(assessmentTypeId, 10))
-      .order("display_order", { ascending: true });
+    // Get questions from unique_questions
+    const { data: questionsData, error: questionsError } = await serviceClient
+      .from('unique_questions')
+      .select('*')
+      .eq('assessment_type_id', parseInt(assessmentTypeId, 10))
+      .order('display_order', { ascending: true });
 
     if (questionsError) {
-      console.error("Questions error:", questionsError);
-      return res.status(500).json({ success: false, error: questionsError.message });
+      console.error('[API] Questions error:', questionsError);
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to fetch questions',
+        details: questionsError.message
+      });
     }
 
-    // ============================================================
-    // STEP 2: Format and randomize questions
-    // ============================================================
-    let formattedQuestions = questions.map((q) => ({
-      id: q.id,
-      question_text: q.question_text,
-      section: q.section || "General",
-      subsection: q.subsection || "",
-      display_order: q.display_order || 0,
-      answers: (q.unique_answers || []).map((a) => ({
-        id: a.id,
-        answer_text: a.answer_text,
-        score: a.score || 0,
-        display_order: a.display_order || 0
-      }))
-    }));
+    if (!questionsData || questionsData.length === 0) {
+      console.warn(`[API] No questions found for assessment_type_id: ${assessmentTypeId}`);
+      return res.status(200).json({
+        success: true,
+        questionCount: 0,
+        questions: []
+      });
+    }
+
+    console.log(`[API] Found ${questionsData.length} questions in unique_questions`);
+
+    // Get answers for all questions
+    const questionIds = questionsData.map(q => q.id);
+    const { data: answersData, error: answersError } = await serviceClient
+      .from('unique_answers')
+      .select('*')
+      .in('question_id', questionIds);
+
+    if (answersError) {
+      console.error('[API] Answers error:', answersError);
+    }
+
+    // Build answers map
+    const answersMap = {};
+    if (answersData) {
+      answersData.forEach(a => {
+        if (!answersMap[a.question_id]) answersMap[a.question_id] = [];
+        answersMap[a.question_id].push(a);
+      });
+    }
+
+    // Format questions with their answers
+    let formattedQuestions = questionsData.map((question) => {
+      const answers = safeArray(answersMap[question.id] || []).map((answer) => ({
+        id: answer.id,
+        answer_text: answer.answer_text,
+        score: answer.score || 0,
+        display_order: answer.display_order || 1
+      }));
+
+      return {
+        id: question.id,
+        question_text: question.question_text,
+        section: question.section || "General",
+        subsection: question.subsection || "",
+        display_order: question.display_order || 1,
+        answers: answers
+      };
+    });
 
     // ============================================================
-    // STEP 3: Apply randomization for ALL assessments
+    // STEP 3: Randomize and enforce the required question count
     // ============================================================
-    // Randomize answer options for ALL questions
+    
+    // Randomize answer options for each question
     formattedQuestions = formattedQuestions.map(q => randomizeAnswers(q));
+    
+    // Randomize question order and enforce the required count
+    formattedQuestions = shuffleArray(formattedQuestions)
+      .slice(0, requiredCount);
 
-    // Randomize the order of questions
-    formattedQuestions = shuffleArray(formattedQuestions);
-
-    console.log(`[API] Found ${formattedQuestions.length} questions`);
-    console.log(`[API] Assessment type code: ${assessmentTypeCode || 'unknown'}`);
-    console.log(`[API] Questions randomized: YES`);
-    console.log(`[API] Answers randomized: YES`);
+    console.log(`[API] Returning ${formattedQuestions.length} questions (limited to ${requiredCount})`);
 
     return res.status(200).json({
       success: true,
+      questionCount: formattedQuestions.length,
       questions: formattedQuestions
     });
 
   } catch (error) {
-    console.error("Error fetching questions:", error);
-    return res.status(500).json({ success: false, error: error.message });
+    console.error('[API] Error:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Internal server error',
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
   }
 }
