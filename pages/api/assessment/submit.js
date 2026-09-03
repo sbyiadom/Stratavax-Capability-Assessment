@@ -1,4 +1,4 @@
-// pages/api/assessment/submit.js - FULLY CORRECTED WITH DYNAMIC QUESTION COUNT
+// pages/api/assessment/submit.js - FULLY CORRECTED WITH FALLBACK ASSESSMENT LOOKUP
 
 import { createClient } from "@supabase/supabase-js";
 
@@ -26,17 +26,12 @@ const QUESTION_COUNT_MAP = {
 };
 
 function getTotalQuestions(assessmentId, assessmentType) {
-  // Check if it's a practical assessment
   if (PRACTICAL_ASSESSMENT_IDS.includes(assessmentId)) {
     return 40;
   }
-  
-  // Check if it's National Service
   if (assessmentId === NATIONAL_SERVICE_ASSESSMENT_ID || assessmentType?.code === 'national_service') {
     return 80;
   }
-  
-  // Use the map or default to 100
   return QUESTION_COUNT_MAP[assessmentId] || 100;
 }
 
@@ -44,17 +39,40 @@ function getTotalQuestions(assessmentId, assessmentType) {
 // HELPER: Split categories into Workplace and Intellectual
 // ============================================================
 const WORKPLACE_KEYWORDS = [
-  'safety', 'risk', 'technical', 'communication', 'teamwork', 
-  'ownership', 'integrity', 'workplace', 'ethics', 'professional',
-  'readiness', 'conduct', 'attitude', 'work ethic', 'collaboration'
+  'safety', 'risk_awareness', 'risk', 'hazard',
+  'technical_fundamentals', 'technical',
+  'problem_solving', 'troubleshooting',
+  'communication', 'teamwork', 'collaboration',
+  'ownership', 'integrity', 'accountability',
+  'professional_conduct', 'work_ethic', 'ethics',
+  'workplace', 'workplace_readiness', 'readiness',
+  'learning_agility', 'agility', 'adaptability'
 ];
 
 const INTELLECTUAL_KEYWORDS = [
-  'numerical', 'logical', 'reasoning', 'measurement', 'engineering',
-  'spatial', 'problem solving', 'troubleshooting', 'analysis',
-  'critical thinking', 'analytical', 'decision making', 'cognitive',
-  'aptitude', 'intellectual', 'capability'
+  'numerical_reasoning', 'numerical_aptitude', 'numerical', 'math',
+  'logical_reasoning', 'logic', 'reasoning',
+  'measurement', 'engineering_units', 'units',
+  'spatial_reasoning', 'spatial',
+  'analysis',
+  'critical_thinking', 'analytical', 'decision_making',
+  'intellectual', 'cognitive', 'capability'
 ];
+
+function cleanText(value, fallback = "") {
+  if (!value) return fallback;
+  return String(value).toLowerCase().replace(/\s+/g, '_');
+}
+
+function isWorkplaceCategory(category) {
+  const normalized = cleanText(category, '');
+  return WORKPLACE_KEYWORDS.some(key => normalized.includes(key));
+}
+
+function isIntellectualCategory(category) {
+  const normalized = cleanText(category, '');
+  return INTELLECTUAL_KEYWORDS.some(key => normalized.includes(key));
+}
 
 function calculateScoresFromCategories(categoryScores) {
   let workplaceTotal = 0;
@@ -70,13 +88,10 @@ function calculateScoresFromCategories(categoryScores) {
     const name = (cat.category || cat.name || '').toLowerCase();
     const percentage = Number(cat.percentage || cat.score || 0);
     
-    const isWorkplace = WORKPLACE_KEYWORDS.some(keyword => name.includes(keyword));
-    const isIntellectual = INTELLECTUAL_KEYWORDS.some(keyword => name.includes(keyword));
-
-    if (isWorkplace) {
+    if (isWorkplaceCategory(name)) {
       workplaceTotal += percentage;
       workplaceCount++;
-    } else if (isIntellectual) {
+    } else if (isIntellectualCategory(name)) {
       intellectualTotal += percentage;
       intellectualCount++;
     }
@@ -173,28 +188,55 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 2: Get assessment details (to get assessment_id)
+    // STEP 2: Get assessment details with fallback
     // ============================================================
-    const { data: assessment, error: assessmentError } = await serviceClient
-      .from("assessments")
-      .select("id, title, assessment_type_id, assessment_type:assessment_types(*)")
-      .eq("id", session.assessment_id)
-      .single();
+    let assessment = null;
+    let assessmentError = null;
 
-    if (assessmentError || !assessment) {
-      console.error("[Submit] Assessment error:", assessmentError);
+    // First try: use assessment_id from session
+    if (session.assessment_id) {
+      const { data, error } = await serviceClient
+        .from("assessments")
+        .select("id, title, assessment_type_id, assessment_type:assessment_types(*)")
+        .eq("id", session.assessment_id)
+        .single();
+      
+      if (!error && data) {
+        assessment = data;
+        console.log("[Submit] Found assessment by assessment_id:", assessment.id);
+      }
+    }
+
+    // Second try: use assessment_type_id from session
+    if (!assessment && session.assessment_type_id) {
+      const { data, error } = await serviceClient
+        .from("assessments")
+        .select("id, title, assessment_type_id, assessment_type:assessment_types(*)")
+        .eq("assessment_type_id", session.assessment_type_id)
+        .maybeSingle();
+      
+      if (!error && data) {
+        assessment = data;
+        console.log("[Submit] Found assessment by assessment_type_id:", assessment.id);
+      }
+    }
+
+    if (!assessment) {
+      console.error("[Submit] Assessment not found for session:", {
+        sessionId: session.id,
+        assessment_id: session.assessment_id,
+        assessment_type_id: session.assessment_type_id
+      });
       return res.status(404).json({ success: false, error: "Assessment not found" });
     }
 
-    // ============================================================
-    // STEP 3: Get assessment type
-    // ============================================================
     const assessmentType = assessment.assessment_type || {};
-    const isNationalService = assessmentType.code === 'national_service';
+    const isNationalService = assessmentType.code === 'national_service' || 
+                             session.assessment_id === NATIONAL_SERVICE_ASSESSMENT_ID;
     const assessmentId = assessment.id;
 
     // ============================================================
-    // STEP 4: Get all responses
+    // STEP 3: Get all responses
     // ============================================================
     const { data: responses, error: responsesError } = await serviceClient
       .from("responses")
@@ -206,7 +248,7 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 5: Get all questions with answers
+    // STEP 4: Get all questions with answers
     // ============================================================
     const { data: questions, error: questionsError } = await serviceClient
       .from("unique_questions")
@@ -227,7 +269,7 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 6: Calculate scores
+    // STEP 5: Calculate scores
     // ============================================================
     let totalEarned = 0;
     let totalMax = 0;
@@ -265,11 +307,10 @@ export default async function handler(req, res) {
     });
 
     // ============================================================
-    // STEP 7: FIX: Use the correct total question count
+    // STEP 6: Use the correct total question count
     // ============================================================
     const expectedTotalQuestions = getTotalQuestions(assessmentId, assessmentType);
     
-    // If totalMax doesn't match the expected count, use the expected count
     if (totalMax !== expectedTotalQuestions) {
       console.log(`[Submit] Fixing totalMax from ${totalMax} to ${expectedTotalQuestions}`);
       totalMax = expectedTotalQuestions;
@@ -278,10 +319,10 @@ export default async function handler(req, res) {
     const finalPercentage = totalMax > 0 ? Math.round((totalEarned / totalMax) * 100) : 0;
 
     console.log(`[Submit] Score: ${totalEarned}/${totalMax} = ${finalPercentage}%`);
-    console.log(`[Submit] Assessment: ${assessmentId}, Type: ${assessmentType.code}`);
+    console.log(`[Submit] Assessment: ${assessmentId}, Type: ${assessmentType.code || 'unknown'}`);
 
     // ============================================================
-    // STEP 8: Build category_scores
+    // STEP 7: Build category_scores
     // ============================================================
     const categoryScores = Object.keys(categoryMap).map(category => {
       const earned = categoryMap[category];
@@ -296,7 +337,7 @@ export default async function handler(req, res) {
     });
 
     // ============================================================
-    // STEP 9: Calculate workplace and intellectual scores
+    // STEP 8: Calculate workplace and intellectual scores
     // ============================================================
     let workplaceReadiness = 0;
     let intellectualCapability = 0;
@@ -308,7 +349,7 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 10: Calculate TIME TRACKING
+    // STEP 9: Calculate TIME TRACKING
     // ============================================================
     const completedAt = new Date().toISOString();
     let assessmentStartedAt = null;
@@ -346,7 +387,7 @@ export default async function handler(req, res) {
     avgTimePerQuestion = calculateAvgTimePerQuestion(totalSeconds, questionCount);
 
     // ============================================================
-    // STEP 11: Process proctoring data
+    // STEP 10: Process proctoring data
     // ============================================================
     const proctoring = proctoringData || {};
     const externalUrls = Array.isArray(proctoring.externalUrls) ? proctoring.externalUrls : [];
@@ -366,7 +407,7 @@ export default async function handler(req, res) {
     const uniqueDomains = [...new Set(externalUrls.map(u => u.domain || u.url))].length;
 
     // ============================================================
-    // STEP 12: RISK CALCULATION
+    // STEP 11: RISK CALCULATION
     // ============================================================
     let riskScore = 0;
     if (totalTabSwitches > 50) riskScore += 30;
@@ -392,7 +433,7 @@ export default async function handler(req, res) {
     else if (riskScore >= 40) riskLevel = 'medium';
 
     // ============================================================
-    // STEP 13: Calculate Recommendation
+    // STEP 12: Calculate Recommendation
     // ============================================================
     let recommendation = null;
     if (isNationalService) {
@@ -409,7 +450,7 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 14: Update session status
+    // STEP 13: Update session status
     // ============================================================
     await serviceClient
       .from("assessment_sessions")
@@ -421,7 +462,7 @@ export default async function handler(req, res) {
       .eq("id", sessionId);
 
     // ============================================================
-    // STEP 15: Check for existing result
+    // STEP 14: Check for existing result
     // ============================================================
     const { data: existingResult } = await serviceClient
       .from("assessment_results")
@@ -430,11 +471,11 @@ export default async function handler(req, res) {
       .maybeSingle();
 
     // ============================================================
-    // STEP 16: Build resultData
+    // STEP 15: Build resultData
     // ============================================================
     const resultData = {
       user_id: session.user_id,
-      assessment_id: session.assessment_id,
+      assessment_id: assessmentId,
       session_id: sessionId,
       total_score: totalEarned,
       max_score: totalMax,
@@ -448,6 +489,10 @@ export default async function handler(req, res) {
       workplace_readiness: workplaceReadiness,
       intellectual_capability: intellectualCapability,
       recommendation: recommendation,
+      risk_level: riskLevel,
+      risk_score: riskScore,
+      total_questions: expectedTotalQuestions,
+      answered_questions: (responses || []).length,
       proctoring_data: {
         summary: {
           totalViolations: totalViolations,
@@ -462,7 +507,6 @@ export default async function handler(req, res) {
           riskLevel: riskLevel,
           riskScore: riskScore
         },
-        riskFactors: [],
         externalUrls: externalUrls,
         domainVisits: proctoring.domainVisits || {},
         violations: violations,
@@ -472,8 +516,6 @@ export default async function handler(req, res) {
       domain_visits: proctoring.domainVisits || {},
       tab_switch_details: tabSwitches,
       violations: violations,
-      risk_score: riskScore,
-      risk_level: riskLevel,
       total_tab_switches: totalTabSwitches,
       total_external_urls: totalExternalUrls,
       report_data: {
@@ -529,7 +571,7 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 17: Update candidate_assessments
+    // STEP 16: Update candidate_assessments
     // ============================================================
     if (resultId) {
       await serviceClient
@@ -538,14 +580,15 @@ export default async function handler(req, res) {
           result_id: resultId,
           status: "completed",
           completed_at: completedAt,
-          updated_at: completedAt
+          updated_at: completedAt,
+          score: totalEarned
         })
         .eq("user_id", session.user_id)
-        .eq("assessment_id", session.assessment_id);
+        .eq("assessment_id", assessmentId);
     }
 
     // ============================================================
-    // STEP 18: Return response
+    // STEP 17: Return response
     // ============================================================
     return res.status(200).json({
       success: true,
