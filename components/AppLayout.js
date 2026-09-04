@@ -1,6 +1,5 @@
-// components/AppLayout.js - COMPLETE FIXED VERSION
-// FIXED: Removed Reports from top navigation (they belong in sidebar only)
-// FIXED: Removed duplicate Sign Out and Role label
+// components/AppLayout.js - FULLY CORRECTED
+// FIXED: Reduced header padding and whitespace
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
@@ -106,18 +105,12 @@ function normalizeBackground(background) {
   return "url(" + background + ") center/cover no-repeat";
 }
 
-// ============================================================
-// PROPER ROUTE DETECTION FOR SUB-PAGES
-// ============================================================
 function isActiveRoute(pathname, href) {
   if (!pathname || !href) return false;
-  
   if (href === "/admin" && pathname === "/admin") return true;
   if (href === "/supervisor" && pathname === "/supervisor") return true;
-  
   if (href.startsWith("/supervisor/") && pathname.startsWith(href)) return true;
   if (href.startsWith("/admin/") && pathname.startsWith(href)) return true;
-  
   if (href.includes("?tab=")) {
     const basePath = href.split("?")[0];
     if (pathname === basePath) {
@@ -126,13 +119,9 @@ function isActiveRoute(pathname, href) {
       if (currentTab === targetTab) return true;
     }
   }
-  
   return pathname === href || pathname.startsWith(href + "/");
 }
 
-// ============================================================
-// ROLE-BASED MENU SECTIONS
-// ============================================================
 function getMenuSections(role) {
   if (role === 'admin') {
     return [
@@ -259,9 +248,6 @@ function getMenuSections(role) {
   return [];
 }
 
-// ============================================================
-// SIDEBAR COMPONENT
-// ============================================================
 function Sidebar({ isOpen, toggleSidebar, currentPath, handleLogout, userRole }) {
   const [isMobile, setIsMobile] = useState(false);
   const [expandedSections, setExpandedSections] = useState({
@@ -659,9 +645,6 @@ const stylesSidebar = {
   },
 };
 
-// ============================================================
-// MAIN APPLAYOUT COMPONENT
-// ============================================================
 export default function AppLayout({ children, background, showNavigation = true }) {
   const router = useRouter();
   const [userRole, setUserRole] = useState(null);
@@ -722,7 +705,6 @@ export default function AppLayout({ children, background, showNavigation = true 
     };
   }, [showNavigation]);
 
-  // Handle responsive sidebar
   useEffect(() => {
     const handleResize = () => {
       if (window.innerWidth >= 768) {
@@ -747,7 +729,6 @@ export default function AppLayout({ children, background, showNavigation = true 
     }
   }
 
-  // 🟢 FIXED: Removed Reports from top navigation - they belong in sidebar only
   function getNavLinks() {
     if (userRole === "admin") {
       return [
@@ -762,7 +743,6 @@ export default function AppLayout({ children, background, showNavigation = true 
         { href: "/supervisor", label: "Dashboard" },
         { href: "/supervisor/batch-manage", label: "Batch Manage" },
         { href: "/supervisor/add-candidate", label: "Add Candidate" }
-        // ❌ REMOVED: Reports - these belong in sidebar only
       ];
     }
 
@@ -885,6 +865,9 @@ export default function AppLayout({ children, background, showNavigation = true 
   );
 }
 
+// ============================================================
+// STYLES - REDUCED WHITESPACE
+// ============================================================
 const styles = {
   mainContent: {
     transition: 'margin-left 0.3s ease',
@@ -897,23 +880,25 @@ const styles = {
     position: "sticky",
     top: 0,
     zIndex: 100,
-    boxShadow: "0 2px 8px rgba(0,0,0,0.05)"
+    boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
+    padding: "0",
+    minHeight: "56px",
   },
   navContainer: {
     maxWidth: "1400px",
     margin: "0 auto",
-    padding: "12px 24px",
+    padding: "6px 20px",
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
     flexWrap: "wrap",
-    gap: "15px"
+    gap: "8px",
   },
   navLeft: {
     display: "flex",
     alignItems: "center",
-    gap: "16px",
-    flexWrap: "wrap"
+    gap: "12px",
+    flexWrap: "wrap",
   },
   menuButton: {
     background: "none",
@@ -927,65 +912,65 @@ const styles = {
   logoLink: {
     display: "flex",
     alignItems: "center",
-    gap: "10px",
-    textDecoration: "none"
+    gap: "8px",
+    textDecoration: "none",
   },
   logoImage: {
-    height: "36px",
-    width: "36px",
-    objectFit: "contain"
+    height: "32px",
+    width: "32px",
+    objectFit: "contain",
   },
   logoText: {
-    fontSize: "18px",
+    fontSize: "16px",
     fontWeight: 700,
     color: "#0a1929",
-    letterSpacing: "1px"
+    letterSpacing: "1px",
   },
   navLinks: {
     display: "flex",
-    gap: "10px",
-    flexWrap: "wrap"
+    gap: "6px",
+    flexWrap: "wrap",
   },
   navLink: {
     color: "#475569",
     textDecoration: "none",
-    fontSize: "14px",
+    fontSize: "13px",
     fontWeight: 600,
-    padding: "8px 12px",
-    borderRadius: "8px",
+    padding: "6px 10px",
+    borderRadius: "6px",
     transition: "all 0.2s",
-    cursor: "pointer"
+    cursor: "pointer",
   },
   navLinkActive: {
     background: "#0a1929",
-    color: "white"
+    color: "white",
   },
   navRight: {
     display: "flex",
     alignItems: "center",
-    gap: "12px",
-    flexWrap: "wrap"
+    gap: "10px",
+    flexWrap: "wrap",
   },
   userRole: {
-    fontSize: "13px",
-    padding: "6px 12px",
+    fontSize: "12px",
+    padding: "4px 10px",
     background: "#e2e8f0",
-    borderRadius: "20px",
+    borderRadius: "16px",
     color: "#475569",
-    fontWeight: 600
+    fontWeight: 600,
   },
   logoutButton: {
-    padding: "8px 18px",
+    padding: "6px 14px",
     background: "#f44336",
     color: "white",
     border: "none",
-    borderRadius: "8px",
+    borderRadius: "6px",
     cursor: "pointer",
-    fontSize: "14px",
-    fontWeight: 600
+    fontSize: "12px",
+    fontWeight: 600,
   },
   content: {
-    minHeight: "calc(100vh - 64px)",
+    minHeight: "calc(100vh - 56px)",
     padding: "0",
   },
   loadingCard: {
@@ -993,7 +978,7 @@ const styles = {
     borderRadius: "16px",
     padding: "28px",
     textAlign: "center",
-    boxShadow: "0 10px 30px rgba(0,0,0,0.15)"
+    boxShadow: "0 10px 30px rgba(0,0,0,0.15)",
   },
   spinner: {
     width: "42px",
@@ -1002,10 +987,10 @@ const styles = {
     borderTop: "4px solid #0a1929",
     borderRadius: "50%",
     animation: "spin 1s linear infinite",
-    margin: "0 auto 14px"
+    margin: "0 auto 14px",
   },
   loadingText: {
     color: "#334155",
-    fontWeight: 600
-  }
+    fontWeight: 600,
+  },
 };
