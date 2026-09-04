@@ -1,4 +1,4 @@
-// pages/assessment/[id].js - FULLY CORRECTED WITH SUBMIT FIXES
+// pages/assessment/[id].js - FULLY CORRECTED WITH FIXED CARD SIZE
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
@@ -156,9 +156,6 @@ async function saveAnswer(sessionId, questionId, answer, metadata) {
   return result;
 }
 
-// ============================================================
-// FIXED: submitAssessment now includes assessmentId
-// ============================================================
 async function submitAssessment(sessionId, autoSubmitted, autoSubmitReason, allowIncomplete, proctoringData, assessmentId) {
   const result = await apiCall('/api/assessment/submit', {
     method: 'POST',
@@ -933,7 +930,7 @@ function AssessmentContent() {
   }
 
   // ============================================================
-  // FIXED: handleSubmit now passes assessmentId
+  // handleSubmit - passes assessmentId
   // ============================================================
   async function handleSubmit() {
     if (!session || !session.id) {
@@ -1003,7 +1000,7 @@ function AssessmentContent() {
         null, 
         false, 
         proctoringData,
-        assessmentId  // ← PASS ASSESSMENT ID HERE
+        assessmentId
       );
 
       console.log('[Assessment] Submit result:', result);
@@ -1438,7 +1435,7 @@ function AssessmentContent() {
 }
 
 // ============================================================
-// STYLES
+// STYLES - WITH FIXED CARD SIZE
 // ============================================================
 
 const styles = {
@@ -1796,6 +1793,9 @@ const styles = {
     gap: "12px",
     minWidth: 0
   },
+  // ============================================================
+  // FIXED: questionCard with consistent size
+  // ============================================================
   questionCard: {
     background: "white",
     borderRadius: "12px",
@@ -1803,17 +1803,24 @@ const styles = {
     border: "1px solid #e2e8f0",
     display: "flex",
     flexDirection: "column",
-    flex: 1,
+    flex: "1",
     overflow: "hidden",
-    boxShadow: "0 2px 8px rgba(0,0,0,0.05)"
+    boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
+    minHeight: "350px",
+    maxHeight: "450px",
   },
-  questionText: { 
-    fontSize: "16px", 
-    lineHeight: "1.7", 
-    color: "#0f172a", 
+  questionText: {
+    fontSize: "16px",
+    lineHeight: "1.7",
+    color: "#0f172a",
     fontWeight: 500,
     padding: "0 4px 12px 4px",
-    flexShrink: 0
+    flexShrink: 0,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    display: "-webkit-box",
+    WebkitLineClamp: 3,
+    WebkitBoxOrient: "vertical",
   },
   multipleHint: { 
     padding: "8px 14px", 
@@ -1825,14 +1832,17 @@ const styles = {
     marginBottom: "12px",
     borderLeft: "3px solid #f9b83a"
   },
-  answersContainer: { 
-    display: "flex", 
-    flexDirection: "column", 
+  // ============================================================
+  // FIXED: answersContainer with scroll if needed
+  // ============================================================
+  answersContainer: {
+    display: "flex",
+    flexDirection: "column",
     gap: "8px",
-    flex: 1,
+    flex: "1",
     overflowY: "auto",
     paddingRight: "4px",
-    scrollbarWidth: "thin"
+    scrollbarWidth: "thin",
   },
   answerCard: { 
     padding: "10px 14px",
