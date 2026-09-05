@@ -1,13 +1,12 @@
-// pages/api/assessment/submit.js - FINAL CORRECTED VERSION
-// Version: submit-direct-questions-v4
-// - Separate assessment and type lookups
-// - Direct questions scoring by assessment_id
-// - Proper error handling and logging
-// - Deployment marker for verification
+// pages/api/assessment/submit.js - FULLY CORRECTED WITH BEHAVIORAL TRACKING
+// Version: submit-behavioral-v1
+// - Complete behavioral data saved to database
+// - Proper proctoring_data structure for Behavioral Matrix
+// - Answer changes tracking
 
 import { createClient } from "@supabase/supabase-js";
 
-const SUBMIT_BUILD = "submit-direct-questions-v4";
+const SUBMIT_BUILD = "submit-behavioral-v1";
 const PRACTICAL_ASSESSMENT_IDS = [
   'c2bc4994-1c4a-4094-a763-8d9d560b759e',
   '243275ec-9bb5-43ce-9f02-1111b2ca66e0',
@@ -179,17 +178,36 @@ export default async function handler(req, res) {
                              session.assessment_id === NATIONAL_SERVICE_ASSESSMENT_ID;
 
     // ============================================================
-    // STEP 6: Get responses
+    // STEP 6: Get responses with metadata (for answer changes)
     // ============================================================
     const { data: responses, error: responsesError } = await serviceClient
       .from("responses")
-      .select("question_id, answer_id, metadata")
+      .select("question_id, answer_id, metadata, times_changed")
       .eq("session_id", sessionId);
 
     if (responsesError) {
       console.error("[Submit] Responses error:", responsesError);
     }
     console.log(`[Submit] Found ${responses?.length || 0} responses`);
+
+    // Calculate answer changes from responses
+    let totalAnswerChanges = 0;
+    let totalCopyAttempts = 0;
+    let totalPasteAttempts = 0;
+    let totalRightClickAttempts = 0;
+
+    if (responses && responses.length > 0) {
+      responses.forEach(r => {
+        // Count answer changes from times_changed field
+        totalAnswerChanges += Number(r.times_changed) || 0;
+        
+        // Get from metadata if available
+        const metadata = r.metadata || {};
+        totalCopyAttempts += Number(metadata.copy_attempts) || 0;
+        totalPasteAttempts += Number(metadata.paste_attempts) || 0;
+        totalRightClickAttempts += Number(metadata.right_click_attempts) || 0;
+      });
+    }
 
     // ============================================================
     // STEP 7: Get questions DIRECTLY from questions table
@@ -300,26 +318,18 @@ export default async function handler(req, res) {
     // ============================================================
     let expectedTotalQuestions = 0;
     
-    // Priority 1: Use assessment_type.question_count
     if (assessmentType?.question_count && assessmentType.question_count > 0) {
       expectedTotalQuestions = assessmentType.question_count;
-    } 
-    // Priority 2: Use direct question count
-    else if (questions.length > 0) {
+    } else if (questions.length > 0) {
       expectedTotalQuestions = questions.length;
-    }
-    // Priority 3: Use hardcoded map
-    else {
+    } else {
       expectedTotalQuestions = getTotalQuestions(assessment.id);
     }
 
     console.log(`[Submit] Expected: ${expectedTotalQuestions}, Actual: ${questions.length}`);
 
-    // If mismatch, use the actual question count for scoring
-    // but log the mismatch for debugging
     if (questions.length !== expectedTotalQuestions) {
       console.warn(`[Submit] Question count mismatch: expected ${expectedTotalQuestions}, found ${questions.length}`);
-      // Use the actual count for scoring
       totalMax = questions.length;
     }
 
@@ -360,14 +370,30 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 12: Calculate risk
+    // STEP 12: Process proctoring data
     // ============================================================
     const proctoring = proctoringData || {};
+    const externalUrls = Array.isArray(proctoring.externalUrls) ? proctoring.externalUrls : [];
+    const violations = Array.isArray(proctoring.violations) ? proctoring.violations : [];
+    const tabSwitches = Array.isArray(proctoring.tabSwitches) ? proctoring.tabSwitches : [];
+    
     const summary = proctoring.summary || {};
     let totalViolations = Number(summary.totalViolations) || 0;
     let totalTabSwitches = Number(summary.tabSwitches) || 0;
-    const totalExternalUrls = Array.isArray(proctoring.externalUrls) ? proctoring.externalUrls.length : 0;
+    const externalUrlsVisited = Array.isArray(proctoring.externalUrls) ? proctoring.externalUrls.length : 0;
+    
+    // Also get from the frontend's violation tracking
+    if (responses && responses.length > 0) {
+      const responseMetadata = responses.map(r => r.metadata || {});
+      const totalViolationsFromResponses = responseMetadata.reduce((sum, meta) => sum + (Number(meta.violations) || 0), 0);
+      if (totalViolationsFromResponses > totalViolations) {
+        totalViolations = totalViolationsFromResponses;
+      }
+    }
 
+    // ============================================================
+    // STEP 13: Calculate risk
+    // ============================================================
     let riskScore = 0;
     if (totalTabSwitches > 50) riskScore += 30;
     else if (totalTabSwitches > 10) riskScore += 20;
@@ -377,7 +403,13 @@ export default async function handler(req, res) {
     else if (totalViolations > 5) riskScore += 20;
     else if (totalViolations > 0) riskScore += 10;
     
-    if (totalExternalUrls > 0) riskScore += 25;
+    if (externalUrlsVisited > 0) {
+      const hasSearchEngine = externalUrls.some(u => u.category === 'search_engine');
+      const hasAITool = externalUrls.some(u => u.category === 'ai_tool');
+      if (hasAITool) riskScore += 35;
+      else if (hasSearchEngine) riskScore += 30;
+      else riskScore += 15;
+    }
     
     riskScore = Math.min(riskScore, 100);
     
@@ -386,7 +418,7 @@ export default async function handler(req, res) {
     else if (riskScore >= 40) riskLevel = 'medium';
 
     // ============================================================
-    // STEP 13: Time tracking
+    // STEP 14: Time tracking
     // ============================================================
     const completedAt = new Date().toISOString();
     let assessmentStartedAt = null;
@@ -408,7 +440,7 @@ export default async function handler(req, res) {
     const avgTimePerQuestion = calculateAvgTimePerQuestion(totalSeconds, totalMax);
 
     // ============================================================
-    // STEP 14: Update session
+    // STEP 15: Update session
     // ============================================================
     const { error: sessionUpdateError } = await serviceClient
       .from("assessment_sessions")
@@ -429,7 +461,7 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 15: Check existing result
+    // STEP 16: Check existing result
     // ============================================================
     const { data: existingResult, error: existingResultError } = await serviceClient
       .from("assessment_results")
@@ -442,7 +474,7 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 16: Build result data
+    // STEP 17: Build result data with COMPLETE BEHAVIORAL DATA
     // ============================================================
     const resultData = {
       user_id: session.user_id,
@@ -464,6 +496,45 @@ export default async function handler(req, res) {
       risk_score: riskScore,
       total_questions: totalMax,
       answered_questions: (responses || []).length,
+      
+      // ============================================================
+      // BEHAVIORAL MATRIX DATA - ALL FIELDS
+      // ============================================================
+      proctoring_data: {
+        summary: {
+          totalViolations: totalViolations,
+          tabSwitches: totalTabSwitches,
+          externalUrlsVisited: externalUrlsVisited,
+          copyPasteAttempts: totalCopyAttempts + totalPasteAttempts,
+          rightClickAttempts: totalRightClickAttempts,
+          duration: totalSeconds,
+          durationFormatted: totalDurationFormatted,
+          avgTimePerQuestion: avgTimePerQuestion,
+          riskLevel: riskLevel,
+          riskScore: riskScore,
+          answerChanges: totalAnswerChanges
+        },
+        externalUrls: externalUrls,
+        domainVisits: proctoring.domainVisits || {},
+        violations: violations,
+        tabSwitches: tabSwitches,
+        total_tab_switches: totalTabSwitches,
+        total_violations: totalViolations,
+        copy_attempts: totalCopyAttempts,
+        paste_attempts: totalPasteAttempts,
+        right_click_attempts: totalRightClickAttempts,
+        answer_changes: totalAnswerChanges,
+        total_time_seconds: totalSeconds,
+        avg_time_per_question: avgTimePerQuestion
+      },
+      
+      external_urls_visited: externalUrls,
+      domain_visits: proctoring.domainVisits || {},
+      tab_switch_details: tabSwitches,
+      violations: violations,
+      total_tab_switches: totalTabSwitches,
+      total_external_urls: externalUrlsVisited,
+      
       report_data: {
         categoryScores: categoryScores,
         totalEarned: totalEarned,
@@ -476,12 +547,28 @@ export default async function handler(req, res) {
         totalDurationFormatted: totalDurationFormatted,
         avgTimePerQuestion: avgTimePerQuestion,
         totalQuestions: totalMax,
+        behavioral: {
+          tabSwitches: totalTabSwitches,
+          violations: totalViolations,
+          externalUrlsVisited: externalUrlsVisited,
+          copyPasteAttempts: totalCopyAttempts + totalPasteAttempts,
+          rightClickAttempts: totalRightClickAttempts,
+          answerChanges: totalAnswerChanges,
+          totalTime: totalSeconds,
+          totalTimeFormatted: totalDurationFormatted,
+          avgTimePerQuestion: avgTimePerQuestion,
+          riskLevel: riskLevel,
+          riskScore: riskScore
+        },
         proctoring: {
           riskLevel: riskLevel,
           riskScore: riskScore,
           totalViolations: totalViolations,
-          externalUrlsVisited: totalExternalUrls,
-          tabSwitches: totalTabSwitches
+          externalUrlsVisited: externalUrlsVisited,
+          tabSwitches: totalTabSwitches,
+          duration: totalSeconds,
+          durationFormatted: totalDurationFormatted,
+          avgTimePerQuestion: avgTimePerQuestion
         }
       }
     };
@@ -526,7 +613,7 @@ export default async function handler(req, res) {
     console.log(`[Submit] Result saved: ${resultId}`);
 
     // ============================================================
-    // STEP 17: Update candidate_assessments
+    // STEP 18: Update candidate_assessments
     // ============================================================
     if (resultId) {
       const { error: caUpdateError } = await serviceClient
@@ -548,7 +635,7 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 18: Return response
+    // STEP 19: Return response with COMPLETE behavioral data
     // ============================================================
     return res.status(200).json({
       success: true,
@@ -570,11 +657,24 @@ export default async function handler(req, res) {
         avgTimePerQuestion: avgTimePerQuestion,
         totalQuestions: totalMax
       },
+      behavioral: {
+        tabSwitches: totalTabSwitches,
+        violations: totalViolations,
+        externalUrlsVisited: externalUrlsVisited,
+        copyPasteAttempts: totalCopyAttempts + totalPasteAttempts,
+        rightClickAttempts: totalRightClickAttempts,
+        answerChanges: totalAnswerChanges,
+        totalTime: totalSeconds,
+        totalTimeFormatted: totalDurationFormatted,
+        avgTimePerQuestion: avgTimePerQuestion,
+        riskLevel: riskLevel,
+        riskScore: riskScore
+      },
       proctoring: {
         riskLevel: riskLevel,
         riskScore: riskScore,
         totalViolations: totalViolations,
-        externalUrlsVisited: totalExternalUrls,
+        externalUrlsVisited: externalUrlsVisited,
         tabSwitches: totalTabSwitches
       }
     });
