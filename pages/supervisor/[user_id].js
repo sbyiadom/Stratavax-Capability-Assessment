@@ -1,7 +1,8 @@
-// pages/supervisor/[user_id].js - COMPLETE FIXED FILE
+// pages/supervisor/[user_id].js - COMPLETE FIXED WITH BEHAVIORAL MATRIX
 // FIXED: Correct API endpoint (/api/supervisor/reports)
 // FIXED: Proper authentication with Authorization header
 // ADDED: Reset Assessment Button
+// ADDED: Behavioral Matrix with real data from proctoring_data
 
 import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
@@ -150,6 +151,34 @@ function EmptyState({ title, message, icon }) {
       <p style={styles.emptyText}>{message}</p>
     </div>
   );
+}
+
+// ============================================================
+// EXTRACT BEHAVIORAL DATA FROM PROCTORING_DATA
+// ============================================================
+function extractBehavioralData(report) {
+  const proctoring = report?.proctoring_data || {};
+  const summary = proctoring?.summary || {};
+  
+  // Also check report_data.behavioral
+  const behavioral = report?.report_data?.behavioral || {};
+  
+  return {
+    totalTime: summary.duration || behavioral.totalTime || 0,
+    totalTimeFormatted: summary.durationFormatted || behavioral.totalTimeFormatted || '00:00:00',
+    avgTimePerQuestion: summary.avgTimePerQuestion || behavioral.avgTimePerQuestion || '0s',
+    answerChanges: summary.answerChanges || behavioral.answerChanges || 0,
+    tabSwitches: summary.tabSwitches || behavioral.tabSwitches || 0,
+    violations: summary.totalViolations || behavioral.violations || 0,
+    copyPasteAttempts: summary.copyPasteAttempts || behavioral.copyPasteAttempts || 0,
+    rightClickAttempts: summary.rightClickAttempts || behavioral.rightClickAttempts || 0,
+    externalUrlsVisited: summary.externalUrlsVisited || behavioral.externalUrlsVisited || 0,
+    riskLevel: summary.riskLevel || behavioral.riskLevel || 'low',
+    riskScore: summary.riskScore || behavioral.riskScore || 0,
+    tabSwitchDetails: proctoring.tabSwitches || [],
+    violationDetails: proctoring.violations || [],
+    externalUrlDetails: proctoring.externalUrls || []
+  };
 }
 
 // ============================================================
@@ -445,6 +474,23 @@ export default function SupervisorUserReportPage() {
   
   const scoreColor = getToneColor(overallScore);
   const scoreGradient = getToneGradient(overallScore);
+
+  // ============================================================
+  // EXTRACT BEHAVIORAL DATA
+  // ============================================================
+  const behavioralData = extractBehavioralData(cleanReport);
+
+  const behavioralMetrics = {
+    totalTime: behavioralData.totalTimeFormatted,
+    avgTimePerQuestion: behavioralData.avgTimePerQuestion,
+    answerChanges: behavioralData.answerChanges,
+    tabSwitches: behavioralData.tabSwitches,
+    violations: behavioralData.violations,
+    copyPasteAttempts: behavioralData.copyPasteAttempts,
+    rightClickAttempts: behavioralData.rightClickAttempts,
+    riskLevel: behavioralData.riskLevel,
+    riskScore: behavioralData.riskScore
+  };
 
   const tabs = useMemo(() => [
     { key: "overview", label: "Overview", icon: "◈" },
@@ -820,6 +866,65 @@ export default function SupervisorUserReportPage() {
           })}
         </nav>
         <div style={styles.tabContent}>{renderActiveTab()}</div>
+
+        {/* ============================================================
+            BEHAVIORAL MATRIX SECTION - WITH REAL DATA
+            ============================================================ */}
+        <div style={styles.behavioralMatrixSection}>
+          <h3 style={styles.matrixTitle}>🧠 Behavioral Matrix</h3>
+          
+          <div style={styles.matrixTableWrapper}>
+            <table style={styles.matrixTable}>
+              <thead>
+                <tr>
+                  <th style={styles.matrixTh}>TOTAL TIME</th>
+                  <th style={styles.matrixTh}>AVG TIME PER QUESTION</th>
+                  <th style={styles.matrixTh}>ANSWER CHANGES</th>
+                  <th style={styles.matrixTh}>TAB SWITCHES</th>
+                  <th style={styles.matrixTh}>VIOLATIONS</th>
+                  <th style={styles.matrixTh}>COPY/PASTE ATTEMPTS</th>
+                  <th style={styles.matrixTh}>RIGHT-CLICK ATTEMPTS</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td style={styles.matrixTd}>{behavioralMetrics.totalTime}</td>
+                  <td style={styles.matrixTd}>{behavioralMetrics.avgTimePerQuestion}</td>
+                  <td style={styles.matrixTd}>{behavioralMetrics.answerChanges}</td>
+                  <td style={styles.matrixTd}>{behavioralMetrics.tabSwitches}</td>
+                  <td style={styles.matrixTd}>{behavioralMetrics.violations}</td>
+                  <td style={styles.matrixTd}>{behavioralMetrics.copyPasteAttempts}</td>
+                  <td style={styles.matrixTd}>{behavioralMetrics.rightClickAttempts}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          
+          <div style={styles.matrixFooter}>
+            <span style={styles.matrixRisk}>
+              Risk Level: <strong style={{ 
+                color: behavioralMetrics.riskLevel === 'high' ? '#dc2626' : 
+                       behavioralMetrics.riskLevel === 'medium' ? '#f59e0b' : '#16a34a' 
+              }}>
+                {behavioralMetrics.riskLevel.charAt(0).toUpperCase() + behavioralMetrics.riskLevel.slice(1)}
+              </strong>
+              {' '}(Score: {behavioralMetrics.riskScore})
+            </span>
+            <span style={styles.matrixFlags}>
+              Behavioral flags: {behavioralMetrics.violations} violation(s), {behavioralMetrics.tabSwitches} tab switch(es), and {behavioralMetrics.answerChanges} answer change(s).
+            </span>
+          </div>
+        </div>
+
+        {/* ✅ HIDE BEHAVIORAL MATRIX BUTTON */}
+        <div style={styles.hideMatrixContainer}>
+          <button 
+            onClick={() => setActiveTab(activeTab === "overview" ? "hidden" : "overview")}
+            style={styles.hideMatrixButton}
+          >
+            {activeTab === "hidden" ? "Show Behavioral Matrix" : "Hide Behavioral Matrix"}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -916,5 +1021,90 @@ const styles = {
   badgeNeutral: { display: "inline-flex", alignItems: "center", justifyContent: "center", borderRadius: "999px", padding: "7px 11px", background: "#eef4ff", color: "#3538cd", fontWeight: 900, fontSize: "12px" },
   badgeWarm: { display: "inline-flex", alignItems: "center", justifyContent: "center", borderRadius: "999px", padding: "7px 11px", background: "#fff7ed", color: "#c2410c", fontWeight: 900, fontSize: "12px" },
   badgeGood: { display: "inline-flex", alignItems: "center", justifyContent: "center", borderRadius: "999px", padding: "7px 11px", background: "#ecfdf3", color: "#027a48", fontWeight: 900, fontSize: "12px" },
-  badgeCritical: { display: "inline-flex", alignItems: "center", justifyContent: "center", borderRadius: "999px", padding: "7px 11px", background: "#fef3f2", color: "#b42318", fontWeight: 900, fontSize: "12px" }
+  badgeCritical: { display: "inline-flex", alignItems: "center", justifyContent: "center", borderRadius: "999px", padding: "7px 11px", background: "#fef3f2", color: "#b42318", fontWeight: 900, fontSize: "12px" },
+
+  // ============================================================
+  // BEHAVIORAL MATRIX STYLES
+  // ============================================================
+  behavioralMatrixSection: {
+    background: 'white',
+    borderRadius: '12px',
+    padding: '16px 20px',
+    marginBottom: '16px',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+    border: '1px solid #e2e8f0',
+  },
+  matrixTitle: {
+    fontSize: '14px',
+    fontWeight: 600,
+    color: '#0a1929',
+    margin: '0 0 12px 0',
+  },
+  matrixTableWrapper: {
+    overflowX: 'auto',
+    marginBottom: '10px',
+  },
+  matrixTable: {
+    width: '100%',
+    borderCollapse: 'collapse',
+    fontSize: '13px',
+    minWidth: '600px',
+  },
+  matrixTh: {
+    textAlign: 'left',
+    padding: '8px 10px',
+    background: '#f8fafc',
+    borderBottom: '2px solid #0a1929',
+    fontWeight: 600,
+    color: '#0a1929',
+    fontSize: '10px',
+    textTransform: 'uppercase',
+    letterSpacing: '0.03em',
+    whiteSpace: 'nowrap',
+  },
+  matrixTd: {
+    padding: '8px 10px',
+    borderBottom: '1px solid #e2e8f0',
+    color: '#2d3748',
+    fontSize: '13px',
+    fontWeight: 500,
+  },
+  matrixFooter: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: '10px',
+    borderTop: '1px solid #e2e8f0',
+    flexWrap: 'wrap',
+    gap: '8px',
+  },
+  matrixRisk: {
+    fontSize: '13px',
+    fontWeight: 500,
+    color: '#475569',
+  },
+  matrixFlags: {
+    fontSize: '13px',
+    color: '#64748b',
+  },
+  hideMatrixContainer: {
+    textAlign: 'center',
+    marginTop: '8px',
+  },
+  hideMatrixButton: {
+    padding: '6px 16px',
+    background: 'transparent',
+    border: '1px solid #e2e8f0',
+    borderRadius: '6px',
+    fontSize: '12px',
+    color: '#64748b',
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+    '&:hover': {
+      background: '#f8fafc',
+      borderColor: '#94a3b8',
+    },
+  },
 };
+
+export default SupervisorUserReportPage;
