@@ -1,12 +1,13 @@
 // pages/api/assessment/submit.js - FULLY CORRECTED WITH BEHAVIORAL TRACKING
-// Version: submit-behavioral-v1
+// Version: submit-behavioral-v2
 // - Complete behavioral data saved to database
 // - Proper proctoring_data structure for Behavioral Matrix
 // - Answer changes tracking
+// - Time cap for unreasonable session durations
 
 import { createClient } from "@supabase/supabase-js";
 
-const SUBMIT_BUILD = "submit-behavioral-v1";
+const SUBMIT_BUILD = "submit-behavioral-v2";
 const PRACTICAL_ASSESSMENT_IDS = [
   'c2bc4994-1c4a-4094-a763-8d9d560b759e',
   '243275ec-9bb5-43ce-9f02-1111b2ca66e0',
@@ -14,6 +15,7 @@ const PRACTICAL_ASSESSMENT_IDS = [
   '928f81fc-35ea-40ac-83cb-7c3a0c1c18dc'
 ];
 const NATIONAL_SERVICE_ASSESSMENT_ID = 'bdb9d46e-9fac-4d00-8478-1f649e7ac600';
+const MAX_REASONABLE_SECONDS = 8 * 60 * 60; // 8 hours
 
 // ============================================================
 // HELPERS
@@ -28,10 +30,17 @@ function formatDuration(seconds) {
 
 function calculateAvgTimePerQuestion(totalSeconds, questionCount) {
   if (!totalSeconds || totalSeconds <= 0 || !questionCount || questionCount <= 0) return '0s';
+  
+  // If total time is unreasonable, flag it
+  if (totalSeconds > MAX_REASONABLE_SECONDS) {
+    return 'Session left open';
+  }
+  
   const avgSeconds = Math.round(totalSeconds / questionCount);
   if (avgSeconds < 60) return `${avgSeconds}s`;
   const minutes = Math.floor(avgSeconds / 60);
   const seconds = avgSeconds % 60;
+  if (seconds === 0) return `${minutes}m`;
   return `${minutes}m ${seconds}s`;
 }
 
@@ -418,7 +427,7 @@ export default async function handler(req, res) {
     else if (riskScore >= 40) riskLevel = 'medium';
 
     // ============================================================
-    // STEP 14: Time tracking
+    // STEP 14: Time tracking with reasonable cap
     // ============================================================
     const completedAt = new Date().toISOString();
     let assessmentStartedAt = null;
@@ -433,6 +442,12 @@ export default async function handler(req, res) {
     } else if (session.created_at) {
       assessmentStartedAt = session.created_at;
       totalSeconds = Math.floor((new Date(completedAt) - new Date(session.created_at)) / 1000);
+    }
+
+    // Cap unreasonable time
+    if (totalSeconds > MAX_REASONABLE_SECONDS) {
+      console.warn(`[Submit] Total time ${totalSeconds}s exceeds reasonable limit, capping for display`);
+      // Keep the actual value but it will be flagged in the frontend
     }
 
     if (totalSeconds < 0) totalSeconds = 0;
@@ -512,7 +527,9 @@ export default async function handler(req, res) {
           avgTimePerQuestion: avgTimePerQuestion,
           riskLevel: riskLevel,
           riskScore: riskScore,
-          answerChanges: totalAnswerChanges
+          answerChanges: totalAnswerChanges,
+          // Flag if time is unreasonable
+          isTimeAbnormal: totalSeconds > MAX_REASONABLE_SECONDS
         },
         externalUrls: externalUrls,
         domainVisits: proctoring.domainVisits || {},
@@ -525,7 +542,8 @@ export default async function handler(req, res) {
         right_click_attempts: totalRightClickAttempts,
         answer_changes: totalAnswerChanges,
         total_time_seconds: totalSeconds,
-        avg_time_per_question: avgTimePerQuestion
+        avg_time_per_question: avgTimePerQuestion,
+        is_time_abnormal: totalSeconds > MAX_REASONABLE_SECONDS
       },
       
       external_urls_visited: externalUrls,
@@ -547,6 +565,7 @@ export default async function handler(req, res) {
         totalDurationFormatted: totalDurationFormatted,
         avgTimePerQuestion: avgTimePerQuestion,
         totalQuestions: totalMax,
+        isTimeAbnormal: totalSeconds > MAX_REASONABLE_SECONDS,
         behavioral: {
           tabSwitches: totalTabSwitches,
           violations: totalViolations,
@@ -558,7 +577,8 @@ export default async function handler(req, res) {
           totalTimeFormatted: totalDurationFormatted,
           avgTimePerQuestion: avgTimePerQuestion,
           riskLevel: riskLevel,
-          riskScore: riskScore
+          riskScore: riskScore,
+          isTimeAbnormal: totalSeconds > MAX_REASONABLE_SECONDS
         },
         proctoring: {
           riskLevel: riskLevel,
@@ -568,7 +588,8 @@ export default async function handler(req, res) {
           tabSwitches: totalTabSwitches,
           duration: totalSeconds,
           durationFormatted: totalDurationFormatted,
-          avgTimePerQuestion: avgTimePerQuestion
+          avgTimePerQuestion: avgTimePerQuestion,
+          isTimeAbnormal: totalSeconds > MAX_REASONABLE_SECONDS
         }
       }
     };
@@ -655,7 +676,8 @@ export default async function handler(req, res) {
         totalSeconds: totalSeconds,
         totalDurationFormatted: totalDurationFormatted,
         avgTimePerQuestion: avgTimePerQuestion,
-        totalQuestions: totalMax
+        totalQuestions: totalMax,
+        isTimeAbnormal: totalSeconds > MAX_REASONABLE_SECONDS
       },
       behavioral: {
         tabSwitches: totalTabSwitches,
@@ -668,14 +690,16 @@ export default async function handler(req, res) {
         totalTimeFormatted: totalDurationFormatted,
         avgTimePerQuestion: avgTimePerQuestion,
         riskLevel: riskLevel,
-        riskScore: riskScore
+        riskScore: riskScore,
+        isTimeAbnormal: totalSeconds > MAX_REASONABLE_SECONDS
       },
       proctoring: {
         riskLevel: riskLevel,
         riskScore: riskScore,
         totalViolations: totalViolations,
         externalUrlsVisited: externalUrlsVisited,
-        tabSwitches: totalTabSwitches
+        tabSwitches: totalTabSwitches,
+        isTimeAbnormal: totalSeconds > MAX_REASONABLE_SECONDS
       }
     });
 
