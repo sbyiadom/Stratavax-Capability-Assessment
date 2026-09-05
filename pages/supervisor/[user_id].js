@@ -159,14 +159,25 @@ function EmptyState({ title, message, icon }) {
 function extractBehavioralData(report) {
   const proctoring = report?.proctoring_data || {};
   const summary = proctoring?.summary || {};
-  
-  // Also check report_data.behavioral
   const behavioral = report?.report_data?.behavioral || {};
   
+  const MAX_REASONABLE_SECONDS = 8 * 60 * 60; // 8 hours
+  const isTimeAbnormal = summary.isTimeAbnormal || behavioral.isTimeAbnormal || summary.duration > MAX_REASONABLE_SECONDS || behavioral.totalTime > MAX_REASONABLE_SECONDS;
+  
+  let totalTime = summary.duration || behavioral.totalTime || 0;
+  let totalTimeFormatted = summary.durationFormatted || behavioral.totalTimeFormatted || '00:00:00';
+  let avgTimePerQuestion = summary.avgTimePerQuestion || behavioral.avgTimePerQuestion || '0s';
+  
+  // If time is abnormal, show a clear indicator
+  if (isTimeAbnormal || totalTime > MAX_REASONABLE_SECONDS) {
+    totalTimeFormatted = '> 8 hrs (session left open)';
+    avgTimePerQuestion = 'N/A';
+  }
+  
   return {
-    totalTime: summary.duration || behavioral.totalTime || 0,
-    totalTimeFormatted: summary.durationFormatted || behavioral.totalTimeFormatted || '00:00:00',
-    avgTimePerQuestion: summary.avgTimePerQuestion || behavioral.avgTimePerQuestion || '0s',
+    totalTime: totalTime,
+    totalTimeFormatted: totalTimeFormatted,
+    avgTimePerQuestion: avgTimePerQuestion,
     answerChanges: summary.answerChanges || behavioral.answerChanges || 0,
     tabSwitches: summary.tabSwitches || behavioral.tabSwitches || 0,
     violations: summary.totalViolations || behavioral.violations || 0,
@@ -175,6 +186,7 @@ function extractBehavioralData(report) {
     externalUrlsVisited: summary.externalUrlsVisited || behavioral.externalUrlsVisited || 0,
     riskLevel: summary.riskLevel || behavioral.riskLevel || 'low',
     riskScore: summary.riskScore || behavioral.riskScore || 0,
+    isTimeAbnormal: isTimeAbnormal || totalTime > MAX_REASONABLE_SECONDS,
     tabSwitchDetails: proctoring.tabSwitches || [],
     violationDetails: proctoring.violations || [],
     externalUrlDetails: proctoring.externalUrls || []
@@ -489,7 +501,8 @@ export default function SupervisorUserReportPage() {
     copyPasteAttempts: behavioralData.copyPasteAttempts,
     rightClickAttempts: behavioralData.rightClickAttempts,
     riskLevel: behavioralData.riskLevel,
-    riskScore: behavioralData.riskScore
+    riskScore: behavioralData.riskScore,
+    isTimeAbnormal: behavioralData.isTimeAbnormal
   };
 
   const tabs = useMemo(() => [
@@ -909,6 +922,11 @@ export default function SupervisorUserReportPage() {
                 {behavioralMetrics.riskLevel.charAt(0).toUpperCase() + behavioralMetrics.riskLevel.slice(1)}
               </strong>
               {' '}(Score: {behavioralMetrics.riskScore})
+              {behavioralMetrics.isTimeAbnormal && (
+                <span style={{ color: '#f59e0b', marginLeft: '8px', fontSize: '11px' }}>
+                  ⚠️ Session left open
+                </span>
+              )}
             </span>
             <span style={styles.matrixFlags}>
               Behavioral flags: {behavioralMetrics.violations} violation(s), {behavioralMetrics.tabSwitches} tab switch(es), and {behavioralMetrics.answerChanges} answer change(s).
