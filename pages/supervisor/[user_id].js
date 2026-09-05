@@ -1106,5 +1106,3 @@ const styles = {
     },
   },
 };
-
-export default SupervisorUserReportPage;
