@@ -1,4 +1,4 @@
-// pages/assessment/[id].js - FULLY CORRECTED WITH FIXED CARD SIZE
+// pages/assessment/[id].js - FULLY CORRECTED WITH RESPONSE-SHAPE FIX
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
@@ -665,7 +665,7 @@ function AssessmentContent() {
   }, [loading, alreadySubmitted, accessDenied, session, isTimeExpired]);
 
   // ============================================================
-  // INITIALIZATION
+  // INITIALIZATION - WITH RESPONSE-SHAPE FIX
   // ============================================================
   useEffect(() => {
     const init = async () => {
@@ -704,21 +704,39 @@ function AssessmentContent() {
         const currentUser = authSession.user;
         setUser(currentUser);
 
+        // ============================================================
+        // FIXED: Handle both wrapped and unwrapped response formats
+        // ============================================================
         const assessmentData = await fetchAssessmentDetails(assessmentId);
         if (!assessmentData.success) {
           throw new Error(assessmentData.error || 'Failed to load assessment');
         }
 
-        const assessmentInfo = assessmentData;
+        // Support both { success: true, assessment: {...} } and { success: true, ... }
+        const assessmentInfo = assessmentData.assessment || assessmentData;
+
+        if (!assessmentInfo?.id) {
+          console.error('[Assessment] Invalid assessment data format:', assessmentData);
+          throw new Error('Assessment details were returned in an invalid format');
+        }
+
+        // Resolve type code from multiple possible locations
+        const resolvedTypeCode = 
+          assessmentInfo.assessment_type?.code ||
+          assessmentInfo.assessmentType?.code ||
+          assessmentInfo.type_code ||
+          null;
+
+        console.log(`[Assessment] Type: ${resolvedTypeCode || 'unknown'}`);
+
         setAssessment(assessmentInfo);
-        setAssessmentType(assessmentInfo.assessment_type || null);
-        setAssessmentTypeCode(assessmentInfo.assessment_type?.code || null);
+        setAssessmentType(assessmentInfo.assessment_type || assessmentInfo.assessmentType || null);
+        setAssessmentTypeCode(resolvedTypeCode);
         
-        const durationMinutes = getAssessmentDuration(assessmentInfo.assessment_type?.code || null);
+        const durationMinutes = getAssessmentDuration(resolvedTypeCode);
         const durationSeconds = durationMinutes * 60;
         setTimeLimitSeconds(durationSeconds);
         
-        console.log(`[Assessment] Type: ${assessmentInfo.assessment_type?.code || 'unknown'}`);
         console.log(`[Assessment] Duration: ${durationMinutes} minutes (${durationSeconds} seconds)`);
 
         const accessData = await fetchAccess(assessmentId);
@@ -735,15 +753,22 @@ function AssessmentContent() {
           return;
         }
 
-        const questionData = await fetchQuestions(
-          assessmentInfo.assessment_type_id,
-          assessmentInfo.assessment_type?.code
-        );
+        // Get assessment type ID from authoritative source
+        const assessmentTypeId = assessmentInfo.assessment_type_id || 
+                                 assessmentInfo.assessment_type?.id ||
+                                 assessmentInfo.assessmentType?.id;
+
+        if (!assessmentTypeId) {
+          console.error('[Assessment] Missing assessment_type_id:', assessmentInfo);
+          throw new Error('Assessment type could not be determined');
+        }
+
+        const questionData = await fetchQuestions(assessmentTypeId, resolvedTypeCode);
         setQuestions(questionData || []);
 
         const sessionData = await createOrGetSession(
           assessmentId,
-          assessmentInfo.assessment_type_id,
+          assessmentTypeId,
           durationMinutes
         );
 
@@ -1793,9 +1818,6 @@ const styles = {
     gap: "12px",
     minWidth: 0
   },
-  // ============================================================
-  // FIXED: questionCard with consistent size
-  // ============================================================
   questionCard: {
     background: "white",
     borderRadius: "12px",
@@ -1832,9 +1854,6 @@ const styles = {
     marginBottom: "12px",
     borderLeft: "3px solid #f9b83a"
   },
-  // ============================================================
-  // FIXED: answersContainer with scroll if needed
-  // ============================================================
   answersContainer: {
     display: "flex",
     flexDirection: "column",
