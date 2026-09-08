@@ -1,6 +1,4 @@
-// pages/api/assessment/session.js - FULLY CORRECTED
-// Persists assessment_id when creating or reusing sessions
-
+// pages/api/assessment/session.js
 import { createClient } from '@supabase/supabase-js';
 
 export default async function handler(req, res) {
@@ -11,11 +9,8 @@ export default async function handler(req, res) {
   try {
     const { assessmentId, assessmentTypeId, durationMinutes } = req.body;
 
-    if (!assessmentId || !assessmentTypeId) {
-      return res.status(400).json({
-        success: false,
-        error: 'Missing assessmentId or assessmentTypeId'
-      });
+    if (!assessmentId) {
+      return res.status(400).json({ success: false, error: 'Missing assessmentId' });
     }
 
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -41,62 +36,44 @@ export default async function handler(req, res) {
 
     const userId = userData.user.id;
 
-    // ============================================================
-    // STEP 1: Check for existing in-progress session
-    // ============================================================
-    const { data: existingSession, error: existingError } = await serviceClient
+    // Check for existing in-progress session
+    const { data: existingSession } = await serviceClient
       .from('assessment_sessions')
       .select('*')
       .eq('user_id', userId)
-      .eq('assessment_id', assessmentId)  // ← MUST match assessment_id
+      .eq('assessment_id', assessmentId)
       .eq('status', 'in_progress')
       .maybeSingle();
 
-    if (existingError) {
-      console.error('[Session] Existing session error:', existingError);
-    }
-
     if (existingSession) {
-      console.log('[Session] Reusing existing session:', existingSession.id);
-      return res.status(200).json({
-        success: true,
-        session: existingSession
-      });
+      return res.status(200).json({ success: true, session: existingSession });
     }
 
-    // ============================================================
-    // STEP 2: Create new session with assessment_id
-    // ============================================================
-    const duration = durationMinutes || 120;
-    const expiresAt = new Date();
-    expiresAt.setMinutes(expiresAt.getMinutes() + duration);
-
-    // Get question count for the assessment
-    const { data: assessment, error: assessmentError } = await serviceClient
+    // Get assessment
+    const { data: assessment } = await serviceClient
       .from('assessments')
       .select('id, assessment_type_id, assessment_type:assessment_types(*)')
       .eq('id', assessmentId)
       .single();
 
-    if (assessmentError || !assessment) {
-      console.error('[Session] Assessment lookup error:', assessmentError);
-      return res.status(404).json({
-        success: false,
-        error: 'Assessment not found'
-      });
+    if (!assessment) {
+      return res.status(404).json({ success: false, error: 'Assessment not found' });
     }
 
+    // Get question count
     const questionCount = assessment.assessment_type?.question_count || 40;
 
-    // ============================================================
-    // STEP 3: Insert session with BOTH assessment_id and assessment_type_id
-    // ============================================================
+    // Create session
+    const duration = durationMinutes || 120;
+    const expiresAt = new Date();
+    expiresAt.setMinutes(expiresAt.getMinutes() + duration);
+
     const { data: newSession, error: createError } = await serviceClient
       .from('assessment_sessions')
       .insert({
         user_id: userId,
-        assessment_id: assessmentId,          // ← CRITICAL: Persist the actual assessment ID
-        assessment_type_id: assessmentTypeId,
+        assessment_id: assessmentId,
+        assessment_type_id: assessment.assessment_type_id,
         status: 'in_progress',
         started_at: new Date().toISOString(),
         expires_at: expiresAt.toISOString(),
@@ -111,26 +88,25 @@ export default async function handler(req, res) {
       .single();
 
     if (createError) {
-      console.error('[Session] Create error:', createError);
-      return res.status(500).json({
-        success: false,
-        error: 'Failed to create session',
-        details: createError.message
-      });
+      return res.status(500).json({ success: false, error: createError.message });
     }
 
-    console.log('[Session] Created new session:', newSession.id, 'for assessment:', assessmentId);
+    // Update candidate_assessments
+    await serviceClient
+      .from('candidate_assessments')
+      .update({
+        session_id: newSession.id,
+        status: 'in_progress',
+        started_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      })
+      .eq('user_id', userId)
+      .eq('assessment_id', assessmentId);
 
-    return res.status(200).json({
-      success: true,
-      session: newSession
-    });
+    return res.status(200).json({ success: true, session: newSession });
 
   } catch (error) {
     console.error('[Session] Error:', error);
-    return res.status(500).json({
-      success: false,
-      error: error.message || 'Internal server error'
-    });
+    return res.status(500).json({ success: false, error: error.message });
   }
 }
