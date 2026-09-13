@@ -1,4 +1,4 @@
-// pages/api/admin/reset-password.js
+// pages/api/admin/reset-password.js - FIXED
 import { createClient } from '@supabase/supabase-js';
 
 export default async function handler(req, res) {
@@ -40,19 +40,54 @@ export default async function handler(req, res) {
       }
     }
 
-    // Find user by email
-    const { data: users, error: listError } = await serviceClient.auth.admin.listUsers();
+    // ============================================================
+    // FIXED: Search ALL users (paginated) instead of only first 50
+    // ============================================================
+    let allUsers = [];
+    let page = 1;
+    const perPage = 1000;
+    let hasMore = true;
 
-    if (listError) {
-      console.error('List users error:', listError);
-      return res.status(500).json({ success: false, error: 'Failed to find user' });
+    while (hasMore) {
+      const { data: usersPage, error: listError } = await serviceClient.auth.admin.listUsers({
+        page: page,
+        perPage: perPage
+      });
+
+      if (listError) {
+        console.error('List users error:', listError);
+        return res.status(500).json({ success: false, error: 'Failed to search users' });
+      }
+
+      if (!usersPage?.users || usersPage.users.length === 0) {
+        hasMore = false;
+      } else {
+        allUsers = allUsers.concat(usersPage.users);
+        if (usersPage.users.length < perPage) {
+          hasMore = false;
+        } else {
+          page++;
+        }
+      }
     }
 
-    const user = users.users.find(u => u.email === email);
+    console.log(`[Admin] Searched ${allUsers.length} total users`);
+
+    // Find user by email (case-insensitive)
+    const normalizedEmail = email.toLowerCase().trim();
+    const user = allUsers.find(u => 
+      u.email?.toLowerCase().trim() === normalizedEmail
+    );
 
     if (!user) {
-      return res.status(404).json({ success: false, error: 'User not found' });
+      console.error('[Admin] User not found:', email);
+      return res.status(404).json({ 
+        success: false, 
+        error: `User not found: ${email}. Please check the email address.` 
+      });
     }
+
+    console.log(`[Admin] Found user: ${user.id} - ${user.email}`);
 
     // Update password using Admin API
     const { data, error: updateError } = await serviceClient.auth.admin.updateUserById(
@@ -65,7 +100,7 @@ export default async function handler(req, res) {
       return res.status(500).json({ success: false, error: updateError.message });
     }
 
-    console.log('[Admin] Password reset for:', email);
+    console.log('[Admin] Password reset successful for:', email);
 
     return res.status(200).json({
       success: true,
