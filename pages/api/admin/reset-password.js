@@ -1,4 +1,4 @@
-// pages/api/admin/reset-password.js - FIXED
+// pages/api/admin/reset-password.js - FIXED WITH PAGINATED SEARCH
 import { createClient } from '@supabase/supabase-js';
 
 export default async function handler(req, res) {
@@ -55,7 +55,7 @@ export default async function handler(req, res) {
       });
 
       if (listError) {
-        console.error('List users error:', listError);
+        console.error('[Admin] List users error:', listError);
         return res.status(500).json({ success: false, error: 'Failed to search users' });
       }
 
@@ -96,7 +96,7 @@ export default async function handler(req, res) {
     );
 
     if (updateError) {
-      console.error('Update password error:', updateError);
+      console.error('[Admin] Update password error:', updateError);
       return res.status(500).json({ success: false, error: updateError.message });
     }
 
