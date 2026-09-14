@@ -1,4 +1,6 @@
 // pages/api/assessment/questions.js - FULLY CORRECTED WITH 40-QUESTION LIMIT
+// UPDATED: Added Bearer token authentication (Phase 1)
+// UPDATED: Removed answer scores from response; server computes isMultipleCorrect (Phase 1)
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -36,6 +38,11 @@ function safeArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
+function safeNumber(value, fallback = 0) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
 function shuffleArray(array) {
   if (!Array.isArray(array)) return [];
   const shuffled = [...array];
@@ -60,17 +67,38 @@ function randomizeAnswers(question) {
   return { ...question, answers: updatedAnswers };
 }
 
+// ============================================================
+// Determine (server-side) whether a question allows multiple
+// correct answers, WITHOUT exposing scores to the client.
+// Mirrors the logic previously duplicated on the frontend
+// (isMultipleCorrectQuestion in pages/assessment/[id].js).
+// ============================================================
+function computeIsMultipleCorrect(question, assessmentTypeCode) {
+  if (assessmentTypeCode === 'national_service') {
+    return false;
+  }
+  if (!question || !Array.isArray(question.answers)) return false;
+  const correctAnswers = question.answers.filter((answer) => safeNumber(answer.score, 0) === 1);
+  return correctAnswers.length > 1;
+}
+
+// Strip the score field from each answer before sending to the client.
+function stripScores(question) {
+  const answers = safeArray(question.answers).map(({ score, ...rest }) => rest);
+  return { ...question, answers };
+}
+
 function getRequiredQuestionCount(assessmentId, assessmentTypeCode) {
   // Check if it's a practical assessment
   if (PRACTICAL_ASSESSMENT_IDS.includes(assessmentId)) {
     return 40;
   }
-  
+
   // Check if it's National Service
   if (assessmentId === NATIONAL_SERVICE_ASSESSMENT_ID || assessmentTypeCode === 'national_service') {
     return 80;
   }
-  
+
   // Use the map or default to 100
   return QUESTION_COUNT_MAP[assessmentId] || 100;
 }
@@ -93,13 +121,31 @@ export default async function handler(req, res) {
       });
     }
 
+    // ============================================================
+    // AUTH CHECK (restored — matches submit.js / session.js pattern)
+    // ============================================================
+    const token = req.headers.authorization?.replace('Bearer ', '');
+    if (!token) {
+      return res.status(401).json({ success: false, error: 'Unauthorized' });
+    }
+
+    const serviceClient = createClient(supabaseUrl, serviceRoleKey, {
+      auth: { persistSession: false, autoRefreshToken: false }
+    });
+
+    const { data: userData, error: userError } = await serviceClient.auth.getUser(token);
+    if (userError || !userData?.user) {
+      console.error('[API] Auth error:', userError);
+      return res.status(401).json({ success: false, error: 'Invalid token' });
+    }
+
     // Get parameters from query
     const { assessmentTypeId, assessmentTypeCode, assessmentId } = req.query;
-    
+
     if (!assessmentTypeId) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Missing assessmentTypeId parameter' 
+      return res.status(400).json({
+        success: false,
+        error: 'Missing assessmentTypeId parameter'
       });
     }
 
@@ -108,11 +154,6 @@ export default async function handler(req, res) {
     // Get required question count
     const requiredCount = getRequiredQuestionCount(assessmentId, assessmentTypeCode);
     console.log(`[API] Required question count: ${requiredCount}`);
-
-    // Create Supabase client
-    const serviceClient = createClient(supabaseUrl, serviceRoleKey, {
-      auth: { persistSession: false }
-    });
 
     // Get questions from unique_questions
     const { data: questionsData, error: questionsError } = await serviceClient
@@ -161,7 +202,9 @@ export default async function handler(req, res) {
       });
     }
 
-    // Format questions with their answers
+    // Format questions with their answers (score included for now —
+    // needed internally to compute isMultipleCorrect and to randomize;
+    // stripped from the response just before sending, below)
     let formattedQuestions = questionsData.map((question) => {
       const answers = safeArray(answersMap[question.id] || []).map((answer) => ({
         id: answer.id,
@@ -183,13 +226,23 @@ export default async function handler(req, res) {
     // ============================================================
     // STEP 3: Randomize and enforce the required question count
     // ============================================================
-    
+
     // Randomize answer options for each question
     formattedQuestions = formattedQuestions.map(q => randomizeAnswers(q));
-    
+
     // Randomize question order and enforce the required count
     formattedQuestions = shuffleArray(formattedQuestions)
       .slice(0, requiredCount);
+
+    // ============================================================
+    // Compute isMultipleCorrect per question (server-side) and
+    // strip score from every answer before returning to the client.
+    // ============================================================
+    formattedQuestions = formattedQuestions.map((q) => {
+      const isMultipleCorrect = computeIsMultipleCorrect(q, assessmentTypeCode);
+      const withoutScores = stripScores(q);
+      return { ...withoutScores, isMultipleCorrect };
+    });
 
     console.log(`[API] Returning ${formattedQuestions.length} questions (limited to ${requiredCount})`);
 
