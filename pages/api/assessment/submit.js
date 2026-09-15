@@ -1,5 +1,5 @@
 // pages/api/assessment/submit.js - FULLY CORRECTED WITH BEHAVIORAL TRACKING
-// Version: submit-behavioral-v3
+// Version: submit-behavioral-v4
 // - Complete behavioral data saved to database
 // - Proper proctoring_data structure for Behavioral Matrix
 // - Answer changes tracking
@@ -8,10 +8,16 @@
 //   against the assessment_results.session_id unique constraint,
 //   instead of returning a scary 500 to a candidate whose submission
 //   actually succeeded.
+// - UPDATED (Phase 1 hotfix): STEP 7 now reads from unique_questions +
+//   unique_answers (the tables the candidate actually saw) instead of
+//   the legacy questions + answers tables, which share numeric IDs
+//   with unique_questions but hold entirely different content.
+//   Prior to this fix, every submission was scored against the wrong
+//   answer key and candidates were awarded 0 for correct answers.
 
 import { createClient } from "@supabase/supabase-js";
 
-const SUBMIT_BUILD = "submit-behavioral-v3";
+const SUBMIT_BUILD = "submit-behavioral-v4";
 const PRACTICAL_ASSESSMENT_IDS = [
   'c2bc4994-1c4a-4094-a763-8d9d560b759e',
   '243275ec-9bb5-43ce-9f02-1111b2ca66e0',
@@ -226,63 +232,42 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 7: Get questions DIRECTLY from questions table
+    // STEP 7: Get questions from unique_questions (the table the
+    // candidate actually saw). Previously this read from the
+    // legacy "questions" table, which shares numeric IDs with
+    // unique_questions but holds entirely different content —
+    // causing every submission to be scored against the wrong
+    // answer key. Fix: read from unique_questions + unique_answers,
+    // matching what questions.js serves and what save-response.js
+    // stores in responses.
     // ============================================================
     const { data: questionsData, error: questionsError } = await serviceClient
-      .from("questions")
+      .from("unique_questions")
       .select(`
         id,
         question_text,
         section,
-        answers (
+        unique_answers (
           id,
           answer_text,
-          score,
-          is_active
+          score
         )
       `)
-      .eq("assessment_id", assessment.id)
-      .eq("is_active", true)
-      .order("question_order", { ascending: true });
+      .eq("assessment_type_id", assessment.assessment_type_id);
 
     if (questionsError) {
       console.error("[Submit] Questions error:", questionsError);
     }
 
-    // If direct questions not found, try unique_questions as fallback
-    let fallbackUsed = false;
-    let questions = questionsData || [];
+    const questions = (questionsData || []).map((q) => ({
+      id: q.id,
+      question_text: q.question_text,
+      section: q.section,
+      answers: q.unique_answers || []
+    }));
 
     if (questions.length === 0) {
-      console.log("[Submit] No direct questions found, trying unique_questions");
-      fallbackUsed = true;
-
-      const { data: fallbackQuestions, error: fallbackError } = await serviceClient
-        .from("unique_questions")
-        .select(`
-          id,
-          question_text,
-          section,
-          unique_answers (
-            id,
-            answer_text,
-            score
-          )
-        `)
-        .eq("assessment_type_id", assessment.assessment_type_id);
-
-      if (!fallbackError && fallbackQuestions) {
-        questions = fallbackQuestions.map(q => ({
-          id: q.id,
-          question_text: q.question_text,
-          section: q.section,
-          answers: q.unique_answers || []
-        }));
-      }
-    }
-
-    if (questions.length === 0) {
-      console.error("[Submit] No questions found for assessment:", assessment.id);
+      console.error("[Submit] No questions found for assessment_type_id:", assessment.assessment_type_id);
       return res.status(409).json({
         success: false,
         error: "No questions found for this assessment",
@@ -290,7 +275,7 @@ export default async function handler(req, res) {
       });
     }
 
-    console.log(`[Submit] Questions found: ${questions.length} (fallback: ${fallbackUsed})`);
+    console.log(`[Submit] Questions found: ${questions.length} (source: unique_questions)`);
 
     // ============================================================
     // STEP 8: Calculate scores
