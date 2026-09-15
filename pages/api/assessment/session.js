@@ -3,31 +3,25 @@
 // - Proper error handling
 // - Validates candidate assignment before session creation
 // - Uses authoritative assessment_type_id from database
-// - UPDATED (Phase Two / Item 2.2): freezes the question set
-//   (and answer order) into session_questions at session creation.
-//   Guarantees page refresh returns the same question set, and
-//   scoring uses the exact questions the candidate answered.
+// - Phase Two / Item 2.2: freezes the question set (and answer order)
+//   into session_questions at session creation.
+// - Phase Two / "Serve all questions" policy: freezes the ENTIRE pool
+//   for the assessment type — no slice, no sampling.
+// - Phase Two: computes the session duration from the frozen question
+//   count (>=100 → 120 min, >=80 → 90 min, <80 → 60 min) and returns
+//   it to the client as session.duration_minutes. No new DB column.
 
 import { createClient } from '@supabase/supabase-js';
 
 // ============================================================
-// Phase Two: question-count constants, mirroring questions.js
+// Phase Two: duration policy
 // ============================================================
-const PRACTICAL_ASSESSMENT_IDS = [
-  'c2bc4994-1c4a-4094-a763-8d9d560b759e',
-  '243275ec-9bb5-43ce-9f02-1111b2ca66e0',
-  'a6000077-095d-4115-bc4e-5936fce953e9',
-  '928f81fc-35ea-40ac-83cb-7c3a0c1c18dc'
-];
-const NATIONAL_SERVICE_ASSESSMENT_ID = 'bdb9d46e-9fac-4d00-8478-1f649e7ac600';
-const QUESTION_COUNT_MAP = {
-  'c2bc4994-1c4a-4094-a763-8d9d560b759e': 40,
-  '243275ec-9bb5-43ce-9f02-1111b2ca66e0': 40,
-  'a6000077-095d-4115-bc4e-5936fce953e9': 40,
-  '928f81fc-35ea-40ac-83cb-7c3a0c1c18dc': 40,
-  'bdb9d46e-9fac-4d00-8478-1f649e7ac600': 80,
-  '232f7ff8-60b8-4223-81c6-4917a5fb12a3': 100
-};
+function computeDurationMinutes(questionCount) {
+  const count = Number(questionCount) || 0;
+  if (count >= 100) return 120;
+  if (count >= 80) return 90;
+  return 60;
+}
 
 function shuffleArray(array) {
   if (!Array.isArray(array)) return [];
@@ -41,19 +35,13 @@ function shuffleArray(array) {
   return shuffled;
 }
 
-function getRequiredQuestionCount(assessmentId, assessmentTypeCode, fallbackCount) {
-  if (PRACTICAL_ASSESSMENT_IDS.includes(assessmentId)) return 40;
-  if (assessmentId === NATIONAL_SERVICE_ASSESSMENT_ID || assessmentTypeCode === 'national_service') return 80;
-  return QUESTION_COUNT_MAP[assessmentId] || fallbackCount || 100;
-}
-
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ success: false, error: 'Method not allowed' });
   }
 
   try {
-    const { assessmentId, assessmentTypeId, durationMinutes } = req.body;
+    const { assessmentId, assessmentTypeId } = req.body;
 
     if (!assessmentId) {
       return res.status(400).json({ success: false, error: 'Missing assessmentId' });
@@ -106,7 +94,6 @@ export default async function handler(req, res) {
       });
     }
 
-    // Check if candidate has access
     if (!candidateAssessment) {
       console.error('[Session] No assignment found for user:', userId, 'assessment:', assessmentId);
       return res.status(403).json({
@@ -115,7 +102,6 @@ export default async function handler(req, res) {
       });
     }
 
-    // Check if assessment is blocked
     if (candidateAssessment.status === 'blocked') {
       return res.status(403).json({
         success: false,
@@ -123,7 +109,6 @@ export default async function handler(req, res) {
       });
     }
 
-    // Check if assessment is already completed
     if (candidateAssessment.status === 'completed' || candidateAssessment.result_id) {
       return res.status(409).json({
         success: false,
@@ -132,7 +117,7 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 3: Get assessment (SEPARATE LOOKUP - NO EMBEDDED RELATIONSHIP)
+    // STEP 3: Get assessment
     // ============================================================
     console.log(`[Session] Looking up assessment: ${assessmentId}`);
     const { data: assessment, error: assessmentError } = await serviceClient
@@ -161,7 +146,7 @@ export default async function handler(req, res) {
     console.log(`[Session] Assessment found: ${assessment.id} - ${assessment.title}`);
 
     // ============================================================
-    // STEP 4: Resolve assessment type from authoritative source
+    // STEP 4: Resolve assessment type
     // ============================================================
     const resolvedAssessmentTypeId =
       assessment.assessment_type_id ||
@@ -196,33 +181,66 @@ export default async function handler(req, res) {
 
     if (existingSession) {
       console.log('[Session] Reusing existing session:', existingSession.id);
+
+      // Compute duration_minutes for the reused session so the client
+      // always receives a consistent value (whether the session is new
+      // or reused).
+      const reusedDurationMinutes = computeDurationMinutes(existingSession.total_questions);
+
       return res.status(200).json({
         success: true,
-        session: existingSession,
+        session: {
+          ...existingSession,
+          duration_minutes: reusedDurationMinutes
+        },
         isNew: false
       });
     }
 
     // ============================================================
-    // STEP 6: Create new session
+    // STEP 6: Fetch the FULL question pool for this assessment type.
+    // Phase Two "Serve all questions" policy: no slice, no sampling.
     // ============================================================
-    const duration = durationMinutes || 120;
-    const expiresAt = new Date();
-    expiresAt.setMinutes(expiresAt.getMinutes() + duration);
+    const { data: allQuestions, error: qErr } = await serviceClient
+      .from('unique_questions')
+      .select('id, section, unique_answers(id, display_order)')
+      .eq('assessment_type_id', resolvedAssessmentTypeId);
 
-    // Get question count for the assessment type
-    const { data: assessmentType, error: typeError } = await serviceClient
-      .from('assessment_types')
-      .select('id, code, name, question_count')
-      .eq('id', resolvedAssessmentTypeId)
-      .maybeSingle();
-
-    if (typeError) {
-      console.error('[Session] Assessment type lookup error:', typeError);
+    if (qErr) {
+      console.error('[Session] Question fetch error:', qErr);
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to load questions for this assessment',
+        diagnosticCode: 'QUESTION_FETCH_FAILED'
+      });
     }
 
-    const questionCount = assessmentType?.question_count || 40;
+    const pool = Array.isArray(allQuestions) ? allQuestions : [];
 
+    if (pool.length === 0) {
+      console.error('[Session] No questions found for assessment_type_id', resolvedAssessmentTypeId);
+      return res.status(422).json({
+        success: false,
+        error: 'No questions available for this assessment',
+        diagnosticCode: 'NO_QUESTIONS'
+      });
+    }
+
+    // ============================================================
+    // STEP 7: Shuffle the full pool (order only) and compute duration.
+    // ============================================================
+    const chosen = shuffleArray(pool);
+    const frozenCount = chosen.length;
+    const durationMinutes = computeDurationMinutes(frozenCount);
+
+    console.log(`[Session] Freezing all ${frozenCount} questions → duration ${durationMinutes} min`);
+
+    const expiresAt = new Date();
+    expiresAt.setMinutes(expiresAt.getMinutes() + durationMinutes);
+
+    // ============================================================
+    // STEP 8: Create the session
+    // ============================================================
     const { data: newSession, error: createError } = await serviceClient
       .from('assessment_sessions')
       .insert({
@@ -233,7 +251,7 @@ export default async function handler(req, res) {
         started_at: new Date().toISOString(),
         expires_at: expiresAt.toISOString(),
         time_spent_seconds: 0,
-        total_questions: questionCount,
+        total_questions: frozenCount,
         answered_questions: 0,
         violation_count: 0,
         created_at: new Date().toISOString(),
@@ -255,54 +273,10 @@ export default async function handler(req, res) {
     console.log('[Session] Created new session:', newSession.id, 'for assessment:', assessmentId);
 
     // ============================================================
-    // STEP 6b (Phase Two): Freeze the question set for this session.
-    // Chosen and shuffled NOW, written to session_questions, and
-    // never re-chosen for this session again — even on page refresh.
-    // Fail-closed: if freezing fails, the session is deleted so we
-    // never end up with a session that has no frozen questions.
+    // STEP 9: Freeze the question set into session_questions.
+    // Fail-closed: if this fails, delete the session.
     // ============================================================
     try {
-      const { data: allQuestions, error: qErr } = await serviceClient
-        .from('unique_questions')
-        .select('id, section, unique_answers(id, display_order)')
-        .eq('assessment_type_id', resolvedAssessmentTypeId);
-
-      if (qErr) {
-        console.error('[Session] Freeze: question fetch error:', qErr);
-        await serviceClient
-          .from('assessment_sessions')
-          .delete()
-          .eq('id', newSession.id);
-        return res.status(500).json({
-          success: false,
-          error: 'Failed to freeze question set for this session',
-          diagnosticCode: 'FREEZE_QUESTION_FETCH_FAILED'
-        });
-      }
-
-      const pool = Array.isArray(allQuestions) ? allQuestions : [];
-
-      if (pool.length === 0) {
-        console.error('[Session] Freeze: no questions found for assessment_type_id', resolvedAssessmentTypeId);
-        await serviceClient
-          .from('assessment_sessions')
-          .delete()
-          .eq('id', newSession.id);
-        return res.status(422).json({
-          success: false,
-          error: 'No questions available for this assessment',
-          diagnosticCode: 'NO_QUESTIONS'
-        });
-      }
-
-      const requiredCount = getRequiredQuestionCount(
-        assessmentId,
-        assessmentType?.code,
-        questionCount
-      );
-
-      const chosen = shuffleArray(pool).slice(0, requiredCount);
-
       const rows = chosen.map((q, index) => ({
         session_id: newSession.id,
         question_id: q.id,
@@ -332,24 +306,6 @@ export default async function handler(req, res) {
         });
       }
 
-      // Align the session's total_questions with the ACTUAL frozen count
-      if (rows.length !== newSession.total_questions) {
-        const { error: alignErr } = await serviceClient
-          .from('assessment_sessions')
-          .update({
-            total_questions: rows.length,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', newSession.id);
-
-        if (alignErr) {
-          console.error('[Session] Freeze: total_questions alignment error:', alignErr);
-          // Not fatal — the freeze itself succeeded; proceed.
-        } else {
-          newSession.total_questions = rows.length;
-        }
-      }
-
       console.log(`[Session] Frozen ${rows.length} questions for session ${newSession.id}`);
     } catch (freezeErr) {
       console.error('[Session] Freeze: unhandled error:', freezeErr);
@@ -365,7 +321,7 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 7: Update candidate_assessments with session_id
+    // STEP 10: Update candidate_assessments with session_id
     // ============================================================
     const { error: updateError } = await serviceClient
       .from('candidate_assessments')
@@ -380,12 +336,14 @@ export default async function handler(req, res) {
 
     if (updateError) {
       console.error('[Session] Candidate assessment update error:', updateError);
-      // Don't fail the session creation if this update fails
     }
 
     return res.status(200).json({
       success: true,
-      session: newSession,
+      session: {
+        ...newSession,
+        duration_minutes: durationMinutes
+      },
       isNew: true
     });
 
