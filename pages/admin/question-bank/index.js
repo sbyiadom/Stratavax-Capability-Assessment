@@ -1,7 +1,7 @@
 // pages/admin/question-bank/index.js
-// Phase 3 — Question Bank Manager (read-only list view)
-// Lists questions for a single assessment type, with search + section filter.
-// No writes yet — create/edit/delete/import/export come file-by-file.
+// Phase 3 — Question Bank Manager
+// Read-only list + Edit modal (writes to /api/admin/question-bank/update).
+// Create / Delete / Import / Export come in later files.
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/router';
@@ -9,6 +9,154 @@ import { supabase } from '../../../supabase/client';
 import { useRequireAuth } from '../../../utils/requireAuth';
 import AppLayout from '../../../components/AppLayout';
 
+// ============================================================
+// EDIT MODAL
+// ============================================================
+function EditModal({ question, onClose, onSaved }) {
+  const [questionText, setQuestionText] = useState(question.question_text || '');
+  const [section, setSection] = useState(question.section || '');
+  const [subsection, setSubsection] = useState(question.subsection || '');
+  const [answers, setAnswers] = useState(
+    (question.answers || []).map((a) => ({
+      id: a.id,
+      answer_text: a.answer_text,
+      score: a.score,
+      display_order: a.display_order
+    }))
+  );
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+
+  const updateAnswer = (idx, field, value) => {
+    setAnswers((prev) => {
+      const next = [...prev];
+      next[idx] = { ...next[idx], [field]: value };
+      return next;
+    });
+  };
+
+  const handleSave = async () => {
+    try {
+      setSaving(true);
+      setError(null);
+
+      const payload = {
+        question_id: question.id,
+        question_text: questionText.trim(),
+        section: section.trim() || null,
+        subsection: subsection.trim() || null,
+        answers: answers.map((a) => ({
+          id: a.id,
+          answer_text: a.answer_text.trim(),
+          score: Number(a.score),
+          display_order: Number(a.display_order)
+        }))
+      };
+
+      const response = await fetch('/api/admin/question-bank/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Failed to save');
+      }
+
+      onSaved();
+    } catch (err) {
+      console.error('[Question Bank UI] save error:', err);
+      setError(err.message || 'Failed to save');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div style={styles.modalOverlay} onClick={onClose}>
+      <div
+        style={styles.modal}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div style={styles.modalHeader}>
+          <h2 style={styles.modalTitle}>Edit Question #{question.display_order}</h2>
+          <button onClick={onClose} style={styles.modalClose} aria-label="Close">✕</button>
+        </div>
+
+        <div style={styles.modalBody}>
+          <label style={styles.fieldLabel}>Question text</label>
+          <textarea
+            value={questionText}
+            onChange={(e) => setQuestionText(e.target.value)}
+            rows={3}
+            style={styles.textarea}
+          />
+
+          <div style={styles.twoCol}>
+            <div>
+              <label style={styles.fieldLabel}>Section</label>
+              <input
+                type="text"
+                value={section}
+                onChange={(e) => setSection(e.target.value)}
+                style={styles.input}
+              />
+            </div>
+            <div>
+              <label style={styles.fieldLabel}>Subsection</label>
+              <input
+                type="text"
+                value={subsection}
+                onChange={(e) => setSubsection(e.target.value)}
+                style={styles.input}
+              />
+            </div>
+          </div>
+
+          <label style={{ ...styles.fieldLabel, marginTop: '16px' }}>Answers</label>
+          {answers.map((a, idx) => (
+            <div key={a.id} style={styles.answerRow}>
+              <input
+                type="number"
+                value={a.score}
+                onChange={(e) => updateAnswer(idx, 'score', e.target.value)}
+                style={styles.scoreInput}
+                title="Score"
+              />
+              <input
+                type="text"
+                value={a.answer_text}
+                onChange={(e) => updateAnswer(idx, 'answer_text', e.target.value)}
+                style={styles.answerInput}
+              />
+            </div>
+          ))}
+
+          {error && (
+            <div style={styles.modalError}>
+              <strong>Error:</strong> {error}
+            </div>
+          )}
+        </div>
+
+        <div style={styles.modalFooter}>
+          <button onClick={onClose} disabled={saving} style={styles.cancelButton}>
+            Cancel
+          </button>
+          <button onClick={handleSave} disabled={saving} style={styles.saveButton}>
+            {saving ? 'Saving…' : 'Save changes'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// MAIN PAGE
+// ============================================================
 export default function QuestionBankList() {
   const router = useRouter();
   const { session, loading: authLoading } = useRequireAuth();
@@ -29,14 +177,13 @@ export default function QuestionBankList() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
+  const [editingQuestion, setEditingQuestion] = useState(null);
+
   const debounceRef = useRef(null);
 
-  // ============================================================
-  // STEP 1: Load assessment types on mount
-  // ============================================================
+  // Load assessment types
   useEffect(() => {
     if (!session) return;
-
     let cancelled = false;
 
     async function loadTypes() {
@@ -50,14 +197,12 @@ export default function QuestionBankList() {
         if (!response.ok || !data.success) {
           throw new Error(data.error || 'Failed to load assessment types');
         }
-
         if (cancelled) return;
 
         const list = data.types || [];
         setTypes(list);
         setTypesLoading(false);
 
-        // Honor ?type= from the URL if present and valid; otherwise default to first type
         const queryType = Number(router.query.type);
         const initialType =
           Number.isInteger(queryType) && list.some((t) => t.id === queryType)
@@ -74,19 +219,13 @@ export default function QuestionBankList() {
     }
 
     loadTypes();
-
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session]);
 
-  // ============================================================
-  // STEP 2: Load questions when type / section / search change
-  // ============================================================
+  // Load questions
   useEffect(() => {
     if (!session || !assessmentTypeId) return;
-
     let cancelled = false;
 
     async function loadQuestions() {
@@ -99,15 +238,12 @@ export default function QuestionBankList() {
         if (section) params.set('section', section);
         if (search) params.set('search', search);
 
-        const response = await fetch(
-          `/api/admin/question-bank/list?${params.toString()}`
-        );
+        const response = await fetch(`/api/admin/question-bank/list?${params.toString()}`);
         const data = await response.json();
 
         if (!response.ok || !data.success) {
           throw new Error(data.error || 'Failed to load questions');
         }
-
         if (cancelled) return;
 
         setAssessmentType(data.assessment_type || null);
@@ -123,35 +259,21 @@ export default function QuestionBankList() {
     }
 
     loadQuestions();
-
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [session, assessmentTypeId, section, search]);
 
-  // ============================================================
-  // STEP 3: Debounce search input → search state
-  // ============================================================
+  // Debounce search
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      setSearch(searchInput.trim());
-    }, 300);
-
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-    };
+    debounceRef.current = setTimeout(() => setSearch(searchInput.trim()), 300);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [searchInput]);
 
-  // ============================================================
-  // STEP 4: Keep ?type= in URL when user changes the dropdown
-  // ============================================================
   const handleTypeChange = (newId) => {
     setAssessmentTypeId(newId);
     setSection('');
     setSearchInput('');
     setSearch('');
-
     router.replace(
       { pathname: '/admin/question-bank', query: { type: newId } },
       undefined,
@@ -167,9 +289,27 @@ export default function QuestionBankList() {
     setSearch('');
   };
 
-  // ============================================================
-  // STEP 5: Derived — distinct sections from current results
-  // ============================================================
+  const handleEditSaved = () => {
+    setEditingQuestion(null);
+    // Trigger a refetch by toggling search state through the debounce path
+    setSearchInput((v) => v);
+    // Direct fetch for immediacy
+    const params = new URLSearchParams();
+    params.set('assessment_type_id', String(assessmentTypeId));
+    if (section) params.set('section', section);
+    if (search) params.set('search', search);
+    fetch(`/api/admin/question-bank/list?${params.toString()}`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.success) {
+          setAssessmentType(d.assessment_type || null);
+          setQuestions(d.questions || []);
+          setTotal(d.total || 0);
+        }
+      })
+      .catch((err) => console.error('[Question Bank UI] refetch error:', err));
+  };
+
   const sectionOptions = (() => {
     const seen = new Map();
     questions.forEach((q) => {
@@ -180,9 +320,6 @@ export default function QuestionBankList() {
 
   const hasActiveFilters = !!(section || search);
 
-  // ============================================================
-  // RENDER: loading shell (auth or initial types load)
-  // ============================================================
   if (authLoading || typesLoading) {
     return (
       <AppLayout background="/images/admin-bg.jpg">
@@ -198,9 +335,7 @@ export default function QuestionBankList() {
     return (
       <AppLayout background="/images/admin-bg.jpg">
         <div style={styles.container}>
-          <button onClick={handleBack} style={styles.backButton}>
-            ← Back to Admin Dashboard
-          </button>
+          <button onClick={handleBack} style={styles.backButton}>← Back to Admin Dashboard</button>
           <div style={styles.errorBox}>
             <strong>Error:</strong> {typesError}
           </div>
@@ -209,24 +344,16 @@ export default function QuestionBankList() {
     );
   }
 
-  // ============================================================
-  // RENDER: main view
-  // ============================================================
   return (
     <AppLayout background="/images/admin-bg.jpg">
       <div style={styles.container}>
-        <button onClick={handleBack} style={styles.backButton}>
-          ← Back to Admin Dashboard
-        </button>
+        <button onClick={handleBack} style={styles.backButton}>← Back to Admin Dashboard</button>
 
         <div style={styles.header}>
           <h1 style={styles.title}>Question Bank</h1>
-          <p style={styles.subtitle}>
-            Browse the question pool for each assessment type.
-          </p>
+          <p style={styles.subtitle}>Browse the question pool for each assessment type.</p>
         </div>
 
-        {/* ============ Type selector + meta ============ */}
         <div style={styles.selectorRow}>
           <label style={styles.selectorLabel}>Assessment type</label>
           <select
@@ -242,7 +369,6 @@ export default function QuestionBankList() {
           </select>
         </div>
 
-        {/* ============ Meta card for the selected type ============ */}
         {assessmentType && (
           <div style={styles.metaCard}>
             <div style={styles.metaRow}>
@@ -251,15 +377,11 @@ export default function QuestionBankList() {
             </div>
             <div style={styles.metaRow}>
               <span style={styles.metaKey}>Declared pool size</span>
-              <span style={styles.metaValue}>
-                {assessmentType.question_count} questions
-              </span>
+              <span style={styles.metaValue}>{assessmentType.question_count} questions</span>
             </div>
             <div style={styles.metaRow}>
               <span style={styles.metaKey}>Time limit</span>
-              <span style={styles.metaValue}>
-                {assessmentType.time_limit_minutes} minutes
-              </span>
+              <span style={styles.metaValue}>{assessmentType.time_limit_minutes} minutes</span>
             </div>
             <div style={styles.metaRow}>
               <span style={styles.metaKey}>Loaded from pool</span>
@@ -273,7 +395,6 @@ export default function QuestionBankList() {
           </div>
         )}
 
-        {/* ============ Search + section filter ============ */}
         <div style={styles.filtersRow}>
           <div style={styles.searchWrapper}>
             <input
@@ -288,9 +409,7 @@ export default function QuestionBankList() {
                 onClick={() => setSearchInput('')}
                 style={styles.clearIconButton}
                 aria-label="Clear search"
-              >
-                ✕
-              </button>
+              >✕</button>
             )}
           </div>
 
@@ -301,9 +420,7 @@ export default function QuestionBankList() {
           >
             <option value="">All sections</option>
             {sectionOptions.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
+              <option key={s} value={s}>{s}</option>
             ))}
           </select>
 
@@ -314,23 +431,12 @@ export default function QuestionBankList() {
           )}
         </div>
 
-        {/* ============ Error ============ */}
         {error && (
           <div style={styles.errorBox}>
             <strong>Error:</strong> {error}
-            <button
-              onClick={() => {
-                // Force refetch by resetting section (no-op) and toggling search
-                setSearch((s) => s);
-              }}
-              style={styles.retryButton}
-            >
-              Retry
-            </button>
           </div>
         )}
 
-        {/* ============ Table ============ */}
         <div style={styles.tableContainer}>
           {loading ? (
             <div style={styles.tableLoading}>
@@ -349,9 +455,10 @@ export default function QuestionBankList() {
                 <tr>
                   <th style={{ ...styles.th, width: '56px' }}>#</th>
                   <th style={styles.th}>Question</th>
-                  <th style={{ ...styles.th, width: '18%' }}>Section</th>
-                  <th style={{ ...styles.th, width: '14%' }}>Subsection</th>
-                  <th style={{ ...styles.th, width: '28%' }}>Answers</th>
+                  <th style={{ ...styles.th, width: '16%' }}>Section</th>
+                  <th style={{ ...styles.th, width: '13%' }}>Subsection</th>
+                  <th style={{ ...styles.th, width: '26%' }}>Answers</th>
+                  <th style={{ ...styles.th, width: '90px' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -359,21 +466,25 @@ export default function QuestionBankList() {
                   <tr key={q.id} style={styles.tr}>
                     <td style={styles.tdOrder}>{q.display_order}</td>
                     <td style={styles.td}>{q.question_text}</td>
-                    <td style={styles.td}>
-                      {q.section || <span style={styles.muted}>—</span>}
-                    </td>
-                    <td style={styles.td}>
-                      {q.subsection || <span style={styles.muted}>—</span>}
-                    </td>
+                    <td style={styles.td}>{q.section || <span style={styles.muted}>—</span>}</td>
+                    <td style={styles.td}>{q.subsection || <span style={styles.muted}>—</span>}</td>
                     <td style={styles.td}>
                       <div style={styles.answersList}>
                         {(q.answers || []).map((a) => (
-                          <div key={a.id} style={styles.answerRow}>
+                          <div key={a.id} style={styles.answerRowDisplay}>
                             <span style={styles.answerScore}>{a.score}</span>
                             <span style={styles.answerText}>{a.answer_text}</span>
                           </div>
                         ))}
                       </div>
+                    </td>
+                    <td style={styles.td}>
+                      <button
+                        onClick={() => setEditingQuestion(q)}
+                        style={styles.editButton}
+                      >
+                        Edit
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -382,14 +493,20 @@ export default function QuestionBankList() {
           )}
         </div>
 
-        {/* ============ Footer count ============ */}
         {!loading && questions.length > 0 && (
           <div style={styles.footerCount}>
-            Showing {questions.length} of {total} question
-            {total === 1 ? '' : 's'}
+            Showing {questions.length} of {total} question{total === 1 ? '' : 's'}
           </div>
         )}
       </div>
+
+      {editingQuestion && (
+        <EditModal
+          question={editingQuestion}
+          onClose={() => setEditingQuestion(null)}
+          onSaved={handleEditSaved}
+        />
+      )}
     </AppLayout>
   );
 }
@@ -429,9 +546,7 @@ const styles = {
     color: '#475569',
     marginBottom: '20px'
   },
-  header: {
-    marginBottom: '24px'
-  },
+  header: { marginBottom: '24px' },
   title: {
     fontSize: '28px',
     fontWeight: '700',
@@ -475,11 +590,7 @@ const styles = {
     gap: '12px 24px',
     boxShadow: '0 2px 8px rgba(0,0,0,0.03)'
   },
-  metaRow: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '2px'
-  },
+  metaRow: { display: 'flex', flexDirection: 'column', gap: '2px' },
   metaKey: {
     fontSize: '12px',
     color: '#94a3b8',
@@ -587,11 +698,7 @@ const styles = {
     gap: '12px',
     color: '#64748b'
   },
-  table: {
-    width: '100%',
-    borderCollapse: 'collapse',
-    fontSize: '14px'
-  },
+  table: { width: '100%', borderCollapse: 'collapse', fontSize: '14px' },
   th: {
     padding: '14px 16px',
     textAlign: 'left',
@@ -601,9 +708,7 @@ const styles = {
     borderBottom: '2px solid #e2e8f0',
     whiteSpace: 'nowrap'
   },
-  tr: {
-    transition: 'background 0.15s'
-  },
+  tr: { transition: 'background 0.15s' },
   td: {
     padding: '12px 16px',
     borderBottom: '1px solid #e2e8f0',
@@ -617,15 +722,9 @@ const styles = {
     fontWeight: '600',
     verticalAlign: 'top'
   },
-  muted: {
-    color: '#cbd5e1'
-  },
-  answersList: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '4px'
-  },
-  answerRow: {
+  muted: { color: '#cbd5e1' },
+  answersList: { display: 'flex', flexDirection: 'column', gap: '4px' },
+  answerRowDisplay: {
     display: 'flex',
     gap: '8px',
     alignItems: 'flex-start',
@@ -644,8 +743,17 @@ const styles = {
     textAlign: 'center',
     flexShrink: 0
   },
-  answerText: {
-    color: '#334155'
+  answerText: { color: '#334155' },
+  editButton: {
+    padding: '6px 14px',
+    background: '#1a237e',
+    color: 'white',
+    border: 'none',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontSize: '12px',
+    fontWeight: '500',
+    fontFamily: 'inherit'
   },
   emptyState: {
     textAlign: 'center',
@@ -657,20 +765,158 @@ const styles = {
     marginTop: '12px',
     fontSize: '13px',
     color: '#64748b'
+  },
+
+  // Modal styles
+  modalOverlay: {
+    position: 'fixed',
+    inset: 0,
+    background: 'rgba(15, 39, 71, 0.55)',
+    display: 'flex',
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+    paddingTop: '60px',
+    zIndex: 2000,
+    overflowY: 'auto'
+  },
+  modal: {
+    background: 'white',
+    borderRadius: '12px',
+    width: 'min(720px, 92vw)',
+    maxHeight: 'calc(100vh - 120px)',
+    display: 'flex',
+    flexDirection: 'column',
+    boxShadow: '0 20px 60px rgba(0,0,0,0.25)'
+  },
+  modalHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '16px 20px',
+    borderBottom: '1px solid #e2e8f0'
+  },
+  modalTitle: {
+    margin: 0,
+    fontSize: '18px',
+    fontWeight: '700',
+    color: '#1a237e'
+  },
+  modalClose: {
+    background: 'none',
+    border: 'none',
+    fontSize: '18px',
+    color: '#64748b',
+    cursor: 'pointer',
+    padding: '4px 8px'
+  },
+  modalBody: {
+    padding: '16px 20px',
+    overflowY: 'auto'
+  },
+  fieldLabel: {
+    display: 'block',
+    fontSize: '12px',
+    fontWeight: '600',
+    color: '#475569',
+    marginBottom: '6px',
+    textTransform: 'uppercase',
+    letterSpacing: '0.04em'
+  },
+  textarea: {
+    width: '100%',
+    padding: '10px 12px',
+    borderRadius: '8px',
+    border: '1px solid #e2e8f0',
+    fontSize: '14px',
+    fontFamily: 'inherit',
+    outline: 'none',
+    resize: 'vertical',
+    boxSizing: 'border-box'
+  },
+  twoCol: {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: '12px',
+    marginTop: '12px'
+  },
+  input: {
+    width: '100%',
+    padding: '10px 12px',
+    borderRadius: '8px',
+    border: '1px solid #e2e8f0',
+    fontSize: '14px',
+    fontFamily: 'inherit',
+    outline: 'none',
+    boxSizing: 'border-box'
+  },
+  answerRow: {
+    display: 'flex',
+    gap: '8px',
+    marginBottom: '8px'
+  },
+  scoreInput: {
+    width: '64px',
+    padding: '10px 8px',
+    borderRadius: '8px',
+    border: '1px solid #e2e8f0',
+    fontSize: '14px',
+    fontFamily: 'inherit',
+    outline: 'none',
+    textAlign: 'center',
+    boxSizing: 'border-box'
+  },
+  answerInput: {
+    flex: 1,
+    padding: '10px 12px',
+    borderRadius: '8px',
+    border: '1px solid #e2e8f0',
+    fontSize: '14px',
+    fontFamily: 'inherit',
+    outline: 'none',
+    boxSizing: 'border-box'
+  },
+  modalError: {
+    marginTop: '12px',
+    padding: '10px 12px',
+    background: '#fee2e2',
+    border: '1px solid #fecaca',
+    borderRadius: '8px',
+    color: '#991b1b',
+    fontSize: '13px'
+  },
+  modalFooter: {
+    display: 'flex',
+    justifyContent: 'flex-end',
+    gap: '10px',
+    padding: '14px 20px',
+    borderTop: '1px solid #e2e8f0'
+  },
+  cancelButton: {
+    padding: '10px 18px',
+    background: 'transparent',
+    border: '1px solid #e2e8f0',
+    borderRadius: '8px',
+    fontSize: '14px',
+    color: '#475569',
+    cursor: 'pointer',
+    fontFamily: 'inherit'
+  },
+  saveButton: {
+    padding: '10px 20px',
+    background: '#1a237e',
+    color: 'white',
+    border: 'none',
+    borderRadius: '8px',
+    fontSize: '14px',
+    fontWeight: '600',
+    cursor: 'pointer',
+    fontFamily: 'inherit'
   }
 };
 
-// ============================================================
-// KEYFRAMES (injected once)
-// ============================================================
 if (typeof document !== 'undefined' && !document.getElementById('qb-spin-keyframes')) {
   const style = document.createElement('style');
   style.id = 'qb-spin-keyframes';
-  style.textContent = `
-    @keyframes spin {
-      0% { transform: rotate(0deg); }
-      100% { transform: rotate(360deg); }
-    }
-  `;
+  style.textContent = `@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`;
   document.head.appendChild(style);
 }
