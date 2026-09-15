@@ -1,6 +1,10 @@
 // pages/api/assessment/questions.js - FULLY CORRECTED WITH 40-QUESTION LIMIT
 // UPDATED: Added Bearer token authentication (Phase 1)
 // UPDATED: Removed answer scores from response; server computes isMultipleCorrect (Phase 1)
+// UPDATED (Phase Two / Item 2.4): If a sessionId is provided and that session
+// has a frozen set in session_questions, return that exact set (in the exact
+// order it was frozen) instead of re-randomizing. This guarantees page refresh
+// returns the same questions the candidate started with.
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -70,8 +74,6 @@ function randomizeAnswers(question) {
 // ============================================================
 // Determine (server-side) whether a question allows multiple
 // correct answers, WITHOUT exposing scores to the client.
-// Mirrors the logic previously duplicated on the frontend
-// (isMultipleCorrectQuestion in pages/assessment/[id].js).
 // ============================================================
 function computeIsMultipleCorrect(question, assessmentTypeCode) {
   if (assessmentTypeCode === 'national_service') {
@@ -89,18 +91,129 @@ function stripScores(question) {
 }
 
 function getRequiredQuestionCount(assessmentId, assessmentTypeCode) {
-  // Check if it's a practical assessment
   if (PRACTICAL_ASSESSMENT_IDS.includes(assessmentId)) {
     return 40;
   }
-
-  // Check if it's National Service
   if (assessmentId === NATIONAL_SERVICE_ASSESSMENT_ID || assessmentTypeCode === 'national_service') {
     return 80;
   }
-
-  // Use the map or default to 100
   return QUESTION_COUNT_MAP[assessmentId] || 100;
+}
+
+// ============================================================
+// Phase Two (Item 2.4): read the frozen set for a session.
+// Returns null if the session has no frozen rows yet, so the
+// caller can fall back to random selection.
+// ============================================================
+async function loadFrozenQuestions(serviceClient, sessionId, assessmentTypeCode) {
+  // 1. Read the frozen rows, ordered exactly as the candidate saw them.
+  const { data: frozen, error: frozenErr } = await serviceClient
+    .from('session_questions')
+    .select('question_id, display_order, answer_order')
+    .eq('session_id', sessionId)
+    .order('display_order', { ascending: true });
+
+  if (frozenErr) {
+    console.error('[API] Frozen set read error:', frozenErr);
+    return null;
+  }
+  if (!frozen || frozen.length === 0) {
+    return null;
+  }
+
+  const questionIds = frozen.map((row) => row.question_id);
+
+  // 2. Fetch the questions themselves.
+  const { data: questions, error: qErr } = await serviceClient
+    .from('unique_questions')
+    .select('id, question_text, section, subsection, display_order')
+    .in('id', questionIds);
+
+  if (qErr || !questions) {
+    console.error('[API] Frozen questions fetch error:', qErr);
+    return null;
+  }
+
+  // 3. Fetch all answers for those questions.
+  const { data: answers, error: aErr } = await serviceClient
+    .from('unique_answers')
+    .select('id, question_id, answer_text, score, display_order')
+    .in('question_id', questionIds);
+
+  if (aErr) {
+    console.error('[API] Frozen answers fetch error:', aErr);
+    return null;
+  }
+
+  // 4. Build lookup maps.
+  const questionMap = {};
+  questions.forEach((q) => { questionMap[q.id] = q; });
+
+  const answersByQuestion = {};
+  safeArray(answers).forEach((a) => {
+    if (!answersByQuestion[a.question_id]) answersByQuestion[a.question_id] = [];
+    answersByQuestion[a.question_id].push(a);
+  });
+
+  // 5. Assemble questions in the frozen order, using the frozen answer order.
+  const assembled = [];
+  for (const row of frozen) {
+    const q = questionMap[row.question_id];
+    if (!q) {
+      console.warn('[API] Frozen question missing from unique_questions:', row.question_id);
+      continue;
+    }
+
+    const answersForQ = answersByQuestion[row.question_id] || [];
+
+    // answer_order is JSONB: [{ answer_id, display_order }, ...]
+    const answerOrder = Array.isArray(row.answer_order) ? row.answer_order : [];
+    let orderedAnswers;
+
+    if (answerOrder.length > 0) {
+      const answerMap = {};
+      answersForQ.forEach((a) => { answerMap[a.id] = a; });
+
+      orderedAnswers = answerOrder
+        .map((entry, idx) => {
+          const a = answerMap[entry.answer_id];
+          if (!a) return null;
+          return {
+            id: a.id,
+            answer_text: a.answer_text,
+            score: a.score || 0,
+            display_order: entry.display_order || idx + 1,
+          };
+        })
+        .filter(Boolean);
+    } else {
+      // Fallback: frozen row exists but answer_order is empty — use DB order.
+      orderedAnswers = answersForQ
+        .sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
+        .map((a, index) => ({
+          id: a.id,
+          answer_text: a.answer_text,
+          score: a.score || 0,
+          display_order: index + 1,
+        }));
+    }
+
+    assembled.push({
+      id: q.id,
+      question_text: q.question_text,
+      section: q.section || 'General',
+      subsection: q.subsection || '',
+      display_order: row.display_order,
+      answers: orderedAnswers,
+    });
+  }
+
+  // 6. Compute isMultipleCorrect and strip scores (same as the random path).
+  return assembled.map((q) => {
+    const isMultipleCorrect = computeIsMultipleCorrect(q, assessmentTypeCode);
+    const withoutScores = stripScores(q);
+    return { ...withoutScores, isMultipleCorrect };
+  });
 }
 
 export default async function handler(req, res) {
@@ -122,7 +235,7 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // AUTH CHECK (restored — matches submit.js / session.js pattern)
+    // AUTH CHECK
     // ============================================================
     const token = req.headers.authorization?.replace('Bearer ', '');
     if (!token) {
@@ -140,7 +253,7 @@ export default async function handler(req, res) {
     }
 
     // Get parameters from query
-    const { assessmentTypeId, assessmentTypeCode, assessmentId } = req.query;
+    const { assessmentTypeId, assessmentTypeCode, assessmentId, sessionId } = req.query;
 
     if (!assessmentTypeId) {
       return res.status(400).json({
@@ -149,13 +262,32 @@ export default async function handler(req, res) {
       });
     }
 
-    console.log(`[API] Fetching questions - TypeId: ${assessmentTypeId}, Code: ${assessmentTypeCode || 'unknown'}, AssessmentId: ${assessmentId || 'unknown'}`);
+    console.log(`[API] Fetching questions - TypeId: ${assessmentTypeId}, Code: ${assessmentTypeCode || 'unknown'}, AssessmentId: ${assessmentId || 'unknown'}, SessionId: ${sessionId || 'none'}`);
 
-    // Get required question count
+    // ============================================================
+    // Phase Two (Item 2.4): prefer the frozen set when a session exists.
+    // ============================================================
+    if (sessionId) {
+      const frozen = await loadFrozenQuestions(serviceClient, sessionId, assessmentTypeCode);
+      if (frozen && frozen.length > 0) {
+        console.log(`[API] Returning ${frozen.length} FROZEN questions for session ${sessionId}`);
+        return res.status(200).json({
+          success: true,
+          questionCount: frozen.length,
+          source: 'frozen',
+          questions: frozen
+        });
+      }
+      console.log(`[API] No frozen set for session ${sessionId} — falling back to random selection`);
+    }
+
+    // ============================================================
+    // Fallback path (legacy sessions without a frozen set, or no
+    // sessionId at all): original random-selection behavior.
+    // ============================================================
     const requiredCount = getRequiredQuestionCount(assessmentId, assessmentTypeCode);
     console.log(`[API] Required question count: ${requiredCount}`);
 
-    // Get questions from unique_questions
     const { data: questionsData, error: questionsError } = await serviceClient
       .from('unique_questions')
       .select('*')
@@ -182,7 +314,6 @@ export default async function handler(req, res) {
 
     console.log(`[API] Found ${questionsData.length} questions in unique_questions`);
 
-    // Get answers for all questions
     const questionIds = questionsData.map(q => q.id);
     const { data: answersData, error: answersError } = await serviceClient
       .from('unique_answers')
@@ -193,7 +324,6 @@ export default async function handler(req, res) {
       console.error('[API] Answers error:', answersError);
     }
 
-    // Build answers map
     const answersMap = {};
     if (answersData) {
       answersData.forEach(a => {
@@ -202,9 +332,6 @@ export default async function handler(req, res) {
       });
     }
 
-    // Format questions with their answers (score included for now —
-    // needed internally to compute isMultipleCorrect and to randomize;
-    // stripped from the response just before sending, below)
     let formattedQuestions = questionsData.map((question) => {
       const answers = safeArray(answersMap[question.id] || []).map((answer) => ({
         id: answer.id,
@@ -223,32 +350,21 @@ export default async function handler(req, res) {
       };
     });
 
-    // ============================================================
-    // STEP 3: Randomize and enforce the required question count
-    // ============================================================
-
-    // Randomize answer options for each question
     formattedQuestions = formattedQuestions.map(q => randomizeAnswers(q));
+    formattedQuestions = shuffleArray(formattedQuestions).slice(0, requiredCount);
 
-    // Randomize question order and enforce the required count
-    formattedQuestions = shuffleArray(formattedQuestions)
-      .slice(0, requiredCount);
-
-    // ============================================================
-    // Compute isMultipleCorrect per question (server-side) and
-    // strip score from every answer before returning to the client.
-    // ============================================================
     formattedQuestions = formattedQuestions.map((q) => {
       const isMultipleCorrect = computeIsMultipleCorrect(q, assessmentTypeCode);
       const withoutScores = stripScores(q);
       return { ...withoutScores, isMultipleCorrect };
     });
 
-    console.log(`[API] Returning ${formattedQuestions.length} questions (limited to ${requiredCount})`);
+    console.log(`[API] Returning ${formattedQuestions.length} questions (limited to ${requiredCount}) — source: random`);
 
     return res.status(200).json({
       success: true,
       questionCount: formattedQuestions.length,
+      source: 'random',
       questions: formattedQuestions
     });
 
