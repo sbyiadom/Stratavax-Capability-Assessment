@@ -1,7 +1,7 @@
 // pages/admin/question-bank/index.js
 // Phase 3 — Question Bank Manager
-// Read-only list + Edit modal (writes to /api/admin/question-bank/update).
-// Create / Delete / Import / Export come in later files.
+// List + Edit modal + Delete + Export.
+// Import + Add-Question come in later files.
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/router';
@@ -76,10 +76,7 @@ function EditModal({ question, onClose, onSaved }) {
 
   return (
     <div style={styles.modalOverlay} onClick={onClose}>
-      <div
-        style={styles.modal}
-        onClick={(e) => e.stopPropagation()}
-      >
+      <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
         <div style={styles.modalHeader}>
           <h2 style={styles.modalTitle}>Edit Question #{question.display_order}</h2>
           <button onClick={onClose} style={styles.modalClose} aria-label="Close">✕</button>
@@ -178,10 +175,12 @@ export default function QuestionBankList() {
   const [error, setError] = useState(null);
 
   const [editingQuestion, setEditingQuestion] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
+  const [exporting, setExporting] = useState(false);
 
   const debounceRef = useRef(null);
 
-  // Load assessment types
+  // ---------- Load types on mount ----------
   useEffect(() => {
     if (!session) return;
     let cancelled = false;
@@ -223,7 +222,30 @@ export default function QuestionBankList() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session]);
 
-  // Load questions
+  // ---------- Refetch questions (reusable) ----------
+  const refetchQuestions = async () => {
+    try {
+      const params = new URLSearchParams();
+      params.set('assessment_type_id', String(assessmentTypeId));
+      if (section) params.set('section', section);
+      if (search) params.set('search', search);
+
+      const response = await fetch(`/api/admin/question-bank/list?${params.toString()}`);
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Failed to load questions');
+      }
+      setAssessmentType(data.assessment_type || null);
+      setQuestions(data.questions || []);
+      setTotal(data.total || 0);
+    } catch (err) {
+      console.error('[Question Bank UI] refetch error:', err);
+      setError(err.message || 'Failed to load questions');
+    }
+  };
+
+  // ---------- Load questions on filter/type change ----------
   useEffect(() => {
     if (!session || !assessmentTypeId) return;
     let cancelled = false;
@@ -262,13 +284,14 @@ export default function QuestionBankList() {
     return () => { cancelled = true; };
   }, [session, assessmentTypeId, section, search]);
 
-  // Debounce search
+  // ---------- Debounce search ----------
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => setSearch(searchInput.trim()), 300);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [searchInput]);
 
+  // ---------- Handlers ----------
   const handleTypeChange = (newId) => {
     setAssessmentTypeId(newId);
     setSection('');
@@ -289,27 +312,77 @@ export default function QuestionBankList() {
     setSearch('');
   };
 
-  const handleEditSaved = () => {
+  const handleEditSaved = async () => {
     setEditingQuestion(null);
-    // Trigger a refetch by toggling search state through the debounce path
-    setSearchInput((v) => v);
-    // Direct fetch for immediacy
-    const params = new URLSearchParams();
-    params.set('assessment_type_id', String(assessmentTypeId));
-    if (section) params.set('section', section);
-    if (search) params.set('search', search);
-    fetch(`/api/admin/question-bank/list?${params.toString()}`)
-      .then((r) => r.json())
-      .then((d) => {
-        if (d.success) {
-          setAssessmentType(d.assessment_type || null);
-          setQuestions(d.questions || []);
-          setTotal(d.total || 0);
-        }
-      })
-      .catch((err) => console.error('[Question Bank UI] refetch error:', err));
+    await refetchQuestions();
   };
 
+  const handleDelete = async (q) => {
+    const ok = window.confirm(
+      `Delete question #${q.display_order}?\n\n"${q.question_text.slice(0, 120)}${q.question_text.length > 120 ? '…' : ''}"\n\nThis will also delete its 4 answers. This cannot be undone.`
+    );
+    if (!ok) return;
+
+    try {
+      setDeletingId(q.id);
+      const response = await fetch('/api/admin/question-bank/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question_id: q.id })
+      });
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Failed to delete');
+      }
+
+      await refetchQuestions();
+    } catch (err) {
+      console.error('[Question Bank UI] delete error:', err);
+      window.alert('Failed to delete: ' + (err.message || 'Unknown error'));
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const handleExport = async () => {
+    try {
+      setExporting(true);
+      const url = `/api/admin/question-bank/export?assessment_type_id=${assessmentTypeId}`;
+      const response = await fetch(url);
+
+      if (!response.ok) {
+        // Error path may return JSON
+        let message = 'Export failed';
+        try {
+          const data = await response.json();
+          message = data.error || message;
+        } catch (e) {
+          // ignore
+        }
+        throw new Error(message);
+      }
+
+      const blob = await response.blob();
+      const objectUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const safeCode = (assessmentType?.code || 'assessment').replace(/[^a-z0-9_-]/gi, '_');
+      const stamp = new Date().toISOString().slice(0, 10);
+      a.href = objectUrl;
+      a.download = `question-bank-${safeCode}-${stamp}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(objectUrl);
+    } catch (err) {
+      console.error('[Question Bank UI] export error:', err);
+      window.alert('Failed to export: ' + (err.message || 'Unknown error'));
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  // ---------- Derived ----------
   const sectionOptions = (() => {
     const seen = new Map();
     questions.forEach((q) => {
@@ -320,6 +393,7 @@ export default function QuestionBankList() {
 
   const hasActiveFilters = !!(section || search);
 
+  // ---------- Loading / error shells ----------
   if (authLoading || typesLoading) {
     return (
       <AppLayout background="/images/admin-bg.jpg">
@@ -344,14 +418,30 @@ export default function QuestionBankList() {
     );
   }
 
+  // ---------- Main render ----------
   return (
     <AppLayout background="/images/admin-bg.jpg">
       <div style={styles.container}>
         <button onClick={handleBack} style={styles.backButton}>← Back to Admin Dashboard</button>
 
         <div style={styles.header}>
-          <h1 style={styles.title}>Question Bank</h1>
-          <p style={styles.subtitle}>Browse the question pool for each assessment type.</p>
+          <div style={styles.headerText}>
+            <h1 style={styles.title}>Question Bank</h1>
+            <p style={styles.subtitle}>Browse the question pool for each assessment type.</p>
+          </div>
+          <div style={styles.headerActions}>
+            <button
+              onClick={handleExport}
+              disabled={exporting || loading}
+              style={{
+                ...styles.exportButton,
+                opacity: exporting || loading ? 0.6 : 1,
+                cursor: exporting || loading ? 'not-allowed' : 'pointer'
+              }}
+            >
+              {exporting ? '⏳ Exporting…' : '⬇ Export to Excel'}
+            </button>
+          </div>
         </div>
 
         <div style={styles.selectorRow}>
@@ -455,10 +545,10 @@ export default function QuestionBankList() {
                 <tr>
                   <th style={{ ...styles.th, width: '56px' }}>#</th>
                   <th style={styles.th}>Question</th>
-                  <th style={{ ...styles.th, width: '16%' }}>Section</th>
-                  <th style={{ ...styles.th, width: '13%' }}>Subsection</th>
-                  <th style={{ ...styles.th, width: '26%' }}>Answers</th>
-                  <th style={{ ...styles.th, width: '90px' }}>Actions</th>
+                  <th style={{ ...styles.th, width: '15%' }}>Section</th>
+                  <th style={{ ...styles.th, width: '12%' }}>Subsection</th>
+                  <th style={{ ...styles.th, width: '24%' }}>Answers</th>
+                  <th style={{ ...styles.th, width: '150px' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -479,12 +569,25 @@ export default function QuestionBankList() {
                       </div>
                     </td>
                     <td style={styles.td}>
-                      <button
-                        onClick={() => setEditingQuestion(q)}
-                        style={styles.editButton}
-                      >
-                        Edit
-                      </button>
+                      <div style={styles.actionCell}>
+                        <button
+                          onClick={() => setEditingQuestion(q)}
+                          style={styles.editButton}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => handleDelete(q)}
+                          disabled={deletingId === q.id}
+                          style={{
+                            ...styles.deleteButton,
+                            opacity: deletingId === q.id ? 0.6 : 1,
+                            cursor: deletingId === q.id ? 'not-allowed' : 'pointer'
+                          }}
+                        >
+                          {deletingId === q.id ? '…' : 'Delete'}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -546,7 +649,16 @@ const styles = {
     color: '#475569',
     marginBottom: '20px'
   },
-  header: { marginBottom: '24px' },
+  header: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: '16px',
+    marginBottom: '24px',
+    flexWrap: 'wrap'
+  },
+  headerText: { flex: '1 1 auto' },
+  headerActions: { display: 'flex', alignItems: 'center', gap: '8px' },
   title: {
     fontSize: '28px',
     fontWeight: '700',
@@ -557,6 +669,16 @@ const styles = {
     fontSize: '16px',
     color: '#64748b',
     margin: 0
+  },
+  exportButton: {
+    padding: '10px 18px',
+    background: '#16a34a',
+    color: 'white',
+    border: 'none',
+    borderRadius: '8px',
+    fontSize: '14px',
+    fontWeight: '600',
+    fontFamily: 'inherit'
   },
   selectorRow: {
     display: 'flex',
@@ -673,15 +795,6 @@ const styles = {
     justifyContent: 'space-between',
     color: '#991b1b'
   },
-  retryButton: {
-    padding: '4px 12px',
-    background: '#991b1b',
-    color: 'white',
-    border: 'none',
-    borderRadius: '4px',
-    cursor: 'pointer',
-    fontSize: '12px'
-  },
   tableContainer: {
     background: 'white',
     borderRadius: '12px',
@@ -744,9 +857,21 @@ const styles = {
     flexShrink: 0
   },
   answerText: { color: '#334155' },
+  actionCell: { display: 'flex', gap: '6px', flexWrap: 'wrap' },
   editButton: {
-    padding: '6px 14px',
+    padding: '6px 12px',
     background: '#1a237e',
+    color: 'white',
+    border: 'none',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontSize: '12px',
+    fontWeight: '500',
+    fontFamily: 'inherit'
+  },
+  deleteButton: {
+    padding: '6px 12px',
+    background: '#dc2626',
     color: 'white',
     border: 'none',
     borderRadius: '6px',
