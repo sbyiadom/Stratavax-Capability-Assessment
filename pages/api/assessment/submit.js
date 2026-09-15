@@ -1,28 +1,27 @@
 // pages/api/assessment/submit.js - FULLY CORRECTED WITH BEHAVIORAL TRACKING
-// Version: submit-behavioral-v7
+// Version: submit-behavioral-v8
 // - Complete behavioral data saved to database
 // - Proper proctoring_data structure for Behavioral Matrix
 // - Answer changes tracking
 // - Time cap for unreasonable session durations
-// - UPDATED (Phase 1): gracefully handle a concurrent-submission race
-//   against the assessment_results.session_id unique constraint.
-// - UPDATED (Phase 1 hotfix): STEP 7 reads from unique_questions +
-//   unique_answers (the tables the candidate actually saw).
+// - UPDATED (Phase 1): gracefully handle a concurrent-submission race.
+// - UPDATED (Phase 1 hotfix): STEP 7 reads from unique_questions + unique_answers.
 // - UPDATED (Phase Two / Item 2.5): STEP 7 prefers the frozen set in
-//   session_questions for this session. Scoring is now performed
-//   against the EXACT questions the candidate was shown.
-// - UPDATED (Phase Two / Item 2.6): STEP 9's denominator override on
-//   the legacy fallback path is now loud, structured, and recorded on
-//   the result via report_data (denominatorOverridden, expectedDenominator,
-//   actualDenominator) instead of a silent console.warn.
-// - UPDATED (Phase Two / Item 2.7): STEP 7 now captures the version
-//   tags (assessment_version, scoring_version) from session_questions
-//   and STEP 17 stamps them on both assessment_results columns and
-//   inside report_data for audit.
+//   session_questions for this session.
+// - UPDATED (Phase Two / Item 2.6): STEP 9's denominator override is
+//   loud, structured, and recorded on the result via report_data.
+// - UPDATED (Phase Two / Item 2.7): version tags captured from the
+//   frozen set and stamped on both columns and report_data.
+// - UPDATED (Phase Two / Item 2.8): Steps 15-18 (session update,
+//   result upsert with race handling, candidate_assessments update)
+//   are now a single atomic RPC call to
+//   public.submit_assessment_transactional. All three writes commit
+//   together or roll back together. Race handling is now native via
+//   ON CONFLICT (session_id) inside the function.
 
 import { createClient } from "@supabase/supabase-js";
 
-const SUBMIT_BUILD = "submit-behavioral-v7";
+const SUBMIT_BUILD = "submit-behavioral-v8";
 const PRACTICAL_ASSESSMENT_IDS = [
   'c2bc4994-1c4a-4094-a763-8d9d560b759e',
   '243275ec-9bb5-43ce-9f02-1111b2ca66e0',
@@ -31,9 +30,6 @@ const PRACTICAL_ASSESSMENT_IDS = [
 ];
 const NATIONAL_SERVICE_ASSESSMENT_ID = 'bdb9d46e-9fac-4d00-8478-1f649e7ac600';
 const MAX_REASONABLE_SECONDS = 8 * 60 * 60; // 8 hours
-
-// Postgres unique-violation error code
-const UNIQUE_VIOLATION_CODE = '23505';
 
 // ============================================================
 // HELPERS
@@ -48,11 +44,7 @@ function formatDuration(seconds) {
 
 function calculateAvgTimePerQuestion(totalSeconds, questionCount) {
   if (!totalSeconds || totalSeconds <= 0 || !questionCount || questionCount <= 0) return '0s';
-
-  if (totalSeconds > MAX_REASONABLE_SECONDS) {
-    return 'Session left open';
-  }
-
+  if (totalSeconds > MAX_REASONABLE_SECONDS) return 'Session left open';
   const avgSeconds = Math.round(totalSeconds / questionCount);
   if (avgSeconds < 60) return `${avgSeconds}s`;
   const minutes = Math.floor(avgSeconds / 60);
@@ -72,13 +64,9 @@ function safeArray(value) {
 }
 
 // ============================================================
-// Phase Two (Item 2.5): load the frozen question set for a
-// session, if one exists. Returns an object:
-//   {
-//     questions: [...],           // in scoring shape
-//     assessmentVersion: number,
-//     scoringVersion: number
-//   }
+// Phase Two (Item 2.5 + 2.7): load the frozen question set for
+// a session, if one exists. Returns:
+//   { questions, assessmentVersion, scoringVersion }
 // or null if the session has no frozen set (legacy session).
 // ============================================================
 async function loadFrozenQuestions(serviceClient, sessionId) {
@@ -92,9 +80,7 @@ async function loadFrozenQuestions(serviceClient, sessionId) {
     console.error("[Submit] Frozen set read error:", frozenErr);
     return null;
   }
-  if (!frozen || frozen.length === 0) {
-    return null;
-  }
+  if (!frozen || frozen.length === 0) return null;
 
   const questionIds = frozen.map((r) => r.question_id);
 
@@ -166,8 +152,6 @@ async function loadFrozenQuestions(serviceClient, sessionId) {
     });
   }
 
-  // Phase Two / Item 2.7: capture the versions from the frozen rows
-  // so we can stamp them onto the result at submit time.
   const assessmentVersion = frozen[0]?.assessment_version ?? 1;
   const scoringVersion = frozen[0]?.scoring_version ?? 1;
 
@@ -259,7 +243,7 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 4: Get assessment (SEPARATE LOOKUP - NO EMBEDDED RELATIONSHIP)
+    // STEP 4: Get assessment
     // ============================================================
     console.log(`[Submit] Looking up assessment: ${session.assessment_id}`);
     const { data: assessment, error: assessmentError } = await serviceClient
@@ -272,28 +256,20 @@ export default async function handler(req, res) {
       console.error("[Submit] Assessment lookup failed:", {
         assessmentId: session.assessment_id,
         code: assessmentError?.code,
-        message: assessmentError?.message,
-        details: assessmentError?.details,
-        hint: assessmentError?.hint
+        message: assessmentError?.message
       });
       return res.status(500).json({
         success: false,
         error: "Assessment lookup failed",
-        diagnosticCode: assessmentError?.code || "ASSESSMENT_NOT_FOUND",
-        debug: {
-          assessmentId: session.assessment_id,
-          code: assessmentError?.code,
-          message: assessmentError?.message
-        }
+        diagnosticCode: assessmentError?.code || "ASSESSMENT_NOT_FOUND"
       });
     }
 
     console.log(`[Submit] Assessment found: ${assessment.id} - ${assessment.title}`);
 
     // ============================================================
-    // STEP 5: Get assessment type (SEPARATE LOOKUP)
+    // STEP 5: Get assessment type
     // ============================================================
-    console.log(`[Submit] Looking up assessment type: ${assessment.assessment_type_id}`);
     const { data: assessmentType, error: typeError } = await serviceClient
       .from("assessment_types")
       .select("id, code, name, question_count")
@@ -314,7 +290,7 @@ export default async function handler(req, res) {
                              session.assessment_id === NATIONAL_SERVICE_ASSESSMENT_ID;
 
     // ============================================================
-    // STEP 6: Get responses with metadata (for answer changes)
+    // STEP 6: Get responses
     // ============================================================
     const { data: responses, error: responsesError } = await serviceClient
       .from("responses")
@@ -342,22 +318,13 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 7: Get questions for scoring.
-    // Prefer the frozen set for this session (Phase Two / Item 2.5).
-    // Falls back to the unique_questions fetch for legacy sessions
-    // created before session_questions existed.
+    // STEP 7: Get questions for scoring (frozen first, fallback second)
     // ============================================================
     let questions = null;
     let frozenUsed = false;
-
-    // Phase Two (Item 2.6): track whether the denominator was overridden
-    // on the fallback path, and what the configured vs actual counts were.
     let denominatorOverridden = false;
     let expectedDenominator = null;
     let actualDenominator = null;
-
-    // Phase Two (Item 2.7): version tags from the frozen set, stamped
-    // onto the result row for audit / future compatibility.
     let frozenAssessmentVersion = null;
     let frozenScoringVersion = null;
 
@@ -424,16 +391,13 @@ export default async function handler(req, res) {
 
     questions.forEach(q => {
       const answers = q.answers || [];
-      const maxScore = 1;
-      totalMax += maxScore;
-
+      totalMax += 1;
       const section = q.section || "General";
-
       if (!categoryMap[section]) {
         categoryMap[section] = 0;
         categoryMaxMap[section] = 0;
       }
-      categoryMaxMap[section] += maxScore;
+      categoryMaxMap[section] += 1;
 
       const userAnswer = responseMap[q.id];
       if (userAnswer) {
@@ -447,20 +411,12 @@ export default async function handler(req, res) {
     });
 
     // ============================================================
-    // STEP 9: Validate question count.
-    // When the frozen set was used, totalMax IS the frozen count —
-    // no mismatch possible. Only run the count validation on the
-    // legacy fallback path.
-    //
-    // Phase Two (Item 2.6): the override on the fallback path is now
-    // loud, structured, and recorded on the result so the mismatch
-    // is visible to supervisors and audit.
+    // STEP 9: Validate question count (fallback path only)
     // ============================================================
     if (frozenUsed) {
       console.log(`[Submit] Frozen denominator locked: ${totalMax} questions`);
     } else {
       let expectedTotalQuestions = 0;
-
       if (assessmentType?.question_count && assessmentType.question_count > 0) {
         expectedTotalQuestions = assessmentType.question_count;
       } else if (questions.length > 0) {
@@ -468,14 +424,11 @@ export default async function handler(req, res) {
       } else {
         expectedTotalQuestions = getTotalQuestions(assessment.id);
       }
-
       console.log(`[Submit] Expected: ${expectedTotalQuestions}, Actual: ${questions.length}`);
-
       if (questions.length !== expectedTotalQuestions) {
         denominatorOverridden = true;
         expectedDenominator = expectedTotalQuestions;
         actualDenominator = questions.length;
-
         console.error('[Submit] DENOMINATOR OVERRIDE:', {
           assessmentId: assessment.id,
           assessmentTypeId: assessment.assessment_type_id,
@@ -485,32 +438,25 @@ export default async function handler(req, res) {
           sessionId: sessionId,
           source: 'legacy_fallback_path'
         });
-
         totalMax = questions.length;
       }
     }
 
     const finalPercentage = totalMax > 0 ? Math.round((totalEarned / totalMax) * 100) : 0;
-
     console.log(`[Submit] Score: ${totalEarned}/${totalMax} = ${finalPercentage}%`);
 
     // ============================================================
-    // STEP 10: Build category_scores
+    // STEP 10: category_scores
     // ============================================================
     const categoryScores = Object.keys(categoryMap).map(category => {
       const earned = categoryMap[category];
       const max = categoryMaxMap[category] || 1;
       const percentage = Math.round((earned / max) * 100);
-      return {
-        category: category,
-        earned: earned,
-        max: max,
-        percentage: percentage
-      };
+      return { category, earned, max, percentage };
     });
 
     // ============================================================
-    // STEP 11: Calculate recommendation
+    // STEP 11: recommendation (may be overridden by NS trigger)
     // ============================================================
     let recommendation = null;
     if (isNationalService) {
@@ -527,7 +473,7 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 12: Process proctoring data
+    // STEP 12: proctoring data
     // ============================================================
     const proctoring = proctoringData || {};
     const externalUrls = Array.isArray(proctoring.externalUrls) ? proctoring.externalUrls : [];
@@ -548,7 +494,7 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 13: Calculate risk
+    // STEP 13: risk
     // ============================================================
     let riskScore = 0;
     if (totalTabSwitches > 50) riskScore += 30;
@@ -568,13 +514,12 @@ export default async function handler(req, res) {
     }
 
     riskScore = Math.min(riskScore, 100);
-
     let riskLevel = 'low';
     if (riskScore >= 70) riskLevel = 'high';
     else if (riskScore >= 40) riskLevel = 'medium';
 
     // ============================================================
-    // STEP 14: Time tracking with reasonable cap
+    // STEP 14: time tracking
     // ============================================================
     const completedAt = new Date().toISOString();
     let assessmentStartedAt = null;
@@ -594,238 +539,145 @@ export default async function handler(req, res) {
     if (totalSeconds > MAX_REASONABLE_SECONDS) {
       console.warn(`[Submit] Total time ${totalSeconds}s exceeds reasonable limit, capping for display`);
     }
-
     if (totalSeconds < 0) totalSeconds = 0;
     const totalDurationFormatted = formatDuration(totalSeconds);
     const avgTimePerQuestion = calculateAvgTimePerQuestion(totalSeconds, totalMax);
 
     // ============================================================
-    // STEP 15: Update session
+    // STEP 15-18 (Phase Two / 2.8): TRANSACTIONAL SUBMISSION
+    // All writes (session update + result upsert + CA update) happen
+    // atomically inside public.submit_assessment_transactional.
+    // On any failure, everything rolls back.
     // ============================================================
-    const { error: sessionUpdateError } = await serviceClient
-      .from("assessment_sessions")
-      .update({
-        status: "completed",
-        completed_at: completedAt,
-        updated_at: completedAt
-      })
-      .eq("id", sessionId);
-
-    if (sessionUpdateError) {
-      console.error("[Submit] Session update error:", sessionUpdateError);
-      return res.status(500).json({
-        success: false,
-        error: "Failed to update session",
-        diagnosticCode: "SESSION_UPDATE_FAILED"
-      });
-    }
-
-    // ============================================================
-    // STEP 16: Check existing result
-    // ============================================================
-    const { data: existingResult, error: existingResultError } = await serviceClient
-      .from("assessment_results")
-      .select("id")
-      .eq("session_id", sessionId)
-      .maybeSingle();
-
-    if (existingResultError) {
-      console.error("[Submit] Existing result error:", existingResultError);
-    }
-
-    // ============================================================
-    // STEP 17: Build result data with COMPLETE BEHAVIORAL DATA
-    // ============================================================
-    const resultData = {
-      user_id: session.user_id,
-      assessment_id: assessment.id,
-      session_id: sessionId,
-      total_score: totalEarned,
-      max_score: totalMax,
-      percentage_score: finalPercentage,
-      started_at: assessmentStartedAt,
-      completed_at: completedAt,
-      total_seconds: totalSeconds,
-      is_valid: riskLevel !== 'high',
-      is_auto_submitted: autoSubmitted || false,
-      category_scores: categoryScores,
-      workplace_readiness: 0,
-      intellectual_capability: 0,
+    const reportData = {
+      categoryScores: categoryScores,
+      totalEarned: totalEarned,
+      totalMax: totalMax,
+      percentageScore: finalPercentage,
       recommendation: recommendation,
-      risk_level: riskLevel,
-      risk_score: riskScore,
-      total_questions: totalMax,
-      answered_questions: (responses || []).length,
-
-      // Phase Two / Item 2.7: version tags for audit.
-      assessment_version: frozenAssessmentVersion || 1,
-      scoring_version: frozenScoringVersion || 1,
-
-      proctoring_data: {
-        summary: {
-          totalViolations: totalViolations,
-          tabSwitches: totalTabSwitches,
-          externalUrlsVisited: externalUrlsVisited,
-          copyPasteAttempts: totalCopyAttempts + totalPasteAttempts,
-          rightClickAttempts: totalRightClickAttempts,
-          duration: totalSeconds,
-          durationFormatted: totalDurationFormatted,
-          avgTimePerQuestion: avgTimePerQuestion,
-          riskLevel: riskLevel,
-          riskScore: riskScore,
-          answerChanges: totalAnswerChanges,
-          isTimeAbnormal: totalSeconds > MAX_REASONABLE_SECONDS
-        },
-        externalUrls: externalUrls,
-        domainVisits: proctoring.domainVisits || {},
-        violations: violations,
-        tabSwitches: tabSwitches,
-        total_tab_switches: totalTabSwitches,
-        total_violations: totalViolations,
-        copy_attempts: totalCopyAttempts,
-        paste_attempts: totalPasteAttempts,
-        right_click_attempts: totalRightClickAttempts,
-        answer_changes: totalAnswerChanges,
-        total_time_seconds: totalSeconds,
-        avg_time_per_question: avgTimePerQuestion,
-        is_time_abnormal: totalSeconds > MAX_REASONABLE_SECONDS
-      },
-
-      external_urls_visited: externalUrls,
-      domain_visits: proctoring.domainVisits || {},
-      tab_switch_details: tabSwitches,
-      violations: violations,
-      total_tab_switches: totalTabSwitches,
-      total_external_urls: externalUrlsVisited,
-
-      report_data: {
-        categoryScores: categoryScores,
-        totalEarned: totalEarned,
-        totalMax: totalMax,
-        percentageScore: finalPercentage,
-        recommendation: recommendation,
-        startedAt: assessmentStartedAt,
-        completedAt: completedAt,
-        totalSeconds: totalSeconds,
-        totalDurationFormatted: totalDurationFormatted,
+      startedAt: assessmentStartedAt,
+      completedAt: completedAt,
+      totalSeconds: totalSeconds,
+      totalDurationFormatted: totalDurationFormatted,
+      avgTimePerQuestion: avgTimePerQuestion,
+      totalQuestions: totalMax,
+      isTimeAbnormal: totalSeconds > MAX_REASONABLE_SECONDS,
+      frozenSetUsed: frozenUsed,
+      denominatorOverridden: denominatorOverridden,
+      expectedDenominator: expectedDenominator,
+      actualDenominator: actualDenominator,
+      assessmentVersion: frozenAssessmentVersion || 1,
+      scoringVersion: frozenScoringVersion || 1,
+      behavioral: {
+        tabSwitches: totalTabSwitches,
+        violations: totalViolations,
+        externalUrlsVisited: externalUrlsVisited,
+        copyPasteAttempts: totalCopyAttempts + totalPasteAttempts,
+        rightClickAttempts: totalRightClickAttempts,
+        answerChanges: totalAnswerChanges,
+        totalTime: totalSeconds,
+        totalTimeFormatted: totalDurationFormatted,
         avgTimePerQuestion: avgTimePerQuestion,
-        totalQuestions: totalMax,
-        isTimeAbnormal: totalSeconds > MAX_REASONABLE_SECONDS,
-        frozenSetUsed: frozenUsed,
-        denominatorOverridden: denominatorOverridden,
-        expectedDenominator: expectedDenominator,
-        actualDenominator: actualDenominator,
-        assessmentVersion: frozenAssessmentVersion || 1,
-        scoringVersion: frozenScoringVersion || 1,
-        behavioral: {
-          tabSwitches: totalTabSwitches,
-          violations: totalViolations,
-          externalUrlsVisited: externalUrlsVisited,
-          copyPasteAttempts: totalCopyAttempts + totalPasteAttempts,
-          rightClickAttempts: totalRightClickAttempts,
-          answerChanges: totalAnswerChanges,
-          totalTime: totalSeconds,
-          totalTimeFormatted: totalDurationFormatted,
-          avgTimePerQuestion: avgTimePerQuestion,
-          riskLevel: riskLevel,
-          riskScore: riskScore,
-          isTimeAbnormal: totalSeconds > MAX_REASONABLE_SECONDS
-        },
-        proctoring: {
-          riskLevel: riskLevel,
-          riskScore: riskScore,
-          totalViolations: totalViolations,
-          externalUrlsVisited: externalUrlsVisited,
-          tabSwitches: totalTabSwitches,
-          duration: totalSeconds,
-          durationFormatted: totalDurationFormatted,
-          avgTimePerQuestion: avgTimePerQuestion,
-          isTimeAbnormal: totalSeconds > MAX_REASONABLE_SECONDS
-        }
+        riskLevel: riskLevel,
+        riskScore: riskScore,
+        isTimeAbnormal: totalSeconds > MAX_REASONABLE_SECONDS
+      },
+      proctoring: {
+        riskLevel: riskLevel,
+        riskScore: riskScore,
+        totalViolations: totalViolations,
+        externalUrlsVisited: externalUrlsVisited,
+        tabSwitches: totalTabSwitches,
+        duration: totalSeconds,
+        durationFormatted: totalDurationFormatted,
+        avgTimePerQuestion: avgTimePerQuestion,
+        isTimeAbnormal: totalSeconds > MAX_REASONABLE_SECONDS
       }
     };
 
-    let resultId;
+    const proctoringDataForDb = {
+      summary: {
+        totalViolations: totalViolations,
+        tabSwitches: totalTabSwitches,
+        externalUrlsVisited: externalUrlsVisited,
+        copyPasteAttempts: totalCopyAttempts + totalPasteAttempts,
+        rightClickAttempts: totalRightClickAttempts,
+        duration: totalSeconds,
+        durationFormatted: totalDurationFormatted,
+        avgTimePerQuestion: avgTimePerQuestion,
+        riskLevel: riskLevel,
+        riskScore: riskScore,
+        answerChanges: totalAnswerChanges,
+        isTimeAbnormal: totalSeconds > MAX_REASONABLE_SECONDS
+      },
+      externalUrls: externalUrls,
+      domainVisits: proctoring.domainVisits || {},
+      violations: violations,
+      tabSwitches: tabSwitches,
+      total_tab_switches: totalTabSwitches,
+      total_violations: totalViolations,
+      copy_attempts: totalCopyAttempts,
+      paste_attempts: totalPasteAttempts,
+      right_click_attempts: totalRightClickAttempts,
+      answer_changes: totalAnswerChanges,
+      total_time_seconds: totalSeconds,
+      avg_time_per_question: avgTimePerQuestion,
+      is_time_abnormal: totalSeconds > MAX_REASONABLE_SECONDS
+    };
 
-    if (existingResult) {
-      const { data: updatedResult, error: updateError } = await serviceClient
-        .from("assessment_results")
-        .update(resultData)
-        .eq("id", existingResult.id)
-        .select()
-        .single();
+    console.log('[Submit] Calling transactional RPC for session:', sessionId);
 
-      if (updateError) {
-        console.error("[Submit] Result update error:", updateError);
-        return res.status(500).json({
-          success: false,
-          error: "Failed to update result",
-          diagnosticCode: "RESULT_UPDATE_FAILED"
-        });
+    const { data: rpcResult, error: rpcError } = await serviceClient.rpc(
+      'submit_assessment_transactional',
+      {
+        p_session_id: sessionId,
+        p_user_id: session.user_id,
+        p_assessment_id: assessment.id,
+        p_assessment_type_id: assessment.assessment_type_id,
+        p_completed_at: completedAt,
+        p_total_score: totalEarned,
+        p_max_score: totalMax,
+        p_percentage_score: finalPercentage,
+        p_total_questions: totalMax,
+        p_answered_questions: (responses || []).length,
+        p_category_scores: categoryScores,
+        p_started_at: assessmentStartedAt,
+        p_total_seconds: totalSeconds,
+        p_recommendation: recommendation,
+        p_risk_level: riskLevel,
+        p_risk_score: riskScore,
+        p_is_valid: riskLevel !== 'high',
+        p_is_auto_submitted: autoSubmitted || false,
+        p_assessment_version: frozenAssessmentVersion || 1,
+        p_scoring_version: frozenScoringVersion || 1,
+        p_report_data: reportData,
+        p_proctoring_data: proctoringDataForDb,
+        p_external_urls_visited: externalUrls,
+        p_domain_visits: proctoring.domainVisits || {},
+        p_tab_switch_details: tabSwitches,
+        p_violations: violations,
+        p_total_tab_switches: totalTabSwitches,
+        p_total_external_urls: externalUrlsVisited
       }
-      resultId = updatedResult?.id;
-    } else {
-      const { data: newResult, error: createError } = await serviceClient
-        .from("assessment_results")
-        .insert(resultData)
-        .select()
-        .single();
+    );
 
-      if (createError) {
-        if (createError.code === UNIQUE_VIOLATION_CODE) {
-          console.warn("[Submit] Concurrent submission detected for session:", sessionId, "- fetching existing result instead of failing");
-
-          const { data: raceWinnerResult, error: raceFetchError } = await serviceClient
-            .from("assessment_results")
-            .select("id")
-            .eq("session_id", sessionId)
-            .maybeSingle();
-
-          if (raceFetchError || !raceWinnerResult) {
-            console.error("[Submit] Failed to fetch result after unique-violation race:", raceFetchError);
-            return res.status(500).json({
-              success: false,
-              error: "Failed to save result",
-              diagnosticCode: "RESULT_CREATE_FAILED"
-            });
-          }
-
-          resultId = raceWinnerResult.id;
-        } else {
-          console.error("[Submit] Result create error:", createError);
-          return res.status(500).json({
-            success: false,
-            error: "Failed to save result",
-            diagnosticCode: "RESULT_CREATE_FAILED"
-          });
+    if (rpcError) {
+      console.error('[Submit] Transactional RPC failed:', rpcError);
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to save assessment result',
+        diagnosticCode: 'TRANSACTION_FAILED',
+        debug: {
+          code: rpcError?.code,
+          message: rpcError?.message,
+          details: rpcError?.details,
+          hint: rpcError?.hint
         }
-      } else {
-        resultId = newResult?.id;
-      }
+      });
     }
 
-    console.log(`[Submit] Result saved: ${resultId}`);
-
-    // ============================================================
-    // STEP 18: Update candidate_assessments
-    // ============================================================
-    if (resultId) {
-      const { error: caUpdateError } = await serviceClient
-        .from("candidate_assessments")
-        .update({
-          result_id: resultId,
-          status: "completed",
-          completed_at: completedAt,
-          updated_at: completedAt,
-          score: totalEarned
-        })
-        .eq("user_id", session.user_id)
-        .eq("assessment_id", assessment.id);
-
-      if (caUpdateError) {
-        console.error("[Submit] Candidate assessment update error:", caUpdateError);
-      }
-    }
+    const resultId = rpcResult;
+    console.log(`[Submit] Result saved (transactional): ${resultId}`);
 
     // ============================================================
     // STEP 19: Return response
@@ -888,4 +740,3 @@ export default async function handler(req, res) {
     });
   }
 }
-
