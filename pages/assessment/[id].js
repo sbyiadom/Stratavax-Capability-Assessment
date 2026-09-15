@@ -6,10 +6,10 @@
 // it can return the frozen question set for that session.
 // UPDATED (Phase Two / Item 2.4b): the current question index is
 // persisted to localStorage and restored on refresh.
-// UPDATED (Phase Two / "Serve all questions"): duration is now read
-// from the session response (sessionData.duration_minutes), which the
-// server computes from the frozen question count. The old hardcoded
-// getAssessmentDuration() helper has been removed.
+// UPDATED (Phase Two / "Serve all questions"): duration is derived
+// from the session's expires_at and started_at timestamps. This is
+// immune to differences in what the session API returns — the DB row
+// is the single source of truth, and both fields are always present.
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
@@ -33,6 +33,29 @@ function formatTime(seconds) {
   const mins = Math.floor((safeSeconds % 3600) / 60);
   const secs = safeSeconds % 60;
   return `${String(hrs).padStart(2, "0")}:${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+}
+
+// Derive the session duration (in seconds) from the timestamps on the
+// session row. Prefers the explicit duration_minutes field if the server
+// provides it, otherwise computes from expires_at - started_at, which is
+// always present on assessment_sessions.
+function deriveDurationSeconds(sessionData) {
+  if (!sessionData) return 0;
+
+  const explicit = safeNumber(sessionData.duration_minutes, 0);
+  if (explicit > 0) {
+    return Math.round(explicit * 60);
+  }
+
+  if (sessionData.expires_at && sessionData.started_at) {
+    const expiresMs = new Date(sessionData.expires_at).getTime();
+    const startedMs = new Date(sessionData.started_at).getTime();
+    if (Number.isFinite(expiresMs) && Number.isFinite(startedMs) && expiresMs > startedMs) {
+      return Math.round((expiresMs - startedMs) / 1000);
+    }
+  }
+
+  return 0;
 }
 
 function getAnswerArray(value) {
@@ -748,8 +771,9 @@ function AssessmentContent() {
         }
 
         // ============================================================
-        // Phase Two: create-or-get the session FIRST. The server
-        // computes and returns the duration (sessionData.duration_minutes).
+        // Phase Two: create-or-get the session FIRST. Derive the
+        // duration from the session's timestamps — the DB row is the
+        // single source of truth, independent of what the API returns.
         // ============================================================
         const sessionData = await createOrGetSession(assessmentId, assessmentTypeId);
 
@@ -758,13 +782,15 @@ function AssessmentContent() {
           sessionIdRef.current = sessionData.id;
         }
 
-        // Duration is now decided by the server, based on the frozen
-        // question count. Fall back to 120 if the field is missing.
-        const resolvedDurationMinutes = safeNumber(sessionData?.duration_minutes, 120);
-        const durationSeconds = resolvedDurationMinutes * 60;
+        const durationSeconds = deriveDurationSeconds(sessionData);
+        if (durationSeconds <= 0) {
+          console.error('[Assessment] Could not derive session duration from:', sessionData);
+          throw new Error('Unable to determine session duration');
+        }
         setTimeLimitSeconds(durationSeconds);
 
-        console.log(`[Assessment] Duration: ${resolvedDurationMinutes} minutes (${durationSeconds} seconds)`);
+        const durationMinutes = Math.round(durationSeconds / 60);
+        console.log(`[Assessment] Duration: ${durationMinutes} minutes (${durationSeconds} seconds)`);
 
         const questionData = await fetchQuestions(
           assessmentTypeId,
@@ -2105,7 +2131,7 @@ const styles = {
     background: "#2e7d32",
     color: "white",
     border: "none",
-    borderRadius: 10,
+    borderRadius: "10px",
     cursor: "pointer",
     fontWeight: 500
   }
