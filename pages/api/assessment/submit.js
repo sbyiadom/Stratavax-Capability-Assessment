@@ -1,25 +1,24 @@
 // pages/api/assessment/submit.js - FULLY CORRECTED WITH BEHAVIORAL TRACKING
-// Version: submit-behavioral-v5
+// Version: submit-behavioral-v6
 // - Complete behavioral data saved to database
 // - Proper proctoring_data structure for Behavioral Matrix
 // - Answer changes tracking
 // - Time cap for unreasonable session durations
 // - UPDATED (Phase 1): gracefully handle a concurrent-submission race
-//   against the assessment_results.session_id unique constraint,
-//   instead of returning a scary 500 to a candidate whose submission
-//   actually succeeded.
+//   against the assessment_results.session_id unique constraint.
 // - UPDATED (Phase 1 hotfix): STEP 7 reads from unique_questions +
-//   unique_answers (the tables the candidate actually saw) instead of
-//   the legacy questions + answers tables.
+//   unique_answers (the tables the candidate actually saw).
 // - UPDATED (Phase Two / Item 2.5): STEP 7 prefers the frozen set in
 //   session_questions for this session. Scoring is now performed
-//   against the EXACT questions the candidate was shown, regardless of
-//   any subsequent edits to unique_questions. Legacy sessions without
-//   a frozen set fall back to the previous unique_questions behavior.
+//   against the EXACT questions the candidate was shown.
+// - UPDATED (Phase Two / Item 2.6): STEP 9's denominator override on
+//   the legacy fallback path is now loud, structured, and recorded on
+//   the result via report_data (denominatorOverridden, expectedDenominator,
+//   actualDenominator) instead of a silent console.warn.
 
 import { createClient } from "@supabase/supabase-js";
 
-const SUBMIT_BUILD = "submit-behavioral-v5";
+const SUBMIT_BUILD = "submit-behavioral-v6";
 const PRACTICAL_ASSESSMENT_IDS = [
   'c2bc4994-1c4a-4094-a763-8d9d560b759e',
   '243275ec-9bb5-43ce-9f02-1111b2ca66e0',
@@ -337,6 +336,12 @@ export default async function handler(req, res) {
     let questions = null;
     let frozenUsed = false;
 
+    // Phase Two (Item 2.6): track whether the denominator was overridden
+    // on the fallback path, and what the configured vs actual counts were.
+    let denominatorOverridden = false;
+    let expectedDenominator = null;
+    let actualDenominator = null;
+
     const frozenQuestions = await loadFrozenQuestions(serviceClient, sessionId);
     if (frozenQuestions && frozenQuestions.length > 0) {
       questions = frozenQuestions;
@@ -420,10 +425,14 @@ export default async function handler(req, res) {
     });
 
     // ============================================================
-    // STEP 9: Validate question count
+    // STEP 9: Validate question count.
     // When the frozen set was used, totalMax IS the frozen count —
     // no mismatch possible. Only run the count validation on the
     // legacy fallback path.
+    //
+    // Phase Two (Item 2.6): the override on the fallback path is now
+    // loud, structured, and recorded on the result so the mismatch
+    // is visible to supervisors and audit.
     // ============================================================
     if (frozenUsed) {
       console.log(`[Submit] Frozen denominator locked: ${totalMax} questions`);
@@ -441,7 +450,20 @@ export default async function handler(req, res) {
       console.log(`[Submit] Expected: ${expectedTotalQuestions}, Actual: ${questions.length}`);
 
       if (questions.length !== expectedTotalQuestions) {
-        console.warn(`[Submit] Question count mismatch: expected ${expectedTotalQuestions}, found ${questions.length}`);
+        denominatorOverridden = true;
+        expectedDenominator = expectedTotalQuestions;
+        actualDenominator = questions.length;
+
+        console.error('[Submit] DENOMINATOR OVERRIDE:', {
+          assessmentId: assessment.id,
+          assessmentTypeId: assessment.assessment_type_id,
+          assessmentTypeCode: assessmentType?.code || null,
+          configuredQuestionCount: expectedTotalQuestions,
+          actualQuestionsFound: questions.length,
+          sessionId: sessionId,
+          source: 'legacy_fallback_path'
+        });
+
         totalMax = questions.length;
       }
     }
@@ -664,6 +686,9 @@ export default async function handler(req, res) {
         totalQuestions: totalMax,
         isTimeAbnormal: totalSeconds > MAX_REASONABLE_SECONDS,
         frozenSetUsed: frozenUsed,
+        denominatorOverridden: denominatorOverridden,
+        expectedDenominator: expectedDenominator,
+        actualDenominator: actualDenominator,
         behavioral: {
           tabSwitches: totalTabSwitches,
           violations: totalViolations,
@@ -790,6 +815,7 @@ export default async function handler(req, res) {
       isAutoSubmitted: autoSubmitted || false,
       submitBuild: SUBMIT_BUILD,
       frozenSetUsed: frozenUsed,
+      denominatorOverridden: denominatorOverridden,
       timeTracking: {
         startedAt: assessmentStartedAt,
         completedAt: completedAt,
