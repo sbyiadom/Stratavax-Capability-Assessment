@@ -1,5 +1,5 @@
 // pages/api/assessment/submit.js - FULLY CORRECTED WITH BEHAVIORAL TRACKING
-// Version: submit-behavioral-v6
+// Version: submit-behavioral-v7
 // - Complete behavioral data saved to database
 // - Proper proctoring_data structure for Behavioral Matrix
 // - Answer changes tracking
@@ -15,10 +15,14 @@
 //   the legacy fallback path is now loud, structured, and recorded on
 //   the result via report_data (denominatorOverridden, expectedDenominator,
 //   actualDenominator) instead of a silent console.warn.
+// - UPDATED (Phase Two / Item 2.7): STEP 7 now captures the version
+//   tags (assessment_version, scoring_version) from session_questions
+//   and STEP 17 stamps them on both assessment_results columns and
+//   inside report_data for audit.
 
 import { createClient } from "@supabase/supabase-js";
 
-const SUBMIT_BUILD = "submit-behavioral-v6";
+const SUBMIT_BUILD = "submit-behavioral-v7";
 const PRACTICAL_ASSESSMENT_IDS = [
   'c2bc4994-1c4a-4094-a763-8d9d560b759e',
   '243275ec-9bb5-43ce-9f02-1111b2ca66e0',
@@ -69,17 +73,18 @@ function safeArray(value) {
 
 // ============================================================
 // Phase Two (Item 2.5): load the frozen question set for a
-// session, if one exists. Returns an array of question objects
-// in the same shape the scoring code expects: { id, section,
-// answers: [{ id, score }] }, in frozen display_order, with
-// answers in frozen answer_order.
-//
-// Returns null if the session has no frozen set (legacy session).
+// session, if one exists. Returns an object:
+//   {
+//     questions: [...],           // in scoring shape
+//     assessmentVersion: number,
+//     scoringVersion: number
+//   }
+// or null if the session has no frozen set (legacy session).
 // ============================================================
 async function loadFrozenQuestions(serviceClient, sessionId) {
   const { data: frozen, error: frozenErr } = await serviceClient
     .from("session_questions")
-    .select("question_id, display_order, answer_order")
+    .select("question_id, display_order, answer_order, assessment_version, scoring_version")
     .eq("session_id", sessionId)
     .order("display_order", { ascending: true });
 
@@ -161,7 +166,16 @@ async function loadFrozenQuestions(serviceClient, sessionId) {
     });
   }
 
-  return assembled;
+  // Phase Two / Item 2.7: capture the versions from the frozen rows
+  // so we can stamp them onto the result at submit time.
+  const assessmentVersion = frozen[0]?.assessment_version ?? 1;
+  const scoringVersion = frozen[0]?.scoring_version ?? 1;
+
+  return {
+    questions: assembled,
+    assessmentVersion,
+    scoringVersion
+  };
 }
 
 // ============================================================
@@ -342,11 +356,19 @@ export default async function handler(req, res) {
     let expectedDenominator = null;
     let actualDenominator = null;
 
-    const frozenQuestions = await loadFrozenQuestions(serviceClient, sessionId);
-    if (frozenQuestions && frozenQuestions.length > 0) {
-      questions = frozenQuestions;
+    // Phase Two (Item 2.7): version tags from the frozen set, stamped
+    // onto the result row for audit / future compatibility.
+    let frozenAssessmentVersion = null;
+    let frozenScoringVersion = null;
+
+    const frozenResult = await loadFrozenQuestions(serviceClient, sessionId);
+    if (frozenResult && frozenResult.questions && frozenResult.questions.length > 0) {
+      questions = frozenResult.questions;
       frozenUsed = true;
+      frozenAssessmentVersion = frozenResult.assessmentVersion;
+      frozenScoringVersion = frozenResult.scoringVersion;
       console.log(`[Submit] Questions found: ${questions.length} (source: session_questions / frozen)`);
+      console.log(`[Submit] Versions: assessment=v${frozenAssessmentVersion}, scoring=v${frozenScoringVersion}`);
     }
 
     if (!frozenUsed) {
@@ -635,6 +657,10 @@ export default async function handler(req, res) {
       total_questions: totalMax,
       answered_questions: (responses || []).length,
 
+      // Phase Two / Item 2.7: version tags for audit.
+      assessment_version: frozenAssessmentVersion || 1,
+      scoring_version: frozenScoringVersion || 1,
+
       proctoring_data: {
         summary: {
           totalViolations: totalViolations,
@@ -689,6 +715,8 @@ export default async function handler(req, res) {
         denominatorOverridden: denominatorOverridden,
         expectedDenominator: expectedDenominator,
         actualDenominator: actualDenominator,
+        assessmentVersion: frozenAssessmentVersion || 1,
+        scoringVersion: frozenScoringVersion || 1,
         behavioral: {
           tabSwitches: totalTabSwitches,
           violations: totalViolations,
@@ -816,6 +844,8 @@ export default async function handler(req, res) {
       submitBuild: SUBMIT_BUILD,
       frozenSetUsed: frozenUsed,
       denominatorOverridden: denominatorOverridden,
+      assessmentVersion: frozenAssessmentVersion || 1,
+      scoringVersion: frozenScoringVersion || 1,
       timeTracking: {
         startedAt: assessmentStartedAt,
         completedAt: completedAt,
