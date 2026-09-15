@@ -1,6 +1,9 @@
 // pages/assessment/[id].js - FULLY CORRECTED WITH RESPONSE-SHAPE FIX
 // UPDATED: isMultipleCorrect now comes from the server (questions API),
 // since answer.score is no longer sent to the client (Phase 1 fix).
+// UPDATED (Phase Two / Item 2.3): session is created BEFORE questions
+// are fetched, and the session id is passed to the questions API so
+// it can return the frozen question set for that session.
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
@@ -119,10 +122,11 @@ async function fetchAccess(assessmentId) {
   return result.access;
 }
 
-async function fetchQuestions(assessmentTypeId, assessmentTypeCode) {
+async function fetchQuestions(assessmentTypeId, assessmentTypeCode, sessionId) {
   const params = new URLSearchParams({
     assessmentTypeId,
-    ...(assessmentTypeCode && { assessmentTypeCode })
+    ...(assessmentTypeCode && { assessmentTypeCode }),
+    ...(sessionId && { sessionId })
   });
   const result = await apiCall(`/api/assessment/questions?${params.toString()}`);
   return result.questions || [];
@@ -229,7 +233,7 @@ function AssessmentContent() {
     (assessment && assessment.title && assessment.title.toLowerCase().includes('national service'));
 
   // ============================================================
-  // UPDATED: isMultipleCorrect now comes directly from the server
+  // isMultipleCorrect now comes directly from the server
   // (questions API), since answer.score is no longer exposed to
   // the client. The server already accounts for national_service
   // assessments, but we keep the isNationalService guard here too
@@ -763,9 +767,12 @@ function AssessmentContent() {
           throw new Error('Assessment type could not be determined');
         }
 
-        const questionData = await fetchQuestions(assessmentTypeId, resolvedTypeCode);
-        setQuestions(questionData || []);
-
+        // ============================================================
+        // Phase Two (Item 2.3): create-or-get the session FIRST, so
+        // the frozen question set exists before we ask for questions.
+        // questions.js reads session_questions when a sessionId is
+        // provided (Item 2.4 wires that up on the server side).
+        // ============================================================
         const sessionData = await createOrGetSession(
           assessmentId,
           assessmentTypeId,
@@ -776,6 +783,13 @@ function AssessmentContent() {
           setSession(sessionData);
           sessionIdRef.current = sessionData.id;
         }
+
+        const questionData = await fetchQuestions(
+          assessmentTypeId,
+          resolvedTypeCode,
+          sessionData?.id
+        );
+        setQuestions(questionData || []);
 
         if (sessionData && sessionData.id) {
           const savedTimer = localStorage.getItem(`timer_${sessionData.id}`);
