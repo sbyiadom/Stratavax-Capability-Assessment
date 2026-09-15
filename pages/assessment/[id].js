@@ -4,6 +4,9 @@
 // UPDATED (Phase Two / Item 2.3): session is created BEFORE questions
 // are fetched, and the session id is passed to the questions API so
 // it can return the frozen question set for that session.
+// UPDATED (Phase Two / Item 2.4b): the current question index is
+// persisted to localStorage and restored on refresh, so a candidate
+// who refreshes the page does not get sent back to question 1.
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
@@ -232,13 +235,6 @@ function AssessmentContent() {
   const isNationalService = assessmentTypeCode === 'national_service' ||
     (assessment && assessment.title && assessment.title.toLowerCase().includes('national service'));
 
-  // ============================================================
-  // isMultipleCorrect now comes directly from the server
-  // (questions API), since answer.score is no longer exposed to
-  // the client. The server already accounts for national_service
-  // assessments, but we keep the isNationalService guard here too
-  // for the title-based fallback detection.
-  // ============================================================
   const isMultipleCorrect = isNationalService ? false : Boolean(currentQuestion.isMultipleCorrect);
 
   const totalAnswered = countAnswered(answers);
@@ -708,15 +704,11 @@ function AssessmentContent() {
         const currentUser = authSession.user;
         setUser(currentUser);
 
-        // ============================================================
-        // FIXED: Handle both wrapped and unwrapped response formats
-        // ============================================================
         const assessmentData = await fetchAssessmentDetails(assessmentId);
         if (!assessmentData.success) {
           throw new Error(assessmentData.error || 'Failed to load assessment');
         }
 
-        // Support both { success: true, assessment: {...} } and { success: true, ... }
         const assessmentInfo = assessmentData.assessment || assessmentData;
 
         if (!assessmentInfo?.id) {
@@ -724,7 +716,6 @@ function AssessmentContent() {
           throw new Error('Assessment details were returned in an invalid format');
         }
 
-        // Resolve type code from multiple possible locations
         const resolvedTypeCode =
           assessmentInfo.assessment_type?.code ||
           assessmentInfo.assessmentType?.code ||
@@ -757,7 +748,6 @@ function AssessmentContent() {
           return;
         }
 
-        // Get assessment type ID from authoritative source
         const assessmentTypeId = assessmentInfo.assessment_type_id ||
                                  assessmentInfo.assessment_type?.id ||
                                  assessmentInfo.assessmentType?.id;
@@ -770,8 +760,6 @@ function AssessmentContent() {
         // ============================================================
         // Phase Two (Item 2.3): create-or-get the session FIRST, so
         // the frozen question set exists before we ask for questions.
-        // questions.js reads session_questions when a sessionId is
-        // provided (Item 2.4 wires that up on the server side).
         // ============================================================
         const sessionData = await createOrGetSession(
           assessmentId,
@@ -798,6 +786,20 @@ function AssessmentContent() {
             if (elapsed > 0 && elapsed < durationSeconds) {
               setElapsedSeconds(elapsed);
               console.log(`[Timer] Restored: ${elapsed}s from localStorage`);
+            }
+          }
+
+          // ============================================================
+          // Phase Two (Item 2.4b): restore the last question the
+          // candidate was viewing, so refresh doesn't send them back
+          // to question 1.
+          // ============================================================
+          const savedIndex = localStorage.getItem(`current_index_${sessionData.id}`);
+          if (savedIndex !== null && questionData && questionData.length > 0) {
+            const idx = parseInt(savedIndex, 10);
+            if (Number.isFinite(idx) && idx > 0 && idx < questionData.length) {
+              setCurrentIndex(idx);
+              console.log(`[Assessment] Restored question index: ${idx}`);
             }
           }
         }
@@ -884,6 +886,26 @@ function AssessmentContent() {
   }, [alreadySubmitted, isTimeExpired, sessionIdRef.current]);
 
   // ============================================================
+  // Phase Two (Item 2.4b): persist the current question index so a
+  // page refresh puts the candidate back on the question they were
+  // viewing. Matches the timer's localStorage pattern.
+  // ============================================================
+  useEffect(() => {
+    if (!sessionIdRef.current) return;
+    if (loading || questions.length === 0) return;
+    localStorage.setItem(
+      `current_index_${sessionIdRef.current}`,
+      String(currentIndex)
+    );
+  }, [currentIndex, loading, questions.length]);
+
+  useEffect(() => {
+    if ((alreadySubmitted || isTimeExpired) && sessionIdRef.current) {
+      localStorage.removeItem(`current_index_${sessionIdRef.current}`);
+    }
+  }, [alreadySubmitted, isTimeExpired]);
+
+  // ============================================================
   // ANTI-CHEAT EFFECT
   // ============================================================
   useEffect(() => {
@@ -968,9 +990,6 @@ function AssessmentContent() {
     if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  // ============================================================
-  // handleSubmit - passes assessmentId
-  // ============================================================
   async function handleSubmit() {
     if (!session || !session.id) {
       alert('Unable to submit: No active session found. Please refresh the page and try again.');
@@ -1067,9 +1086,6 @@ function AssessmentContent() {
 
   const isDisabled = alreadySubmitted || isAutoSubmitting || isTimeExpired;
 
-  // ============================================================
-  // RENDER STATES
-  // ============================================================
   if (loading) return <div style={styles.loadingContainer}><div style={styles.loadingSpinner} /><h2>Loading Assessment...</h2><p>Preparing your questions</p></div>;
   if (accessDenied) return <div style={styles.messageContainer}><div style={styles.messageCard}><div style={styles.errorIcon}>🔒</div><h2>Access Denied</h2><p>This assessment is not currently available for your account.</p><button onClick={() => router.push("/candidate/dashboard")} style={styles.primaryButton}>← Go to Dashboard</button></div></div>;
   if (alreadySubmitted && !showSuccessModal) return <div style={styles.messageContainer}><div style={styles.messageCard}><div style={styles.successIcon}>✅</div><h2>Assessment Completed</h2><p>This assessment has already been submitted.</p><button onClick={() => router.push("/candidate/dashboard")} style={styles.primaryButton}>← Go to Dashboard</button></div></div>;
@@ -1087,9 +1103,6 @@ function AssessmentContent() {
     );
   }
 
-  // ============================================================
-  // RENDER
-  // ============================================================
   return (
     <>
       {showViolationWarning && (
@@ -1195,7 +1208,6 @@ function AssessmentContent() {
         </div>
       )}
 
-      {/* MAIN ASSESSMENT UI */}
       <div style={styles.container}>
         <div style={styles.header}>
           <div style={styles.headerContent}>
@@ -1472,10 +1484,6 @@ function AssessmentContent() {
     </>
   );
 }
-
-// ============================================================
-// STYLES - WITH FIXED CARD SIZE
-// ============================================================
 
 const styles = {
   loadingContainer: {
