@@ -1,5 +1,5 @@
 // pages/api/assessment/submit.js - FULLY CORRECTED WITH BEHAVIORAL TRACKING
-// Version: submit-behavioral-v4
+// Version: submit-behavioral-v5
 // - Complete behavioral data saved to database
 // - Proper proctoring_data structure for Behavioral Matrix
 // - Answer changes tracking
@@ -8,16 +8,18 @@
 //   against the assessment_results.session_id unique constraint,
 //   instead of returning a scary 500 to a candidate whose submission
 //   actually succeeded.
-// - UPDATED (Phase 1 hotfix): STEP 7 now reads from unique_questions +
+// - UPDATED (Phase 1 hotfix): STEP 7 reads from unique_questions +
 //   unique_answers (the tables the candidate actually saw) instead of
-//   the legacy questions + answers tables, which share numeric IDs
-//   with unique_questions but hold entirely different content.
-//   Prior to this fix, every submission was scored against the wrong
-//   answer key and candidates were awarded 0 for correct answers.
+//   the legacy questions + answers tables.
+// - UPDATED (Phase Two / Item 2.5): STEP 7 prefers the frozen set in
+//   session_questions for this session. Scoring is now performed
+//   against the EXACT questions the candidate was shown, regardless of
+//   any subsequent edits to unique_questions. Legacy sessions without
+//   a frozen set fall back to the previous unique_questions behavior.
 
 import { createClient } from "@supabase/supabase-js";
 
-const SUBMIT_BUILD = "submit-behavioral-v4";
+const SUBMIT_BUILD = "submit-behavioral-v5";
 const PRACTICAL_ASSESSMENT_IDS = [
   'c2bc4994-1c4a-4094-a763-8d9d560b759e',
   '243275ec-9bb5-43ce-9f02-1111b2ca66e0',
@@ -44,7 +46,6 @@ function formatDuration(seconds) {
 function calculateAvgTimePerQuestion(totalSeconds, questionCount) {
   if (!totalSeconds || totalSeconds <= 0 || !questionCount || questionCount <= 0) return '0s';
 
-  // If total time is unreasonable, flag it
   if (totalSeconds > MAX_REASONABLE_SECONDS) {
     return 'Session left open';
   }
@@ -61,6 +62,107 @@ function getTotalQuestions(assessmentId) {
   if (PRACTICAL_ASSESSMENT_IDS.includes(assessmentId)) return 40;
   if (assessmentId === NATIONAL_SERVICE_ASSESSMENT_ID) return 80;
   return 100;
+}
+
+function safeArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+// ============================================================
+// Phase Two (Item 2.5): load the frozen question set for a
+// session, if one exists. Returns an array of question objects
+// in the same shape the scoring code expects: { id, section,
+// answers: [{ id, score }] }, in frozen display_order, with
+// answers in frozen answer_order.
+//
+// Returns null if the session has no frozen set (legacy session).
+// ============================================================
+async function loadFrozenQuestions(serviceClient, sessionId) {
+  const { data: frozen, error: frozenErr } = await serviceClient
+    .from("session_questions")
+    .select("question_id, display_order, answer_order")
+    .eq("session_id", sessionId)
+    .order("display_order", { ascending: true });
+
+  if (frozenErr) {
+    console.error("[Submit] Frozen set read error:", frozenErr);
+    return null;
+  }
+  if (!frozen || frozen.length === 0) {
+    return null;
+  }
+
+  const questionIds = frozen.map((r) => r.question_id);
+
+  const { data: questions, error: qErr } = await serviceClient
+    .from("unique_questions")
+    .select("id, question_text, section, subsection")
+    .in("id", questionIds);
+
+  if (qErr || !questions) {
+    console.error("[Submit] Frozen questions fetch error:", qErr);
+    return null;
+  }
+
+  const { data: answers, error: aErr } = await serviceClient
+    .from("unique_answers")
+    .select("id, question_id, answer_text, score, display_order")
+    .in("question_id", questionIds);
+
+  if (aErr) {
+    console.error("[Submit] Frozen answers fetch error:", aErr);
+    return null;
+  }
+
+  const questionMap = {};
+  questions.forEach((q) => { questionMap[q.id] = q; });
+
+  const answersByQuestion = {};
+  safeArray(answers).forEach((a) => {
+    if (!answersByQuestion[a.question_id]) answersByQuestion[a.question_id] = [];
+    answersByQuestion[a.question_id].push(a);
+  });
+
+  const assembled = [];
+  for (const row of frozen) {
+    const q = questionMap[row.question_id];
+    if (!q) {
+      console.warn("[Submit] Frozen question missing from unique_questions:", row.question_id);
+      continue;
+    }
+
+    const answersForQ = answersByQuestion[row.question_id] || [];
+    const answerOrder = Array.isArray(row.answer_order) ? row.answer_order : [];
+    let orderedAnswers;
+
+    if (answerOrder.length > 0) {
+      const answerMap = {};
+      answersForQ.forEach((a) => { answerMap[a.id] = a; });
+      orderedAnswers = answerOrder
+        .map((entry) => {
+          const a = answerMap[entry.answer_id];
+          if (!a) return null;
+          return { id: a.id, answer_text: a.answer_text, score: a.score || 0 };
+        })
+        .filter(Boolean);
+    } else {
+      orderedAnswers = answersForQ.map((a) => ({
+        id: a.id,
+        answer_text: a.answer_text,
+        score: a.score || 0
+      }));
+    }
+
+    assembled.push({
+      id: q.id,
+      question_text: q.question_text,
+      section: q.section || "General",
+      subsection: q.subsection || "",
+      answers: orderedAnswers
+    });
+  }
+
+  return assembled;
 }
 
 // ============================================================
@@ -191,7 +293,6 @@ export default async function handler(req, res) {
         code: typeError?.code,
         message: typeError?.message
       });
-      // Continue without type - we'll use direct question count
     } else {
       console.log(`[Submit] Assessment type: ${assessmentType.code} (${assessmentType.id})`);
     }
@@ -212,7 +313,6 @@ export default async function handler(req, res) {
     }
     console.log(`[Submit] Found ${responses?.length || 0} responses`);
 
-    // Calculate answer changes from responses
     let totalAnswerChanges = 0;
     let totalCopyAttempts = 0;
     let totalPasteAttempts = 0;
@@ -220,10 +320,7 @@ export default async function handler(req, res) {
 
     if (responses && responses.length > 0) {
       responses.forEach(r => {
-        // Count answer changes from times_changed field
         totalAnswerChanges += Number(r.times_changed) || 0;
-
-        // Get from metadata if available
         const metadata = r.metadata || {};
         totalCopyAttempts += Number(metadata.copy_attempts) || 0;
         totalPasteAttempts += Number(metadata.paste_attempts) || 0;
@@ -232,50 +329,58 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 7: Get questions from unique_questions (the table the
-    // candidate actually saw). Previously this read from the
-    // legacy "questions" table, which shares numeric IDs with
-    // unique_questions but holds entirely different content —
-    // causing every submission to be scored against the wrong
-    // answer key. Fix: read from unique_questions + unique_answers,
-    // matching what questions.js serves and what save-response.js
-    // stores in responses.
+    // STEP 7: Get questions for scoring.
+    // Prefer the frozen set for this session (Phase Two / Item 2.5).
+    // Falls back to the unique_questions fetch for legacy sessions
+    // created before session_questions existed.
     // ============================================================
-    const { data: questionsData, error: questionsError } = await serviceClient
-      .from("unique_questions")
-      .select(`
-        id,
-        question_text,
-        section,
-        unique_answers (
+    let questions = null;
+    let frozenUsed = false;
+
+    const frozenQuestions = await loadFrozenQuestions(serviceClient, sessionId);
+    if (frozenQuestions && frozenQuestions.length > 0) {
+      questions = frozenQuestions;
+      frozenUsed = true;
+      console.log(`[Submit] Questions found: ${questions.length} (source: session_questions / frozen)`);
+    }
+
+    if (!frozenUsed) {
+      const { data: questionsData, error: questionsError } = await serviceClient
+        .from("unique_questions")
+        .select(`
           id,
-          answer_text,
-          score
-        )
-      `)
-      .eq("assessment_type_id", assessment.assessment_type_id);
+          question_text,
+          section,
+          unique_answers (
+            id,
+            answer_text,
+            score
+          )
+        `)
+        .eq("assessment_type_id", assessment.assessment_type_id);
 
-    if (questionsError) {
-      console.error("[Submit] Questions error:", questionsError);
+      if (questionsError) {
+        console.error("[Submit] Questions error:", questionsError);
+      }
+
+      questions = (questionsData || []).map((q) => ({
+        id: q.id,
+        question_text: q.question_text,
+        section: q.section,
+        answers: q.unique_answers || []
+      }));
+
+      if (questions.length === 0) {
+        console.error("[Submit] No questions found for assessment_type_id:", assessment.assessment_type_id);
+        return res.status(409).json({
+          success: false,
+          error: "No questions found for this assessment",
+          diagnosticCode: "NO_QUESTIONS_FOUND"
+        });
+      }
+
+      console.log(`[Submit] Questions found: ${questions.length} (source: unique_questions / fallback)`);
     }
-
-    const questions = (questionsData || []).map((q) => ({
-      id: q.id,
-      question_text: q.question_text,
-      section: q.section,
-      answers: q.unique_answers || []
-    }));
-
-    if (questions.length === 0) {
-      console.error("[Submit] No questions found for assessment_type_id:", assessment.assessment_type_id);
-      return res.status(409).json({
-        success: false,
-        error: "No questions found for this assessment",
-        diagnosticCode: "NO_QUESTIONS_FOUND"
-      });
-    }
-
-    console.log(`[Submit] Questions found: ${questions.length} (source: unique_questions)`);
 
     // ============================================================
     // STEP 8: Calculate scores
@@ -316,22 +421,29 @@ export default async function handler(req, res) {
 
     // ============================================================
     // STEP 9: Validate question count
+    // When the frozen set was used, totalMax IS the frozen count —
+    // no mismatch possible. Only run the count validation on the
+    // legacy fallback path.
     // ============================================================
-    let expectedTotalQuestions = 0;
-
-    if (assessmentType?.question_count && assessmentType.question_count > 0) {
-      expectedTotalQuestions = assessmentType.question_count;
-    } else if (questions.length > 0) {
-      expectedTotalQuestions = questions.length;
+    if (frozenUsed) {
+      console.log(`[Submit] Frozen denominator locked: ${totalMax} questions`);
     } else {
-      expectedTotalQuestions = getTotalQuestions(assessment.id);
-    }
+      let expectedTotalQuestions = 0;
 
-    console.log(`[Submit] Expected: ${expectedTotalQuestions}, Actual: ${questions.length}`);
+      if (assessmentType?.question_count && assessmentType.question_count > 0) {
+        expectedTotalQuestions = assessmentType.question_count;
+      } else if (questions.length > 0) {
+        expectedTotalQuestions = questions.length;
+      } else {
+        expectedTotalQuestions = getTotalQuestions(assessment.id);
+      }
 
-    if (questions.length !== expectedTotalQuestions) {
-      console.warn(`[Submit] Question count mismatch: expected ${expectedTotalQuestions}, found ${questions.length}`);
-      totalMax = questions.length;
+      console.log(`[Submit] Expected: ${expectedTotalQuestions}, Actual: ${questions.length}`);
+
+      if (questions.length !== expectedTotalQuestions) {
+        console.warn(`[Submit] Question count mismatch: expected ${expectedTotalQuestions}, found ${questions.length}`);
+        totalMax = questions.length;
+      }
     }
 
     const finalPercentage = totalMax > 0 ? Math.round((totalEarned / totalMax) * 100) : 0;
@@ -383,7 +495,6 @@ export default async function handler(req, res) {
     let totalTabSwitches = Number(summary.tabSwitches) || 0;
     const externalUrlsVisited = Array.isArray(proctoring.externalUrls) ? proctoring.externalUrls.length : 0;
 
-    // Also get from the frontend's violation tracking
     if (responses && responses.length > 0) {
       const responseMetadata = responses.map(r => r.metadata || {});
       const totalViolationsFromResponses = responseMetadata.reduce((sum, meta) => sum + (Number(meta.violations) || 0), 0);
@@ -436,10 +547,8 @@ export default async function handler(req, res) {
       totalSeconds = Math.floor((new Date(completedAt) - new Date(session.created_at)) / 1000);
     }
 
-    // Cap unreasonable time
     if (totalSeconds > MAX_REASONABLE_SECONDS) {
       console.warn(`[Submit] Total time ${totalSeconds}s exceeds reasonable limit, capping for display`);
-      // Keep the actual value but it will be flagged in the frontend
     }
 
     if (totalSeconds < 0) totalSeconds = 0;
@@ -504,9 +613,6 @@ export default async function handler(req, res) {
       total_questions: totalMax,
       answered_questions: (responses || []).length,
 
-      // ============================================================
-      // BEHAVIORAL MATRIX DATA - ALL FIELDS
-      // ============================================================
       proctoring_data: {
         summary: {
           totalViolations: totalViolations,
@@ -520,7 +626,6 @@ export default async function handler(req, res) {
           riskLevel: riskLevel,
           riskScore: riskScore,
           answerChanges: totalAnswerChanges,
-          // Flag if time is unreasonable
           isTimeAbnormal: totalSeconds > MAX_REASONABLE_SECONDS
         },
         externalUrls: externalUrls,
@@ -558,6 +663,7 @@ export default async function handler(req, res) {
         avgTimePerQuestion: avgTimePerQuestion,
         totalQuestions: totalMax,
         isTimeAbnormal: totalSeconds > MAX_REASONABLE_SECONDS,
+        frozenSetUsed: frozenUsed,
         behavioral: {
           tabSwitches: totalTabSwitches,
           violations: totalViolations,
@@ -613,17 +719,6 @@ export default async function handler(req, res) {
         .single();
 
       if (createError) {
-        // ============================================================
-        // UPDATED (Phase 1): assessment_results.session_id has a
-        // UNIQUE constraint (confirmed: assessment_results_session_id_key).
-        // If a concurrent request (e.g. a manual submit racing an
-        // auto-submit, or a network retry) already inserted the result
-        // for this session between our STEP 16 check and this insert,
-        // Postgres returns a unique-violation (23505) here. That means
-        // the submission actually succeeded via the other request — so
-        // we fetch that existing result and proceed normally, instead
-        // of failing the candidate's submission with a scary error.
-        // ============================================================
         if (createError.code === UNIQUE_VIOLATION_CODE) {
           console.warn("[Submit] Concurrent submission detected for session:", sessionId, "- fetching existing result instead of failing");
 
@@ -676,12 +771,11 @@ export default async function handler(req, res) {
 
       if (caUpdateError) {
         console.error("[Submit] Candidate assessment update error:", caUpdateError);
-        // Don't fail the submission, just log it
       }
     }
 
     // ============================================================
-    // STEP 19: Return response with COMPLETE behavioral data
+    // STEP 19: Return response
     // ============================================================
     return res.status(200).json({
       success: true,
@@ -695,6 +789,7 @@ export default async function handler(req, res) {
       isNationalService: isNationalService,
       isAutoSubmitted: autoSubmitted || false,
       submitBuild: SUBMIT_BUILD,
+      frozenSetUsed: frozenUsed,
       timeTracking: {
         startedAt: assessmentStartedAt,
         completedAt: completedAt,
