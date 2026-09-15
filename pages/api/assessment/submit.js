@@ -1,13 +1,17 @@
 // pages/api/assessment/submit.js - FULLY CORRECTED WITH BEHAVIORAL TRACKING
-// Version: submit-behavioral-v2
+// Version: submit-behavioral-v3
 // - Complete behavioral data saved to database
 // - Proper proctoring_data structure for Behavioral Matrix
 // - Answer changes tracking
 // - Time cap for unreasonable session durations
+// - UPDATED (Phase 1): gracefully handle a concurrent-submission race
+//   against the assessment_results.session_id unique constraint,
+//   instead of returning a scary 500 to a candidate whose submission
+//   actually succeeded.
 
 import { createClient } from "@supabase/supabase-js";
 
-const SUBMIT_BUILD = "submit-behavioral-v2";
+const SUBMIT_BUILD = "submit-behavioral-v3";
 const PRACTICAL_ASSESSMENT_IDS = [
   'c2bc4994-1c4a-4094-a763-8d9d560b759e',
   '243275ec-9bb5-43ce-9f02-1111b2ca66e0',
@@ -16,6 +20,9 @@ const PRACTICAL_ASSESSMENT_IDS = [
 ];
 const NATIONAL_SERVICE_ASSESSMENT_ID = 'bdb9d46e-9fac-4d00-8478-1f649e7ac600';
 const MAX_REASONABLE_SECONDS = 8 * 60 * 60; // 8 hours
+
+// Postgres unique-violation error code
+const UNIQUE_VIOLATION_CODE = '23505';
 
 // ============================================================
 // HELPERS
@@ -30,12 +37,12 @@ function formatDuration(seconds) {
 
 function calculateAvgTimePerQuestion(totalSeconds, questionCount) {
   if (!totalSeconds || totalSeconds <= 0 || !questionCount || questionCount <= 0) return '0s';
-  
+
   // If total time is unreasonable, flag it
   if (totalSeconds > MAX_REASONABLE_SECONDS) {
     return 'Session left open';
   }
-  
+
   const avgSeconds = Math.round(totalSeconds / questionCount);
   if (avgSeconds < 60) return `${avgSeconds}s`;
   const minutes = Math.floor(avgSeconds / 60);
@@ -209,7 +216,7 @@ export default async function handler(req, res) {
       responses.forEach(r => {
         // Count answer changes from times_changed field
         totalAnswerChanges += Number(r.times_changed) || 0;
-        
+
         // Get from metadata if available
         const metadata = r.metadata || {};
         totalCopyAttempts += Number(metadata.copy_attempts) || 0;
@@ -249,7 +256,7 @@ export default async function handler(req, res) {
     if (questions.length === 0) {
       console.log("[Submit] No direct questions found, trying unique_questions");
       fallbackUsed = true;
-      
+
       const { data: fallbackQuestions, error: fallbackError } = await serviceClient
         .from("unique_questions")
         .select(`
@@ -304,7 +311,7 @@ export default async function handler(req, res) {
       totalMax += maxScore;
 
       const section = q.section || "General";
-      
+
       if (!categoryMap[section]) {
         categoryMap[section] = 0;
         categoryMaxMap[section] = 0;
@@ -326,7 +333,7 @@ export default async function handler(req, res) {
     // STEP 9: Validate question count
     // ============================================================
     let expectedTotalQuestions = 0;
-    
+
     if (assessmentType?.question_count && assessmentType.question_count > 0) {
       expectedTotalQuestions = assessmentType.question_count;
     } else if (questions.length > 0) {
@@ -385,12 +392,12 @@ export default async function handler(req, res) {
     const externalUrls = Array.isArray(proctoring.externalUrls) ? proctoring.externalUrls : [];
     const violations = Array.isArray(proctoring.violations) ? proctoring.violations : [];
     const tabSwitches = Array.isArray(proctoring.tabSwitches) ? proctoring.tabSwitches : [];
-    
+
     const summary = proctoring.summary || {};
     let totalViolations = Number(summary.totalViolations) || 0;
     let totalTabSwitches = Number(summary.tabSwitches) || 0;
     const externalUrlsVisited = Array.isArray(proctoring.externalUrls) ? proctoring.externalUrls.length : 0;
-    
+
     // Also get from the frontend's violation tracking
     if (responses && responses.length > 0) {
       const responseMetadata = responses.map(r => r.metadata || {});
@@ -407,11 +414,11 @@ export default async function handler(req, res) {
     if (totalTabSwitches > 50) riskScore += 30;
     else if (totalTabSwitches > 10) riskScore += 20;
     else if (totalTabSwitches > 0) riskScore += 5;
-    
+
     if (totalViolations > 10) riskScore += 30;
     else if (totalViolations > 5) riskScore += 20;
     else if (totalViolations > 0) riskScore += 10;
-    
+
     if (externalUrlsVisited > 0) {
       const hasSearchEngine = externalUrls.some(u => u.category === 'search_engine');
       const hasAITool = externalUrls.some(u => u.category === 'ai_tool');
@@ -419,9 +426,9 @@ export default async function handler(req, res) {
       else if (hasSearchEngine) riskScore += 30;
       else riskScore += 15;
     }
-    
+
     riskScore = Math.min(riskScore, 100);
-    
+
     let riskLevel = 'low';
     if (riskScore >= 70) riskLevel = 'high';
     else if (riskScore >= 40) riskLevel = 'medium';
@@ -511,7 +518,7 @@ export default async function handler(req, res) {
       risk_score: riskScore,
       total_questions: totalMax,
       answered_questions: (responses || []).length,
-      
+
       // ============================================================
       // BEHAVIORAL MATRIX DATA - ALL FIELDS
       // ============================================================
@@ -545,14 +552,14 @@ export default async function handler(req, res) {
         avg_time_per_question: avgTimePerQuestion,
         is_time_abnormal: totalSeconds > MAX_REASONABLE_SECONDS
       },
-      
+
       external_urls_visited: externalUrls,
       domain_visits: proctoring.domainVisits || {},
       tab_switch_details: tabSwitches,
       violations: violations,
       total_tab_switches: totalTabSwitches,
       total_external_urls: externalUrlsVisited,
-      
+
       report_data: {
         categoryScores: categoryScores,
         totalEarned: totalEarned,
@@ -621,14 +628,47 @@ export default async function handler(req, res) {
         .single();
 
       if (createError) {
-        console.error("[Submit] Result create error:", createError);
-        return res.status(500).json({
-          success: false,
-          error: "Failed to save result",
-          diagnosticCode: "RESULT_CREATE_FAILED"
-        });
+        // ============================================================
+        // UPDATED (Phase 1): assessment_results.session_id has a
+        // UNIQUE constraint (confirmed: assessment_results_session_id_key).
+        // If a concurrent request (e.g. a manual submit racing an
+        // auto-submit, or a network retry) already inserted the result
+        // for this session between our STEP 16 check and this insert,
+        // Postgres returns a unique-violation (23505) here. That means
+        // the submission actually succeeded via the other request — so
+        // we fetch that existing result and proceed normally, instead
+        // of failing the candidate's submission with a scary error.
+        // ============================================================
+        if (createError.code === UNIQUE_VIOLATION_CODE) {
+          console.warn("[Submit] Concurrent submission detected for session:", sessionId, "- fetching existing result instead of failing");
+
+          const { data: raceWinnerResult, error: raceFetchError } = await serviceClient
+            .from("assessment_results")
+            .select("id")
+            .eq("session_id", sessionId)
+            .maybeSingle();
+
+          if (raceFetchError || !raceWinnerResult) {
+            console.error("[Submit] Failed to fetch result after unique-violation race:", raceFetchError);
+            return res.status(500).json({
+              success: false,
+              error: "Failed to save result",
+              diagnosticCode: "RESULT_CREATE_FAILED"
+            });
+          }
+
+          resultId = raceWinnerResult.id;
+        } else {
+          console.error("[Submit] Result create error:", createError);
+          return res.status(500).json({
+            success: false,
+            error: "Failed to save result",
+            diagnosticCode: "RESULT_CREATE_FAILED"
+          });
+        }
+      } else {
+        resultId = newResult?.id;
       }
-      resultId = newResult?.id;
     }
 
     console.log(`[Submit] Result saved: ${resultId}`);
