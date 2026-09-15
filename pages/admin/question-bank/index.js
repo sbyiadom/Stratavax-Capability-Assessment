@@ -11,9 +11,7 @@ import AppLayout from '../../../components/AppLayout';
 
 // ============================================================
 // CLIENT-SIDE XLSX PREVIEW PARSER
-// Column-position independent: builds a name→index map from the
-// header row and reads every cell via that map, so shifts or
-// reorderings in the sheet do not break parsing.
+// Column-position independent + SheetJS cell-object tolerant.
 // ============================================================
 const EXPECTED_HEADERS = [
   'question_id',
@@ -31,12 +29,38 @@ const EXPECTED_HEADERS = [
   'answer_4_score'
 ];
 
-const normalizeHeader = (v) =>
-  String(v == null ? '' : v)
-    .replace(/\u00A0/g, ' ')  // non-breaking space → space
+// Robust header normalization.
+// SheetJS occasionally returns cell objects (not raw strings) for
+// formatted cells; unwrap .w / .v before stringifying.
+const normalizeHeader = (v) => {
+  let s;
+  if (v == null) {
+    s = '';
+  } else if (typeof v === 'string') {
+    s = v;
+  } else if (typeof v === 'object') {
+    s = v.w != null ? String(v.w) : v.v != null ? String(v.v) : '';
+  } else {
+    s = String(v);
+  }
+  return s
+    .replace(/\u00A0/g, ' ')                  // non-breaking space → space
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')    // zero-width chars
     .replace(/\s+/g, ' ')
     .trim()
     .toLowerCase();
+};
+
+// Unwrap a cell value that may be a SheetJS cell object.
+const readCellValue = (v) => {
+  if (v == null) return '';
+  if (typeof v === 'object') {
+    if (v.w != null) return String(v.w);
+    if (v.v != null) return String(v.v);
+    return '';
+  }
+  return v;
+};
 
 function parseWorkbookBuffer(buffer) {
   const wb = XLSX.read(buffer, { type: 'array' });
@@ -45,7 +69,6 @@ function parseWorkbookBuffer(buffer) {
     return { questions: [], errors: [{ row: 0, reason: 'Workbook has no sheets' }], total: 0 };
   }
 
-  // Read as raw arrays of cells — no header inference.
   const rawRows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], {
     header: 1,
     blankrows: false,
@@ -56,24 +79,27 @@ function parseWorkbookBuffer(buffer) {
     return { questions: [], errors: [{ row: 0, reason: 'Sheet is empty' }], total: 0 };
   }
 
-  // Build normalized header → column index map.
   const rawHeader = rawRows[0] || [];
   const headerMap = {};
   const foundHeaders = [];
+
   rawHeader.forEach((h, i) => {
     const key = normalizeHeader(h);
     if (key && headerMap[key] === undefined) headerMap[key] = i;
     if (key) foundHeaders.push(key);
   });
 
+  // Diagnostics — visible in browser console.
+  console.log('[Question Bank Import] raw header row:', rawHeader);
+  console.log('[Question Bank Import] header map:', headerMap);
+  console.log('[Question Bank Import] normalized found:', foundHeaders);
+
   const missing = EXPECTED_HEADERS.filter(
     (h) => headerMap[normalizeHeader(h)] === undefined
   );
 
   if (missing.length > 0) {
-    console.log('[Question Bank Import] header row (raw):', rawHeader);
-    console.log('[Question Bank Import] header row (normalized):', foundHeaders);
-    console.log('[Question Bank Import] missing:', missing);
+    console.log('[Question Bank Import] MISSING:', missing);
     return {
       questions: [],
       errors: [{
@@ -87,8 +113,7 @@ function parseWorkbookBuffer(buffer) {
   const cell = (row, header) => {
     const idx = headerMap[normalizeHeader(header)];
     if (idx === undefined) return '';
-    const v = row[idx];
-    return v === undefined || v === null ? '' : v;
+    return readCellValue(row[idx]);
   };
 
   const questions = [];
@@ -100,7 +125,11 @@ function parseWorkbookBuffer(buffer) {
     const fileRow = i + 1;
 
     // Skip entirely blank rows.
-    const nonEmpty = raw.some((c) => c !== '' && c !== null && c !== undefined);
+    const nonEmpty = raw.some((c) => {
+      if (c == null) return false;
+      if (typeof c === 'object') return c.v != null || c.w != null;
+      return c !== '';
+    });
     if (!nonEmpty) continue;
     total++;
 
