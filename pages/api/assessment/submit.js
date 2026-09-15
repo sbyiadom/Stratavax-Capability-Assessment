@@ -1,5 +1,5 @@
 // pages/api/assessment/submit.js - FULLY CORRECTED WITH BEHAVIORAL TRACKING
-// Version: submit-behavioral-v8
+// Version: submit-behavioral-v9
 // - Complete behavioral data saved to database
 // - Proper proctoring_data structure for Behavioral Matrix
 // - Answer changes tracking
@@ -12,16 +12,16 @@
 //   loud, structured, and recorded on the result via report_data.
 // - UPDATED (Phase Two / Item 2.7): version tags captured from the
 //   frozen set and stamped on both columns and report_data.
-// - UPDATED (Phase Two / Item 2.8): Steps 15-18 (session update,
-//   result upsert with race handling, candidate_assessments update)
-//   are now a single atomic RPC call to
-//   public.submit_assessment_transactional. All three writes commit
-//   together or roll back together. Race handling is now native via
-//   ON CONFLICT (session_id) inside the function.
+// - UPDATED (Phase Two / Item 2.8): Steps 15-18 collapsed into a
+//   single atomic RPC to public.submit_assessment_transactional.
+//   Race handling is native via ON CONFLICT (session_id).
+// - UPDATED (Phase Two / 2.8 fix): p_answered_questions is now passed
+//   as a JSON array of question IDs (matches the jsonb column on
+//   assessment_results), not an integer count.
 
 import { createClient } from "@supabase/supabase-js";
 
-const SUBMIT_BUILD = "submit-behavioral-v8";
+const SUBMIT_BUILD = "submit-behavioral-v9";
 const PRACTICAL_ASSESSMENT_IDS = [
   'c2bc4994-1c4a-4094-a763-8d9d560b759e',
   '243275ec-9bb5-43ce-9f02-1111b2ca66e0',
@@ -64,9 +64,8 @@ function safeArray(value) {
 }
 
 // ============================================================
-// Phase Two (Item 2.5 + 2.7): load the frozen question set for
-// a session, if one exists. Returns:
-//   { questions, assessmentVersion, scoringVersion }
+// Phase Two (Items 2.5 + 2.7): load the frozen question set for
+// a session. Returns { questions, assessmentVersion, scoringVersion }
 // or null if the session has no frozen set (legacy session).
 // ============================================================
 async function loadFrozenQuestions(serviceClient, sessionId) {
@@ -545,9 +544,8 @@ export default async function handler(req, res) {
 
     // ============================================================
     // STEP 15-18 (Phase Two / 2.8): TRANSACTIONAL SUBMISSION
-    // All writes (session update + result upsert + CA update) happen
-    // atomically inside public.submit_assessment_transactional.
-    // On any failure, everything rolls back.
+    // All writes happen atomically in
+    // public.submit_assessment_transactional.
     // ============================================================
     const reportData = {
       categoryScores: categoryScores,
@@ -625,6 +623,10 @@ export default async function handler(req, res) {
       is_time_abnormal: totalSeconds > MAX_REASONABLE_SECONDS
     };
 
+    // Phase Two / 2.8 fix: answered_questions is a jsonb column on
+    // assessment_results. Pass the array of question IDs, not a count.
+    const answeredQuestionIds = (responses || []).map(r => r.question_id);
+
     console.log('[Submit] Calling transactional RPC for session:', sessionId);
 
     const { data: rpcResult, error: rpcError } = await serviceClient.rpc(
@@ -639,7 +641,7 @@ export default async function handler(req, res) {
         p_max_score: totalMax,
         p_percentage_score: finalPercentage,
         p_total_questions: totalMax,
-        p_answered_questions: (responses || []).length,
+        p_answered_questions: answeredQuestionIds,
         p_category_scores: categoryScores,
         p_started_at: assessmentStartedAt,
         p_total_seconds: totalSeconds,
