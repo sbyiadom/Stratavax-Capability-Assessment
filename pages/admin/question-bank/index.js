@@ -11,8 +11,9 @@ import AppLayout from '../../../components/AppLayout';
 
 // ============================================================
 // CLIENT-SIDE XLSX PREVIEW PARSER
-// Same validation rules as the server, so preview matches what the server will accept.
-// Returns { questions, errors: [{row, reason}], total }
+// Column-position independent: builds a name→index map from the
+// header row and reads every cell via that map, so shifts or
+// reorderings in the sheet do not break parsing.
 // ============================================================
 const EXPECTED_HEADERS = [
   'question_id',
@@ -30,52 +31,90 @@ const EXPECTED_HEADERS = [
   'answer_4_score'
 ];
 
+const normalizeHeader = (v) =>
+  String(v == null ? '' : v)
+    .replace(/\u00A0/g, ' ')  // non-breaking space → space
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+
 function parseWorkbookBuffer(buffer) {
   const wb = XLSX.read(buffer, { type: 'array' });
   const sheetName = wb.SheetNames.includes('Questions') ? 'Questions' : wb.SheetNames[0];
   if (!sheetName) {
     return { questions: [], errors: [{ row: 0, reason: 'Workbook has no sheets' }], total: 0 };
   }
-  const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], {
+
+  // Read as raw arrays of cells — no header inference.
+  const rawRows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], {
     header: 1,
     blankrows: false,
     defval: ''
   });
-  if (rows.length === 0) {
+
+  if (rawRows.length === 0) {
     return { questions: [], errors: [{ row: 0, reason: 'Sheet is empty' }], total: 0 };
   }
-  const headerRow = rows[0].map((h) => String(h || '').trim());
-  const missing = EXPECTED_HEADERS.filter((h) => !headerRow.includes(h));
+
+  // Build normalized header → column index map.
+  const rawHeader = rawRows[0] || [];
+  const headerMap = {};
+  const foundHeaders = [];
+  rawHeader.forEach((h, i) => {
+    const key = normalizeHeader(h);
+    if (key && headerMap[key] === undefined) headerMap[key] = i;
+    if (key) foundHeaders.push(key);
+  });
+
+  const missing = EXPECTED_HEADERS.filter(
+    (h) => headerMap[normalizeHeader(h)] === undefined
+  );
+
   if (missing.length > 0) {
+    console.log('[Question Bank Import] header row (raw):', rawHeader);
+    console.log('[Question Bank Import] header row (normalized):', foundHeaders);
+    console.log('[Question Bank Import] missing:', missing);
     return {
       questions: [],
-      errors: [{ row: 1, reason: 'Missing columns: ' + missing.join(', ') }],
+      errors: [{
+        row: 1,
+        reason: `Missing columns: ${missing.join(', ')}. Found: ${foundHeaders.join(', ')}`
+      }],
       total: 0
     };
   }
-  const idx = {};
-  EXPECTED_HEADERS.forEach((h) => { idx[h] = headerRow.indexOf(h); });
+
+  const cell = (row, header) => {
+    const idx = headerMap[normalizeHeader(header)];
+    if (idx === undefined) return '';
+    const v = row[idx];
+    return v === undefined || v === null ? '' : v;
+  };
 
   const questions = [];
   const errors = [];
   let total = 0;
-  for (let i = 1; i < rows.length; i++) {
-    const raw = rows[i];
+
+  for (let i = 1; i < rawRows.length; i++) {
+    const raw = rawRows[i];
     const fileRow = i + 1;
+
+    // Skip entirely blank rows.
     const nonEmpty = raw.some((c) => c !== '' && c !== null && c !== undefined);
     if (!nonEmpty) continue;
     total++;
 
-    const qText = String(raw[idx['question_text']] || '').trim();
-    const section = String(raw[idx['section']] || '').trim();
-    const subsection = String(raw[idx['subsection']] || '').trim();
+    const qText = String(cell(raw, 'question_text')).trim();
+    const section = String(cell(raw, 'section')).trim();
+    const subsection = String(cell(raw, 'subsection')).trim();
     const rowErrors = [];
     if (!qText) rowErrors.push('question_text is required');
 
     const answers = [];
     for (let n = 1; n <= 4; n++) {
-      const aText = String(raw[idx[`answer_${n}_text`]] || '').trim();
-      const aScoreRaw = raw[idx[`answer_${n}_score`]];
+      const aText = String(cell(raw, `answer_${n}_text`)).trim();
+      const aScoreRaw = cell(raw, `answer_${n}_score`);
+
       if (!aText) { rowErrors.push(`answer_${n}_text is required`); continue; }
       if (aScoreRaw === '' || aScoreRaw === null || aScoreRaw === undefined) {
         rowErrors.push(`answer_${n}_score is required`);
@@ -83,18 +122,21 @@ function parseWorkbookBuffer(buffer) {
       }
       const aScore = Number(aScoreRaw);
       if (!Number.isInteger(aScore)) {
-        rowErrors.push(`answer_${n}_score must be an integer`);
+        rowErrors.push(`answer_${n}_score must be an integer (got "${aScoreRaw}")`);
         continue;
       }
       answers.push({ answer_text: aText, score: aScore, display_order: n });
     }
+
     if (answers.length !== 4) {
       rowErrors.push(`must have exactly 4 valid answers (got ${answers.length})`);
     }
+
     if (rowErrors.length > 0) {
       errors.push({ row: fileRow, reason: rowErrors.join('; ') });
       continue;
     }
+
     questions.push({
       question_text: qText,
       section: section || null,
@@ -102,6 +144,7 @@ function parseWorkbookBuffer(buffer) {
       answers
     });
   }
+
   return { questions, errors, total };
 }
 
@@ -110,7 +153,7 @@ function parseWorkbookBuffer(buffer) {
 // ============================================================
 function ImportModal({ assessmentType, onClose, onImported }) {
   const [file, setFile] = useState(null);
-  const [preview, setPreview] = useState(null); // { questions, errors, total }
+  const [preview, setPreview] = useState(null);
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState(null);
 
@@ -162,6 +205,12 @@ function ImportModal({ assessmentType, onClose, onImported }) {
       setImporting(false);
     }
   };
+
+  const canImport =
+    !importing &&
+    preview &&
+    preview.questions.length > 0 &&
+    preview.errors.length === 0;
 
   return (
     <div style={styles.modalOverlay} onClick={onClose}>
@@ -234,27 +283,18 @@ function ImportModal({ assessmentType, onClose, onImported }) {
           </button>
           <button
             onClick={handleImport}
-            disabled={
-              importing ||
-              !preview ||
-              preview.questions.length === 0 ||
-              preview.errors.length > 0
-            }
+            disabled={!canImport}
             style={{
               ...styles.saveButton,
-              opacity:
-                importing || !preview || preview.questions.length === 0 || preview.errors.length > 0
-                  ? 0.5
-                  : 1,
-              cursor:
-                importing || !preview || preview.questions.length === 0 || preview.errors.length > 0
-                  ? 'not-allowed'
-                  : 'pointer'
+              opacity: canImport ? 1 : 0.5,
+              cursor: canImport ? 'pointer' : 'not-allowed'
             }}
           >
-            {importing ? 'Importing…' : preview && preview.errors.length === 0
-              ? `Import ${preview.questions.length} question${preview.questions.length === 1 ? '' : 's'}`
-              : 'Import'}
+            {importing
+              ? 'Importing…'
+              : preview && preview.errors.length === 0 && preview.questions.length > 0
+                ? `Import ${preview.questions.length} question${preview.questions.length === 1 ? '' : 's'}`
+                : 'Import'}
           </button>
         </div>
       </div>
@@ -263,7 +303,7 @@ function ImportModal({ assessmentType, onClose, onImported }) {
 }
 
 // ============================================================
-// EDIT MODAL  (unchanged from previous version)
+// EDIT MODAL
 // ============================================================
 function EditModal({ question, onClose, onSaved }) {
   const [questionText, setQuestionText] = useState(question.question_text || '');
@@ -549,7 +589,6 @@ export default function QuestionBankList() {
     setImportToast(
       `Imported ${data.questions_inserted} question${data.questions_inserted === 1 ? '' : 's'} (${data.answers_inserted} answers), display_order ${data.first_display_order}–${data.last_display_order}.`
     );
-    // auto-dismiss
     setTimeout(() => setImportToast(null), 8000);
     await refetchQuestions();
   };
