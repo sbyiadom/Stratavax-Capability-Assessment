@@ -5,8 +5,11 @@
 // are fetched, and the session id is passed to the questions API so
 // it can return the frozen question set for that session.
 // UPDATED (Phase Two / Item 2.4b): the current question index is
-// persisted to localStorage and restored on refresh, so a candidate
-// who refreshes the page does not get sent back to question 1.
+// persisted to localStorage and restored on refresh.
+// UPDATED (Phase Two / "Serve all questions"): duration is now read
+// from the session response (sessionData.duration_minutes), which the
+// server computes from the frozen question count. The old hardcoded
+// getAssessmentDuration() helper has been removed.
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
@@ -43,13 +46,6 @@ function countAnswered(answerMap) {
     if (Array.isArray(answer)) return answer.length > 0;
     return answer !== null && answer !== undefined && answer !== "";
   }).length;
-}
-
-function getAssessmentDuration(assessmentTypeCode) {
-  if (assessmentTypeCode === 'national_service') {
-    return 90;
-  }
-  return 120;
 }
 
 function extractDomain(url) {
@@ -135,10 +131,10 @@ async function fetchQuestions(assessmentTypeId, assessmentTypeCode, sessionId) {
   return result.questions || [];
 }
 
-async function createOrGetSession(assessmentId, assessmentTypeId, durationMinutes) {
+async function createOrGetSession(assessmentId, assessmentTypeId) {
   const result = await apiCall('/api/assessment/session', {
     method: 'POST',
-    body: JSON.stringify({ assessmentId, assessmentTypeId, durationMinutes })
+    body: JSON.stringify({ assessmentId, assessmentTypeId })
   });
   return result.session;
 }
@@ -665,7 +661,7 @@ function AssessmentContent() {
   }, [loading, alreadySubmitted, accessDenied, session, isTimeExpired]);
 
   // ============================================================
-  // INITIALIZATION - WITH RESPONSE-SHAPE FIX
+  // INITIALIZATION
   // ============================================================
   useEffect(() => {
     const init = async () => {
@@ -728,12 +724,6 @@ function AssessmentContent() {
         setAssessmentType(assessmentInfo.assessment_type || assessmentInfo.assessmentType || null);
         setAssessmentTypeCode(resolvedTypeCode);
 
-        const durationMinutes = getAssessmentDuration(resolvedTypeCode);
-        const durationSeconds = durationMinutes * 60;
-        setTimeLimitSeconds(durationSeconds);
-
-        console.log(`[Assessment] Duration: ${durationMinutes} minutes (${durationSeconds} seconds)`);
-
         const accessData = await fetchAccess(assessmentId);
 
         if (accessData && (accessData.status === 'completed' || accessData.result_id)) {
@@ -758,19 +748,23 @@ function AssessmentContent() {
         }
 
         // ============================================================
-        // Phase Two (Item 2.3): create-or-get the session FIRST, so
-        // the frozen question set exists before we ask for questions.
+        // Phase Two: create-or-get the session FIRST. The server
+        // computes and returns the duration (sessionData.duration_minutes).
         // ============================================================
-        const sessionData = await createOrGetSession(
-          assessmentId,
-          assessmentTypeId,
-          durationMinutes
-        );
+        const sessionData = await createOrGetSession(assessmentId, assessmentTypeId);
 
         if (sessionData) {
           setSession(sessionData);
           sessionIdRef.current = sessionData.id;
         }
+
+        // Duration is now decided by the server, based on the frozen
+        // question count. Fall back to 120 if the field is missing.
+        const resolvedDurationMinutes = safeNumber(sessionData?.duration_minutes, 120);
+        const durationSeconds = resolvedDurationMinutes * 60;
+        setTimeLimitSeconds(durationSeconds);
+
+        console.log(`[Assessment] Duration: ${resolvedDurationMinutes} minutes (${durationSeconds} seconds)`);
 
         const questionData = await fetchQuestions(
           assessmentTypeId,
@@ -789,11 +783,6 @@ function AssessmentContent() {
             }
           }
 
-          // ============================================================
-          // Phase Two (Item 2.4b): restore the last question the
-          // candidate was viewing, so refresh doesn't send them back
-          // to question 1.
-          // ============================================================
           const savedIndex = localStorage.getItem(`current_index_${sessionData.id}`);
           if (savedIndex !== null && questionData && questionData.length > 0) {
             const idx = parseInt(savedIndex, 10);
@@ -885,11 +874,6 @@ function AssessmentContent() {
     }
   }, [alreadySubmitted, isTimeExpired, sessionIdRef.current]);
 
-  // ============================================================
-  // Phase Two (Item 2.4b): persist the current question index so a
-  // page refresh puts the candidate back on the question they were
-  // viewing. Matches the timer's localStorage pattern.
-  // ============================================================
   useEffect(() => {
     if (!sessionIdRef.current) return;
     if (loading || questions.length === 0) return;
@@ -2121,7 +2105,7 @@ const styles = {
     background: "#2e7d32",
     color: "white",
     border: "none",
-    borderRadius: "10px",
+    borderRadius: 10,
     cursor: "pointer",
     fontWeight: 500
   }
