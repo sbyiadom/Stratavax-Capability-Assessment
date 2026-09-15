@@ -1,5 +1,6 @@
 // components/AppLayout.js - FULLY CORRECTED WITH RESET PASSWORD
 // ADDED: Reset Password button under Candidates section
+// ADDED: Assessments section with Question Bank link (Phase 3)
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
@@ -72,6 +73,9 @@ const Icons = {
   ),
   Key: () => (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
+  ),
+  QuestionBank: () => (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="6" rx="2"/><rect x="3" y="11" width="18" height="6" rx="2"/><line x1="7" y1="17" x2="7" y2="21"/><line x1="17" y1="17" x2="17" y2="21"/></svg>
   ),
 };
 
@@ -156,6 +160,15 @@ function getMenuSections(role) {
           { id: 'assign-assessments', label: 'Assign Assessments', icon: Icons.CheckSquare(), href: '/admin/assign-assessments' },
           { id: 'batch-manage', label: 'Batch Manage', icon: Icons.Layers(), href: '/admin/batch-manage' },
           { id: 'reset-password', label: 'Reset Password', icon: Icons.Key(), href: '/admin/reset-password' },
+        ]
+      },
+      {
+        id: 'assessments',
+        label: 'Assessments',
+        icon: Icons.QuestionBank(),
+        isSection: true,
+        children: [
+          { id: 'question-bank', label: 'Question Bank', icon: Icons.QuestionBank(), href: '/admin/question-bank' },
         ]
       },
       {
@@ -258,6 +271,7 @@ function Sidebar({ isOpen, toggleSidebar, currentPath, handleLogout, userRole })
   const [expandedSections, setExpandedSections] = useState({
     supervisors: true,
     candidates: true,
+    assessments: true,
     reports: true,
     system: true,
     'my-candidates': true,
