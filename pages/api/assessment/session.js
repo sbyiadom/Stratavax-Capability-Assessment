@@ -3,8 +3,49 @@
 // - Proper error handling
 // - Validates candidate assignment before session creation
 // - Uses authoritative assessment_type_id from database
+// - UPDATED (Phase Two / Item 2.2): freezes the question set
+//   (and answer order) into session_questions at session creation.
+//   Guarantees page refresh returns the same question set, and
+//   scoring uses the exact questions the candidate answered.
 
 import { createClient } from '@supabase/supabase-js';
+
+// ============================================================
+// Phase Two: question-count constants, mirroring questions.js
+// ============================================================
+const PRACTICAL_ASSESSMENT_IDS = [
+  'c2bc4994-1c4a-4094-a763-8d9d560b759e',
+  '243275ec-9bb5-43ce-9f02-1111b2ca66e0',
+  'a6000077-095d-4115-bc4e-5936fce953e9',
+  '928f81fc-35ea-40ac-83cb-7c3a0c1c18dc'
+];
+const NATIONAL_SERVICE_ASSESSMENT_ID = 'bdb9d46e-9fac-4d00-8478-1f649e7ac600';
+const QUESTION_COUNT_MAP = {
+  'c2bc4994-1c4a-4094-a763-8d9d560b759e': 40,
+  '243275ec-9bb5-43ce-9f02-1111b2ca66e0': 40,
+  'a6000077-095d-4115-bc4e-5936fce953e9': 40,
+  '928f81fc-35ea-40ac-83cb-7c3a0c1c18dc': 40,
+  'bdb9d46e-9fac-4d00-8478-1f649e7ac600': 80,
+  '232f7ff8-60b8-4223-81c6-4917a5fb12a3': 100
+};
+
+function shuffleArray(array) {
+  if (!Array.isArray(array)) return [];
+  const shuffled = [...array];
+  for (let i = shuffled.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const tmp = shuffled[i];
+    shuffled[i] = shuffled[j];
+    shuffled[j] = tmp;
+  }
+  return shuffled;
+}
+
+function getRequiredQuestionCount(assessmentId, assessmentTypeCode, fallbackCount) {
+  if (PRACTICAL_ASSESSMENT_IDS.includes(assessmentId)) return 40;
+  if (assessmentId === NATIONAL_SERVICE_ASSESSMENT_ID || assessmentTypeCode === 'national_service') return 80;
+  return QUESTION_COUNT_MAP[assessmentId] || fallbackCount || 100;
+}
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -122,7 +163,7 @@ export default async function handler(req, res) {
     // ============================================================
     // STEP 4: Resolve assessment type from authoritative source
     // ============================================================
-    const resolvedAssessmentTypeId = 
+    const resolvedAssessmentTypeId =
       assessment.assessment_type_id ||
       candidateAssessment.assessment_type_id ||
       Number(assessmentTypeId) ||
@@ -212,6 +253,116 @@ export default async function handler(req, res) {
     }
 
     console.log('[Session] Created new session:', newSession.id, 'for assessment:', assessmentId);
+
+    // ============================================================
+    // STEP 6b (Phase Two): Freeze the question set for this session.
+    // Chosen and shuffled NOW, written to session_questions, and
+    // never re-chosen for this session again — even on page refresh.
+    // Fail-closed: if freezing fails, the session is deleted so we
+    // never end up with a session that has no frozen questions.
+    // ============================================================
+    try {
+      const { data: allQuestions, error: qErr } = await serviceClient
+        .from('unique_questions')
+        .select('id, section, unique_answers(id, display_order)')
+        .eq('assessment_type_id', resolvedAssessmentTypeId);
+
+      if (qErr) {
+        console.error('[Session] Freeze: question fetch error:', qErr);
+        await serviceClient
+          .from('assessment_sessions')
+          .delete()
+          .eq('id', newSession.id);
+        return res.status(500).json({
+          success: false,
+          error: 'Failed to freeze question set for this session',
+          diagnosticCode: 'FREEZE_QUESTION_FETCH_FAILED'
+        });
+      }
+
+      const pool = Array.isArray(allQuestions) ? allQuestions : [];
+
+      if (pool.length === 0) {
+        console.error('[Session] Freeze: no questions found for assessment_type_id', resolvedAssessmentTypeId);
+        await serviceClient
+          .from('assessment_sessions')
+          .delete()
+          .eq('id', newSession.id);
+        return res.status(422).json({
+          success: false,
+          error: 'No questions available for this assessment',
+          diagnosticCode: 'NO_QUESTIONS'
+        });
+      }
+
+      const requiredCount = getRequiredQuestionCount(
+        assessmentId,
+        assessmentType?.code,
+        questionCount
+      );
+
+      const chosen = shuffleArray(pool).slice(0, requiredCount);
+
+      const rows = chosen.map((q, index) => ({
+        session_id: newSession.id,
+        question_id: q.id,
+        display_order: index + 1,
+        answer_order: shuffleArray(q.unique_answers || []).map((a, ai) => ({
+          answer_id: a.id,
+          display_order: ai + 1
+        })),
+        assessment_version: 1,
+        scoring_version: 1
+      }));
+
+      const { error: insertErr } = await serviceClient
+        .from('session_questions')
+        .insert(rows);
+
+      if (insertErr) {
+        console.error('[Session] Freeze: insert error:', insertErr);
+        await serviceClient
+          .from('assessment_sessions')
+          .delete()
+          .eq('id', newSession.id);
+        return res.status(500).json({
+          success: false,
+          error: 'Failed to freeze question set for this session',
+          diagnosticCode: 'FREEZE_INSERT_FAILED'
+        });
+      }
+
+      // Align the session's total_questions with the ACTUAL frozen count
+      if (rows.length !== newSession.total_questions) {
+        const { error: alignErr } = await serviceClient
+          .from('assessment_sessions')
+          .update({
+            total_questions: rows.length,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', newSession.id);
+
+        if (alignErr) {
+          console.error('[Session] Freeze: total_questions alignment error:', alignErr);
+          // Not fatal — the freeze itself succeeded; proceed.
+        } else {
+          newSession.total_questions = rows.length;
+        }
+      }
+
+      console.log(`[Session] Frozen ${rows.length} questions for session ${newSession.id}`);
+    } catch (freezeErr) {
+      console.error('[Session] Freeze: unhandled error:', freezeErr);
+      await serviceClient
+        .from('assessment_sessions')
+        .delete()
+        .eq('id', newSession.id);
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to freeze question set for this session',
+        diagnosticCode: 'FREEZE_UNHANDLED_ERROR'
+      });
+    }
 
     // ============================================================
     // STEP 7: Update candidate_assessments with session_id
