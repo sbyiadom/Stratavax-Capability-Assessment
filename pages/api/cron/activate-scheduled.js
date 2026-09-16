@@ -1,29 +1,53 @@
 // pages/api/cron/activate-scheduled.js
 // Phase 3 item 6 — activation cron.
-// Runs daily via Vercel Cron. Flips scheduled rows to their next state:
-//   • start <= now < end  → 'unblocked'
-//   • end   <= now        → 'blocked'
-// Idempotent — safe to run multiple times.
+// TEMPORARY DIAGNOSTIC BUILD — revert after debugging.
 
 import { createClient } from '@supabase/supabase-js';
 
+function safePreview(s) {
+  if (!s || typeof s !== 'string') return `(empty:${typeof s})`;
+  if (s.length <= 16) return s;
+  return s.slice(0, 10) + '*'.repeat(Math.max(0, s.length - 15)) + s.slice(-5);
+}
+
 export default async function handler(req, res) {
-  // Vercel Cron sends GET; allow POST for manual testing
   if (req.method !== 'GET' && req.method !== 'POST') {
     return res.status(405).json({ success: false, error: 'Method not allowed' });
   }
 
-  // Optional shared-secret check.
-  // If CRON_SECRET is set in Vercel env vars, Vercel Cron will send it as
-  // Authorization: Bearer <secret>. Manual calls (curl / reqbin) must send
-  // the same. If CRON_SECRET is unset, this check is skipped.
   const cronSecret = process.env.CRON_SECRET;
-  if (cronSecret) {
-    const auth = req.headers.authorization || '';
-    if (auth !== `Bearer ${cronSecret}`) {
-      console.warn('[Activate Scheduled] Unauthorized call');
-      return res.status(401).json({ success: false, error: 'Unauthorized' });
-    }
+  const auth = req.headers.authorization || '';
+
+  // ----- DIAGNOSTIC BLOCK -----
+  // If the env var is missing OR the header doesn't match, return a diagnostic
+  // response so we can see what's happening without leaking the full secret.
+  const expected = cronSecret ? `Bearer ${cronSecret}` : null;
+
+  if (cronSecret && auth !== expected) {
+    console.warn('[Activate Scheduled] Unauthorized call');
+    return res.status(401).json({
+      success: false,
+      error: 'Unauthorized',
+      _diagnostic: {
+        cron_secret_loaded: !!cronSecret,
+        cron_secret_length: cronSecret ? cronSecret.length : 0,
+        cron_secret_preview: safePreview(cronSecret),
+        received_header_length: auth.length,
+        received_header_preview: safePreview(auth),
+        expected_header_length: expected ? expected.length : 0,
+        expected_header_preview: safePreview(expected),
+        received_starts_with_bearer_space:
+          typeof auth === 'string' && auth.startsWith('Bearer '),
+        received_starts_with_bearer_no_space:
+          typeof auth === 'string' && auth.startsWith('Bearer') && !auth.startsWith('Bearer '),
+      }
+    });
+  }
+  // ----- END DIAGNOSTIC BLOCK -----
+
+  if (cronSecret && auth !== expected) {
+    // (redundant — kept for safety)
+    return res.status(401).json({ success: false, error: 'Unauthorized' });
   }
 
   try {
