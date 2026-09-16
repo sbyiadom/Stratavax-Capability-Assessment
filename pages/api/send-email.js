@@ -1,42 +1,51 @@
 // pages/api/send-email.js
+// Sends email via Resend.
+// If `html` is provided in the request body, it's used verbatim.
+// Otherwise, falls back to the built-in "assessment scheduled" template
+// (preserving the original behavior for existing callers).
+
 import { Resend } from 'resend';
 
-// Initialize Resend with your API key from environment variables
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 export default async function handler(req, res) {
-  // Only allow POST requests
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { to, subject, candidateName, assessmentTitle, scheduledStart, scheduledEnd, supervisorName } = req.body;
+  const {
+    to, subject,
+    html: callerHtml, text: callerText,
+    candidateName, assessmentTitle, scheduledStart, scheduledEnd, supervisorName
+  } = req.body;
 
-  // Validate required fields
   if (!to || !subject) {
     return res.status(400).json({ error: 'Missing required fields: to and subject are required' });
   }
 
   try {
-    // Format dates for display
-    const formatDateTime = (dateString) => {
-      if (!dateString) return 'Not specified';
-      return new Date(dateString).toLocaleString('en-US', {
-        weekday: 'long',
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        timeZoneName: 'short'
-      });
-    };
+    let emailHtml = callerHtml;
+    let emailText = callerText;
 
-    const startFormatted = formatDateTime(scheduledStart);
-    const endFormatted = formatDateTime(scheduledEnd);
+    // ---------- Fallback: built-in scheduled-assessment template ----------
+    if (!emailHtml) {
+      const formatDateTime = (dateString) => {
+        if (!dateString) return 'Not specified';
+        return new Date(dateString).toLocaleString('en-US', {
+          weekday: 'long',
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          timeZoneName: 'short'
+        });
+      };
 
-    // HTML email template
-    const emailHtml = `
+      const startFormatted = formatDateTime(scheduledStart);
+      const endFormatted = formatDateTime(scheduledEnd);
+
+      emailHtml = `
       <!DOCTYPE html>
       <html>
       <head>
@@ -157,11 +166,6 @@ export default async function handler(req, res) {
             padding: 12px 32px;
             border-radius: 8px;
             font-weight: 500;
-            transition: transform 0.2s, box-shadow 0.2s;
-          }
-          .button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(10,25,41,0.2);
           }
           .footer {
             background: #F8FAFC;
@@ -182,20 +186,17 @@ export default async function handler(req, res) {
             <div class="logo">STRATAVAX</div>
             <div class="subtitle">Talent Assessment Platform</div>
           </div>
-          
           <div class="content">
             <div class="greeting">
               Hello, <span class="greeting-name">${candidateName || 'Candidate'}</span>
             </div>
-            
             <p>Your supervisor <strong>${supervisorName || 'Your supervisor'}</strong> has scheduled an assessment for you.</p>
-            
             <div class="schedule-card">
               <div class="schedule-title">📋 Assessment Details</div>
               <div class="schedule-item">
                 <span class="schedule-icon">📝</span>
                 <span class="schedule-label">Assessment:</span>
-                <span class="schedule-value">${assessmentTitle}</span>
+                <span class="schedule-value">${assessmentTitle || 'N/A'}</span>
               </div>
               <div class="schedule-item">
                 <span class="schedule-icon">🕒</span>
@@ -213,7 +214,6 @@ export default async function handler(req, res) {
                 <span class="schedule-value">3 hours (timer starts when you begin)</span>
               </div>
             </div>
-            
             <div class="warning-box">
               <div class="warning-title">⚠️ Important Information</div>
               <ul class="warning-list">
@@ -223,18 +223,15 @@ export default async function handler(req, res) {
                 <li>Your answers are auto-saved as you progress</li>
               </ul>
             </div>
-            
             <div class="button-container">
               <a href="https://stratavax-capability-assessment.vercel.app/login" class="button">
                 Go to Assessment Portal
               </a>
             </div>
-            
             <p style="margin-top: 24px; font-size: 13px; color: #64748B; text-align: center;">
               If you have any questions, please contact your supervisor.
             </p>
           </div>
-          
           <div class="footer">
             <p>© 2026 Stratavax - Talent Assessment Platform</p>
             <p>This is an automated message, please do not reply.</p>
@@ -242,36 +239,35 @@ export default async function handler(req, res) {
         </div>
       </body>
       </html>
-    `;
+      `;
 
-    // Plain text version for email clients that don't support HTML
-    const emailText = `
-      STRATAVAX - Assessment Scheduled
-      
-      Hello ${candidateName || 'Candidate'},
-      
-      Your supervisor ${supervisorName || 'Your supervisor'} has scheduled an assessment for you.
-      
-      Assessment: ${assessmentTitle}
-      Start Time: ${startFormatted}
-      End Time: ${endFormatted}
-      Duration: 3 hours (timer starts when you begin)
-      
-      IMPORTANT:
-      - You can only take this assessment ONCE
-      - The assessment will ONLY be available during the scheduled time window
-      - Once you start, you have 3 hours to complete it
-      
-      Go to the assessment portal:
-      https://stratavax-capability-assessment.vercel.app/login
-      
-      If you have any questions, please contact your supervisor.
-      
-      © 2026 Stratavax - Talent Assessment Platform
-    `;
+      if (!emailText) {
+        emailText = `STRATAVAX - Assessment Scheduled
 
-    // Send email using Resend
-    // Using Resend's testing domain - works immediately
+Hello ${candidateName || 'Candidate'},
+
+Your supervisor ${supervisorName || 'Your supervisor'} has scheduled an assessment for you.
+
+Assessment: ${assessmentTitle || 'N/A'}
+Start Time: ${startFormatted}
+End Time: ${endFormatted}
+Duration: 3 hours (timer starts when you begin)
+
+IMPORTANT:
+- You can only take this assessment ONCE
+- The assessment will ONLY be available during the scheduled time window
+- Once you start, you have 3 hours to complete it
+
+Go to the assessment portal:
+https://stratavax-capability-assessment.vercel.app/login
+
+If you have any questions, please contact your supervisor.
+
+© 2026 Stratavax - Talent Assessment Platform
+`;
+      }
+    }
+
     const { data, error } = await resend.emails.send({
       from: 'Stratavax <onboarding@resend.dev>',
       to: [to],
@@ -281,15 +277,14 @@ export default async function handler(req, res) {
     });
 
     if (error) {
-      console.error('Resend error:', error);
+      console.error('[Send Email] Resend error:', error);
       return res.status(500).json({ error: error.message });
     }
 
-    console.log('Email sent successfully:', data);
+    console.log('[Send Email] Sent:', data);
     return res.status(200).json({ success: true, data });
-
   } catch (error) {
-    console.error('Email send error:', error);
+    console.error('[Send Email] error:', error);
     return res.status(500).json({ error: error.message });
   }
 }
