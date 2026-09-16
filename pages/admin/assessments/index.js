@@ -1,10 +1,10 @@
 // pages/admin/assessments/index.js
 // Phase 3 — Assessment Builder
-// List + create modal + edit modal + activate/deactivate toggle.
-// No delete in v1 — destructive ops are deferred to Phase 7.
+// List + create modal + edit modal + activate/deactivate toggle + role tagging.
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useRouter } from 'next/router';
+import Select from 'react-select';
 import { supabase } from '../../../supabase/client';
 import { useRequireAuth } from '../../../utils/requireAuth';
 import AppLayout from '../../../components/AppLayout';
@@ -28,7 +28,6 @@ function formatDateTime(iso) {
   }
 }
 
-// datetime-local value → ISO string  (or null if empty)
 function localToIso(local) {
   if (!local) return null;
   const d = new Date(local);
@@ -36,7 +35,6 @@ function localToIso(local) {
   return d.toISOString();
 }
 
-// ISO string → datetime-local value
 function isoToLocal(iso) {
   if (!iso) return '';
   try {
@@ -66,7 +64,6 @@ function CreateModal({ types, onClose, onCreated }) {
     try {
       setSaving(true);
       setError(null);
-
       const payload = {
         title: title.trim(),
         assessment_type_id: Number(assessmentTypeId),
@@ -75,7 +72,6 @@ function CreateModal({ types, onClose, onCreated }) {
         is_active: isActive,
         expires_at: localToIso(expiresLocal)
       };
-
       const response = await fetch('/api/admin/assessments/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -102,78 +98,36 @@ function CreateModal({ types, onClose, onCreated }) {
 
         <div style={styles.modalBody}>
           <label style={styles.fieldLabel}>Title</label>
-          <input
-            type="text"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            style={styles.input}
-            maxLength={200}
-            autoFocus
-          />
+          <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} style={styles.input} maxLength={200} autoFocus />
 
           <label style={{ ...styles.fieldLabel, marginTop: '12px' }}>Assessment type</label>
-          <select
-            value={assessmentTypeId}
-            onChange={(e) => setAssessmentTypeId(e.target.value)}
-            style={styles.select}
-          >
+          <select value={assessmentTypeId} onChange={(e) => setAssessmentTypeId(e.target.value)} style={styles.select}>
             {types.map((t) => (
               <option key={t.id} value={t.id}>
                 {t.name} ({t.question_count}q · {t.time_limit_minutes}m)
               </option>
             ))}
           </select>
-          <div style={styles.helperText}>
-            Type is locked after creation. To use a different type, create a new assessment.
-          </div>
+          <div style={styles.helperText}>Type is locked after creation. To use a different type, create a new assessment.</div>
 
           <label style={{ ...styles.fieldLabel, marginTop: '12px' }}>Description (optional)</label>
-          <textarea
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            rows={2}
-            style={styles.textarea}
-          />
+          <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} style={styles.textarea} />
 
           <label style={{ ...styles.fieldLabel, marginTop: '12px' }}>Instructions (optional)</label>
-          <textarea
-            value={instructions}
-            onChange={(e) => setInstructions(e.target.value)}
-            rows={2}
-            style={styles.textarea}
-          />
+          <textarea value={instructions} onChange={(e) => setInstructions(e.target.value)} rows={2} style={styles.textarea} />
 
           <label style={{ ...styles.fieldLabel, marginTop: '12px' }}>Expires at (optional)</label>
           <div style={styles.inlineRow}>
-            <input
-              type="datetime-local"
-              value={expiresLocal}
-              onChange={(e) => setExpiresLocal(e.target.value)}
-              style={styles.input}
-            />
-            {expiresLocal && (
-              <button
-                type="button"
-                onClick={() => setExpiresLocal('')}
-                style={styles.clearInlineButton}
-              >
-                Clear
-              </button>
-            )}
+            <input type="datetime-local" value={expiresLocal} onChange={(e) => setExpiresLocal(e.target.value)} style={styles.input} />
+            {expiresLocal && <button type="button" onClick={() => setExpiresLocal('')} style={styles.clearInlineButton}>Clear</button>}
           </div>
 
           <label style={styles.checkboxRow}>
-            <input
-              type="checkbox"
-              checked={isActive}
-              onChange={(e) => setIsActive(e.target.checked)}
-            />
+            <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} />
             <span style={{ fontSize: '14px', color: '#1a202c' }}>Active</span>
           </label>
 
-          {error && (
-            <div style={styles.modalError}><strong>Error:</strong> {error}</div>
-          )}
+          {error && <div style={styles.modalError}><strong>Error:</strong> {error}</div>}
         </div>
 
         <div style={styles.modalFooter}>
@@ -188,23 +142,47 @@ function CreateModal({ types, onClose, onCreated }) {
 }
 
 // ============================================================
-// EDIT MODAL
+// EDIT MODAL (includes roles multi-select)
 // ============================================================
-function EditModal({ assessment, onClose, onSaved }) {
+function EditModal({ assessment, allRoles, onClose, onSaved }) {
   const [title, setTitle] = useState(assessment.title || '');
   const [description, setDescription] = useState(assessment.description || '');
   const [instructions, setInstructions] = useState(assessment.instructions || '');
   const [isActive, setIsActive] = useState(assessment.is_active !== false);
   const [expiresLocal, setExpiresLocal] = useState(isoToLocal(assessment.expires_at));
+
+  const initialRoles = useMemo(
+    () => (assessment.roles || []).map((r) => ({ value: r.id, label: r.name })),
+    [assessment.roles]
+  );
+  const [selectedRoles, setSelectedRoles] = useState(initialRoles);
+
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+
+  // react-select options grouped by category
+  const roleOptions = useMemo(() => {
+    const universities = allRoles.filter((r) => r.category === 'university');
+    const programmes = allRoles.filter((r) => r.category === 'programme');
+    return [
+      {
+        label: 'Programmes',
+        options: programmes.map((r) => ({ value: r.id, label: r.name }))
+      },
+      {
+        label: 'Universities',
+        options: universities.map((r) => ({ value: r.id, label: r.name }))
+      }
+    ];
+  }, [allRoles]);
 
   const handleSave = async () => {
     try {
       setSaving(true);
       setError(null);
 
-      const payload = {
+      // 1) update assessment fields
+      const updatePayload = {
         assessment_id: assessment.id,
         title: title.trim(),
         description: description.trim() || null,
@@ -213,13 +191,28 @@ function EditModal({ assessment, onClose, onSaved }) {
         expires_at: localToIso(expiresLocal)
       };
 
-      const response = await fetch('/api/admin/assessments/update', {
+      const updateResponse = await fetch('/api/admin/assessments/update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(updatePayload)
       });
-      const data = await response.json();
-      if (!response.ok || !data.success) throw new Error(data.error || 'Failed to save');
+      const updateData = await updateResponse.json();
+      if (!updateResponse.ok || !updateData.success) {
+        throw new Error(updateData.error || 'Failed to save assessment');
+      }
+
+      // 2) set roles (full replace)
+      const roleIds = selectedRoles.map((r) => r.value);
+      const rolesResponse = await fetch('/api/admin/assessments/set-roles', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ assessment_id: assessment.id, role_ids: roleIds })
+      });
+      const rolesData = await rolesResponse.json();
+      if (!rolesResponse.ok || !rolesData.success) {
+        throw new Error(rolesData.error || 'Assessment saved, but role tagging failed');
+      }
+
       onSaved();
     } catch (err) {
       console.error('[Assessment Builder UI] save error:', err);
@@ -239,13 +232,7 @@ function EditModal({ assessment, onClose, onSaved }) {
 
         <div style={styles.modalBody}>
           <label style={styles.fieldLabel}>Title</label>
-          <input
-            type="text"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            style={styles.input}
-            maxLength={200}
-          />
+          <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} style={styles.input} maxLength={200} />
 
           <label style={{ ...styles.fieldLabel, marginTop: '12px' }}>Assessment type</label>
           <div style={styles.readonlyField}>
@@ -256,52 +243,37 @@ function EditModal({ assessment, onClose, onSaved }) {
           </div>
 
           <label style={{ ...styles.fieldLabel, marginTop: '12px' }}>Description (optional)</label>
-          <textarea
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            rows={2}
-            style={styles.textarea}
-          />
+          <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} style={styles.textarea} />
 
           <label style={{ ...styles.fieldLabel, marginTop: '12px' }}>Instructions (optional)</label>
-          <textarea
-            value={instructions}
-            onChange={(e) => setInstructions(e.target.value)}
-            rows={2}
-            style={styles.textarea}
-          />
+          <textarea value={instructions} onChange={(e) => setInstructions(e.target.value)} rows={2} style={styles.textarea} />
 
           <label style={{ ...styles.fieldLabel, marginTop: '12px' }}>Expires at (optional)</label>
           <div style={styles.inlineRow}>
-            <input
-              type="datetime-local"
-              value={expiresLocal}
-              onChange={(e) => setExpiresLocal(e.target.value)}
-              style={styles.input}
-            />
-            {expiresLocal && (
-              <button
-                type="button"
-                onClick={() => setExpiresLocal('')}
-                style={styles.clearInlineButton}
-              >
-                Clear
-              </button>
-            )}
+            <input type="datetime-local" value={expiresLocal} onChange={(e) => setExpiresLocal(e.target.value)} style={styles.input} />
+            {expiresLocal && <button type="button" onClick={() => setExpiresLocal('')} style={styles.clearInlineButton}>Clear</button>}
+          </div>
+
+          <label style={{ ...styles.fieldLabel, marginTop: '12px' }}>Roles / Programmes</label>
+          <Select
+            isMulti
+            options={roleOptions}
+            value={selectedRoles}
+            onChange={(opts) => setSelectedRoles(opts || [])}
+            placeholder="Tag this assessment with the roles it's intended for..."
+            styles={reactSelectStyles}
+            menuPlacement="top"
+          />
+          <div style={styles.helperText}>
+            Leave empty if this assessment isn't role-specific.
           </div>
 
           <label style={styles.checkboxRow}>
-            <input
-              type="checkbox"
-              checked={isActive}
-              onChange={(e) => setIsActive(e.target.checked)}
-            />
+            <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} />
             <span style={{ fontSize: '14px', color: '#1a202c' }}>Active</span>
           </label>
 
-          {error && (
-            <div style={styles.modalError}><strong>Error:</strong> {error}</div>
-          )}
+          {error && <div style={styles.modalError}><strong>Error:</strong> {error}</div>}
         </div>
 
         <div style={styles.modalFooter}>
@@ -316,6 +288,34 @@ function EditModal({ assessment, onClose, onSaved }) {
 }
 
 // ============================================================
+// react-select custom styles
+// ============================================================
+const reactSelectStyles = {
+  control: (base, state) => ({
+    ...base,
+    minHeight: '38px',
+    borderColor: state.isFocused ? '#1a237e' : '#e2e8f0',
+    boxShadow: state.isFocused ? '0 0 0 1px #1a237e' : 'none',
+    '&:hover': { borderColor: '#1a237e' },
+    fontSize: '14px'
+  }),
+  multiValue: (base) => ({ ...base, backgroundColor: '#e0e7ff' }),
+  multiValueLabel: (base) => ({ ...base, color: '#1e40af', fontWeight: 600, fontSize: '12px' }),
+  multiValueRemove: (base) => ({
+    ...base,
+    color: '#1e40af',
+    '&:hover': { backgroundColor: '#1e40af', color: 'white' }
+  }),
+  groupHeading: (base) => ({
+    ...base,
+    fontSize: '11px',
+    textTransform: 'uppercase',
+    letterSpacing: '0.05em',
+    color: '#94a3b8'
+  })
+};
+
+// ============================================================
 // MAIN PAGE
 // ============================================================
 export default function AssessmentBuilderList() {
@@ -326,12 +326,15 @@ export default function AssessmentBuilderList() {
   const [typesLoading, setTypesLoading] = useState(true);
   const [typesError, setTypesError] = useState(null);
 
+  const [allRoles, setAllRoles] = useState([]);
+
   const [assessments, setAssessments] = useState([]);
   const [total, setTotal] = useState(0);
 
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
+  const [roleFilter, setRoleFilter] = useState('');
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -343,39 +346,57 @@ export default function AssessmentBuilderList() {
 
   const debounceRef = useRef(null);
 
-  // ---------- Load types on mount (reuses question-bank types endpoint) ----------
+  // ---------- Load types + roles on mount ----------
   useEffect(() => {
     if (!session) return;
     let cancelled = false;
-    async function loadTypes() {
+
+    async function loadStatic() {
       try {
         setTypesLoading(true);
         setTypesError(null);
-        const response = await fetch('/api/admin/question-bank/types');
-        const data = await response.json();
-        if (!response.ok || !data.success) throw new Error(data.error || 'Failed to load assessment types');
+
+        const [typesRes, rolesRes] = await Promise.all([
+          fetch('/api/admin/question-bank/types'),
+          fetch('/api/admin/roles/list')
+        ]);
+
+        const typesData = await typesRes.json();
+        const rolesData = await rolesRes.json();
+
+        if (!typesRes.ok || !typesData.success) {
+          throw new Error(typesData.error || 'Failed to load assessment types');
+        }
+        if (!rolesRes.ok || !rolesData.success) {
+          throw new Error(rolesData.error || 'Failed to load roles');
+        }
+
         if (cancelled) return;
-        setTypes(data.types || []);
+        setTypes(typesData.types || []);
+        setAllRoles(rolesData.roles || []);
         setTypesLoading(false);
       } catch (err) {
-        console.error('[Assessment Builder UI] loadTypes error:', err);
+        console.error('[Assessment Builder UI] loadStatic error:', err);
         if (cancelled) return;
-        setTypesError(err.message || 'Failed to load assessment types');
+        setTypesError(err.message || 'Failed to load reference data');
         setTypesLoading(false);
       }
     }
-    loadTypes();
+
+    loadStatic();
     return () => { cancelled = true; };
   }, [session]);
 
-  // ---------- Reusable refetch ----------
+  // ---------- Refetch assessments ----------
   const refetch = async () => {
     try {
       setLoading(true);
       setError(null);
+
       const params = new URLSearchParams();
       if (search) params.set('search', search);
       if (typeFilter) params.set('assessment_type_id', typeFilter);
+      if (roleFilter) params.set('role_id', roleFilter);
 
       const response = await fetch(`/api/admin/assessments/list?${params.toString()}`);
       const data = await response.json();
@@ -390,12 +411,11 @@ export default function AssessmentBuilderList() {
     }
   };
 
-  // ---------- Load assessments on filter change ----------
   useEffect(() => {
     if (!session) return;
     refetch();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session, search, typeFilter]);
+  }, [session, search, typeFilter, roleFilter]);
 
   // ---------- Debounce search ----------
   useEffect(() => {
@@ -410,11 +430,12 @@ export default function AssessmentBuilderList() {
     setSearchInput('');
     setSearch('');
     setTypeFilter('');
+    setRoleFilter('');
   };
 
-  const handleCreated = async (data) => {
+  const handleCreated = async () => {
     setShowCreate(false);
-    setToast(`Created assessment (${data.assessment_id.slice(0, 8)}…)`);
+    setToast('Created assessment');
     setTimeout(() => setToast(null), 6000);
     await refetch();
   };
@@ -452,9 +473,9 @@ export default function AssessmentBuilderList() {
     }
   };
 
-  const hasActiveFilters = !!(search || typeFilter);
+  const hasActiveFilters = !!(search || typeFilter || roleFilter);
 
-  // ---------- Loading / error shells ----------
+  // ---------- Loading shell ----------
   if (authLoading || typesLoading) {
     return (
       <AppLayout background="/images/admin-bg.jpg">
@@ -491,20 +512,11 @@ export default function AssessmentBuilderList() {
             </p>
           </div>
           <div style={styles.headerActions}>
-            <button
-              onClick={() => setShowCreate(true)}
-              style={styles.createButton}
-            >
-              + New Assessment
-            </button>
+            <button onClick={() => setShowCreate(true)} style={styles.createButton}>+ New Assessment</button>
           </div>
         </div>
 
-        {toast && (
-          <div style={styles.successToast}>
-            <strong>✓ {toast}</strong>
-          </div>
-        )}
+        {toast && <div style={styles.successToast}><strong>✓ {toast}</strong></div>}
 
         <div style={styles.filtersRow}>
           <div style={styles.searchWrapper}>
@@ -516,29 +528,26 @@ export default function AssessmentBuilderList() {
               style={styles.searchInput}
             />
             {searchInput && (
-              <button
-                onClick={() => setSearchInput('')}
-                style={styles.clearIconButton}
-                aria-label="Clear search"
-              >✕</button>
+              <button onClick={() => setSearchInput('')} style={styles.clearIconButton} aria-label="Clear search">✕</button>
             )}
           </div>
 
-          <select
-            value={typeFilter}
-            onChange={(e) => setTypeFilter(e.target.value)}
-            style={styles.typeSelect}
-          >
+          <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} style={styles.typeSelect}>
             <option value="">All types</option>
-            {types.map((t) => (
-              <option key={t.id} value={t.id}>{t.name}</option>
+            {types.map((t) => (<option key={t.id} value={t.id}>{t.name}</option>))}
+          </select>
+
+          <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} style={styles.typeSelect}>
+            <option value="">All roles</option>
+            {allRoles.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name} ({r.category === 'university' ? 'uni' : 'prog'})
+              </option>
             ))}
           </select>
 
           {hasActiveFilters && (
-            <button onClick={handleClearFilters} style={styles.clearFiltersButton}>
-              Clear filters
-            </button>
+            <button onClick={handleClearFilters} style={styles.clearFiltersButton}>Clear filters</button>
           )}
         </div>
 
@@ -560,12 +569,13 @@ export default function AssessmentBuilderList() {
             <table style={styles.table}>
               <thead>
                 <tr>
-                  <th style={{ ...styles.th, width: '60px' }}>#</th>
+                  <th style={{ ...styles.th, width: '50px' }}>#</th>
                   <th style={styles.th}>Title</th>
-                  <th style={{ ...styles.th, width: '22%' }}>Type</th>
-                  <th style={{ ...styles.th, width: '100px' }}>Status</th>
-                  <th style={{ ...styles.th, width: '18%' }}>Expires</th>
-                  <th style={{ ...styles.th, width: '200px' }}>Actions</th>
+                  <th style={{ ...styles.th, width: '18%' }}>Type</th>
+                  <th style={{ ...styles.th, width: '20%' }}>Roles</th>
+                  <th style={{ ...styles.th, width: '90px' }}>Status</th>
+                  <th style={{ ...styles.th, width: '140px' }}>Expires</th>
+                  <th style={{ ...styles.th, width: '180px' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -574,9 +584,7 @@ export default function AssessmentBuilderList() {
                     <td style={styles.tdOrder}>{i + 1}</td>
                     <td style={styles.td}>
                       <div style={styles.titleCell}>{a.title}</div>
-                      {a.description && (
-                        <div style={styles.descCell}>{a.description}</div>
-                      )}
+                      {a.description && <div style={styles.descCell}>{a.description}</div>}
                     </td>
                     <td style={styles.td}>
                       {a.assessment_type ? (
@@ -585,6 +593,17 @@ export default function AssessmentBuilderList() {
                           <div style={styles.typeMeta}>
                             {a.assessment_type.code} · {a.assessment_type.question_count}q · {a.assessment_type.time_limit_minutes}m
                           </div>
+                        </div>
+                      ) : (
+                        <span style={styles.muted}>—</span>
+                      )}
+                    </td>
+                    <td style={styles.td}>
+                      {a.roles && a.roles.length > 0 ? (
+                        <div style={styles.roleChips}>
+                          {a.roles.map((r) => (
+                            <span key={r.id} style={styles.roleChip}>{r.name}</span>
+                          ))}
                         </div>
                       ) : (
                         <span style={styles.muted}>—</span>
@@ -600,12 +619,7 @@ export default function AssessmentBuilderList() {
                     </td>
                     <td style={styles.td}>
                       <div style={styles.actionCell}>
-                        <button
-                          onClick={() => setEditing(a)}
-                          style={styles.editButton}
-                        >
-                          Edit
-                        </button>
+                        <button onClick={() => setEditing(a)} style={styles.editButton}>Edit</button>
                         <button
                           onClick={() => handleToggleActive(a)}
                           disabled={togglingId === a.id}
@@ -635,16 +649,13 @@ export default function AssessmentBuilderList() {
       </div>
 
       {showCreate && types.length > 0 && (
-        <CreateModal
-          types={types}
-          onClose={() => setShowCreate(false)}
-          onCreated={handleCreated}
-        />
+        <CreateModal types={types} onClose={() => setShowCreate(false)} onCreated={handleCreated} />
       )}
 
       {editing && (
         <EditModal
           assessment={editing}
+          allRoles={allRoles}
           onClose={() => setEditing(null)}
           onSaved={handleSaved}
         />
@@ -669,10 +680,10 @@ const styles = {
   createButton: { padding: '10px 20px', background: '#1a237e', color: 'white', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer', fontFamily: 'inherit' },
   successToast: { padding: '12px 16px', background: '#dcfce7', border: '1px solid #86efac', color: '#166534', borderRadius: '8px', marginBottom: '12px', fontSize: '14px' },
   filtersRow: { display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' },
-  searchWrapper: { position: 'relative', flex: '1 1 320px', maxWidth: '480px' },
+  searchWrapper: { position: 'relative', flex: '1 1 280px', maxWidth: '420px' },
   searchInput: { width: '100%', padding: '10px 40px 10px 16px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '14px', outline: 'none', background: 'white', fontFamily: 'inherit', boxSizing: 'border-box' },
   clearIconButton: { position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '14px', padding: '4px 8px' },
-  typeSelect: { padding: '10px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '14px', background: 'white', fontFamily: 'inherit', minWidth: '240px', cursor: 'pointer' },
+  typeSelect: { padding: '10px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '14px', background: 'white', fontFamily: 'inherit', minWidth: '200px', cursor: 'pointer' },
   clearFiltersButton: { padding: '10px 16px', background: 'transparent', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '13px', color: '#475569', cursor: 'pointer', fontFamily: 'inherit' },
   errorBox: { background: '#fee2e2', border: '1px solid #fecaca', borderRadius: '8px', padding: '12px 16px', marginBottom: '12px', color: '#991b1b' },
   tableContainer: { background: 'white', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', overflow: 'hidden', border: '1px solid #e2e8f0' },
@@ -687,6 +698,8 @@ const styles = {
   typeName: { fontWeight: '500', color: '#0a1929' },
   typeMeta: { fontSize: '12px', color: '#94a3b8', marginTop: '2px' },
   muted: { color: '#cbd5e1' },
+  roleChips: { display: 'flex', flexWrap: 'wrap', gap: '4px' },
+  roleChip: { display: 'inline-block', padding: '2px 8px', background: '#e0e7ff', color: '#1e40af', borderRadius: '10px', fontSize: '11px', fontWeight: '600' },
   badgeActive: { display: 'inline-block', padding: '3px 10px', borderRadius: '12px', background: '#dcfce7', color: '#166534', fontSize: '12px', fontWeight: '600' },
   badgeInactive: { display: 'inline-block', padding: '3px 10px', borderRadius: '12px', background: '#fee2e2', color: '#991b1b', fontSize: '12px', fontWeight: '600' },
   actionCell: { display: 'flex', gap: '6px', flexWrap: 'wrap' },
