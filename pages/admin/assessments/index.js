@@ -1,6 +1,6 @@
 // pages/admin/assessments/index.js
 // Phase 3 — Assessment Builder
-// List + create modal + edit modal + activate/deactivate toggle + role tagging.
+// List + create modal (with template picker) + edit modal + role tagging.
 
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useRouter } from 'next/router';
@@ -47,23 +47,78 @@ function isoToLocal(iso) {
   }
 }
 
+// {date} → today's date (YYYY-MM-DD); leaves other content untouched.
+function applyTitlePattern(pattern) {
+  if (!pattern) return '';
+  const today = new Date();
+  const yyyy = today.getFullYear();
+  const mm = String(today.getMonth() + 1).padStart(2, '0');
+  const dd = String(today.getDate()).padStart(2, '0');
+  const iso = `${yyyy}-${mm}-${dd}`;
+  return pattern.replace(/\{date\}/g, iso);
+}
+
+// now + N days → datetime-local string for the expires input
+function daysFromNowToLocal(days) {
+  if (days == null || !Number.isFinite(days) || days <= 0) return '';
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 // ============================================================
-// CREATE MODAL
+// CREATE MODAL (with template picker)
 // ============================================================
-function CreateModal({ types, onClose, onCreated }) {
+function CreateModal({ types, templates, onClose, onCreated }) {
   const [title, setTitle] = useState('');
   const [assessmentTypeId, setAssessmentTypeId] = useState(types[0]?.id ?? '');
   const [description, setDescription] = useState('');
   const [instructions, setInstructions] = useState('');
   const [isActive, setIsActive] = useState(true);
   const [expiresLocal, setExpiresLocal] = useState('');
+
+  const [templateId, setTemplateId] = useState('');
+  const [templateRoles, setTemplateRoles] = useState([]);
+
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
+  // ---------- Apply template values to form state ----------
+  const applyTemplate = (t) => {
+    if (!t) return;
+    if (t.title_pattern) setTitle(applyTitlePattern(t.title_pattern));
+    if (t.assessment_type_id) setAssessmentTypeId(String(t.assessment_type_id));
+    setDescription(t.description || '');
+    setInstructions(t.instructions || '');
+    setIsActive(t.default_is_active !== false);
+    setExpiresLocal(daysFromNowToLocal(t.expires_in_days));
+    setTemplateRoles(Array.isArray(t.roles) ? t.roles : []);
+  };
+
+  const handleTemplateChange = (id) => {
+    setTemplateId(id);
+    if (!id) {
+      // Clearing the template doesn't wipe manual input — user decides what to do
+      setTemplateRoles([]);
+      return;
+    }
+    const t = templates.find((x) => x.id === id);
+    if (t) applyTemplate(t);
+  };
+
+  const handleResetFromTemplate = () => {
+    if (!templateId) return;
+    const t = templates.find((x) => x.id === templateId);
+    if (t) applyTemplate(t);
+  };
+
+  // ---------- Save ----------
   const handleSave = async () => {
     try {
       setSaving(true);
       setError(null);
+
       const payload = {
         title: title.trim(),
         assessment_type_id: Number(assessmentTypeId),
@@ -72,6 +127,7 @@ function CreateModal({ types, onClose, onCreated }) {
         is_active: isActive,
         expires_at: localToIso(expiresLocal)
       };
+
       const response = await fetch('/api/admin/assessments/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -79,6 +135,28 @@ function CreateModal({ types, onClose, onCreated }) {
       });
       const data = await response.json();
       if (!response.ok || !data.success) throw new Error(data.error || 'Failed to create');
+
+      // Apply template roles if any
+      if (templateRoles.length > 0 && data.assessment_id) {
+        try {
+          const rolesRes = await fetch('/api/admin/assessments/set-roles', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              assessment_id: data.assessment_id,
+              role_ids: templateRoles.map((r) => r.id)
+            })
+          });
+          const rolesData = await rolesRes.json();
+          if (!rolesRes.ok || !rolesData.success) {
+            console.error('[Assessment Builder UI] template roles failed:', rolesData.error);
+            // Don't block creation — assessment exists, only role tagging failed
+          }
+        } catch (roleErr) {
+          console.error('[Assessment Builder UI] template roles error:', roleErr);
+        }
+      }
+
       onCreated(data);
     } catch (err) {
       console.error('[Assessment Builder UI] create error:', err);
@@ -87,6 +165,8 @@ function CreateModal({ types, onClose, onCreated }) {
       setSaving(false);
     }
   };
+
+  const hasTemplate = templateId !== '';
 
   return (
     <div style={styles.modalOverlay} onClick={onClose}>
@@ -97,6 +177,40 @@ function CreateModal({ types, onClose, onCreated }) {
         </div>
 
         <div style={styles.modalBody}>
+          {/* ---------- Template picker ---------- */}
+          {templates.length > 0 && (
+            <>
+              <label style={styles.fieldLabel}>Start from template (optional)</label>
+              <div style={styles.inlineRow}>
+                <select
+                  value={templateId}
+                  onChange={(e) => handleTemplateChange(e.target.value)}
+                  style={{ ...styles.select, flex: 1 }}
+                >
+                  <option value="">— No template —</option>
+                  {templates.map((t) => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+                {hasTemplate && (
+                  <button
+                    type="button"
+                    onClick={handleResetFromTemplate}
+                    style={styles.resetTemplateButton}
+                  >
+                    Reset
+                  </button>
+                )}
+              </div>
+              <div style={styles.helperText}>
+                {hasTemplate
+                  ? 'Template values have been applied. Edit any field freely — use Reset to re-apply the template.'
+                  : 'Pick a template to pre-fill the fields below.'}
+              </div>
+              <div style={{ borderTop: '1px solid #e2e8f0', marginTop: '14px', marginBottom: '14px' }} />
+            </>
+          )}
+
           <label style={styles.fieldLabel}>Title</label>
           <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} style={styles.input} maxLength={200} autoFocus />
 
@@ -127,6 +241,17 @@ function CreateModal({ types, onClose, onCreated }) {
             <span style={{ fontSize: '14px', color: '#1a202c' }}>Active</span>
           </label>
 
+          {hasTemplate && templateRoles.length > 0 && (
+            <div style={styles.templateRolesBanner}>
+              <strong>Will tag with {templateRoles.length} role{templateRoles.length === 1 ? '' : 's'} from template:</strong>
+              <div style={styles.roleChips}>
+                {templateRoles.map((r) => (
+                  <span key={r.id} style={styles.roleChip}>{r.name}</span>
+                ))}
+              </div>
+            </div>
+          )}
+
           {error && <div style={styles.modalError}><strong>Error:</strong> {error}</div>}
         </div>
 
@@ -142,7 +267,7 @@ function CreateModal({ types, onClose, onCreated }) {
 }
 
 // ============================================================
-// EDIT MODAL (includes roles multi-select)
+// EDIT MODAL (unchanged, roles multi-select)
 // ============================================================
 function EditModal({ assessment, allRoles, onClose, onSaved }) {
   const [title, setTitle] = useState(assessment.title || '');
@@ -160,19 +285,12 @@ function EditModal({ assessment, allRoles, onClose, onSaved }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
-  // react-select options grouped by category
   const roleOptions = useMemo(() => {
     const universities = allRoles.filter((r) => r.category === 'university');
     const programmes = allRoles.filter((r) => r.category === 'programme');
     return [
-      {
-        label: 'Programmes',
-        options: programmes.map((r) => ({ value: r.id, label: r.name }))
-      },
-      {
-        label: 'Universities',
-        options: universities.map((r) => ({ value: r.id, label: r.name }))
-      }
+      { label: 'Programmes', options: programmes.map((r) => ({ value: r.id, label: r.name })) },
+      { label: 'Universities', options: universities.map((r) => ({ value: r.id, label: r.name })) }
     ];
   }, [allRoles]);
 
@@ -181,7 +299,6 @@ function EditModal({ assessment, allRoles, onClose, onSaved }) {
       setSaving(true);
       setError(null);
 
-      // 1) update assessment fields
       const updatePayload = {
         assessment_id: assessment.id,
         title: title.trim(),
@@ -201,7 +318,6 @@ function EditModal({ assessment, allRoles, onClose, onSaved }) {
         throw new Error(updateData.error || 'Failed to save assessment');
       }
 
-      // 2) set roles (full replace)
       const roleIds = selectedRoles.map((r) => r.value);
       const rolesResponse = await fetch('/api/admin/assessments/set-roles', {
         method: 'POST',
@@ -323,10 +439,10 @@ export default function AssessmentBuilderList() {
   const { session, loading: authLoading } = useRequireAuth();
 
   const [types, setTypes] = useState([]);
-  const [typesLoading, setTypesLoading] = useState(true);
-  const [typesError, setTypesError] = useState(null);
-
   const [allRoles, setAllRoles] = useState([]);
+  const [templates, setTemplates] = useState([]);
+  const [refDataLoading, setRefDataLoading] = useState(true);
+  const [typesError, setTypesError] = useState(null);
 
   const [assessments, setAssessments] = useState([]);
   const [total, setTotal] = useState(0);
@@ -346,44 +462,44 @@ export default function AssessmentBuilderList() {
 
   const debounceRef = useRef(null);
 
-  // ---------- Load types + roles on mount ----------
+  // ---------- Load reference data ----------
   useEffect(() => {
     if (!session) return;
     let cancelled = false;
 
-    async function loadStatic() {
+    async function loadRef() {
       try {
-        setTypesLoading(true);
+        setRefDataLoading(true);
         setTypesError(null);
 
-        const [typesRes, rolesRes] = await Promise.all([
+        const [typesRes, rolesRes, templatesRes] = await Promise.all([
           fetch('/api/admin/question-bank/types'),
-          fetch('/api/admin/roles/list')
+          fetch('/api/admin/roles/list'),
+          fetch('/api/admin/templates/list')
         ]);
 
         const typesData = await typesRes.json();
         const rolesData = await rolesRes.json();
+        const templatesData = await templatesRes.json();
 
-        if (!typesRes.ok || !typesData.success) {
-          throw new Error(typesData.error || 'Failed to load assessment types');
-        }
-        if (!rolesRes.ok || !rolesData.success) {
-          throw new Error(rolesData.error || 'Failed to load roles');
-        }
+        if (!typesRes.ok || !typesData.success) throw new Error(typesData.error || 'Failed to load types');
+        if (!rolesRes.ok || !rolesData.success) throw new Error(rolesData.error || 'Failed to load roles');
+        if (!templatesRes.ok || !templatesData.success) throw new Error(templatesData.error || 'Failed to load templates');
 
         if (cancelled) return;
         setTypes(typesData.types || []);
         setAllRoles(rolesData.roles || []);
-        setTypesLoading(false);
+        setTemplates(templatesData.templates || []);
+        setRefDataLoading(false);
       } catch (err) {
-        console.error('[Assessment Builder UI] loadStatic error:', err);
+        console.error('[Assessment Builder UI] loadRef error:', err);
         if (cancelled) return;
         setTypesError(err.message || 'Failed to load reference data');
-        setTypesLoading(false);
+        setRefDataLoading(false);
       }
     }
 
-    loadStatic();
+    loadRef();
     return () => { cancelled = true; };
   }, [session]);
 
@@ -392,7 +508,6 @@ export default function AssessmentBuilderList() {
     try {
       setLoading(true);
       setError(null);
-
       const params = new URLSearchParams();
       if (search) params.set('search', search);
       if (typeFilter) params.set('assessment_type_id', typeFilter);
@@ -417,14 +532,12 @@ export default function AssessmentBuilderList() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session, search, typeFilter, roleFilter]);
 
-  // ---------- Debounce search ----------
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => setSearch(searchInput.trim()), 300);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [searchInput]);
 
-  // ---------- Handlers ----------
   const handleBack = () => router.push('/admin');
   const handleClearFilters = () => {
     setSearchInput('');
@@ -475,8 +588,7 @@ export default function AssessmentBuilderList() {
 
   const hasActiveFilters = !!(search || typeFilter || roleFilter);
 
-  // ---------- Loading shell ----------
-  if (authLoading || typesLoading) {
+  if (authLoading || refDataLoading) {
     return (
       <AppLayout background="/images/admin-bg.jpg">
         <div style={styles.loadingContainer}>
@@ -498,7 +610,6 @@ export default function AssessmentBuilderList() {
     );
   }
 
-  // ---------- Main render ----------
   return (
     <AppLayout background="/images/admin-bg.jpg">
       <div style={styles.container}>
@@ -649,7 +760,12 @@ export default function AssessmentBuilderList() {
       </div>
 
       {showCreate && types.length > 0 && (
-        <CreateModal types={types} onClose={() => setShowCreate(false)} onCreated={handleCreated} />
+        <CreateModal
+          types={types}
+          templates={templates}
+          onClose={() => setShowCreate(false)}
+          onCreated={handleCreated}
+        />
       )}
 
       {editing && (
@@ -720,9 +836,11 @@ const styles = {
   helperText: { fontSize: '12px', color: '#94a3b8', marginTop: '4px' },
   inlineRow: { display: 'flex', gap: '8px', alignItems: 'center' },
   clearInlineButton: { padding: '8px 14px', background: 'transparent', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '12px', color: '#475569', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' },
+  resetTemplateButton: { padding: '10px 14px', background: 'transparent', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '12px', color: '#1a237e', fontWeight: '600', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' },
   checkboxRow: { display: 'flex', alignItems: 'center', gap: '8px', marginTop: '16px', cursor: 'pointer' },
   readonlyField: { padding: '10px 12px', background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '14px', color: '#475569' },
   readonlyNote: { fontSize: '12px', color: '#94a3b8' },
+  templateRolesBanner: { marginTop: '14px', padding: '10px 12px', background: '#eef2ff', border: '1px solid #c7d2fe', borderRadius: '8px', fontSize: '13px', color: '#1e40af' },
   modalError: { marginTop: '12px', padding: '10px 12px', background: '#fee2e2', border: '1px solid #fecaca', borderRadius: '8px', color: '#991b1b', fontSize: '13px' },
   modalFooter: { display: 'flex', justifyContent: 'flex-end', gap: '10px', padding: '14px 20px', borderTop: '1px solid #e2e8f0' },
   cancelButton: { padding: '10px 18px', background: 'transparent', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '14px', color: '#475569', cursor: 'pointer', fontFamily: 'inherit' },
