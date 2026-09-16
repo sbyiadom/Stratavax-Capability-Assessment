@@ -7,7 +7,8 @@
 //   1. multipart/form-data  with fields: assessment_type_id, file
 //   2. application/json     with body: { assessment_type_id, questions: [...] }
 //
-// In both cases, all-or-nothing: any invalid row rejects the whole batch.
+// Parsing is column-position-independent and tolerates SheetJS cell objects,
+// non-breaking spaces, and zero-width characters in headers.
 
 import { createClient } from '@supabase/supabase-js';
 import formidable from 'formidable';
@@ -16,12 +17,12 @@ import fs from 'fs';
 
 export const config = {
   api: {
-    bodyParser: false // we parse multipart ourselves
+    bodyParser: false
   }
 };
 
 // ============================================================
-// HELPER: expected column header names (matches export.js)
+// EXPECTED HEADERS (matches export.js)
 // ============================================================
 const EXPECTED_HEADERS = [
   'question_id',
@@ -40,15 +41,45 @@ const EXPECTED_HEADERS = [
 ];
 
 // ============================================================
-// HELPER: parse + validate XLSX buffer into question payloads
-// Throws an Error with .details = { valid, total, errors: [{row, reason}] }
+// Robust header normalization — unwrap cell objects, strip
+// non-breaking spaces and zero-width chars, lowercase, trim.
+// ============================================================
+function normalizeHeader(v) {
+  let s;
+  if (v == null) {
+    s = '';
+  } else if (typeof v === 'string') {
+    s = v;
+  } else if (typeof v === 'object') {
+    s = v.w != null ? String(v.w) : v.v != null ? String(v.v) : '';
+  } else {
+    s = String(v);
+  }
+  return s
+    .replace(/\u00A0/g, ' ')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+function readCellValue(v) {
+  if (v == null) return '';
+  if (typeof v === 'object') {
+    if (v.w != null) return String(v.w);
+    if (v.v != null) return String(v.v);
+    return '';
+  }
+  return v;
+}
+
+// ============================================================
+// parseWorkbook — returns { questions, errors, total }
+// Throws with .details on structural failures.
 // ============================================================
 function parseWorkbook(buffer) {
   const wb = XLSX.read(buffer, { type: 'buffer' });
-
-  const sheetName = wb.SheetNames.includes('Questions')
-    ? 'Questions'
-    : wb.SheetNames[0];
+  const sheetName = wb.SheetNames.includes('Questions') ? 'Questions' : wb.SheetNames[0];
 
   if (!sheetName) {
     throw Object.assign(new Error('Workbook has no sheets'), {
@@ -68,16 +99,44 @@ function parseWorkbook(buffer) {
     });
   }
 
-  const headerRow = rows[0].map((h) => String(h || '').trim());
-  const missing = EXPECTED_HEADERS.filter((h) => !headerRow.includes(h));
+  // Build normalized header → index map.
+  const rawHeader = rows[0] || [];
+  const headerMap = {};
+  const foundHeaders = [];
+  rawHeader.forEach((h, i) => {
+    const key = normalizeHeader(h);
+    if (key && headerMap[key] === undefined) headerMap[key] = i;
+    if (key) foundHeaders.push(key);
+  });
+
+  const missing = EXPECTED_HEADERS.filter(
+    (h) => headerMap[normalizeHeader(h)] === undefined
+  );
+
   if (missing.length > 0) {
-    throw Object.assign(new Error('Missing columns: ' + missing.join(', ')), {
-      details: { valid: 0, total: 0, errors: [{ row: 1, reason: 'Missing columns: ' + missing.join(', ') }] }
-    });
+    console.log('[Question Bank Import] raw header row:', rawHeader);
+    console.log('[Question Bank Import] normalized found:', foundHeaders);
+    console.log('[Question Bank Import] missing:', missing);
+    throw Object.assign(
+      new Error(`Missing columns: ${missing.join(', ')}. Found: ${foundHeaders.join(', ')}`),
+      {
+        details: {
+          valid: 0,
+          total: 0,
+          errors: [{
+            row: 1,
+            reason: `Missing columns: ${missing.join(', ')}. Found: ${foundHeaders.join(', ')}`
+          }]
+        }
+      }
+    );
   }
 
-  const idx = {};
-  EXPECTED_HEADERS.forEach((h) => { idx[h] = headerRow.indexOf(h); });
+  const cell = (row, header) => {
+    const idx = headerMap[normalizeHeader(header)];
+    if (idx === undefined) return '';
+    return readCellValue(row[idx]);
+  };
 
   const questions = [];
   const errors = [];
@@ -85,31 +144,30 @@ function parseWorkbook(buffer) {
 
   for (let i = 1; i < rows.length; i++) {
     const raw = rows[i];
-    const fileRow = i + 1; // 1-based including header
+    const fileRow = i + 1;
 
-    // Skip completely blank rows
-    const nonEmpty = raw.some((c) => c !== '' && c !== null && c !== undefined);
+    // Skip entirely blank rows
+    const nonEmpty = raw.some((c) => {
+      if (c == null) return false;
+      if (typeof c === 'object') return c.v != null || c.w != null;
+      return c !== '';
+    });
     if (!nonEmpty) continue;
-
     total++;
 
-    const qText   = String(raw[idx['question_text']] || '').trim();
-    const section = String(raw[idx['section']] || '').trim();
-    const subsection = String(raw[idx['subsection']] || '').trim();
+    const qText = String(cell(raw, 'question_text')).trim();
+    const section = String(cell(raw, 'section')).trim();
+    const subsection = String(cell(raw, 'subsection')).trim();
 
     const rowErrors = [];
-
     if (!qText) rowErrors.push('question_text is required');
 
     const answers = [];
     for (let n = 1; n <= 4; n++) {
-      const aText  = String(raw[idx[`answer_${n}_text`]] || '').trim();
-      const aScoreRaw = raw[idx[`answer_${n}_score`]];
+      const aText = String(cell(raw, `answer_${n}_text`)).trim();
+      const aScoreRaw = cell(raw, `answer_${n}_score`);
 
-      if (!aText) {
-        rowErrors.push(`answer_${n}_text is required`);
-        continue;
-      }
+      if (!aText) { rowErrors.push(`answer_${n}_text is required`); continue; }
       if (aScoreRaw === '' || aScoreRaw === null || aScoreRaw === undefined) {
         rowErrors.push(`answer_${n}_score is required`);
         continue;
@@ -119,11 +177,7 @@ function parseWorkbook(buffer) {
         rowErrors.push(`answer_${n}_score must be an integer (got "${aScoreRaw}")`);
         continue;
       }
-      answers.push({
-        answer_text: aText,
-        score: aScore,
-        display_order: n
-      });
+      answers.push({ answer_text: aText, score: aScore, display_order: n });
     }
 
     if (answers.length !== 4) {
@@ -147,12 +201,12 @@ function parseWorkbook(buffer) {
 }
 
 // ============================================================
-// HELPER: read multipart form
+// HELPERS: multipart + raw JSON body
 // ============================================================
 function readMultipart(req) {
   return new Promise((resolve, reject) => {
     const form = formidable({
-      maxFileSize: 10 * 1024 * 1024, // 10 MB
+      maxFileSize: 10 * 1024 * 1024,
       multiples: false
     });
     form.parse(req, (err, fields, files) => {
@@ -171,9 +225,6 @@ function readMultipart(req) {
   });
 }
 
-// ============================================================
-// HELPER: read raw JSON body
-// ============================================================
 function readJsonBody(req) {
   return new Promise((resolve, reject) => {
     let data = '';
@@ -214,7 +265,6 @@ export default async function handler(req, res) {
     let questions = [];
 
     if (contentType.startsWith('multipart/form-data')) {
-      // ---- XLSX upload path ----
       const { assessment_type_id, file } = await readMultipart(req);
 
       if (!assessment_type_id) {
@@ -264,7 +314,6 @@ export default async function handler(req, res) {
       questions = parsed.questions;
 
     } else if (contentType.startsWith('application/json')) {
-      // ---- direct JSON path (useful for tests, scripts) ----
       const body = await readJsonBody(req);
       const { assessment_type_id, questions: qs } = body;
 
@@ -288,7 +337,6 @@ export default async function handler(req, res) {
       });
     }
 
-    // ---- call RPC ----
     const { data, error } = await serviceClient.rpc('import_questions_bulk', {
       p_assessment_type_id: assessmentTypeId,
       p_questions: questions
@@ -296,7 +344,6 @@ export default async function handler(req, res) {
 
     if (error) {
       console.error('[Question Bank Import] rpc error:', error);
-
       const code = error.code;
       if (code === 'P0002') {
         return res.status(404).json({
@@ -310,7 +357,6 @@ export default async function handler(req, res) {
           error: error.message || 'Validation failed'
         });
       }
-
       return res.status(500).json({
         success: false,
         error: `Import failed: ${error.message}`
