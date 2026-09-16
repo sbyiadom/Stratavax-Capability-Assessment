@@ -1,4 +1,5 @@
 // pages/admin/assign-assessments.js
+// Phase 3 item 6: adds scheduling-window support to Assign and Unblock actions.
 
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/router";
@@ -25,7 +26,43 @@ function getReadableError(error) {
   return error.message || String(error) || "Something went wrong.";
 }
 
-function statusDetails(status) {
+// Format a scheduled window for display under a status badge
+function formatWindow(start, end) {
+  const fmt = (v) => {
+    if (!v) return null;
+    try {
+      const d = new Date(v);
+      if (Number.isNaN(d.getTime())) return null;
+      return d.toLocaleString(undefined, {
+        month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit'
+      });
+    } catch { return null; }
+  };
+  const s = fmt(start);
+  const e = fmt(end);
+  if (s && e) return `${s} → ${e}`;
+  if (s) return `from ${s}`;
+  if (e) return `until ${e}`;
+  return null;
+}
+
+// datetime-local string → ISO string (or null if empty/invalid)
+function localToIso(local) {
+  if (!local) return null;
+  const d = new Date(local);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString();
+}
+
+function statusDetails(status, row) {
+  if (status === "scheduled") {
+    return {
+      text: "Scheduled",
+      bg: "#e0f2fe",
+      color: "#075985",
+      subtitle: row ? formatWindow(row.scheduled_start, row.scheduled_end) : null
+    };
+  }
   if (status === "unblocked") {
     return { text: "Unblocked / Ready", bg: "#e8f5e9", color: "#2e7d32" };
   }
@@ -46,6 +83,8 @@ export default function AssignAssessments() {
   const [loading, setLoading] = useState(true);
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [currentAdminId, setCurrentAdminId] = useState(null);
+
   const [candidates, setCandidates] = useState([]);
   const [assessments, setAssessments] = useState([]);
   const [supervisors, setSupervisors] = useState([]);
@@ -56,7 +95,13 @@ export default function AssignAssessments() {
   const [filterSupervisor, setFilterSupervisor] = useState("all");
   const [processing, setProcessing] = useState(false);
   const [message, setMessage] = useState({ type: "", text: "" });
+
+  // Maps user_id → { status, scheduled_start, scheduled_end, is_scheduled }
   const [candidateAssessmentStatus, setCandidateAssessmentStatus] = useState({});
+
+  // Scheduling inputs (Phase 3 item 6)
+  const [scheduleStart, setScheduleStart] = useState("");
+  const [scheduleEnd, setScheduleEnd] = useState("");
 
   useEffect(() => {
     checkAdminAuth();
@@ -65,6 +110,14 @@ export default function AssignAssessments() {
   useEffect(() => {
     fetchAssessmentStatus();
   }, [selectedAssessment]);
+
+  // Clear schedule inputs when action changes away from assign/unblock
+  useEffect(() => {
+    if (selectedAction !== "assign" && selectedAction !== "unblock") {
+      setScheduleStart("");
+      setScheduleEnd("");
+    }
+  }, [selectedAction]);
 
   async function checkAdminAuth() {
     try {
@@ -107,6 +160,7 @@ export default function AssignAssessments() {
         return;
       }
 
+      setCurrentAdminId(activeSession.user.id);
       setIsAdmin(true);
       await fetchData();
     } catch (error) {
@@ -164,14 +218,19 @@ export default function AssignAssessments() {
     try {
       const { data, error } = await supabase
         .from("candidate_assessments")
-        .select("user_id, status")
+        .select("user_id, status, is_scheduled, scheduled_start, scheduled_end")
         .eq("assessment_id", selectedAssessment);
 
       if (error) throw error;
 
       const statusMap = {};
       safeArray(data).forEach((item) => {
-        statusMap[item.user_id] = item.status;
+        statusMap[item.user_id] = {
+          status: item.status,
+          is_scheduled: item.is_scheduled,
+          scheduled_start: item.scheduled_start,
+          scheduled_end: item.scheduled_end
+        };
       });
       setCandidateAssessmentStatus(statusMap);
     } catch (error) {
@@ -204,7 +263,7 @@ export default function AssignAssessments() {
   }
 
   function getCandidateStatus(candidateId) {
-    return candidateAssessmentStatus[candidateId] || "unassigned";
+    return candidateAssessmentStatus[candidateId] || null;
   }
 
   function handleSelectAll() {
@@ -226,7 +285,36 @@ export default function AssignAssessments() {
     });
   }
 
-  async function assignOrUpdateCandidateAssessment(candidateId, assessmentId, status) {
+  // Build the scheduling columns for an assign/unblock payload.
+  // Returns null if inputs are invalid (caller shows error).
+  function buildScheduleFields() {
+    if (selectedAction !== "assign" && selectedAction !== "unblock") return {};
+    const hasStart = scheduleStart !== "";
+    const hasEnd = scheduleEnd !== "";
+    if (!hasStart && !hasEnd) {
+      return {
+        is_scheduled: false,
+        scheduled_start: null,
+        scheduled_end: null,
+        scheduled_by: null,
+        scheduled_at: null
+      };
+    }
+    if (!hasStart || !hasEnd) return null;
+    const startIso = localToIso(scheduleStart);
+    const endIso = localToIso(scheduleEnd);
+    if (!startIso || !endIso) return null;
+    if (new Date(startIso) >= new Date(endIso)) return null;
+    return {
+      is_scheduled: true,
+      scheduled_start: startIso,
+      scheduled_end: endIso,
+      scheduled_by: currentAdminId,
+      scheduled_at: new Date().toISOString()
+    };
+  }
+
+  async function assignOrUpdateCandidateAssessment(candidateId, assessmentId, status, scheduleFields) {
     const now = new Date().toISOString();
 
     const { data: existing, error: checkError } = await supabase
@@ -242,7 +330,8 @@ export default function AssignAssessments() {
       const updatePayload = {
         status,
         updated_at: now,
-        unblocked_at: status === "unblocked" ? now : null
+        unblocked_at: status === "unblocked" ? now : null,
+        ...scheduleFields
       };
 
       const { error } = await supabase
@@ -260,7 +349,8 @@ export default function AssignAssessments() {
       status,
       unblocked_at: status === "unblocked" ? now : null,
       created_at: now,
-      updated_at: now
+      updated_at: now,
+      ...scheduleFields
     };
 
     const { error } = await supabase
@@ -281,17 +371,36 @@ export default function AssignAssessments() {
       return;
     }
 
+    // Build scheduling fields (only for assign/unblock)
+    const scheduleFields = buildScheduleFields();
+    if (scheduleFields === null) {
+      setMessage({
+        type: "error",
+        text: "Invalid scheduling window. Provide both start and end, and start must be before end."
+      });
+      return;
+    }
+
+    const isScheduled = scheduleFields.is_scheduled === true;
+
     try {
       setProcessing(true);
       setMessage({ type: "", text: "" });
 
       let successCount = 0;
       let errorCount = 0;
-      const targetStatus = selectedAction === "block" ? "blocked" : "unblocked";
+
+      // If a schedule window is set, target status becomes 'scheduled'.
+      // Otherwise assign → unblocked, block → blocked, unblock → unblocked.
+      let targetStatus;
+      if (selectedAction === "block") targetStatus = "blocked";
+      else if (isScheduled) targetStatus = "scheduled";
+      else if (selectedAction === "assign" || selectedAction === "unblock") targetStatus = "unblocked";
+      else targetStatus = "unblocked";
 
       for (const candidateId of selectedCandidates) {
         try {
-          await assignOrUpdateCandidateAssessment(candidateId, selectedAssessment, targetStatus);
+          await assignOrUpdateCandidateAssessment(candidateId, selectedAssessment, targetStatus, scheduleFields);
           successCount += 1;
         } catch (error) {
           errorCount += 1;
@@ -300,7 +409,11 @@ export default function AssignAssessments() {
       }
 
       const selectedAssessmentTitle = assessments.find((item) => item.id === selectedAssessment)?.title || "selected assessment";
-      const actionText = selectedAction === "block" ? "blocked" : selectedAction === "unblock" ? "unblocked" : "assigned and unblocked";
+      let actionText;
+      if (selectedAction === "block") actionText = "blocked";
+      else if (isScheduled) actionText = selectedAction === "unblock" ? "scheduled for unblock" : "scheduled";
+      else if (selectedAction === "unblock") actionText = "unblocked";
+      else actionText = "assigned and unblocked";
 
       if (successCount > 0) {
         setMessage({ type: "success", text: "Successfully " + actionText + " " + successCount + " candidate(s) for " + selectedAssessmentTitle + "." });
@@ -311,6 +424,7 @@ export default function AssignAssessments() {
       }
 
       setSelectedCandidates([]);
+      // Do not clear scheduleStart/scheduleEnd — admin may want to reuse the window
       await fetchAssessmentStatus();
     } catch (error) {
       console.error("Assessment assignment error:", error);
@@ -322,8 +436,13 @@ export default function AssignAssessments() {
   }
 
   function getActionButtonText() {
-    if (selectedAction === "assign") return "Assign and Unblock";
-    if (selectedAction === "unblock") return "Unblock";
+    const hasWindow = scheduleStart !== "" && scheduleEnd !== "";
+    if (selectedAction === "assign") {
+      return hasWindow ? "Assign and Schedule" : "Assign and Unblock";
+    }
+    if (selectedAction === "unblock") {
+      return hasWindow ? "Schedule Unblock" : "Unblock";
+    }
     if (selectedAction === "block") return "Block";
     return "Process";
   }
@@ -338,6 +457,9 @@ export default function AssignAssessments() {
   const visibleCandidates = filteredCandidates();
   const selectedAssessmentObj = assessments.find((assessment) => assessment.id === selectedAssessment);
   const allVisibleSelected = visibleCandidates.length > 0 && visibleCandidates.every((candidate) => selectedCandidates.includes(candidate.id));
+
+  const showScheduleInputs = selectedAction === "assign" || selectedAction === "unblock";
+  const hasAnyWindow = scheduleStart !== "" || scheduleEnd !== "";
 
   if (checkingAuth) {
     return (
@@ -397,13 +519,11 @@ export default function AssignAssessments() {
           ) : (
             <div style={styles.assessmentGrid}>
               {assessments.map((assessment) => {
-                // Clean 2-letter badge from type
                 const typeName = assessment.assessment_type?.name || "AS";
                 const badgeText = typeName.substring(0, 2).toUpperCase();
-                // Generate a simple pastel color based on the ID to keep it varied
                 const hash = assessment.id.split('').reduce((acc, char) => char.charCodeAt(0) + acc, 0);
                 const hue = hash % 360;
-                
+
                 return (
                   <button
                     key={assessment.id}
@@ -438,6 +558,49 @@ export default function AssignAssessments() {
               <ActionButton active={selectedAction === "unblock"} color="#2196f3" title="Unblock" desc="Make existing access ready" onClick={() => setSelectedAction("unblock")} />
               <ActionButton active={selectedAction === "block"} color="#f57c00" title="Block" desc="Restrict assessment access" onClick={() => setSelectedAction("block")} />
             </div>
+
+            {showScheduleInputs && (
+              <div style={styles.scheduleBlock}>
+                <div style={styles.scheduleHeader}>
+                  <div>
+                    <div style={styles.scheduleTitle}>Schedule window (optional)</div>
+                    <div style={styles.scheduleHint}>
+                      Leave blank to make the assessment available immediately.
+                      Fill both fields to schedule it — candidates cannot start outside the window.
+                    </div>
+                  </div>
+                  {hasAnyWindow && (
+                    <button
+                      type="button"
+                      onClick={() => { setScheduleStart(""); setScheduleEnd(""); }}
+                      style={styles.scheduleClear}
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+                <div style={styles.scheduleInputs}>
+                  <label style={styles.scheduleField}>
+                    <span style={styles.scheduleLabel}>Starts at</span>
+                    <input
+                      type="datetime-local"
+                      value={scheduleStart}
+                      onChange={(e) => setScheduleStart(e.target.value)}
+                      style={styles.scheduleInput}
+                    />
+                  </label>
+                  <label style={styles.scheduleField}>
+                    <span style={styles.scheduleLabel}>Ends at</span>
+                    <input
+                      type="datetime-local"
+                      value={scheduleEnd}
+                      onChange={(e) => setScheduleEnd(e.target.value)}
+                      style={styles.scheduleInput}
+                    />
+                  </label>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -480,8 +643,9 @@ export default function AssignAssessments() {
                       <tr><td colSpan="5" style={styles.noData}>No candidates found.</td></tr>
                     ) : (
                       visibleCandidates.map((candidate) => {
-                        const status = getCandidateStatus(candidate.id);
-                        const details = statusDetails(status);
+                        const row = getCandidateStatus(candidate.id);
+                        const status = row?.status || "unassigned";
+                        const details = statusDetails(status, row);
                         return (
                           <tr key={candidate.id} style={styles.tableRow}>
                             <td style={styles.tdCheckbox}><input type="checkbox" checked={selectedCandidates.includes(candidate.id)} onChange={() => handleSelectCandidate(candidate.id)} style={styles.checkbox} /></td>
@@ -496,7 +660,14 @@ export default function AssignAssessments() {
                             </td>
                             <td style={styles.tableCell}><div style={styles.candidateEmail}>{candidate.email || "No email"}</div></td>
                             <td style={styles.tableCell}>{candidate.supervisor ? <span style={styles.supervisorName}>{candidate.supervisor.full_name || candidate.supervisor.email}</span> : <span style={styles.unassignedBadge}>Unassigned</span>}</td>
-                            <td style={styles.tableCell}><span style={{ ...styles.statusBadge, background: details.bg, color: details.color }}>{details.text}</span></td>
+                            <td style={styles.tableCell}>
+                              <div>
+                                <span style={{ ...styles.statusBadge, background: details.bg, color: details.color }}>{details.text}</span>
+                                {details.subtitle && (
+                                  <div style={styles.statusSubtitle}>{details.subtitle}</div>
+                                )}
+                              </div>
+                            </td>
                           </tr>
                         );
                       })
@@ -582,6 +753,15 @@ const styles = {
   actionGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "16px" },
   actionButton: { display: "flex", flexDirection: "column", alignItems: "center", gap: "8px", padding: "20px", borderRadius: "12px", fontSize: "16px", fontWeight: 800, cursor: "pointer", fontFamily: "inherit" },
   actionDesc: { fontSize: "11px", fontWeight: 500, opacity: 0.75 },
+  scheduleBlock: { marginTop: "20px", padding: "16px 20px", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "12px" },
+  scheduleHeader: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "12px", marginBottom: "12px", flexWrap: "wrap" },
+  scheduleTitle: { fontSize: "14px", fontWeight: 800, color: "#0a1929" },
+  scheduleHint: { fontSize: "12px", color: "#667085", marginTop: "4px", lineHeight: 1.5, maxWidth: "600px" },
+  scheduleClear: { padding: "4px 12px", background: "transparent", border: "1px solid #e2e8f0", borderRadius: "6px", color: "#667085", fontSize: "12px", fontWeight: 700, cursor: "pointer" },
+  scheduleInputs: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "16px" },
+  scheduleField: { display: "flex", flexDirection: "column", gap: "6px" },
+  scheduleLabel: { fontSize: "12px", fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.05em" },
+  scheduleInput: { width: "100%", padding: "10px 12px", border: "1px solid #e2e8f0", borderRadius: "8px", fontSize: "14px", background: "white", boxSizing: "border-box", fontFamily: "inherit" },
   filterBar: { display: "flex", gap: "20px", marginBottom: "20px", flexWrap: "wrap" },
   searchBox: { flex: 2, minWidth: "250px" },
   searchInput: { width: "100%", padding: "10px 16px", border: "1px solid #e2e8f0", borderRadius: "8px", fontSize: "14px", outline: "none", boxSizing: "border-box" },
@@ -605,6 +785,7 @@ const styles = {
   supervisorName: { fontSize: "13px", color: "#0a1929", fontWeight: 700 },
   unassignedBadge: { display: "inline-block", padding: "2px 8px", background: "#fef2f2", color: "#b91c1c", borderRadius: "12px", fontSize: "11px", fontWeight: 800 },
   statusBadge: { display: "inline-flex", alignItems: "center", gap: "4px", padding: "4px 12px", borderRadius: "20px", fontSize: "12px", fontWeight: 800 },
+  statusSubtitle: { fontSize: "11px", color: "#667085", marginTop: "4px" },
   noData: { padding: "40px", textAlign: "center", color: "#718096" },
   loadingState: { padding: "35px", textAlign: "center", color: "#667085" },
   summaryBar: { display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: "16px", borderTop: "1px solid #e2e8f0", flexWrap: "wrap", gap: "16px" },
