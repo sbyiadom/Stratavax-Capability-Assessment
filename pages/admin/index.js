@@ -1,10 +1,12 @@
 // pages/admin/index.js - CLEAN DASHBOARD WITH SCROLLING FIX
+// Sidebar is now a shared component from components/AdminSidebar.js
 
 import { useEffect, useState, useMemo, Fragment } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import { supabase } from "../../supabase/client";
 import AssessmentExpiration from "../../components/admin/AssessmentExpiration";
+import AdminSidebar from "../../components/AdminSidebar";
 
 // ============================================================
 // CHART.JS IMPORTS
@@ -427,214 +429,6 @@ const customSelectStyles = {
 };
 
 // ============================================================
-// SIDEBAR COMPONENT
-// ============================================================
-function Sidebar({ isOpen, toggleSidebar, activePage, setActivePage, handleLogout }) {
-  const router = useRouter();
-  
-  const menuItems = [
-    { 
-      id: 'dashboard', 
-      label: 'Dashboard', 
-      icon: (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
-      ),
-      href: '/admin'
-    },
-    { 
-      id: 'candidates', 
-      label: 'Candidates', 
-      icon: (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-      ),
-      href: '/admin/manage-candidates'
-    },
-    { 
-      id: 'reports', 
-      label: 'Reports', 
-      icon: (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-      ),
-      href: '/admin/reports'
-    },
-    { 
-      id: 'assessments', 
-      label: 'Assessments', 
-      icon: (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
-      ),
-      href: '/admin/assign-assessments'
-    },
-    { 
-      id: 'question-bank', 
-      label: 'Question Bank', 
-      icon: (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="6" rx="2"/><rect x="3" y="11" width="18" height="6" rx="2"/><line x1="7" y1="17" x2="7" y2="21"/><line x1="17" y1="17" x2="17" y2="21"/></svg>
-      ),
-      href: '/admin/question-bank'
-    },
-    { 
-      id: 'assessment-builder', 
-      label: 'Assessment Builder', 
-      icon: (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-      ),
-      href: '/admin/assessments'
-    },
-    { 
-      id: 'templates', 
-      label: 'Templates', 
-      icon: (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
-      ),
-      href: '/admin/templates'
-    },
-    { 
-      id: 'roles', 
-      label: 'Roles', 
-      icon: (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-      ),
-      href: '/admin/roles'
-    },
-    { 
-      id: 'settings', 
-      label: 'Settings', 
-      icon: (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v2"/><path d="M12 21v2"/><path d="M4.22 4.22l1.42 1.42"/><path d="M18.36 18.36l1.42 1.42"/><path d="M1 12h2"/><path d="M21 12h2"/><path d="M4.22 19.78l1.42-1.42"/><path d="M18.36 5.64l1.42-1.42"/></svg>
-      ),
-      href: '/admin/system-settings'
-    },
-  ];
-
-  const handleNavigation = (item) => {
-    setActivePage(item.id);
-    if (window.innerWidth < 768) toggleSidebar();
-    router.push(item.href);
-  };
-
-  return (
-    <div style={{
-      ...stylesSidebar.sidebar,
-      transform: isOpen ? 'translateX(0)' : 'translateX(-100%)',
-    }}>
-      <div style={stylesSidebar.logoArea}>
-        <div style={stylesSidebar.logoIcon}>S</div>
-        <span style={stylesSidebar.logoText}>Stratavax</span>
-      </div>
-
-      <nav style={stylesSidebar.nav}>
-        {menuItems.map((item) => (
-          <button
-            key={item.id}
-            onClick={() => handleNavigation(item)}
-            style={{
-              ...stylesSidebar.navItem,
-              backgroundColor: activePage === item.id ? COLORS.sidebarHover : 'transparent',
-              borderLeft: activePage === item.id ? `3px solid ${COLORS.accent}` : '3px solid transparent',
-            }}
-          >
-            <span style={stylesSidebar.navIcon}>{item.icon}</span>
-            <span style={stylesSidebar.navLabel}>{item.label}</span>
-          </button>
-        ))}
-      </nav>
-
-      <div style={stylesSidebar.bottomNav}>
-        <button onClick={handleLogout} style={stylesSidebar.navItem}>
-          <span style={stylesSidebar.navIcon}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-          </span>
-          <span style={stylesSidebar.navLabel}>Logout</span>
-        </button>
-      </div>
-    </div>
-  );
-}
-
-const stylesSidebar = {
-  sidebar: {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    width: '250px',
-    height: '100vh',
-    background: COLORS.sidebarBg,
-    color: 'white',
-    zIndex: 1000,
-    transition: 'transform 0.3s ease',
-    display: 'flex',
-    flexDirection: 'column',
-    overflowY: 'auto',
-  },
-  logoArea: {
-    padding: '20px 20px 10px 20px',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    borderBottom: '1px solid rgba(255,255,255,0.1)',
-  },
-  logoIcon: {
-    width: '36px',
-    height: '36px',
-    background: COLORS.accent,
-    borderRadius: '8px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontSize: '18px',
-    fontWeight: 700,
-  },
-  logoText: {
-    fontSize: '18px',
-    fontWeight: 700,
-    letterSpacing: '-0.5px',
-  },
-  nav: {
-    flex: 1,
-    padding: '16px 12px',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '4px',
-    overflowY: 'auto',
-  },
-  navItem: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '14px',
-    padding: '10px 16px',
-    borderRadius: '8px',
-    border: 'none',
-    background: 'transparent',
-    color: 'rgba(255,255,255,0.7)',
-    cursor: 'pointer',
-    fontSize: '14px',
-    fontWeight: 500,
-    width: '100%',
-    transition: 'all 0.2s',
-    '&:hover': {
-      background: COLORS.sidebarHover,
-      color: 'white',
-    },
-  },
-  navIcon: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: '20px',
-    flexShrink: 0,
-  },
-  navLabel: {
-    flex: 1,
-    textAlign: 'left',
-  },
-  bottomNav: {
-    padding: '12px',
-    borderTop: '1px solid rgba(255,255,255,0.1)',
-  },
-};
-
-// ============================================================
 // MAIN COMPONENT
 // ============================================================
 export default function AdminDashboard() {
@@ -645,7 +439,6 @@ export default function AdminDashboard() {
   const [lastUpdated, setLastUpdated] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [activePage, setActivePage] = useState('dashboard');
   
   const [selectedUniversityOption, setSelectedUniversityOption] = useState(null);
   const [selectedProgramOptions, setSelectedProgramOptions] = useState([]);
@@ -1024,13 +817,12 @@ export default function AdminDashboard() {
 
   return (
     <div style={stylesModern.appContainer}>
-      {/* Sidebar */}
-      <Sidebar
+      {/* Sidebar — shared component */}
+      <AdminSidebar
         isOpen={sidebarOpen}
         toggleSidebar={toggleSidebar}
-        activePage={activePage}
-        setActivePage={setActivePage}
         handleLogout={handleLogout}
+        userRole="admin"
       />
 
       {/* Main Content */}
