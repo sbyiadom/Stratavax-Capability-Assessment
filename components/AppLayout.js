@@ -1,11 +1,12 @@
-// components/AppLayout.js - FULLY CORRECTED WITH RESET PASSWORD
-// ADDED: Reset Password button under Candidates section
-// ADDED: Assessments section with Question Bank link (Phase 3)
+// components/AppLayout.js
+// Admin sidebar is now the shared AdminSidebar component (flat list, URL-driven active state).
+// Supervisor keeps its own sectioned sidebar (different menu structure).
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import { supabase } from "../supabase/client";
+import AdminSidebar from "./AdminSidebar";
 
 // ============================================================
 // SIDEBAR ICONS
@@ -129,158 +130,57 @@ function isActiveRoute(pathname, href) {
   return pathname === href || pathname.startsWith(href + "/");
 }
 
-function getMenuSections(role) {
-  if (role === 'admin') {
-    return [
-      {
-        id: 'dashboard',
-        label: 'Dashboard',
-        icon: Icons.Dashboard(),
-        href: '/admin',
-        isMain: true,
-      },
-      {
-        id: 'supervisors',
-        label: 'Supervisors',
-        icon: Icons.Users(),
-        isSection: true,
-        children: [
-          { id: 'add-supervisor', label: 'Add Supervisor', icon: Icons.UserPlus(), href: '/admin/add-supervisor' },
-          { id: 'manage-supervisors', label: 'Manage Supervisors', icon: Icons.UserCheck(), href: '/admin/manage-supervisors' },
-          { id: 'assign-supervisors', label: 'Assign Supervisors', icon: Icons.UserX(), href: '/admin/assign-candidates' },
-        ]
-      },
-      {
-        id: 'candidates',
-        label: 'Candidates',
-        icon: Icons.Users(),
-        isSection: true,
-        children: [
-          { id: 'manage-candidates', label: 'Manage Candidates', icon: Icons.UserCheck(), href: '/admin/manage-candidates' },
-          { id: 'assign-assessments', label: 'Assign Assessments', icon: Icons.CheckSquare(), href: '/admin/assign-assessments' },
-          { id: 'batch-manage', label: 'Batch Manage', icon: Icons.Layers(), href: '/admin/batch-manage' },
-          { id: 'reset-password', label: 'Reset Password', icon: Icons.Key(), href: '/admin/reset-password' },
-        ]
-      },
-      {
-        id: 'assessments',
-        label: 'Assessments',
-        icon: Icons.QuestionBank(),
-        isSection: true,
-        children: [
-          { id: 'question-bank', label: 'Question Bank', icon: Icons.QuestionBank(), href: '/admin/question-bank' },
-        ]
-      },
-      {
-        id: 'reports',
-        label: 'Reports',
-        icon: Icons.FileText(),
-        isSection: true,
-        children: [
-          { id: 'assessment-reports', label: 'Assessment Reports', icon: Icons.FileText(), href: '/admin/reports' },
-          { id: 'export-dashboard', label: '📊 Export Dashboard', icon: Icons.Export(), href: '/admin/export-dashboard' },
-        ]
-      },
-      {
-        id: 'system',
-        label: 'System',
-        icon: Icons.Settings(),
-        isSection: true,
-        children: [
-          { id: 'audit-logs', label: 'Audit Logs', icon: Icons.History(), href: '/admin/audit-logs' },
-          { id: 'system-settings', label: 'System Settings', icon: Icons.Settings(), href: '/admin/system-settings' },
-        ]
-      }
-    ];
-  }
-
-  if (role === 'supervisor') {
-    return [
-      {
-        id: 'dashboard',
-        label: 'Dashboard',
-        icon: Icons.Dashboard(),
-        href: '/supervisor',
-        isMain: true,
-      },
-      {
-        id: 'my-candidates',
-        label: 'My Candidates',
-        icon: Icons.Users(),
-        isSection: true,
-        children: [
-          { id: 'view-candidates', label: 'View Candidates', icon: Icons.UserCheck(), href: '/supervisor/manage-candidate' },
-          { id: 'add-candidate', label: 'Add Candidate', icon: Icons.UserPlus(), href: '/supervisor/add-candidate' },
-          { id: 'assign-assessment', label: 'Assign Assessment', icon: Icons.CheckSquare(), href: '/supervisor/assign-assessment' },
-          { id: 'batch-manage', label: 'Batch Manage', icon: Icons.Layers(), href: '/supervisor/batch-manage' },
-          { id: 'reset-password', label: 'Reset Password', icon: Icons.Key(), href: '/supervisor/reset-password' },
-        ]
-      },
-      {
-        id: 'reports',
-        label: 'Reports',
-        icon: Icons.FileText(),
-        isSection: true,
-        children: [
-          { id: 'national-service', label: 'National Service Reports', icon: Icons.FileText(), href: '/supervisor/reports?tab=national' },
-          { id: 'other-assessments', label: 'Other Assessment Reports', icon: Icons.Reports(), href: '/supervisor/reports?tab=other' },
-          { id: 'export-dashboard', label: '📊 Export Dashboard', icon: Icons.Export(), href: '/supervisor/export-dashboard' },
-        ]
-      },
-    ];
-  }
-
-  if (role === 'candidate') {
-    return [
-      {
-        id: 'dashboard',
-        label: 'Dashboard',
-        icon: Icons.Dashboard(),
-        href: '/candidate/dashboard',
-        isMain: true,
-      },
-      {
-        id: 'assessments',
-        label: 'My Assessments',
-        icon: Icons.Assessment(),
-        href: '/candidate/assessments',
-        isMain: true,
-      },
-      {
-        id: 'profile',
-        label: 'Profile',
-        icon: Icons.Users(),
-        href: '/candidate/profile',
-        isMain: true,
-      },
-      {
-        id: 'results',
-        label: 'My Results',
-        icon: Icons.FileText(),
-        href: '/candidate/results',
-        isMain: true,
-      },
-    ];
-  }
-
-  return [];
+// ============================================================
+// SUPERVISOR SIDEBAR MENU (kept as-is)
+// ============================================================
+function getSupervisorMenuSections() {
+  return [
+    {
+      id: 'dashboard',
+      label: 'Dashboard',
+      icon: Icons.Dashboard(),
+      href: '/supervisor',
+      isMain: true,
+    },
+    {
+      id: 'my-candidates',
+      label: 'My Candidates',
+      icon: Icons.Users(),
+      isSection: true,
+      children: [
+        { id: 'view-candidates', label: 'View Candidates', icon: Icons.UserCheck(), href: '/supervisor/manage-candidate' },
+        { id: 'add-candidate', label: 'Add Candidate', icon: Icons.UserPlus(), href: '/supervisor/add-candidate' },
+        { id: 'assign-assessment', label: 'Assign Assessment', icon: Icons.CheckSquare(), href: '/supervisor/assign-assessment' },
+        { id: 'batch-manage', label: 'Batch Manage', icon: Icons.Layers(), href: '/supervisor/batch-manage' },
+        { id: 'reset-password', label: 'Reset Password', icon: Icons.Key(), href: '/supervisor/reset-password' },
+      ]
+    },
+    {
+      id: 'reports',
+      label: 'Reports',
+      icon: Icons.FileText(),
+      isSection: true,
+      children: [
+        { id: 'national-service', label: 'National Service Reports', icon: Icons.FileText(), href: '/supervisor/reports?tab=national' },
+        { id: 'other-assessments', label: 'Other Assessment Reports', icon: Icons.Reports(), href: '/supervisor/reports?tab=other' },
+        { id: 'export-dashboard', label: '📊 Export Dashboard', icon: Icons.Export(), href: '/supervisor/export-dashboard' },
+      ]
+    },
+  ];
 }
 
-function Sidebar({ isOpen, toggleSidebar, currentPath, handleLogout, userRole }) {
+// ============================================================
+// SUPERVISOR SIDEBAR (kept as-is; only rendered for role 'supervisor')
+// ============================================================
+function SupervisorSidebar({ isOpen, toggleSidebar, currentPath, handleLogout, userRole }) {
   const [isMobile, setIsMobile] = useState(false);
   const [expandedSections, setExpandedSections] = useState({
-    supervisors: true,
-    candidates: true,
-    assessments: true,
-    reports: true,
-    system: true,
     'my-candidates': true,
+    reports: true,
   });
 
   useEffect(() => {
-    const checkMobile = () => {
-      setIsMobile(window.innerWidth < 768);
-    };
+    const checkMobile = () => setIsMobile(window.innerWidth < 768);
     checkMobile();
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
@@ -289,32 +189,23 @@ function Sidebar({ isOpen, toggleSidebar, currentPath, handleLogout, userRole })
   useEffect(() => {
     try {
       const saved = localStorage.getItem('sidebar_expanded_sections');
-      if (saved) {
-        setExpandedSections(JSON.parse(saved));
-      }
+      if (saved) setExpandedSections(JSON.parse(saved));
     } catch (e) {}
   }, []);
 
   const toggleSection = (section) => {
-    const newState = {
-      ...expandedSections,
-      [section]: !expandedSections[section]
-    };
+    const newState = { ...expandedSections, [section]: !expandedSections[section] };
     setExpandedSections(newState);
-    try {
-      localStorage.setItem('sidebar_expanded_sections', JSON.stringify(newState));
-    } catch (e) {}
+    try { localStorage.setItem('sidebar_expanded_sections', JSON.stringify(newState)); } catch (e) {}
   };
 
-  const menuSections = getMenuSections(userRole);
+  const menuSections = getSupervisorMenuSections();
 
   const isActive = (href) => {
     if (!currentPath) return false;
     if (currentPath === href) return true;
     if (href !== '/supervisor' && currentPath.startsWith(href)) return true;
-    if (href === '/supervisor') {
-      return currentPath === '/supervisor';
-    }
+    if (href === '/supervisor') return currentPath === '/supervisor';
     if (href.includes('?tab=')) {
       const basePath = href.split('?')[0];
       if (currentPath === basePath) {
@@ -331,14 +222,6 @@ function Sidebar({ isOpen, toggleSidebar, currentPath, handleLogout, userRole })
     return section.children.some(child => {
       if (child.href === '/supervisor' && currentPath === '/supervisor') return true;
       if (child.href !== '/supervisor' && currentPath.startsWith(child.href)) return true;
-      if (child.href.includes('?tab=')) {
-        const basePath = child.href.split('?')[0];
-        if (currentPath === basePath) {
-          const currentTab = new URLSearchParams(window.location.search).get('tab');
-          const targetTab = child.href.split('=')[1];
-          if (currentTab === targetTab) return true;
-        }
-      }
       return isActive(child.href);
     });
   };
@@ -411,10 +294,7 @@ function Sidebar({ isOpen, toggleSidebar, currentPath, handleLogout, userRole })
                   {isExpanded && (
                     <div style={stylesSidebar.subNav}>
                       {item.children.map((child) => {
-                        const childActive = isActive(child.href) || 
-                          (child.href === '/supervisor' && currentPath === '/supervisor') ||
-                          (currentPath.startsWith(child.href) && child.href !== '/supervisor');
-                        
+                        const childActive = isActive(child.href);
                         return (
                           <Link href={child.href} key={child.id} legacyBehavior>
                             <a
@@ -698,9 +578,7 @@ export default function AppLayout({ children, background, showNavigation = true 
 
     if (!showNavigation) {
       setLoading(false);
-      return () => {
-        mounted = false;
-      };
+      return () => { mounted = false; };
     }
 
     resolveRole();
@@ -726,11 +604,8 @@ export default function AppLayout({ children, background, showNavigation = true 
 
   useEffect(() => {
     const handleResize = () => {
-      if (window.innerWidth >= 768) {
-        setSidebarOpen(true);
-      } else {
-        setSidebarOpen(false);
-      }
+      if (window.innerWidth >= 768) setSidebarOpen(true);
+      else setSidebarOpen(false);
     };
     window.addEventListener('resize', handleResize);
     handleResize();
@@ -775,9 +650,7 @@ export default function AppLayout({ children, background, showNavigation = true 
     return [];
   }
 
-  const toggleSidebar = () => {
-    setSidebarOpen(!sidebarOpen);
-  };
+  const toggleSidebar = () => setSidebarOpen(!sidebarOpen);
 
   const wrapperStyle = {
     minHeight: "100vh",
@@ -812,10 +685,24 @@ export default function AppLayout({ children, background, showNavigation = true 
   const homeHref = getDashboardHref(userRole);
   const showSidebar = userRole === "admin" || userRole === "supervisor";
 
+  // Sidebar width differs by role: admin uses the shared 250px one, supervisor keeps 280px
+  const sidebarWidth = userRole === "admin" ? 250 : 280;
+
   return (
     <div style={wrapperStyle}>
-      {showSidebar && (
-        <Sidebar
+      {/* ADMIN — shared AdminSidebar (flat menu, URL-driven active state) */}
+      {userRole === "admin" && (
+        <AdminSidebar
+          isOpen={sidebarOpen}
+          toggleSidebar={toggleSidebar}
+          handleLogout={handleLogout}
+          userRole={userRole}
+        />
+      )}
+
+      {/* SUPERVISOR — its own sectioned sidebar (unchanged) */}
+      {userRole === "supervisor" && (
+        <SupervisorSidebar
           isOpen={sidebarOpen}
           toggleSidebar={toggleSidebar}
           currentPath={router.pathname}
@@ -826,7 +713,7 @@ export default function AppLayout({ children, background, showNavigation = true 
 
       <div style={{
         ...styles.mainContent,
-        marginLeft: showSidebar ? (sidebarOpen ? '280px' : '0') : '0',
+        marginLeft: showSidebar ? (sidebarOpen ? `${sidebarWidth}px` : '0') : '0',
       }}>
         <header style={styles.navBar}>
           <div style={styles.navContainer}>
