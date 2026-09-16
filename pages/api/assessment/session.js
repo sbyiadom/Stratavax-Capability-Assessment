@@ -10,6 +10,10 @@
 // - Phase Two: computes the session duration from the frozen question
 //   count (>=100 → 120 min, >=80 → 90 min, <80 → 60 min) and returns
 //   it to the client as session.duration_minutes. No new DB column.
+// - Phase Three / Item 6: enforces scheduling windows.
+//   Priority: per-candidate (candidate_assessments.scheduled_start/end
+//   when is_scheduled = true) → falls back to per-assessment
+//   (assessments.starts_at/expires_at).
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -33,6 +37,28 @@ function shuffleArray(array) {
     shuffled[j] = tmp;
   }
   return shuffled;
+}
+
+// ============================================================
+// Phase Three / Item 6: resolve the effective scheduling window.
+// Per-candidate window (when is_scheduled = true) wins.
+// Falls back to per-assessment starts_at / expires_at.
+// Returns { start: Date|null, end: Date|null, source: string }
+// ============================================================
+function resolveWindow(candidateAssessment, assessment) {
+  if (candidateAssessment?.is_scheduled) {
+    const start = candidateAssessment.scheduled_start
+      ? new Date(candidateAssessment.scheduled_start)
+      : null;
+    const end = candidateAssessment.scheduled_end
+      ? new Date(candidateAssessment.scheduled_end)
+      : null;
+    return { start, end, source: 'candidate' };
+  }
+
+  const start = assessment?.starts_at ? new Date(assessment.starts_at) : null;
+  const end = assessment?.expires_at ? new Date(assessment.expires_at) : null;
+  return { start, end, source: 'assessment' };
 }
 
 export default async function handler(req, res) {
@@ -117,12 +143,12 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 3: Get assessment
+    // STEP 3: Get assessment (needed for window fallback + type resolution)
     // ============================================================
     console.log(`[Session] Looking up assessment: ${assessmentId}`);
     const { data: assessment, error: assessmentError } = await serviceClient
       .from('assessments')
-      .select('id, title, assessment_type_id')
+      .select('id, title, assessment_type_id, starts_at, expires_at, is_active')
       .eq('id', assessmentId)
       .maybeSingle();
 
@@ -144,6 +170,43 @@ export default async function handler(req, res) {
     }
 
     console.log(`[Session] Assessment found: ${assessment.id} - ${assessment.title}`);
+
+    // ============================================================
+    // STEP 3.5: Enforce scheduling window
+    // Per-candidate window takes priority; falls back to per-assessment.
+    // ============================================================
+    const window = resolveWindow(candidateAssessment, assessment);
+    const now = new Date();
+
+    if (window.start && now < window.start) {
+      const when = window.start.toISOString();
+      console.log(`[Session] Rejecting: before window (source=${window.source}, start=${when})`);
+      return res.status(403).json({
+        success: false,
+        error: `This assessment is not yet available. It opens on ${when}.`,
+        diagnosticCode: 'BEFORE_WINDOW',
+        window: {
+          source: window.source,
+          starts_at: window.start.toISOString(),
+          expires_at: window.end ? window.end.toISOString() : null
+        }
+      });
+    }
+
+    if (window.end && now > window.end) {
+      const when = window.end.toISOString();
+      console.log(`[Session] Rejecting: after window (source=${window.source}, end=${when})`);
+      return res.status(403).json({
+        success: false,
+        error: `This assessment window has closed (${when}). Please contact your supervisor.`,
+        diagnosticCode: 'AFTER_WINDOW',
+        window: {
+          source: window.source,
+          starts_at: window.start ? window.start.toISOString() : null,
+          expires_at: window.end.toISOString()
+        }
+      });
+    }
 
     // ============================================================
     // STEP 4: Resolve assessment type
@@ -182,9 +245,6 @@ export default async function handler(req, res) {
     if (existingSession) {
       console.log('[Session] Reusing existing session:', existingSession.id);
 
-      // Compute duration_minutes for the reused session so the client
-      // always receives a consistent value (whether the session is new
-      // or reused).
       const reusedDurationMinutes = computeDurationMinutes(existingSession.total_questions);
 
       return res.status(200).json({
@@ -356,4 +416,3 @@ export default async function handler(req, res) {
     });
   }
 }
-
