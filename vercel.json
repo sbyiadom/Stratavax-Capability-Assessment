@@ -9,6 +9,14 @@
     {
       "path": "/api/cron/block-expired-assessments",
       "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/api/cron/activate-scheduled",
+      "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/cron/send-reminders",
+      "schedule": "0 8 * * *"
     }
   ]
 }
