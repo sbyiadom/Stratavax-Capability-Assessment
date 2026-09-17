@@ -1,18 +1,26 @@
 // pages/admin/bulk-assign.js
 // Phase 3 item 7: bulk candidate <-> assessment assignment.
+// Phase 3 item 8: fires confirmation email after a successful write.
 //
 // Two modes:
 //   byAssessment  — pick many assessments, pick many candidates   (A)
 //   byCandidate   — pick one candidate, pick many assessments     (B)
 //
 // Calls POST /api/admin/assessments/bulk-assign.
-// Leaves pages/admin/assign-assessments.js untouched.
+// Then, per candidate × assessment pair that landed in 'scheduled' or
+// 'unblocked', calls utils/emailService to send the candidate a confirmation.
+// Email delivery is gated by NEXT_PUBLIC_EMAIL_DELIVERY_ENABLED — until
+// Phase 8, emails are logged but not delivered.
 
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import AppLayout from "../../components/AppLayout";
 import { supabase } from "../../supabase/client";
+import {
+  sendScheduleNotification,
+  sendAssignmentNotification
+} from "../../utils/emailService";
 
 function safeArray(value) {
   return Array.isArray(value) ? value : [];
@@ -40,15 +48,6 @@ function localToIso(local) {
   return d.toISOString();
 }
 
-function statusLabel(status) {
-  if (status === "scheduled") return { text: "Scheduled", bg: "#e0f2fe", color: "#075985" };
-  if (status === "unblocked") return { text: "Unblocked / Ready", bg: "#e8f5e9", color: "#2e7d32" };
-  if (status === "blocked") return { text: "Blocked", bg: "#fff3e0", color: "#f57c00" };
-  if (status === "completed") return { text: "Completed", bg: "#e0f2fe", color: "#0369a1" };
-  if (status === "in_progress") return { text: "In Progress", bg: "#fef9c3", color: "#854d0e" };
-  return { text: "Not Assigned", bg: "#f5f5f5", color: "#667085" };
-}
-
 export default function BulkAssign() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -60,19 +59,14 @@ export default function BulkAssign() {
   const [assessments, setAssessments] = useState([]);
   const [supervisors, setSupervisors] = useState([]);
 
-  // Direction
-  const [mode, setMode] = useState("byAssessment"); // 'byAssessment' | 'byCandidate'
-
-  // Selections
+  const [mode, setMode] = useState("byAssessment");
   const [selectedAssessments, setSelectedAssessments] = useState([]);
   const [selectedCandidates, setSelectedCandidates] = useState([]);
   const [singleCandidateId, setSingleCandidateId] = useState("");
 
-  // Filters
   const [searchTerm, setSearchTerm] = useState("");
   const [filterSupervisor, setFilterSupervisor] = useState("all");
 
-  // Action + schedule
   const [selectedAction, setSelectedAction] = useState("assign");
   const [scheduleStart, setScheduleStart] = useState("");
   const [scheduleEnd, setScheduleEnd] = useState("");
@@ -81,13 +75,12 @@ export default function BulkAssign() {
   const [message, setMessage] = useState({ type: "", text: "" });
   const [failures, setFailures] = useState([]);
   const [skipped, setSkipped] = useState([]);
+  const [emailIssues, setEmailIssues] = useState([]);
 
   useEffect(() => {
     checkAdminAuth();
   }, []);
 
-  // When the mode flips, clear selections that no longer make sense so we
-  // don't silently carry a 40-candidate selection into a single-candidate mode.
   useEffect(() => {
     setSelectedCandidates([]);
     setSingleCandidateId("");
@@ -95,9 +88,9 @@ export default function BulkAssign() {
     setMessage({ type: "", text: "" });
     setFailures([]);
     setSkipped([]);
+    setEmailIssues([]);
   }, [mode]);
 
-  // Clear schedule fields when action becomes block
   useEffect(() => {
     if (selectedAction === "block") {
       setScheduleStart("");
@@ -240,9 +233,6 @@ export default function BulkAssign() {
     }
   }
 
-  // Validate schedule inputs. Returns:
-  //   { ok: true, schedule: undefined | { start, end } }
-  //   { ok: false, error: '...' }
   function buildSchedulePayload() {
     if (selectedAction === "block") {
       return { ok: true, schedule: undefined };
@@ -280,6 +270,73 @@ export default function BulkAssign() {
     return null;
   }
 
+  // Fire confirmation emails for every (candidate × assessment) pair that
+  // successfully landed in 'scheduled' or 'unblocked'. Best-effort: an email
+  // failure never rolls back the DB write.
+  async function sendConfirmations({ pairs, action, schedule }) {
+    const candidateMap = new Map(candidates.map((c) => [c.id, c]));
+    const assessmentMap = new Map(assessments.map((a) => [a.id, a]));
+    const issues = [];
+    let sent = 0;
+    let failed = 0;
+    let dryRun = 0;
+
+    for (const pair of pairs) {
+      const candidate = candidateMap.get(pair.candidateId);
+      const assessment = assessmentMap.get(pair.assessmentId);
+      if (!candidate?.email || !assessment?.title) {
+        issues.push({
+          candidateId: pair.candidateId,
+          assessmentId: pair.assessmentId,
+          error: "Missing candidate email or assessment title"
+        });
+        failed += 1;
+        continue;
+      }
+
+      try {
+        let result;
+        if (schedule && schedule.start && schedule.end) {
+          result = await sendScheduleNotification({
+            candidateEmail: candidate.email,
+            candidateName: candidate.full_name,
+            assessmentTitle: assessment.title,
+            scheduledStart: schedule.start,
+            scheduledEnd: schedule.end,
+            supervisorName: candidate.supervisor?.full_name || null
+          });
+        } else {
+          result = await sendAssignmentNotification({
+            candidateEmail: candidate.email,
+            candidateName: candidate.full_name,
+            assessmentTitle: assessment.title,
+            supervisorName: candidate.supervisor?.full_name || null
+          });
+        }
+
+        if (result?.success && result?.dryRun) dryRun += 1;
+        else if (result?.success) sent += 1;
+        else {
+          failed += 1;
+          issues.push({
+            candidateId: pair.candidateId,
+            assessmentId: pair.assessmentId,
+            error: result?.error || "Unknown email error"
+          });
+        }
+      } catch (err) {
+        failed += 1;
+        issues.push({
+          candidateId: pair.candidateId,
+          assessmentId: pair.assessmentId,
+          error: err?.message || "Unknown email error"
+        });
+      }
+    }
+
+    return { sent, failed, dryRun, issues };
+  }
+
   async function handleSubmit() {
     const validationError = validateSelections();
     if (validationError) {
@@ -300,6 +357,7 @@ export default function BulkAssign() {
       setMessage({ type: "", text: "" });
       setFailures([]);
       setSkipped([]);
+      setEmailIssues([]);
 
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData?.session?.access_token;
@@ -327,14 +385,52 @@ export default function BulkAssign() {
       }
 
       const wrote = data.written ?? 0;
-      const skippedCount = safeArray(data.skipped).length;
-      const failedCount = safeArray(data.failed).length;
+      const skippedRows = safeArray(data.skipped);
+      const failedRows = safeArray(data.failed);
+
+      // Fire confirmation emails only for statuses that mean "candidate has access".
+      // block produces no email; scheduled + unblocked do.
+      let emailSummary = null;
+      const targetStatus = data.targetStatus;
+      const shouldEmail = targetStatus === "scheduled" || targetStatus === "unblocked";
+
+      if (shouldEmail && wrote > 0) {
+        // Rebuild the pairs the API actually wrote (skip protected rows).
+        const skippedSet = new Set(
+          skippedRows.map((s) => `${s.candidateId}::${s.assessmentId}`)
+        );
+        const allPairs = [];
+        for (const candidateId of candidateIds) {
+          for (const assessmentId of selectedAssessments) {
+            const key = `${candidateId}::${assessmentId}`;
+            if (!skippedSet.has(key)) allPairs.push({ candidateId, assessmentId });
+          }
+        }
+
+        emailSummary = await sendConfirmations({
+          pairs: allPairs,
+          action: selectedAction,
+          schedule: scheduleResult.schedule
+        });
+      }
+
+      const skippedCount = skippedRows.length;
+      const failedCount = failedRows.length;
 
       if (failedCount === 0) {
-        setMessage({
-          type: "success",
-          text: `Wrote ${wrote} assignment(s). Skipped ${skippedCount} protected row(s).`
-        });
+        let msg = `Wrote ${wrote} assignment(s). Skipped ${skippedCount} protected row(s).`;
+        if (emailSummary) {
+          if (emailSummary.dryRun > 0) {
+            msg += ` Confirmation emails queued (dry-run): ${emailSummary.dryRun}.`;
+          }
+          if (emailSummary.sent > 0) {
+            msg += ` Confirmation emails sent: ${emailSummary.sent}.`;
+          }
+          if (emailSummary.failed > 0) {
+            msg += ` Email failures: ${emailSummary.failed}.`;
+          }
+        }
+        setMessage({ type: "success", text: msg });
       } else {
         setMessage({
           type: "error",
@@ -342,10 +438,10 @@ export default function BulkAssign() {
         });
       }
 
-      setSkipped(safeArray(data.skipped));
-      setFailures(safeArray(data.failed));
+      setSkipped(skippedRows);
+      setFailures(failedRows);
+      setEmailIssues(emailSummary?.issues || []);
 
-      // Clear selections that succeeded to keep the UI tidy, but keep mode/filters.
       setSelectedCandidates([]);
       setSingleCandidateId("");
     } catch (error) {
@@ -425,7 +521,7 @@ export default function BulkAssign() {
           <h1 style={styles.title}>Bulk Assign Assessments</h1>
           <p style={styles.subtitle}>
             Assign assessments to candidates in either direction. Completed and in-progress
-            attempts are never overwritten.
+            attempts are never overwritten. Confirmation emails are queued after a successful write.
           </p>
         </div>
 
@@ -442,7 +538,6 @@ export default function BulkAssign() {
           </div>
         )}
 
-        {/* Mode toggle */}
         <div style={styles.section}>
           <h3 style={styles.sectionTitle}>Direction</h3>
           <div style={styles.modeGrid}>
@@ -461,7 +556,6 @@ export default function BulkAssign() {
           </div>
         </div>
 
-        {/* Assessments */}
         <div style={styles.section}>
           <h3 style={styles.sectionTitle}>
             1. Select Assessment{selectedAssessments.length !== 1 ? "s" : ""}
@@ -518,7 +612,6 @@ export default function BulkAssign() {
           )}
         </div>
 
-        {/* Candidate selection - depends on mode */}
         <div style={styles.section}>
           {mode === "byAssessment" ? (
             <>
@@ -713,7 +806,6 @@ export default function BulkAssign() {
           )}
         </div>
 
-        {/* Action + schedule */}
         <div style={styles.section}>
           <h3 style={styles.sectionTitle}>3. Choose Action</h3>
           <div style={styles.actionGrid}>
@@ -746,8 +838,8 @@ export default function BulkAssign() {
                 <div>
                   <div style={styles.scheduleTitle}>Schedule window (optional)</div>
                   <div style={styles.scheduleHint}>
-                    Leave blank to make the assessment available immediately. Fill both fields to
-                    schedule it — candidates cannot start outside the window.
+                    Leave blank to make the assessment available immediately.
+                    Fill both fields to schedule it — candidates cannot start outside the window.
                   </div>
                 </div>
                 {hasAnyWindow && (
@@ -787,7 +879,6 @@ export default function BulkAssign() {
           )}
         </div>
 
-        {/* Summary + submit */}
         <div style={styles.section}>
           <div style={styles.summaryBar}>
             <div style={styles.selectionSummary}>
@@ -852,6 +943,25 @@ export default function BulkAssign() {
               {failures.length > 20 && (
                 <div style={styles.reportHint}>…and {failures.length - 20} more.</div>
               )}
+            </div>
+          )}
+
+          {emailIssues.length > 0 && (
+            <div style={{ ...styles.reportBlock, borderColor: "#fde68a", background: "#fffbeb" }}>
+              <div style={{ ...styles.reportTitle, color: "#92400e" }}>
+                Email issues ({emailIssues.length})
+              </div>
+              <div style={styles.reportHint}>
+                Assignments succeeded; these confirmation emails could not be queued.
+              </div>
+              <ul style={styles.reportList}>
+                {emailIssues.slice(0, 20).map((row, i) => (
+                  <li key={i} style={{ ...styles.reportItem, color: "#92400e" }}>
+                    <code>{String(row.candidateId).substring(0, 8)}</code> ×{" "}
+                    <code>{String(row.assessmentId).substring(0, 8)}</code> — {row.error}
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
         </div>
