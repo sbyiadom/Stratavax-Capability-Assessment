@@ -1,4 +1,18 @@
 // pages/api/admin/reprocess-competencies.js
+//
+// Phase 5 — one-shot backfill: recompute competency scores for every
+// existing assessment_results row and write them to candidate_competency_scores.
+//
+// FIX (this revision):
+// The responses select used to ask for unique_questions.category,
+// unique_questions.competency, and unique_questions.dimension. Those columns
+// do not exist on unique_questions, so PostgREST rejected the entire query
+// and every assessment failed with "Failed to fetch responses".
+//
+// The fallback category logic in utils/competencyScoring.js already handles
+// missing competency/category/dimension by falling through to section and
+// subsection, which DO exist. So the fix is just to stop asking for the
+// missing columns.
 
 import { calculateCompetencyScores } from '../../../utils/competencyScoring';
 
@@ -8,7 +22,6 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Get the user's session from the authorization header
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return res.status(401).json({ error: 'Unauthorized' });
@@ -16,16 +29,13 @@ export default async function handler(req, res) {
 
     const token = authHeader.replace('Bearer ', '').trim();
 
-    // Create a client with the user's token (respects RLS policies)
     const { createClient } = require('@supabase/supabase-js');
     const userClient = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
       {
         global: {
-          headers: {
-            Authorization: `Bearer ${token}`
-          }
+          headers: { Authorization: `Bearer ${token}` }
         }
       }
     );
@@ -94,7 +104,12 @@ export default async function handler(req, res) {
       try {
         console.log(`🔄 Processing result ${result.id}...`);
 
-        // Get responses for this assessment with full question + answers context.
+        // NOTE: unique_questions only has these columns:
+        //   id, assessment_type_id, section, subsection, question_text,
+        //   display_order, created_at, updated_at
+        //
+        // Previously this select also asked for category, competency, and
+        // dimension — those do not exist and caused every fetch to fail.
         const { data: responses, error: responsesError } = await userClient
           .from('responses')
           .select(`
@@ -107,9 +122,6 @@ export default async function handler(req, res) {
               id,
               section,
               subsection,
-              category,
-              competency,
-              dimension,
               question_text,
               unique_answers (
                 id,
@@ -131,7 +143,10 @@ export default async function handler(req, res) {
         if (responsesError) {
           console.error(`Error fetching responses for ${result.id}:`, responsesError);
           failedCount += 1;
-          failedDetails.push({ id: result.id, error: 'Failed to fetch responses' });
+          failedDetails.push({
+            id: result.id,
+            error: responsesError.message || 'Failed to fetch responses'
+          });
           continue;
         }
 
@@ -144,7 +159,7 @@ export default async function handler(req, res) {
 
         const assessmentType = typeMap[result.assessment_type_id] || 'general';
 
-        // Calculate competency scores using corrected scoring engine.
+        // Calculate competency scores
         const competencyResults = calculateCompetencyScores(
           responses,
           questionCompetencies,
@@ -167,12 +182,10 @@ export default async function handler(req, res) {
           max_possible: comp.maxPossible,
           percentage: comp.percentage,
           classification: comp.classification,
-          question_count: comp.questionCount,
-          updated_at: new Date().toISOString()
+          question_count: comp.questionCount
         }));
 
         if (competencyInserts.length > 0) {
-          // Delete existing scores for this candidate/assessment first
           const { error: deleteError } = await userClient
             .from('candidate_competency_scores')
             .delete()
@@ -186,7 +199,6 @@ export default async function handler(req, res) {
             continue;
           }
 
-          // Insert new scores
           const { error: insertError } = await userClient
             .from('candidate_competency_scores')
             .insert(competencyInserts);
@@ -199,7 +211,7 @@ export default async function handler(req, res) {
           }
 
           successCount += 1;
-          console.log(`✅ Reprocessed result ${result.id} (${successCount}/${results.length})`);
+          console.log(`✅ Reprocessed result ${result.id} (${successCount} ok / ${failedCount} failed / ${results.length} total)`);
         } else {
           console.log(`⚠️ No competency inserts for result ${result.id}`);
           failedCount += 1;
