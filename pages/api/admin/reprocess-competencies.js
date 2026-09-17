@@ -3,16 +3,11 @@
 // Phase 5 — one-shot backfill: recompute competency scores for every
 // existing assessment_results row and write them to candidate_competency_scores.
 //
-// FIX (this revision):
-// The responses select used to ask for unique_questions.category,
-// unique_questions.competency, and unique_questions.dimension. Those columns
-// do not exist on unique_questions, so PostgREST rejected the entire query
-// and every assessment failed with "Failed to fetch responses".
-//
-// The fallback category logic in utils/competencyScoring.js already handles
-// missing competency/category/dimension by falling through to section and
-// subsection, which DO exist. So the fix is just to stop asking for the
-// missing columns.
+// Prior fixes:
+//   1. unique_questions.category / competency / dimension do not exist.
+//   2. responses.score does not exist — responses store answer_id only.
+//      The scoring engine looks up the score from the answer join, so we
+//      don't need responses.score at all.
 
 import { calculateCompetencyScores } from '../../../utils/competencyScoring';
 
@@ -104,19 +99,20 @@ export default async function handler(req, res) {
       try {
         console.log(`🔄 Processing result ${result.id}...`);
 
-        // NOTE: unique_questions only has these columns:
-        //   id, assessment_type_id, section, subsection, question_text,
-        //   display_order, created_at, updated_at
+        // NOTE: The responses table has these columns:
+        //   id, session_id, user_id, assessment_id, question_id, answer_id,
+        //   created_at, updated_at, time_spent_seconds, first_saved_at,
+        //   times_changed, initial_answer_id, metadata
         //
-        // Previously this select also asked for category, competency, and
-        // dimension — those do not exist and caused every fetch to fail.
+        // There is NO score column. The scoring engine resolves the score
+        // by looking up answer_id in unique_answers, which the nested
+        // select below provides.
         const { data: responses, error: responsesError } = await userClient
           .from('responses')
           .select(`
             id,
             question_id,
             answer_id,
-            score,
             session_id,
             unique_questions!inner (
               id,
@@ -159,7 +155,6 @@ export default async function handler(req, res) {
 
         const assessmentType = typeMap[result.assessment_type_id] || 'general';
 
-        // Calculate competency scores
         const competencyResults = calculateCompetencyScores(
           responses,
           questionCompetencies,
@@ -173,7 +168,6 @@ export default async function handler(req, res) {
           continue;
         }
 
-        // Save competency scores
         const competencyInserts = Object.values(competencyResults).map((comp) => ({
           candidate_id: result.user_id,
           assessment_id: result.assessment_id,
