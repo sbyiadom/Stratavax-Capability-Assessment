@@ -6,28 +6,28 @@
 // Five idempotent tracks, all in one run:
 //
 //   A. Pre-open          — status='scheduled', window opens within 24h
-//                          → "your assessment opens tomorrow"
-//   B. Window-open       — status='unblocked', scheduled_start passed
-//                          within the last 24h (auto flip OR manual late
-//                          unblock) → "your assessment is now available"
+//   B. Window-open       — status='unblocked', scheduled_start in last 24h
 //   C. Idle nudge        — status='unblocked', session_id IS NULL,
-//                          3–7 days since the candidate could start
-//                          → "still pending"
-//   D. Second nudge      — same, 7–14 days since start, windowed rows
-//                          ONLY → "firmer reminder"
-//   E. Post-window       — status='blocked', scheduled_end passed,
-//                          session_id IS NULL → "your window closed"
+//                          3–7 days since candidate could start
+//   D. Second nudge      — same, 7–14 days since start, WINDOWED rows only
+//   E. Post-window       — status='blocked', scheduled_end in last 7 days,
+//                          session_id IS NULL
 //
 // Idempotency columns on candidate_assessments:
 //   reminder_1_sent_at              (track C)
 //   reminder_2_sent_at              (track D)
-//   reminder_3_sent_at              (legacy — not used; retained for compat)
+//   reminder_3_sent_at              (legacy — retained for compat, unused)
 //   pre_open_reminder_sent_at       (track A)
 //   window_open_reminder_sent_at    (track B)
 //   window_closed_reminder_sent_at  (track E)
 //
-// The 3/7/14-day cadence now keys off max(scheduled_start, unblocked_at),
-// NOT scheduled_at. A candidate cannot be "idle" before they can start.
+// Delivery gating:
+//   EMAIL_DELIVERY_ENABLED = "true"  → actually sends via /api/send-email
+//   anything else (or unset)         → dry run; stamps rows, logs "would_send",
+//                                      does NOT call /api/send-email.
+//
+// When the Resend domain lands (Phase 8), flip EMAIL_DELIVERY_ENABLED to "true"
+// in Vercel. No code change required.
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -36,6 +36,13 @@ const SITE_URL =
   'https://stratavax-capability-assessment.vercel.app';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+// ============================================================
+// Delivery gate
+// ============================================================
+function deliveryEnabled() {
+  return process.env.EMAIL_DELIVERY_ENABLED === 'true';
+}
 
 // ============================================================
 // HTML / text templates
@@ -69,7 +76,7 @@ function shell({ heading, accent, bodyHtml, ctaLabel, ctaUrl }) {
       </div>
     </body>
     </html>
-  `.replace(/\$\{accent\}/g, accent);
+  `;
 }
 
 function assessmentBlock(title, accent) {
@@ -172,16 +179,19 @@ async function sendEmail({ to, subject, html, text }) {
 }
 
 // ============================================================
-// Track handler — one track = one DB query + one email per match
+// Track handler
 // ============================================================
 async function runTrack({ name, supabase, rows, stampColumn, emailParams, counters }) {
+  const dry = !deliveryEnabled();
+
   if (!rows || rows.length === 0) {
     console.log(`[Send Reminders] track=${name}: 0 matches`);
-    counters[name] = { sent: 0, failed: 0, skipped: 0 };
+    counters[name] = { sent: 0, pending: 0, failed: 0, skipped: 0 };
     return;
   }
 
   let sent = 0;
+  let pending = 0;
   let failed = 0;
   let skipped = 0;
 
@@ -197,7 +207,13 @@ async function runTrack({ name, supabase, rows, stampColumn, emailParams, counte
       const params = emailParams(row);
       const { subject, html, text } = buildEmail(name, params);
 
-      await sendEmail({ to: profile.email, subject, html, text });
+      if (dry) {
+        // Delivery disabled (Phase 8 pending). Log, stamp, count as pending.
+        console.log(`[Send Reminders] track=${name} id=${row.id} would_send to=${profile.email} subject="${subject}"`);
+      } else {
+        await sendEmail({ to: profile.email, subject, html, text });
+        await new Promise((r) => setTimeout(r, 200)); // rate-limit courtesy
+      }
 
       const { error: updErr } = await supabase
         .from('candidate_assessments')
@@ -213,16 +229,16 @@ async function runTrack({ name, supabase, rows, stampColumn, emailParams, counte
         continue;
       }
 
-      sent += 1;
-      await new Promise((r) => setTimeout(r, 200)); // rate-limit courtesy
+      if (dry) pending += 1;
+      else sent += 1;
     } catch (err) {
       console.error(`[Send Reminders] track=${name} send error id=${row.id}`, err);
       failed += 1;
     }
   }
 
-  counters[name] = { sent, failed, skipped };
-  console.log(`[Send Reminders] track=${name}: sent=${sent} failed=${failed} skipped=${skipped}`);
+  counters[name] = { sent, pending, failed, skipped };
+  console.log(`[Send Reminders] track=${name}: sent=${sent} pending=${pending} failed=${failed} skipped=${skipped}`);
 }
 
 // ============================================================
@@ -338,8 +354,8 @@ export default async function handler(req, res) {
 
     // --------------------------------------------------------
     // Track C — idle nudge, 3–7 days since candidate could start
-    // "could start" = max(scheduled_start, unblocked_at). Falls back
-    // to scheduled_at if both are null (legacy rows).
+    // base = max(scheduled_start, unblocked_at). Falls back to
+    // scheduled_at if both are null (legacy rows).
     // Windowed AND non-windowed rows are eligible.
     // --------------------------------------------------------
     {
@@ -411,8 +427,9 @@ export default async function handler(req, res) {
     }
 
     // --------------------------------------------------------
-    // Track E — post-window, still blocked, never started
-    // Fires once per row, immediately after scheduled_end passes.
+    // Track E — post-window, still blocked, never started,
+    // window closed within the last 7 days.
+    // Recency bound prevents historical backfill from firing.
     // --------------------------------------------------------
     {
       const { data, error } = await supabase
@@ -422,7 +439,8 @@ export default async function handler(req, res) {
         .is('session_id', null)
         .is('window_closed_reminder_sent_at', null)
         .not('scheduled_end', 'is', null)
-        .lte('scheduled_end', iso(now));
+        .lte('scheduled_end', iso(now))
+        .gte('scheduled_end', iso(now - 7 * DAY_MS));
 
       if (error) console.error('[Send Reminders] track=E query error', error);
 
@@ -441,6 +459,7 @@ export default async function handler(req, res) {
 
     return res.status(200).json({
       success: true,
+      delivery_enabled: deliveryEnabled(),
       ran_at: new Date().toISOString(),
       tracks: counters
     });
