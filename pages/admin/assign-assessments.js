@@ -1,11 +1,22 @@
 // pages/admin/assign-assessments.js
 // Phase 3 item 6: adds scheduling-window support to Assign and Unblock actions.
+// Phase 3 item 8: fires confirmation emails after a successful write.
+//
+// Single-assessment assignment: pick ONE assessment, apply to MANY candidates.
+// (For multi-assessment × multi-candidate, use /admin/bulk-assign.)
+//
+// Email delivery is gated by NEXT_PUBLIC_EMAIL_DELIVERY_ENABLED — until
+// Phase 8, emails are logged but not delivered.
 
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import AppLayout from "../../components/AppLayout";
 import { supabase } from "../../supabase/client";
+import {
+  sendScheduleNotification,
+  sendAssignmentNotification
+} from "../../utils/emailService";
 
 function safeArray(value) {
   return Array.isArray(value) ? value : [];
@@ -26,7 +37,6 @@ function getReadableError(error) {
   return error.message || String(error) || "Something went wrong.";
 }
 
-// Format a scheduled window for display under a status badge
 function formatWindow(start, end) {
   const fmt = (v) => {
     if (!v) return null;
@@ -46,7 +56,6 @@ function formatWindow(start, end) {
   return null;
 }
 
-// datetime-local string → ISO string (or null if empty/invalid)
 function localToIso(local) {
   if (!local) return null;
   const d = new Date(local);
@@ -96,12 +105,12 @@ export default function AssignAssessments() {
   const [processing, setProcessing] = useState(false);
   const [message, setMessage] = useState({ type: "", text: "" });
 
-  // Maps user_id → { status, scheduled_start, scheduled_end, is_scheduled }
   const [candidateAssessmentStatus, setCandidateAssessmentStatus] = useState({});
 
-  // Scheduling inputs (Phase 3 item 6)
   const [scheduleStart, setScheduleStart] = useState("");
   const [scheduleEnd, setScheduleEnd] = useState("");
+
+  const [emailIssues, setEmailIssues] = useState([]);
 
   useEffect(() => {
     checkAdminAuth();
@@ -111,7 +120,6 @@ export default function AssignAssessments() {
     fetchAssessmentStatus();
   }, [selectedAssessment]);
 
-  // Clear schedule inputs when action changes away from assign/unblock
   useEffect(() => {
     if (selectedAction !== "assign" && selectedAction !== "unblock") {
       setScheduleStart("");
@@ -285,8 +293,6 @@ export default function AssignAssessments() {
     });
   }
 
-  // Build the scheduling columns for an assign/unblock payload.
-  // Returns null if inputs are invalid (caller shows error).
   function buildScheduleFields() {
     if (selectedAction !== "assign" && selectedAction !== "unblock") return {};
     const hasStart = scheduleStart !== "";
@@ -360,6 +366,61 @@ export default function AssignAssessments() {
     if (error) throw error;
   }
 
+  // Best-effort confirmation emails for the successful writes.
+  async function sendConfirmations({ successfulCandidateIds, schedule }) {
+    if (!selectedAssessment) return null;
+    const assessment = assessments.find((a) => a.id === selectedAssessment);
+    if (!assessment?.title) return null;
+
+    const candidateMap = new Map(candidates.map((c) => [c.id, c]));
+    const issues = [];
+    let sent = 0;
+    let failed = 0;
+    let dryRun = 0;
+
+    for (const candidateId of successfulCandidateIds) {
+      const candidate = candidateMap.get(candidateId);
+      if (!candidate?.email) {
+        issues.push({ candidateId, error: "Missing candidate email" });
+        failed += 1;
+        continue;
+      }
+
+      try {
+        let result;
+        if (schedule && schedule.start && schedule.end) {
+          result = await sendScheduleNotification({
+            candidateEmail: candidate.email,
+            candidateName: candidate.full_name,
+            assessmentTitle: assessment.title,
+            scheduledStart: schedule.start,
+            scheduledEnd: schedule.end,
+            supervisorName: candidate.supervisor?.full_name || null
+          });
+        } else {
+          result = await sendAssignmentNotification({
+            candidateEmail: candidate.email,
+            candidateName: candidate.full_name,
+            assessmentTitle: assessment.title,
+            supervisorName: candidate.supervisor?.full_name || null
+          });
+        }
+
+        if (result?.success && result?.dryRun) dryRun += 1;
+        else if (result?.success) sent += 1;
+        else {
+          failed += 1;
+          issues.push({ candidateId, error: result?.error || "Unknown email error" });
+        }
+      } catch (err) {
+        failed += 1;
+        issues.push({ candidateId, error: err?.message || "Unknown email error" });
+      }
+    }
+
+    return { sent, failed, dryRun, issues };
+  }
+
   async function handleSubmit() {
     if (!selectedAssessment) {
       setMessage({ type: "error", text: "Please select an assessment." });
@@ -371,7 +432,6 @@ export default function AssignAssessments() {
       return;
     }
 
-    // Build scheduling fields (only for assign/unblock)
     const scheduleFields = buildScheduleFields();
     if (scheduleFields === null) {
       setMessage({
@@ -386,12 +446,12 @@ export default function AssignAssessments() {
     try {
       setProcessing(true);
       setMessage({ type: "", text: "" });
+      setEmailIssues([]);
 
       let successCount = 0;
       let errorCount = 0;
+      const successfulCandidateIds = [];
 
-      // If a schedule window is set, target status becomes 'scheduled'.
-      // Otherwise assign → unblocked, block → blocked, unblock → unblocked.
       let targetStatus;
       if (selectedAction === "block") targetStatus = "blocked";
       else if (isScheduled) targetStatus = "scheduled";
@@ -402,10 +462,24 @@ export default function AssignAssessments() {
         try {
           await assignOrUpdateCandidateAssessment(candidateId, selectedAssessment, targetStatus, scheduleFields);
           successCount += 1;
+          successfulCandidateIds.push(candidateId);
         } catch (error) {
           errorCount += 1;
           console.error("Error processing candidate " + candidateId + ":", error);
         }
+      }
+
+      // Fire confirmation emails only for statuses that mean "candidate has access".
+      let emailSummary = null;
+      const shouldEmail = (targetStatus === "scheduled" || targetStatus === "unblocked") && successCount > 0;
+      if (shouldEmail) {
+        emailSummary = await sendConfirmations({
+          successfulCandidateIds,
+          schedule: isScheduled ? {
+            start: scheduleFields.scheduled_start,
+            end: scheduleFields.scheduled_end
+          } : undefined
+        });
       }
 
       const selectedAssessmentTitle = assessments.find((item) => item.id === selectedAssessment)?.title || "selected assessment";
@@ -416,22 +490,29 @@ export default function AssignAssessments() {
       else actionText = "assigned and unblocked";
 
       if (successCount > 0) {
-        setMessage({ type: "success", text: "Successfully " + actionText + " " + successCount + " candidate(s) for " + selectedAssessmentTitle + "." });
+        let msg = "Successfully " + actionText + " " + successCount + " candidate(s) for " + selectedAssessmentTitle + ".";
+        if (emailSummary) {
+          if (emailSummary.dryRun > 0) msg += " Confirmation emails queued (dry-run): " + emailSummary.dryRun + ".";
+          if (emailSummary.sent > 0) msg += " Confirmation emails sent: " + emailSummary.sent + ".";
+          if (emailSummary.failed > 0) msg += " Email failures: " + emailSummary.failed + ".";
+        }
+        setMessage({ type: "success", text: msg });
       }
 
       if (errorCount > 0) {
         setMessage({ type: "error", text: "Failed to process " + errorCount + " candidate(s)." });
       }
 
+      setEmailIssues(emailSummary?.issues || []);
+
       setSelectedCandidates([]);
-      // Do not clear scheduleStart/scheduleEnd — admin may want to reuse the window
       await fetchAssessmentStatus();
     } catch (error) {
       console.error("Assessment assignment error:", error);
       setMessage({ type: "error", text: "Failed to process request: " + getReadableError(error) });
     } finally {
       setProcessing(false);
-      setTimeout(() => setMessage({ type: "", text: "" }), 5000);
+      setTimeout(() => setMessage({ type: "", text: "" }), 8000);
     }
   }
 
@@ -496,7 +577,9 @@ export default function AssignAssessments() {
             <a style={styles.backButton}>← Back to Manage Candidates</a>
           </Link>
           <h1 style={styles.title}>Assign Assessments</h1>
-          <p style={styles.subtitle}>Manage candidate access to assessments.</p>
+          <p style={styles.subtitle}>
+            Manage candidate access to assessments. Confirmation emails are queued after a successful write.
+          </p>
         </div>
 
         {message.text && (
@@ -698,6 +781,22 @@ export default function AssignAssessments() {
                 </button>
               )}
             </div>
+
+            {emailIssues.length > 0 && (
+              <div style={styles.emailIssueBlock}>
+                <div style={styles.emailIssueTitle}>Email issues ({emailIssues.length})</div>
+                <div style={styles.emailIssueHint}>
+                  Assignments succeeded; these confirmation emails could not be queued.
+                </div>
+                <ul style={styles.emailIssueList}>
+                  {emailIssues.slice(0, 20).map((row, i) => (
+                    <li key={i} style={styles.emailIssueItem}>
+                      <code>{String(row.candidateId).substring(0, 8)}</code> — {row.error}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -738,7 +837,7 @@ const styles = {
   header: { marginBottom: "24px", background: "white", padding: "22px 30px", borderRadius: "16px", boxShadow: "0 4px 12px rgba(0,0,0,0.08)" },
   backButton: { display: "inline-block", color: "#0a1929", textDecoration: "none", fontSize: "14px", marginBottom: "15px", padding: "7px 12px", borderRadius: "6px", border: "1px solid #e2e8f0", fontWeight: 700 },
   title: { margin: "0 0 5px", color: "#0a1929", fontSize: "28px", fontWeight: 800 },
-  subtitle: { margin: 0, color: "#667085", fontSize: "14px" },
+  subtitle: { margin: 0, color: "#667085", fontSize: "14px", lineHeight: 1.6 },
   message: { padding: "12px 20px", borderRadius: "8px", marginBottom: "20px", fontSize: "14px", lineHeight: 1.5 },
   section: { background: "white", borderRadius: "16px", padding: "24px", marginBottom: "24px", boxShadow: "0 2px 8px rgba(0,0,0,0.08)" },
   sectionTitle: { fontSize: "18px", fontWeight: 800, color: "#0a1929", margin: "0 0 20px", display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" },
@@ -793,6 +892,11 @@ const styles = {
   selectedCount: { fontSize: "20px", fontWeight: 800, color: "#0a1929" },
   clearSelection: { background: "none", border: "none", color: "#f57c00", cursor: "pointer", fontSize: "12px", textDecoration: "underline", padding: "4px 8px" },
   submitButton: { padding: "12px 32px", color: "white", border: "none", borderRadius: "8px", fontSize: "16px", fontWeight: 800 },
+  emailIssueBlock: { marginTop: "16px", border: "1px solid #fde68a", background: "#fffbeb", borderRadius: "10px", padding: "12px 16px" },
+  emailIssueTitle: { fontSize: "13px", fontWeight: 800, color: "#92400e", marginBottom: "4px" },
+  emailIssueHint: { fontSize: "12px", color: "#92400e", marginBottom: "6px" },
+  emailIssueList: { margin: "6px 0 0 18px", padding: 0, fontSize: "12px", color: "#92400e" },
+  emailIssueItem: { marginBottom: "3px" },
   unauthorized: { textAlign: "center", padding: "60px", color: "#667085", background: "white", borderRadius: "16px", maxWidth: "400px", margin: "100px auto" },
   button: { padding: "10px 20px", background: "#0a1929", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "14px", fontWeight: 700, marginTop: "20px" }
 };
