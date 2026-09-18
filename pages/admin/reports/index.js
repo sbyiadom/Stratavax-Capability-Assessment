@@ -1,5 +1,5 @@
-// pages/admin/reports/index.js - COMPLETE WITH FIXED FILTERS
-// FIXED: Filters now work properly for all views
+// pages/admin/reports/index.js - COMPLETE WITH URL-DRIVEN FILTERS
+// Phase 6: reads ?type= from URL to preselect the correct tab.
 
 import { useState, useEffect, Fragment } from 'react';
 import { useRouter } from 'next/router';
@@ -24,11 +24,11 @@ function calculateNationalServiceScores(reportData, categoryScores, result) {
     if (reportData.workplaceReadiness) workplaceReadiness = safeNumber(reportData.workplaceReadiness);
     else if (reportData.workplace_readiness) workplaceReadiness = safeNumber(reportData.workplace_readiness);
     else if (reportData.dimensions?.workplaceReadiness) workplaceReadiness = safeNumber(reportData.dimensions.workplaceReadiness);
-    
+
     if (reportData.intellectualCapability) intellectualCapability = safeNumber(reportData.intellectualCapability);
     else if (reportData.intellectual_capability) intellectualCapability = safeNumber(reportData.intellectual_capability);
     else if (reportData.dimensions?.intellectualCapability) intellectualCapability = safeNumber(reportData.dimensions.intellectualCapability);
-    
+
     if (reportData.overallScore) overallScore = safeNumber(reportData.overallScore);
     else if (reportData.percentage_score) overallScore = safeNumber(reportData.percentage_score);
     else if (reportData.dimensions?.overallScore) overallScore = safeNumber(reportData.dimensions.overallScore);
@@ -47,7 +47,7 @@ function calculateNationalServiceScores(reportData, categoryScores, result) {
       'Technical Fundamentals',
       'Safety & Risk Awareness'
     ];
-    
+
     const intellectualCategories = [
       'Learning Agility',
       'Problem Solving & Troubleshooting',
@@ -65,7 +65,7 @@ function calculateNationalServiceScores(reportData, categoryScores, result) {
       categoryScores.forEach(cat => {
         const name = cat.category || cat.name || '';
         const percentage = safeNumber(cat.percentage || cat.score || 0);
-        
+
         if (workplaceCategories.some(c => name.includes(c) || name.toLowerCase().includes(c.toLowerCase()))) {
           workplaceTotal += percentage;
           workplaceCount++;
@@ -79,11 +79,11 @@ function calculateNationalServiceScores(reportData, categoryScores, result) {
     if (workplaceReadiness === 0 && workplaceCount > 0) {
       workplaceReadiness = Math.round(workplaceTotal / workplaceCount);
     }
-    
+
     if (intellectualCapability === 0 && intellectualCount > 0) {
       intellectualCapability = Math.round(intellectualTotal / intellectualCount);
     }
-    
+
     if (overallScore === 0 && (workplaceReadiness > 0 || intellectualCapability > 0)) {
       overallScore = Math.round((workplaceReadiness + intellectualCapability) / 2);
     }
@@ -102,10 +102,13 @@ function calculateNationalServiceRecommendation(workplaceReadiness, intellectual
   return 'Not Recommended';
 }
 
+// Valid type values that map to tabs
+const VALID_TYPES = ['all', 'national_service', 'stratavax'];
+
 export default function AdminReportsList() {
   const router = useRouter();
   const { session, loading: authLoading } = useRequireAuth();
-  
+
   const [loading, setLoading] = useState(true);
   const [reports, setReports] = useState([]);
   const [filter, setFilter] = useState('all');
@@ -115,6 +118,16 @@ export default function AdminReportsList() {
   const [exporting, setExporting] = useState(false);
   const [expandedCandidates, setExpandedCandidates] = useState({});
   const [candidates, setCandidates] = useState([]);
+
+  // ============================================================
+  // 🟢 PHASE 6: Sync filter with URL query param on mount and on change
+  // ============================================================
+  useEffect(() => {
+    if (!router.isReady) return;
+    const qType = typeof router.query.type === 'string' ? router.query.type : 'all';
+    const nextFilter = VALID_TYPES.includes(qType) ? qType : 'all';
+    setFilter(nextFilter);
+  }, [router.isReady, router.query.type]);
 
   useEffect(() => {
     if (!session) return;
@@ -151,21 +164,21 @@ export default function AdminReportsList() {
 
       // Process reports
       const processedReports = (data.reports || []).map(report => {
-        const isNationalService = report.isNationalService || 
+        const isNationalService = report.isNationalService ||
           report.assessment_id === 'bdb9d46e-9fac-4d00-8478-1f649e7ac600' ||
           report.assessment_title === 'National Service Recruitment Assessment';
 
         if (isNationalService) {
-          const categoryScores = report.category_scores || 
-            report.report_data?.categoryScores || 
+          const categoryScores = report.category_scores ||
+            report.report_data?.categoryScores ||
             report.report_data?.category_scores || [];
-          
+
           const calculated = calculateNationalServiceScores(
             report.report_data,
             categoryScores,
             report
           );
-          
+
           return {
             ...report,
             isNationalService: true,
@@ -183,7 +196,7 @@ export default function AdminReportsList() {
 
       setReports(processedReports);
       setStats(data.stats || { total: 0, nationalService: 0, stratavax: 0 });
-      
+
       // Build candidate map
       const candidateMap = {};
       processedReports.forEach(report => {
@@ -200,7 +213,7 @@ export default function AdminReportsList() {
         }
         candidateMap[key].assessments.push(report);
       });
-      
+
       setCandidates(Object.values(candidateMap));
       setLoading(false);
     } catch (error) {
@@ -260,10 +273,23 @@ export default function AdminReportsList() {
     }));
   };
 
-  // 🟢 FIXED: Get filtered candidates based on filter and search
+  // ============================================================
+  // 🟢 PHASE 6: Filter change also updates the URL so the sidebar
+  //    active state and browser back/forward stay in sync.
+  // ============================================================
+  const handleFilterChange = (nextFilter) => {
+    setFilter(nextFilter);
+    const query = nextFilter === 'all' ? {} : { type: nextFilter };
+    router.replace(
+      { pathname: '/admin/reports', query },
+      undefined,
+      { shallow: true }
+    );
+  };
+
   const getFilteredCandidates = () => {
     let filtered = candidates;
-    
+
     if (filter === 'national_service') {
       filtered = filtered.map(c => ({
         ...c,
@@ -275,40 +301,38 @@ export default function AdminReportsList() {
         assessments: c.assessments.filter(r => r.isNationalService !== true)
       })).filter(c => c.assessments.length > 0);
     }
-    
-    // Apply search filter
+
     if (searchTerm && searchTerm.trim()) {
       const term = searchTerm.toLowerCase().trim();
-      filtered = filtered.filter(c => 
+      filtered = filtered.filter(c =>
         c.name.toLowerCase().includes(term) ||
         c.email.toLowerCase().includes(term) ||
         c.university.toLowerCase().includes(term) ||
         c.assessments.some(a => (a.assessment_title || '').toLowerCase().includes(term))
       );
     }
-    
+
     return filtered;
   };
 
-  // 🟢 FIXED: Get filtered reports based on filter and search
   const getFilteredReports = () => {
     let filtered = [...reports];
-    
+
     if (filter === 'national_service') {
       filtered = filtered.filter(r => r.isNationalService === true);
     } else if (filter === 'stratavax') {
       filtered = filtered.filter(r => r.isNationalService !== true);
     }
-    
+
     if (searchTerm && searchTerm.trim()) {
       const term = searchTerm.toLowerCase().trim();
-      filtered = filtered.filter(r => 
+      filtered = filtered.filter(r =>
         (r.candidate_name || '').toLowerCase().includes(term) ||
         (r.candidate_email || '').toLowerCase().includes(term) ||
         (r.assessment_title || '').toLowerCase().includes(term)
       );
     }
-    
+
     return filtered;
   };
 
@@ -335,11 +359,11 @@ export default function AdminReportsList() {
   }
 
   // ============================================================
-  // NATIONAL SERVICE VIEW: Simple flat list with table
+  // NATIONAL SERVICE VIEW
   // ============================================================
   const renderNationalServiceView = () => {
     const nsReports = filteredReports.filter(r => r.isNationalService === true);
-    
+
     return (
       <div style={styles.tableContainer}>
         <table style={styles.table}>
@@ -366,7 +390,7 @@ export default function AdminReportsList() {
                 const workplace = report.workplaceReadiness || 0;
                 const intellectual = report.intellectualCapability || 0;
                 const displayRecommendation = calculateNationalServiceRecommendation(workplace, intellectual);
-                
+
                 return (
                   <tr key={report.id} style={styles.tr}>
                     <td style={styles.td}>
@@ -426,7 +450,7 @@ export default function AdminReportsList() {
   };
 
   // ============================================================
-  // STRATAVAX VIEW: Candidate grouping with expandable assessments
+  // STRATAVAX VIEW
   // ============================================================
   const renderStratavaxView = () => {
     return (
@@ -457,7 +481,7 @@ export default function AdminReportsList() {
 
                 return (
                   <Fragment key={candidate.id}>
-                    <tr 
+                    <tr
                       style={styles.candidateRow}
                       onClick={() => toggleCandidate(candidate.id)}
                     >
@@ -493,7 +517,7 @@ export default function AdminReportsList() {
                         </span>
                       </td>
                     </tr>
-                    
+
                     {isExpanded && (
                       <tr>
                         <td colSpan="5" style={styles.expandedRow}>
@@ -502,13 +526,13 @@ export default function AdminReportsList() {
                               const score = Math.round(assessment.displayScore || assessment.percentage_score || 0);
                               const isNS = assessment.isNationalService;
                               let recommendation = assessment.recommendation || 'N/A';
-                              
+
                               if (isNS) {
                                 const workplace = assessment.workplaceReadiness || 0;
                                 const intellectual = assessment.intellectualCapability || 0;
                                 recommendation = calculateNationalServiceRecommendation(workplace, intellectual);
                               }
-                              
+
                               return (
                                 <div key={assessment.id} style={styles.assessmentItem}>
                                   <span style={styles.assessmentItemTitle}>
@@ -553,7 +577,7 @@ export default function AdminReportsList() {
   };
 
   // ============================================================
-  // ALL REPORTS VIEW: Unified table with type column
+  // ALL VIEW
   // ============================================================
   const renderAllView = () => {
     const allReports = [...filteredReports].sort((a, b) => {
@@ -586,14 +610,14 @@ export default function AdminReportsList() {
               allReports.map((report) => {
                 const isNationalService = report.isNationalService;
                 const score = Math.round(report.displayScore || report.percentage_score || 0);
-                
+
                 let displayRecommendation = report.recommendation || 'N/A';
                 if (isNationalService) {
                   const workplace = report.workplaceReadiness || 0;
                   const intellectual = report.intellectualCapability || 0;
                   displayRecommendation = calculateNationalServiceRecommendation(workplace, intellectual);
                 }
-                
+
                 return (
                   <tr key={report.id} style={styles.tr}>
                     <td style={styles.td}>
@@ -659,7 +683,7 @@ export default function AdminReportsList() {
   };
 
   // ============================================================
-  // RENDER BASED ON FILTER
+  // RENDER
   // ============================================================
   return (
     <AppLayout background="/images/admin-bg.jpg">
@@ -671,7 +695,7 @@ export default function AdminReportsList() {
         <div style={styles.header}>
           <h1 style={styles.title}>Assessment Reports</h1>
           <p style={styles.subtitle}>All assessment reports from candidates</p>
-          
+
           {error && (
             <div style={styles.errorBox}>
               <strong>Error:</strong> {error}
@@ -688,8 +712,8 @@ export default function AdminReportsList() {
               style={styles.searchInput}
             />
             {searchTerm && (
-              <button 
-                onClick={() => setSearchTerm('')} 
+              <button
+                onClick={() => setSearchTerm('')}
                 style={styles.clearButton}
               >
                 ✕
@@ -699,7 +723,7 @@ export default function AdminReportsList() {
 
           <div style={styles.filterTabs}>
             <button
-              onClick={() => setFilter('all')}
+              onClick={() => handleFilterChange('all')}
               style={{
                 ...styles.filterTab,
                 background: filter === 'all' ? '#1a237e' : 'white',
@@ -710,7 +734,7 @@ export default function AdminReportsList() {
               All Reports ({stats.total})
             </button>
             <button
-              onClick={() => setFilter('national_service')}
+              onClick={() => handleFilterChange('national_service')}
               style={{
                 ...styles.filterTab,
                 background: filter === 'national_service' ? '#1a237e' : 'white',
@@ -721,7 +745,7 @@ export default function AdminReportsList() {
               🇬🇭 National Service ({stats.nationalService})
             </button>
             <button
-              onClick={() => setFilter('stratavax')}
+              onClick={() => handleFilterChange('stratavax')}
               style={{
                 ...styles.filterTab,
                 background: filter === 'stratavax' ? '#1a237e' : 'white',
