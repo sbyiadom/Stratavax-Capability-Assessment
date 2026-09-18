@@ -1,5 +1,12 @@
-// pages/api/assessment-report/[resultId].js - FINAL PRODUCTION CLEAN VERSION
-// FIXED: Removed verbose logging, kept essential debugging.
+// pages/api/assessment-report/[resultId].js
+// FINAL PRODUCTION CLEAN VERSION — with Phase 6 competency summary embedded.
+//
+// Phase 6 addition:
+//   - Fetches candidate_competency_scores for (user_id, assessment_id)
+//   - Fetches cohort stats per competency across all candidates on the same assessment
+//   - Returns `competencySummary` in the response envelope, matching the
+//     exact shape produced by /api/reports/competency-summary?resultId=...
+//   - Fails soft: competency errors never break the existing report.
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -26,7 +33,7 @@ function getReportData(result) {
 
 function normalizeCategoryScores(result) {
   const reportData = getReportData(result);
-  const rawCategories = 
+  const rawCategories =
     result?.category_scores ||
     reportData?.category_scores ||
     reportData?.categoryScores ||
@@ -56,6 +63,180 @@ function normalizeCategoryScores(result) {
   return [];
 }
 
+// ============================================================
+// 🟢 PHASE 6 — COMPETENCY SUMMARY HELPERS
+// ============================================================
+const CLASSIFICATION_ORDER = [
+  'Exceptional',
+  'Strong Performer',
+  'Capable Contributor',
+  'Developing',
+  'At Risk',
+  'High Risk',
+];
+
+const DISCRIMINATION_THRESHOLDS = {
+  LOW: 5,
+  MODERATE: 10,
+};
+
+function safeNum(value, fallback = 0) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function round1(value) {
+  return Math.round(safeNum(value, 0) * 10) / 10;
+}
+
+function computeStddev(values) {
+  if (!Array.isArray(values) || values.length < 2) return 0;
+  const mean = values.reduce((a, b) => a + b, 0) / values.length;
+  const variance = values.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) / values.length;
+  return Math.sqrt(variance);
+}
+
+function classifyDiscrimination(sd) {
+  if (sd < DISCRIMINATION_THRESHOLDS.LOW) return 'low';
+  if (sd < DISCRIMINATION_THRESHOLDS.MODERATE) return 'moderate';
+  return 'good';
+}
+
+/**
+ * Build the competencySummary payload for a single candidate's attempt.
+ * Matches the shape returned by /api/reports/competency-summary?resultId=...
+ * Returns null on any hard failure so the caller can degrade gracefully.
+ */
+async function buildCompetencySummary(serviceClient, candidateId, assessmentId) {
+  try {
+    // 1. Candidate's competency rows for this assessment
+    const { data: candidateRows, error: candidateError } = await serviceClient
+      .from('candidate_competency_scores')
+      .select('competency_id, raw_score, max_possible, percentage, classification, question_count')
+      .eq('candidate_id', candidateId)
+      .eq('assessment_id', assessmentId);
+
+    if (candidateError) {
+      console.error('[Assessment Report] Competency candidate lookup failed:', {
+        message: candidateError.message,
+        code: candidateError.code,
+        details: candidateError.details,
+        candidateId,
+        assessmentId,
+      });
+      return null;
+    }
+
+    if (!candidateRows || candidateRows.length === 0) {
+      return {
+        mode: 'single',
+        hasCompetencies: false,
+        candidateId,
+        assessmentId,
+        competencies: [],
+        message: 'No competency scores are available for this assessment.',
+      };
+    }
+
+    // 2. Competency metadata
+    const competencyIds = candidateRows.map((r) => r.competency_id);
+    const { data: competencyMeta, error: metaError } = await serviceClient
+      .from('competencies')
+      .select('id, name, category, display_order')
+      .in('id', competencyIds);
+
+    if (metaError) {
+      console.error('[Assessment Report] Competency meta lookup failed:', {
+        message: metaError.message,
+        code: metaError.code,
+        details: metaError.details,
+      });
+      return null;
+    }
+
+    const metaMap = {};
+    (competencyMeta || []).forEach((c) => { metaMap[c.id] = c; });
+
+    // 3. Cohort rows for the same assessment — used for band stats
+    const { data: cohortRows, error: cohortError } = await serviceClient
+      .from('candidate_competency_scores')
+      .select('competency_id, candidate_id, percentage')
+      .eq('assessment_id', assessmentId);
+
+    if (cohortError) {
+      console.error('[Assessment Report] Competency cohort lookup failed:', {
+        message: cohortError.message,
+        code: cohortError.code,
+        details: cohortError.details,
+        assessmentId,
+      });
+      // Cohort failure is not fatal — fall through with no cohort data
+    }
+
+    const cohortByCompetency = {};
+    (cohortRows || []).forEach((row) => {
+      const key = row.competency_id;
+      if (!cohortByCompetency[key]) cohortByCompetency[key] = [];
+      cohortByCompetency[key].push(safeNum(row.percentage, 0));
+    });
+
+    // 4. Build the per-competency entries
+    const competencies = candidateRows.map((row) => {
+      const meta = metaMap[row.competency_id] || {
+        name: 'Unknown',
+        category: null,
+        display_order: 999,
+      };
+      const cohort = cohortByCompetency[row.competency_id] || [];
+      const cohortMin = cohort.length > 0 ? Math.min(...cohort) : null;
+      const cohortMax = cohort.length > 0 ? Math.max(...cohort) : null;
+      const cohortMean = cohort.length > 0
+        ? round1(cohort.reduce((a, b) => a + b, 0) / cohort.length)
+        : null;
+      const cohortSd = cohort.length >= 2 ? round1(computeStddev(cohort)) : null;
+
+      return {
+        competencyId: row.competency_id,
+        name: meta.name,
+        category: meta.category,
+        displayOrder: meta.display_order ?? 999,
+        rawScore: safeNum(row.raw_score, 0),
+        maxPossible: safeNum(row.max_possible, 0),
+        percentage: round1(row.percentage),
+        classification: row.classification || null,
+        questionCount: safeNum(row.question_count, 0),
+        cohort: {
+          n: cohort.length,
+          min: cohortMin !== null ? round1(cohortMin) : null,
+          max: cohortMax !== null ? round1(cohortMax) : null,
+          mean: cohortMean,
+          stddev: cohortSd,
+          discrimination: cohortSd !== null ? classifyDiscrimination(cohortSd) : null,
+        },
+      };
+    });
+
+    competencies.sort((a, b) => {
+      if (a.displayOrder !== b.displayOrder) return a.displayOrder - b.displayOrder;
+      return a.name.localeCompare(b.name);
+    });
+
+    return {
+      mode: 'single',
+      hasCompetencies: true,
+      candidateId,
+      assessmentId,
+      competencies,
+    };
+  } catch (error) {
+    console.error('[Assessment Report] buildCompetencySummary threw:', error);
+    return null;
+  }
+}
+
+// ============================================================
+// HANDLER
+// ============================================================
 export default async function handler(req, res) {
   if (req.method !== 'GET') {
     return res.status(405).json({ success: false, error: 'Method not allowed' });
@@ -77,9 +258,9 @@ export default async function handler(req, res) {
 
     if (!supabaseUrl || !supabaseKey) {
       console.error('[Assessment Report] Missing environment variables');
-      return res.status(500).json({ 
-        success: false, 
-        error: 'Server configuration error: missing Supabase service role key' 
+      return res.status(500).json({
+        success: false,
+        error: 'Server configuration error: missing Supabase service role key'
       });
     }
 
@@ -92,7 +273,7 @@ export default async function handler(req, res) {
     // ============================================================
     const authHeader = req.headers.authorization || '';
     const token = authHeader.startsWith('Bearer ') ? authHeader.replace('Bearer ', '').trim() : null;
-    
+
     if (!token) {
       return res.status(401).json({ success: false, error: 'Unauthorized: No token provided' });
     }
@@ -114,8 +295,8 @@ export default async function handler(req, res) {
 
     if (resultError) {
       console.error('[Assessment Report] Result query error:', resultError);
-      return res.status(500).json({ 
-        success: false, 
+      return res.status(500).json({
+        success: false,
         error: resultError.message || 'Failed to fetch result',
         debug: { stage: 'fetch_result', error: resultError }
       });
@@ -123,13 +304,13 @@ export default async function handler(req, res) {
 
     if (!result) {
       console.error('[Assessment Report] Result not found:', { resultId: cleanResultId });
-      return res.status(404).json({ 
-        success: false, 
+      return res.status(404).json({
+        success: false,
         error: 'Result not found',
-        debug: { 
-          searchedTable: 'assessment_results', 
-          searchedColumn: 'id', 
-          resultId: cleanResultId 
+        debug: {
+          searchedTable: 'assessment_results',
+          searchedColumn: 'id',
+          resultId: cleanResultId
         }
       });
     }
@@ -194,7 +375,7 @@ export default async function handler(req, res) {
     const assessmentCode = String(assessmentType?.code || '').toLowerCase().trim();
     const assessmentTypeName = String(assessmentType?.name || '').toLowerCase().trim();
 
-    const isNationalService = 
+    const isNationalService =
       result.assessment_id === 'bdb9d46e-9fac-4d00-8478-1f649e7ac600' ||
       assessmentCode.includes('national') ||
       assessmentTypeName.includes('national service') ||
@@ -215,12 +396,12 @@ export default async function handler(req, res) {
     if (isNationalService && Array.isArray(categoryScores)) {
       const workplaceKeywords = ['Safety', 'Technical', 'Communication', 'Teamwork', 'Ownership', 'Integrity', 'Professional', 'Work Ethic', 'Workplace'];
       const intellectualKeywords = ['Learning', 'Problem Solving', 'Troubleshooting', 'Logical', 'Numerical', 'Measurement', 'Engineering', 'Critical', 'Analytical'];
-      
+
       categoryScores.forEach(cat => {
         const name = cat.category || '';
         const isWorkplace = workplaceKeywords.some(k => name.includes(k));
         const isIntellectual = intellectualKeywords.some(k => name.includes(k));
-        
+
         if (isWorkplace) workplaceSubCategories.push(cat);
         else if (isIntellectual) intellectualSubCategories.push(cat);
         else intellectualSubCategories.push(cat); // Default fallback
@@ -280,7 +461,7 @@ export default async function handler(req, res) {
     };
 
     // BUILD THE FINAL REPORT OBJECT
-    const finalReport = isNationalService 
+    const finalReport = isNationalService
       ? {
           ...reportData,
           reportType: 'national_service',
@@ -330,6 +511,18 @@ export default async function handler(req, res) {
         };
 
     // ============================================================
+    // 🟢 PHASE 6 — COMPETENCY SUMMARY (fails soft)
+    // ============================================================
+    let competencySummary = null;
+    if (result.user_id && result.assessment_id && !isNationalService) {
+      competencySummary = await buildCompetencySummary(
+        serviceClient,
+        result.user_id,
+        result.assessment_id
+      );
+    }
+
+    // ============================================================
     // RETURN COMPLETE RESPONSE
     // ============================================================
     return res.status(200).json({
@@ -353,7 +546,8 @@ export default async function handler(req, res) {
       report: finalReport,
       isNationalService,
       assessmentTypeCode: assessmentType?.code || 'general',
-      categoryScores
+      categoryScores,
+      competencySummary
     });
 
   } catch (error) {
