@@ -1,13 +1,21 @@
 // pages/api/admin/reprocess-competencies.js
 //
-// Phase 5 — one-shot backfill: recompute competency scores for every
-// existing assessment_results row and write them to candidate_competency_scores.
+// Phase 5 — backfill: recompute competency scores for every existing
+// assessment_results row and write them to candidate_competency_scores.
 //
-// Prior fixes:
-//   1. unique_questions.category / competency / dimension do not exist.
-//   2. responses.score does not exist — responses store answer_id only.
-//      The scoring engine looks up the score from the answer join, so we
-//      don't need responses.score at all.
+// Changes in this revision:
+//   • Fetch scoring_mode from assessment_types so forced-choice
+//     assessments use the most/least model instead of single-select.
+//   • Fetch least_answer_id from responses so the engine sees both picks.
+//   • Pass the assessment type object (not a bare code) to
+//     calculateCompetencyScores, so the engine can read scoring_mode.
+//
+// Prior fixes retained:
+//   • Removed unique_questions.category / competency / dimension from
+//     the responses select (columns don't exist).
+//   • Removed responses.score from the select (column doesn't exist).
+//   • Only mapped questions contribute to competency scores; the
+//     section-name fallback is gone.
 
 import { calculateCompetencyScores } from '../../../utils/competencyScoring';
 
@@ -78,16 +86,21 @@ export default async function handler(req, res) {
       });
     }
 
-    // 3. Get assessment types for context
+    // 3. Get assessment types — now including scoring_mode so the engine
+    //    can pick between single_select, baseline, and forced_choice.
     const { data: assessmentTypes, error: typeError } = await userClient
       .from('assessment_types')
-      .select('id, code');
+      .select('id, code, scoring_mode');
 
     if (typeError) throw typeError;
 
     const typeMap = {};
     (assessmentTypes || []).forEach((t) => {
-      typeMap[t.id] = t.code;
+      typeMap[t.id] = {
+        id: t.id,
+        code: t.code,
+        scoring_mode: t.scoring_mode || 'single_select'
+      };
     });
 
     // 4. Process each result
@@ -99,20 +112,13 @@ export default async function handler(req, res) {
       try {
         console.log(`🔄 Processing result ${result.id}...`);
 
-        // NOTE: The responses table has these columns:
-        //   id, session_id, user_id, assessment_id, question_id, answer_id,
-        //   created_at, updated_at, time_spent_seconds, first_saved_at,
-        //   times_changed, initial_answer_id, metadata
-        //
-        // There is NO score column. The scoring engine resolves the score
-        // by looking up answer_id in unique_answers, which the nested
-        // select below provides.
         const { data: responses, error: responsesError } = await userClient
           .from('responses')
           .select(`
             id,
             question_id,
             answer_id,
+            least_answer_id,
             session_id,
             unique_questions!inner (
               id,
@@ -153,7 +159,13 @@ export default async function handler(req, res) {
           continue;
         }
 
-        const assessmentType = typeMap[result.assessment_type_id] || 'general';
+        // Pass the assessment type OBJECT (with code + scoring_mode) so the
+        // engine can resolve forced-choice vs single-select correctly.
+        const assessmentType = typeMap[result.assessment_type_id] || {
+          id: result.assessment_type_id,
+          code: 'general',
+          scoring_mode: 'single_select'
+        };
 
         const competencyResults = calculateCompetencyScores(
           responses,
