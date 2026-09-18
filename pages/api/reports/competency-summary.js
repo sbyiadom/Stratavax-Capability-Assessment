@@ -1,17 +1,15 @@
 // pages/api/reports/competency-summary.js
-// Phase 6 — Competency Reports API (v2 — diagnostic build)
+// Phase 6 — Competency Reports API (v3)
 //
-// Two modes:
-//   GET /api/reports/competency-summary?resultId=<uuid>       → single candidate profile + cohort band
-//   GET /api/reports/competency-summary?assessmentId=<uuid>   → per-assessment rollup (role-scoped)
+// Modes:
+//   GET ?resultId=<uuid>            → single candidate profile + cohort band
+//   GET ?assessmentId=<uuid>        → per-assessment rollup (role-scoped)
+//   GET ?scope=list                 → list of assessments with competency data in caller's scope
 //
 // Source of truth: candidate_competency_scores. No client re-derivation.
 
 import { createClient } from '@supabase/supabase-js';
 
-// ============================================================
-// CLASSIFICATION ORDER (matches candidate_competency_scores CHECK)
-// ============================================================
 const CLASSIFICATION_ORDER = [
   'Exceptional',
   'Strong Performer',
@@ -21,9 +19,6 @@ const CLASSIFICATION_ORDER = [
   'High Risk',
 ];
 
-// ============================================================
-// DISCRIMINATION THRESHOLDS (percentage points)
-// ============================================================
 const DISCRIMINATION = {
   LOW: 5,
   MODERATE: 10,
@@ -70,9 +65,6 @@ function logSupabaseError(tag, error, extra = {}) {
   });
 }
 
-// ============================================================
-// AUTH + ROLE RESOLUTION
-// ============================================================
 async function resolveCaller(serviceClient, token) {
   const { data: userData, error: authError } = await serviceClient.auth.getUser(token);
 
@@ -113,9 +105,6 @@ async function resolveCaller(serviceClient, token) {
   };
 }
 
-// ============================================================
-// SUPERVISOR SCOPE — which candidate_ids can this supervisor see?
-// ============================================================
 async function getSupervisorCandidateIds(serviceClient, supervisorId) {
   const { data, error } = await serviceClient
     .from('candidate_profiles')
@@ -131,7 +120,7 @@ async function getSupervisorCandidateIds(serviceClient, supervisorId) {
 }
 
 // ============================================================
-// MODE A — SINGLE RESULT: profile + cohort band
+// MODE A — SINGLE RESULT
 // ============================================================
 async function handleSingleResult(serviceClient, caller, resultId) {
   const { data: result, error: resultError } = await serviceClient
@@ -145,9 +134,7 @@ async function handleSingleResult(serviceClient, caller, resultId) {
     return { error: resultError.message, status: 500 };
   }
 
-  if (!result) {
-    return { error: 'Result not found', status: 404 };
-  }
+  if (!result) return { error: 'Result not found', status: 404 };
 
   if (!caller.isAdmin) {
     const allowed = await getSupervisorCandidateIds(serviceClient, caller.userId);
@@ -266,7 +253,7 @@ async function handleSingleResult(serviceClient, caller, resultId) {
 }
 
 // ============================================================
-// MODE B — ASSESSMENT ROLLUP (role-scoped)
+// MODE B — ASSESSMENT ROLLUP
 // ============================================================
 async function handleAssessmentRollup(serviceClient, caller, assessmentId) {
   const { data: assessment, error: assessmentError } = await serviceClient
@@ -280,9 +267,7 @@ async function handleAssessmentRollup(serviceClient, caller, assessmentId) {
     return { error: assessmentError.message, status: 500 };
   }
 
-  if (!assessment) {
-    return { error: 'Assessment not found', status: 404 };
-  }
+  if (!assessment) return { error: 'Assessment not found', status: 404 };
 
   let allowedCandidateIds = null;
   if (!caller.isAdmin) {
@@ -401,6 +386,85 @@ async function handleAssessmentRollup(serviceClient, caller, assessmentId) {
 }
 
 // ============================================================
+// MODE C — SCOPE LIST
+// Returns the assessments that have competency data for the caller's scope.
+// Admin → all. Supervisor → only assessments with their candidates' rows.
+// ============================================================
+async function handleScopeList(serviceClient, caller) {
+  let allowedCandidateIds = null;
+  if (!caller.isAdmin) {
+    allowedCandidateIds = await getSupervisorCandidateIds(serviceClient, caller.userId);
+    if (allowedCandidateIds.length === 0) {
+      return {
+        mode: 'scope-list',
+        assessments: [],
+        message: 'No candidates are assigned to you.',
+      };
+    }
+  }
+
+  let rowsQuery = serviceClient
+    .from('candidate_competency_scores')
+    .select('assessment_id, candidate_id');
+
+  if (allowedCandidateIds) {
+    rowsQuery = rowsQuery.in('candidate_id', allowedCandidateIds);
+  }
+
+  const { data: rows, error: rowsError } = await rowsQuery;
+
+  if (rowsError) {
+    logSupabaseError('scope-list rows lookup failed', rowsError, {
+      supervisorId: caller.userId,
+    });
+    return { error: rowsError.message, status: 500 };
+  }
+
+  if (!rows || rows.length === 0) {
+    return { mode: 'scope-list', assessments: [] };
+  }
+
+  const distinctAssessmentIds = [...new Set(rows.map((r) => r.assessment_id).filter(Boolean))];
+
+  const { data: assessments, error: assessmentError } = await serviceClient
+    .from('assessments')
+    .select('id, title')
+    .in('id', distinctAssessmentIds);
+
+  if (assessmentError) {
+    logSupabaseError('scope-list assessments lookup failed', assessmentError, {
+      distinctAssessmentIds,
+    });
+    return { error: assessmentError.message, status: 500 };
+  }
+
+  // Count candidates per assessment within scope, for sorting
+  const candidateCounts = {};
+  rows.forEach((r) => {
+    const key = r.assessment_id;
+    if (!candidateCounts[key]) candidateCounts[key] = new Set();
+    candidateCounts[key].add(r.candidate_id);
+  });
+
+  const cleaned = (assessments || [])
+    .filter((a) => !/^TEST\s*[—\-]/i.test(a.title || ''))
+    .map((a) => ({
+      id: a.id,
+      title: a.title,
+      candidateCount: candidateCounts[a.id]?.size || 0,
+    }))
+    .sort((a, b) => {
+      if (b.candidateCount !== a.candidateCount) return b.candidateCount - a.candidateCount;
+      return (a.title || '').localeCompare(b.title || '');
+    });
+
+  return {
+    mode: 'scope-list',
+    assessments: cleaned,
+  };
+}
+
+// ============================================================
 // HANDLER
 // ============================================================
 export default async function handler(req, res) {
@@ -447,17 +511,25 @@ export default async function handler(req, res) {
       userId: caller.userId,
       role: caller.role,
       isAdmin: caller.isAdmin,
-      hasProfileRow: caller.hasProfileRow,
     });
 
-    const { resultId, assessmentId } = req.query || {};
+    const { resultId, assessmentId, scope } = req.query || {};
 
+    // -------- scope=list mode --------
+    if (scope === 'list') {
+      const payload = await handleScopeList(serviceClient, caller);
+      if (payload.error) {
+        return res.status(payload.status || 500).json({ success: false, error: payload.error });
+      }
+      return res.status(200).json({ success: true, ...payload });
+    }
+
+    // -------- resultId mode --------
     if (resultId) {
       const cleanResultId = String(resultId).trim();
       if (!cleanResultId) {
         return res.status(400).json({ success: false, error: 'Invalid resultId' });
       }
-
       const payload = await handleSingleResult(serviceClient, caller, cleanResultId);
       if (payload.error) {
         return res.status(payload.status || 500).json({ success: false, error: payload.error });
@@ -465,12 +537,12 @@ export default async function handler(req, res) {
       return res.status(200).json({ success: true, ...payload });
     }
 
+    // -------- assessmentId mode --------
     if (assessmentId) {
       const cleanAssessmentId = String(assessmentId).trim();
       if (!cleanAssessmentId) {
         return res.status(400).json({ success: false, error: 'Invalid assessmentId' });
       }
-
       const payload = await handleAssessmentRollup(serviceClient, caller, cleanAssessmentId);
       if (payload.error) {
         return res.status(payload.status || 500).json({ success: false, error: payload.error });
@@ -480,7 +552,7 @@ export default async function handler(req, res) {
 
     return res.status(400).json({
       success: false,
-      error: 'Provide either ?resultId=<uuid> or ?assessmentId=<uuid>',
+      error: 'Provide ?resultId=<uuid>, ?assessmentId=<uuid>, or ?scope=list',
     });
   } catch (error) {
     console.error('[Competency Summary] Unhandled error:', error);
