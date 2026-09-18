@@ -1,5 +1,6 @@
 // pages/api/reports/competency-summary.js
-// Phase 6 — Competency Reports API
+// Phase 6 — Competency Reports API (v2 — diagnostic build)
+//
 // Two modes:
 //   GET /api/reports/competency-summary?resultId=<uuid>       → single candidate profile + cohort band
 //   GET /api/reports/competency-summary?assessmentId=<uuid>   → per-assessment rollup (role-scoped)
@@ -21,9 +22,7 @@ const CLASSIFICATION_ORDER = [
 ];
 
 // ============================================================
-// DISCRIMINATION THRESHOLDS
-// stddev in percentage points across the cohort for a competency.
-// Below LOW → the competency is not separating candidates.
+// DISCRIMINATION THRESHOLDS (percentage points)
 // ============================================================
 const DISCRIMINATION = {
   LOW: 5,
@@ -61,12 +60,24 @@ function classifyDiscrimination(sd) {
   return 'good';
 }
 
+function logSupabaseError(tag, error, extra = {}) {
+  console.error(`[Competency Summary] ${tag}`, {
+    message: error?.message,
+    code: error?.code,
+    details: error?.details,
+    hint: error?.hint,
+    ...extra,
+  });
+}
+
 // ============================================================
 // AUTH + ROLE RESOLUTION
 // ============================================================
 async function resolveCaller(serviceClient, token) {
   const { data: userData, error: authError } = await serviceClient.auth.getUser(token);
+
   if (authError || !userData?.user) {
+    logSupabaseError('auth.getUser failed', authError || { message: 'no user' });
     return { error: 'Unauthorized: Invalid token', status: 401 };
   }
 
@@ -80,7 +91,11 @@ async function resolveCaller(serviceClient, token) {
     .maybeSingle();
 
   if (profileError) {
-    return { error: 'Unable to verify caller identity', status: 500 };
+    logSupabaseError('supervisor_profiles lookup failed', profileError, { userId });
+    return {
+      error: `Unable to verify caller identity: ${profileError.message}`,
+      status: 500,
+    };
   }
 
   const resolvedRole = profile?.role || metadataRole || 'supervisor';
@@ -94,6 +109,7 @@ async function resolveCaller(serviceClient, token) {
     role: resolvedRole,
     isAdmin: resolvedRole === 'admin',
     isSupervisor: resolvedRole === 'supervisor',
+    hasProfileRow: !!profile,
   };
 }
 
@@ -107,7 +123,7 @@ async function getSupervisorCandidateIds(serviceClient, supervisorId) {
     .eq('supervisor_id', supervisorId);
 
   if (error) {
-    console.error('[Competency Summary] Supervisor scope lookup failed:', error);
+    logSupabaseError('supervisor candidate scope lookup failed', error, { supervisorId });
     return [];
   }
 
@@ -118,7 +134,6 @@ async function getSupervisorCandidateIds(serviceClient, supervisorId) {
 // MODE A — SINGLE RESULT: profile + cohort band
 // ============================================================
 async function handleSingleResult(serviceClient, caller, resultId) {
-  // 1. Load the result to get candidate_id + assessment_id
   const { data: result, error: resultError } = await serviceClient
     .from('assessment_results')
     .select('id, user_id, assessment_id, completed_at')
@@ -126,7 +141,7 @@ async function handleSingleResult(serviceClient, caller, resultId) {
     .maybeSingle();
 
   if (resultError) {
-    console.error('[Competency Summary] Result lookup failed:', resultError);
+    logSupabaseError('single-result lookup failed', resultError, { resultId });
     return { error: resultError.message, status: 500 };
   }
 
@@ -134,7 +149,6 @@ async function handleSingleResult(serviceClient, caller, resultId) {
     return { error: 'Result not found', status: 404 };
   }
 
-  // 2. Supervisor scope check
   if (!caller.isAdmin) {
     const allowed = await getSupervisorCandidateIds(serviceClient, caller.userId);
     if (!allowed.includes(result.user_id)) {
@@ -142,22 +156,18 @@ async function handleSingleResult(serviceClient, caller, resultId) {
     }
   }
 
-  // 3. Candidate's competency rows
   const { data: candidateRows, error: candidateError } = await serviceClient
     .from('candidate_competency_scores')
-    .select(`
-      competency_id,
-      raw_score,
-      max_possible,
-      percentage,
-      classification,
-      question_count
-    `)
+    .select('competency_id, raw_score, max_possible, percentage, classification, question_count')
     .eq('candidate_id', result.user_id)
     .eq('assessment_id', result.assessment_id);
 
   if (candidateError) {
-    console.error('[Competency Summary] Candidate competency lookup failed:', candidateError);
+    logSupabaseError('candidate competency lookup failed', candidateError, {
+      resultId,
+      candidateId: result.user_id,
+      assessmentId: result.assessment_id,
+    });
     return { error: candidateError.message, status: 500 };
   }
 
@@ -172,7 +182,6 @@ async function handleSingleResult(serviceClient, caller, resultId) {
     };
   }
 
-  // 4. Competency metadata
   const competencyIds = candidateRows.map((r) => r.competency_id);
   const { data: competencyMeta, error: metaError } = await serviceClient
     .from('competencies')
@@ -180,25 +189,25 @@ async function handleSingleResult(serviceClient, caller, resultId) {
     .in('id', competencyIds);
 
   if (metaError) {
-    console.error('[Competency Summary] Competency meta lookup failed:', metaError);
+    logSupabaseError('competency meta lookup failed', metaError, { competencyIds });
     return { error: metaError.message, status: 500 };
   }
 
   const metaMap = {};
   (competencyMeta || []).forEach((c) => { metaMap[c.id] = c; });
 
-  // 5. Cohort — all rows for the same assessment_id (option a)
   const { data: cohortRows, error: cohortError } = await serviceClient
     .from('candidate_competency_scores')
     .select('competency_id, candidate_id, percentage')
     .eq('assessment_id', result.assessment_id);
 
   if (cohortError) {
-    console.error('[Competency Summary] Cohort lookup failed:', cohortError);
+    logSupabaseError('cohort lookup failed', cohortError, {
+      assessmentId: result.assessment_id,
+    });
     return { error: cohortError.message, status: 500 };
   }
 
-  // 6. Build cohort distribution per competency
   const cohortByCompetency = {};
   (cohortRows || []).forEach((row) => {
     const key = row.competency_id;
@@ -206,9 +215,12 @@ async function handleSingleResult(serviceClient, caller, resultId) {
     cohortByCompetency[key].push(safeNumber(row.percentage, 0));
   });
 
-  // 7. Assemble response
   const competencies = candidateRows.map((row) => {
-    const meta = metaMap[row.competency_id] || { name: 'Unknown', category: null, display_order: 999 };
+    const meta = metaMap[row.competency_id] || {
+      name: 'Unknown',
+      category: null,
+      display_order: 999,
+    };
     const cohort = cohortByCompetency[row.competency_id] || [];
     const cohortMin = cohort.length > 0 ? Math.min(...cohort) : null;
     const cohortMax = cohort.length > 0 ? Math.max(...cohort) : null;
@@ -238,7 +250,6 @@ async function handleSingleResult(serviceClient, caller, resultId) {
     };
   });
 
-  // Sort by display_order, then name
   competencies.sort((a, b) => {
     if (a.displayOrder !== b.displayOrder) return a.displayOrder - b.displayOrder;
     return a.name.localeCompare(b.name);
@@ -258,7 +269,6 @@ async function handleSingleResult(serviceClient, caller, resultId) {
 // MODE B — ASSESSMENT ROLLUP (role-scoped)
 // ============================================================
 async function handleAssessmentRollup(serviceClient, caller, assessmentId) {
-  // 1. Assessment meta
   const { data: assessment, error: assessmentError } = await serviceClient
     .from('assessments')
     .select('id, title, assessment_type_id')
@@ -266,7 +276,7 @@ async function handleAssessmentRollup(serviceClient, caller, assessmentId) {
     .maybeSingle();
 
   if (assessmentError) {
-    console.error('[Competency Summary] Assessment lookup failed:', assessmentError);
+    logSupabaseError('assessment lookup failed', assessmentError, { assessmentId });
     return { error: assessmentError.message, status: 500 };
   }
 
@@ -274,7 +284,6 @@ async function handleAssessmentRollup(serviceClient, caller, assessmentId) {
     return { error: 'Assessment not found', status: 404 };
   }
 
-  // 2. Build the row query, applying supervisor scope if needed
   let allowedCandidateIds = null;
   if (!caller.isAdmin) {
     allowedCandidateIds = await getSupervisorCandidateIds(serviceClient, caller.userId);
@@ -302,7 +311,7 @@ async function handleAssessmentRollup(serviceClient, caller, assessmentId) {
   const { data: rows, error: rowsError } = await rowsQuery;
 
   if (rowsError) {
-    console.error('[Competency Summary] Rollup rows lookup failed:', rowsError);
+    logSupabaseError('rollup rows lookup failed', rowsError, { assessmentId });
     return { error: rowsError.message, status: 500 };
   }
 
@@ -317,7 +326,6 @@ async function handleAssessmentRollup(serviceClient, caller, assessmentId) {
     };
   }
 
-  // 3. Competency metadata
   const competencyIds = [...new Set(rows.map((r) => r.competency_id))];
   const { data: competencyMeta, error: metaError } = await serviceClient
     .from('competencies')
@@ -325,14 +333,13 @@ async function handleAssessmentRollup(serviceClient, caller, assessmentId) {
     .in('id', competencyIds);
 
   if (metaError) {
-    console.error('[Competency Summary] Rollup competency meta failed:', metaError);
+    logSupabaseError('rollup competency meta failed', metaError, { competencyIds });
     return { error: metaError.message, status: 500 };
   }
 
   const metaMap = {};
   (competencyMeta || []).forEach((c) => { metaMap[c.id] = c; });
 
-  // 4. Group rows by competency
   const byCompetency = {};
   const distinctCandidates = new Set();
 
@@ -343,10 +350,13 @@ async function handleAssessmentRollup(serviceClient, caller, assessmentId) {
     distinctCandidates.add(row.candidate_id);
   });
 
-  // 5. Build rollup
   const competencies = Object.keys(byCompetency).map((competencyId) => {
     const group = byCompetency[competencyId];
-    const meta = metaMap[competencyId] || { name: 'Unknown', category: null, display_order: 999 };
+    const meta = metaMap[competencyId] || {
+      name: 'Unknown',
+      category: null,
+      display_order: 999,
+    };
 
     const percentages = group.map((r) => safeNumber(r.percentage, 0));
     const mean = percentages.reduce((a, b) => a + b, 0) / percentages.length;
@@ -403,18 +413,20 @@ export default async function handler(req, res) {
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
     if (!supabaseUrl || !serviceRoleKey) {
-      console.error('[Competency Summary] Missing Supabase credentials');
+      console.error('[Competency Summary] Missing Supabase credentials', {
+        hasUrl: !!supabaseUrl,
+        hasServiceRoleKey: !!serviceRoleKey,
+      });
       return res.status(500).json({
         success: false,
-        error: 'Server configuration error',
+        error: 'Server configuration error: Missing Supabase credentials',
       });
     }
 
     const serviceClient = createClient(supabaseUrl, serviceRoleKey, {
-      auth: { persistSession: false },
+      auth: { persistSession: false, autoRefreshToken: false },
     });
 
-    // Auth
     const authHeader = req.headers.authorization || '';
     const token = authHeader.startsWith('Bearer ')
       ? authHeader.replace('Bearer ', '').trim()
@@ -425,11 +437,19 @@ export default async function handler(req, res) {
     }
 
     const caller = await resolveCaller(serviceClient, token);
+
     if (caller.error) {
+      console.error('[Competency Summary] resolveCaller failed:', caller.error);
       return res.status(caller.status || 401).json({ success: false, error: caller.error });
     }
 
-    // Route to mode
+    console.log('[Competency Summary] caller resolved', {
+      userId: caller.userId,
+      role: caller.role,
+      isAdmin: caller.isAdmin,
+      hasProfileRow: caller.hasProfileRow,
+    });
+
     const { resultId, assessmentId } = req.query || {};
 
     if (resultId) {
