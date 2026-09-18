@@ -1,4 +1,10 @@
-// pages/api/assessment/save-response.js - UPDATED WITH METADATA SUPPORT
+// pages/api/assessment/save-response.js - WITH FORCED-CHOICE SUPPORT
+//
+// Phase 5:
+// - Accepts leastAnswerId from the request body for forced-choice assessments.
+// - Writes it to responses.least_answer_id.
+// - Single-select responses leave leastAnswerId undefined; the column
+//   stays null and behavior is unchanged.
 
 import { createClient } from "@supabase/supabase-js";
 
@@ -8,7 +14,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { sessionId, questionId, answer, metadata } = req.body;
+    const { sessionId, questionId, answer, leastAnswerId, metadata } = req.body;
 
     if (!sessionId || !questionId || answer === undefined) {
       return res.status(400).json({ success: false, error: "Missing required fields" });
@@ -58,20 +64,35 @@ export default async function handler(req, res) {
     // Check if response exists
     const { data: existing, error: existingError } = await serviceClient
       .from("responses")
-      .select("id, answer_id, times_changed, initial_answer_id, metadata")
+      .select("id, answer_id, least_answer_id, times_changed, initial_answer_id, metadata")
       .eq("session_id", sessionId)
       .eq("question_id", parseInt(questionId, 10))
       .maybeSingle();
 
     const isNew = !existing;
-    const isAnswerChange = existing ? String(existing.answer_id) !== String(answer) : false;
+
+    // An answer change is only counted when the MOST pick changes.
+    // Setting least for the first time is not a change.
+    const isAnswerChange = existing && existing.answer_id != null
+      ? String(existing.answer_id) !== String(answer)
+      : false;
+
     const newChangeCount = isNew ? 0 : (existing.times_changed || 0) + (isAnswerChange ? 1 : 0);
+
+    // Normalize least answer ID
+    const normalizedLeastAnswerId =
+      leastAnswerId === undefined || leastAnswerId === null || leastAnswerId === ""
+        ? null
+        : parseInt(leastAnswerId, 10);
+
+    const safeLeastAnswerId = Number.isNaN(normalizedLeastAnswerId)
+      ? null
+      : normalizedLeastAnswerId;
 
     // ============================================================
     // BUILD METADATA COLUMN
     // ============================================================
     const metadataColumn = {
-      // Behavioral data from the assessment page
       tab_switches: parseInt(metadata?.tab_switches, 10) || 0,
       copy_attempts: parseInt(metadata?.copy_attempts, 10) || 0,
       paste_attempts: parseInt(metadata?.paste_attempts, 10) || 0,
@@ -80,7 +101,6 @@ export default async function handler(req, res) {
       previous_question: parseInt(metadata?.previous_question, 10) || 0,
       is_answer_change: isAnswerChange,
       time_on_question: parseInt(metadata?.time_on_question, 10) || 0,
-      // Preserve existing metadata if any
       ...(existing?.metadata || {})
     };
 
@@ -91,6 +111,7 @@ export default async function handler(req, res) {
       assessment_id: assessmentId,
       question_id: parseInt(questionId, 10),
       answer_id: String(answer),
+      least_answer_id: safeLeastAnswerId,
       time_spent_seconds: parseInt(metadata?.time_spent_seconds, 10) || 0,
       updated_at: new Date().toISOString(),
       metadata: metadataColumn
@@ -103,7 +124,8 @@ export default async function handler(req, res) {
       responseData.initial_answer_id = metadata?.initial_answer_id || String(answer);
     } else {
       responseData.times_changed = newChangeCount;
-      responseData.initial_answer_id = existing.initial_answer_id || metadata?.initial_answer_id || String(answer);
+      responseData.initial_answer_id =
+        existing.initial_answer_id || metadata?.initial_answer_id || String(answer);
     }
 
     // Save or update
@@ -113,7 +135,7 @@ export default async function handler(req, res) {
         .from("responses")
         .insert(responseData)
         .select();
-      
+
       if (error) {
         console.error("Insert error:", error);
         return res.status(500).json({ success: false, error: error.message });
@@ -125,7 +147,7 @@ export default async function handler(req, res) {
         .update(responseData)
         .eq("id", existing.id)
         .select();
-      
+
       if (error) {
         console.error("Update error:", error);
         return res.status(500).json({ success: false, error: error.message });
@@ -141,8 +163,8 @@ export default async function handler(req, res) {
 
     await serviceClient
       .from("assessment_sessions")
-      .update({ 
-        answered_questions: count || 0, 
+      .update({
+        answered_questions: count || 0,
         updated_at: new Date().toISOString(),
         total_time_spent: metadata?.time_spent_seconds || 0,
         last_activity: new Date().toISOString()
@@ -155,6 +177,7 @@ export default async function handler(req, res) {
       isNewResponse: isNew,
       isAnswerChange: isAnswerChange,
       timesChanged: newChangeCount,
+      hasLeastAnswer: safeLeastAnswerId !== null,
       hasBehavioralData: metadataColumn.violations > 0 || metadataColumn.tab_switches > 0
     });
 
