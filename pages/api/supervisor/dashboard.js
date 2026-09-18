@@ -1,7 +1,12 @@
-// pages/api/supervisor/dashboard.js - COMPLETE FIXED
-// SUPPORTS MULTIPLE SUPERVISORS via junction table
+// pages/api/supervisor/dashboard.js - COMPLETE FIXED v2
+// Phase 6.5: Scope locked to primary supervisor (candidate_profiles.supervisor_id).
+//            Junction access still applies elsewhere (report viewer) but is
+//            NOT used for the supervisor dashboard's "my candidates" count.
+//            All .in() queries are chunked to avoid URL length limits.
 
 import { createClient } from '@supabase/supabase-js';
+
+const IN_CHUNK_SIZE = 150;
 
 function extractBearerToken(req) {
   const authHeader = req.headers.authorization || req.headers.Authorization || '';
@@ -15,11 +20,40 @@ function safeNumber(value, fallback = 0) {
   return Number.isFinite(num) ? num : fallback;
 }
 
+function chunkArray(arr, size) {
+  const out = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
+// Run a query that filters by .in() over a possibly-large ID list, chunked.
+async function chunkedIn(ids, queryBuilder) {
+  if (!ids || ids.length === 0) return { data: [], error: null };
+  const chunks = chunkArray(ids, IN_CHUNK_SIZE);
+  const allData = [];
+  for (const chunk of chunks) {
+    const { data, error } = await queryBuilder(chunk);
+    if (error) return { data: allData, error };
+    if (Array.isArray(data)) allData.push(...data);
+  }
+  return { data: allData, error: null };
+}
+
+function logSupabaseError(tag, error, extra = {}) {
+  console.error(`[Supervisor Dashboard] ${tag}`, {
+    message: error?.message,
+    code: error?.code,
+    details: error?.details,
+    hint: error?.hint,
+    ...extra,
+  });
+}
+
 function getReportData(result) {
   if (!result) return {};
   if (result.report_data && typeof result.report_data === 'object') return result.report_data;
   if (result.report_data && typeof result.report_data === 'string') {
-    try { return JSON.parse(result.report_data) || {}; } 
+    try { return JSON.parse(result.report_data) || {}; }
     catch { return {}; }
   }
   return {};
@@ -28,21 +62,19 @@ function getReportData(result) {
 function normalizeCategoryScores(result) {
   const reportData = getReportData(result);
   const raw = result?.category_scores || reportData?.categoryScores || reportData?.categoryBreakdown || [];
-  
+
   if (Array.isArray(raw)) {
     return raw.map(cat => ({
       category: cat.category || cat.name || '',
       percentage: Math.round(safeNumber(cat.percentage || cat.score || 0))
     }));
   }
-  
   if (raw && typeof raw === 'object') {
     return Object.entries(raw).map(([cat, data]) => ({
       category: cat,
       percentage: Math.round(safeNumber(data?.percentage || data?.score || 0))
     }));
   }
-  
   return [];
 }
 
@@ -50,76 +82,76 @@ function calculateScore(result) {
   if (result?.percentage_score) {
     return Math.round(safeNumber(result.percentage_score));
   }
-  
+
   const categories = normalizeCategoryScores(result);
   const valid = categories.filter(c => c.percentage > 0);
   if (valid.length > 0) {
     const sum = valid.reduce((a, c) => a + c.percentage, 0);
     return Math.round(sum / valid.length);
   }
-  
+
   const reportData = getReportData(result);
   if (reportData?.percentageScore) {
     return Math.round(safeNumber(reportData.percentageScore));
   }
-  
+
   return 0;
 }
 
 function getNationalServiceScores(result) {
   const reportData = getReportData(result);
-  
+
   let workplace = safeNumber(
-    reportData?.workplaceReadiness || 
+    reportData?.workplaceReadiness ||
     reportData?.dimensions?.workplaceReadiness ||
     reportData?.workplace_readiness ||
-    result?.workplace_readiness || 
+    result?.workplace_readiness ||
     0
   );
-  
+
   let intellectual = safeNumber(
-    reportData?.intellectualCapability || 
+    reportData?.intellectualCapability ||
     reportData?.dimensions?.intellectualCapability ||
     reportData?.intellectual_capability ||
-    result?.intellectual_capability || 
+    result?.intellectual_capability ||
     0
   );
-  
+
   if (workplace === 0 && intellectual === 0) {
     const categoryScores = reportData?.categoryScores || reportData?.category_scores || result?.category_scores || [];
-    
+
     const workplaceCategories = [
-      'Communication & Teamwork', 
-      'Ownership & Integrity', 
-      'Safety & Risk Awareness', 
+      'Communication & Teamwork',
+      'Ownership & Integrity',
+      'Safety & Risk Awareness',
       'Technical Fundamentals',
       'Work Ethic',
       'Professional Conduct'
     ];
-    
+
     const intellectualCategories = [
       'Problem Solving & Troubleshooting',
-      'Logical Reasoning', 
-      'Numerical Reasoning', 
+      'Logical Reasoning',
+      'Numerical Reasoning',
       'Measurement & Engineering Units',
       'Learning Agility',
       'Cognitive Ability',
       'Analytical Thinking'
     ];
-    
+
     let workplaceTotal = 0;
     let workplaceCount = 0;
     let intellectualTotal = 0;
     let intellectualCount = 0;
-    
+
     if (Array.isArray(categoryScores) && categoryScores.length > 0) {
       categoryScores.forEach(cat => {
         const name = (cat.category || cat.name || '').toLowerCase();
         const percentage = safeNumber(cat.percentage || cat.score || 0);
-        
+
         const isWorkplace = workplaceCategories.some(c => name.includes(c.toLowerCase()));
         const isIntellectual = intellectualCategories.some(c => name.includes(c.toLowerCase()));
-        
+
         if (isWorkplace && percentage > 0) {
           workplaceTotal += percentage;
           workplaceCount++;
@@ -129,24 +161,24 @@ function getNationalServiceScores(result) {
         }
       });
     }
-    
+
     workplace = workplaceCount > 0 ? Math.round(workplaceTotal / workplaceCount) : 0;
     intellectual = intellectualCount > 0 ? Math.round(intellectualTotal / intellectualCount) : 0;
   }
-  
+
   const overall = safeNumber(
-    reportData?.percentageScore || 
-    reportData?.overallScore || 
+    reportData?.percentageScore ||
+    reportData?.overallScore ||
     reportData?.percentage_score ||
-    result?.percentage_score || 
+    result?.percentage_score ||
     0
   );
-  
+
   if (workplace === 0 && intellectual === 0 && overall > 0) {
     workplace = overall;
     intellectual = overall;
   }
-  
+
   return {
     workplaceReadiness: workplace,
     intellectualCapability: intellectual,
@@ -158,9 +190,9 @@ function getRecommendation(workplace, intellectual, overall) {
   const w = safeNumber(workplace);
   const i = safeNumber(intellectual);
   const o = safeNumber(overall);
-  
+
   const bestScore = Math.max(w, i, o);
-  
+
   if (bestScore >= 85) return 'Highly Recommended';
   if (bestScore >= 75) return 'Recommended';
   if (bestScore >= 65) return 'Reserve Pool';
@@ -170,102 +202,81 @@ function getRecommendation(workplace, intellectual, overall) {
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') {
-    return res.status(405).json({ 
-      success: false, 
-      error: 'Method not allowed. Use GET.' 
+    return res.status(405).json({
+      success: false,
+      error: 'Method not allowed. Use GET.'
     });
   }
 
   try {
     const token = extractBearerToken(req);
     if (!token) {
-      return res.status(401).json({ 
-        success: false, 
-        error: 'Missing authorization token' 
+      return res.status(401).json({
+        success: false,
+        error: 'Missing authorization token'
       });
     }
 
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
     if (!supabaseUrl || !supabaseKey) {
-      console.error('[Dashboard] Missing environment variables');
-      return res.status(500).json({ 
-        success: false, 
-        error: 'Server configuration error' 
+      console.error('[Supervisor Dashboard] Missing environment variables');
+      return res.status(500).json({
+        success: false,
+        error: 'Server configuration error'
       });
     }
 
     const supabase = createClient(supabaseUrl, supabaseKey, {
-      global: {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
-      },
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false
-      }
+      auth: { autoRefreshToken: false, persistSession: false }
     });
 
     const { data: userData, error: userError } = await supabase.auth.getUser(token);
     if (userError || !userData?.user) {
-      console.error('[Dashboard] Auth error:', userError);
-      return res.status(401).json({ 
-        success: false, 
-        error: 'Invalid or expired token' 
+      logSupabaseError('auth.getUser failed', userError);
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid or expired token'
       });
     }
 
     const authEmail = String(userData.user.email || '').trim().toLowerCase();
     const authId = userData.user.id;
-    
-    console.log(`[Dashboard] Auth Email: ${authEmail}`);
-    console.log(`[Dashboard] Auth ID: ${authId}`);
 
     // ============================================================
     // RESOLVE SUPERVISOR PROFILE
     // ============================================================
     let supervisor = null;
 
-    try {
-      const { data, error } = await supabase
+    const { data: byId, error: byIdError } = await supabase
+      .from('supervisor_profiles')
+      .select('id, full_name, email, role, is_active')
+      .eq('id', authId)
+      .maybeSingle();
+
+    if (byIdError) {
+      logSupabaseError('supervisor lookup by id failed', byIdError, { authId });
+    } else if (byId) {
+      supervisor = byId;
+    }
+
+    if (!supervisor) {
+      const { data: byEmail, error: byEmailError } = await supabase
         .from('supervisor_profiles')
         .select('id, full_name, email, role, is_active')
-        .eq('id', authId)
+        .ilike('email', authEmail)
         .maybeSingle();
 
-      if (error) {
-        console.error('[Dashboard] ID lookup error:', error);
-      } else if (data) {
-        supervisor = data;
-        console.log(`[Dashboard] Found supervisor by ID: ${supervisor.full_name}`);
-      }
-    } catch (err) {
-      console.error('[Dashboard] ID lookup exception:', err);
-    }
-
-    if (!supervisor) {
-      try {
-        const { data, error } = await supabase
-          .from('supervisor_profiles')
-          .select('id, full_name, email, role, is_active')
-          .ilike('email', authEmail)
-          .maybeSingle();
-
-        if (error) {
-          console.error('[Dashboard] Email lookup error:', error);
-        } else if (data) {
-          supervisor = data;
-          console.log(`[Dashboard] Found supervisor by email: ${supervisor.full_name}`);
-        }
-      } catch (err) {
-        console.error('[Dashboard] Email lookup exception:', err);
+      if (byEmailError) {
+        logSupabaseError('supervisor lookup by email failed', byEmailError, { authEmail });
+      } else if (byEmail) {
+        supervisor = byEmail;
       }
     }
 
     if (!supervisor) {
-      console.error('[Dashboard] Supervisor not found for:', { authId, authEmail });
+      console.error('[Supervisor Dashboard] Supervisor not found:', { authId, authEmail });
       return res.status(404).json({
         success: false,
         error: 'Supervisor profile not found. Please contact support.',
@@ -281,78 +292,27 @@ export default async function handler(req, res) {
       });
     }
 
-    console.log(`[Dashboard] Supervisor resolved: ${supervisor.full_name} (${supervisor.email})`);
-    console.log(`[Dashboard] Supervisor ID: ${supervisor.id}`);
-
-    // ============================================================
-    // 🟢 FIXED: FETCH CANDIDATES - SUPPORTS MULTIPLE SUPERVISORS
-    // ============================================================
     const supervisorId = supervisor.id;
-    let allCandidates = [];
-    const candidateIdsSet = new Set();
-    let legacyCount = 0;
-    let junctionCount = 0;
 
-    // 1. Get candidates from legacy supervisor_id field
-    try {
-      const { data: legacyCandidates, error: legacyError } = await supabase
-        .from('candidate_profiles')
-        .select('id, full_name, email, university, programme, supervisor_id, created_at')
-        .eq('supervisor_id', supervisorId);
+    // ============================================================
+    // FETCH CANDIDATES — PRIMARY ONLY (locked semantics)
+    // ============================================================
+    const { data: primaryCandidates, error: primaryError } = await supabase
+      .from('candidate_profiles')
+      .select('id, full_name, email, university, programme, supervisor_id, created_at')
+      .eq('supervisor_id', supervisorId);
 
-      if (legacyError) {
-        console.log('[Dashboard] Legacy field query error:', legacyError.message);
-      } else if (legacyCandidates) {
-        legacyCandidates.forEach(c => {
-          if (!candidateIdsSet.has(c.id)) {
-            candidateIdsSet.add(c.id);
-            allCandidates.push(c);
-          }
-        });
-        legacyCount = legacyCandidates.length;
-        console.log(`[Dashboard] Legacy candidates: ${legacyCount}`);
-      }
-    } catch (err) {
-      console.log('[Dashboard] Legacy field error:', err.message);
+    if (primaryError) {
+      logSupabaseError('primary candidates lookup failed', primaryError, { supervisorId });
+      return res.status(500).json({
+        success: false,
+        error: 'Unable to retrieve candidate list',
+        code: 'CANDIDATES_FETCH_FAILED'
+      });
     }
 
-    // 2. 🟢 FIXED: Get candidates from multiple supervisor assignments (junction table)
-    try {
-      const { data: junctionAssignments, error: junctionError } = await supabase
-        .from('candidate_supervisors')
-        .select('candidate_id, supervisor_id')
-        .eq('supervisor_id', supervisorId);
-
-      if (junctionError) {
-        console.log('[Dashboard] Junction table query error:', junctionError.message);
-      } else if (junctionAssignments && junctionAssignments.length > 0) {
-        const junctionIds = junctionAssignments.map(a => a.candidate_id).filter(Boolean);
-        const missingIds = junctionIds.filter(id => !candidateIdsSet.has(id));
-        
-        if (missingIds.length > 0) {
-          const { data: junctionCandidates, error: junctionCandError } = await supabase
-            .from('candidate_profiles')
-            .select('id, full_name, email, university, programme, supervisor_id, created_at')
-            .in('id', missingIds);
-          
-          if (!junctionCandError && junctionCandidates) {
-            junctionCandidates.forEach(c => {
-              if (!candidateIdsSet.has(c.id)) {
-                candidateIdsSet.add(c.id);
-                allCandidates.push(c);
-              }
-            });
-            junctionCount = junctionCandidates.length;
-            console.log(`[Dashboard] Junction candidates: ${junctionCount}`);
-          }
-        }
-      }
-    } catch (err) {
-      console.log('[Dashboard] Junction table error:', err.message);
-    }
-
+    const allCandidates = primaryCandidates || [];
     const totalCandidates = allCandidates.length;
-    console.log(`[Dashboard] Total candidates: ${totalCandidates} (Legacy: ${legacyCount}, Junction: ${junctionCount})`);
 
     if (totalCandidates === 0) {
       return res.status(200).json({
@@ -377,64 +337,48 @@ export default async function handler(req, res) {
     const candidateIds = allCandidates.map(c => c.id);
 
     // ============================================================
-    // FETCH ASSESSMENT RESULTS - BATCH PROCESSING
+    // FETCH ASSESSMENT RESULTS (chunked)
     // ============================================================
-    let results = [];
-    const BATCH_SIZE = 100;
+    const { data: results, error: resultsError } = await chunkedIn(candidateIds, (chunk) =>
+      supabase
+        .from('assessment_results')
+        .select('id, user_id, assessment_id, percentage_score, completed_at, report_data, category_scores, workplace_readiness, intellectual_capability, total_score, max_score')
+        .in('user_id', chunk)
+    );
 
-    try {
-      console.log(`[Dashboard] Querying assessment_results for ${candidateIds.length} candidates in batches...`);
-      
-      for (let i = 0; i < candidateIds.length; i += BATCH_SIZE) {
-        const batch = candidateIds.slice(i, i + BATCH_SIZE);
-        console.log(`[Dashboard] Processing batch ${Math.floor(i/BATCH_SIZE) + 1}, ${batch.length} IDs`);
-        
-        const { data, error } = await supabase
-          .from('assessment_results')
-          .select('id, user_id, assessment_id, percentage_score, completed_at, report_data, category_scores, workplace_readiness, intellectual_capability, total_score, max_score')
-          .in('user_id', batch);
-
-        if (error) {
-          console.error('[Dashboard] Batch error:', error);
-          continue;
-        }
-        
-        if (data && data.length > 0) {
-          results = results.concat(data);
-          console.log(`[Dashboard] Batch found ${data.length} results, total: ${results.length}`);
-        }
-      }
-
-      console.log(`[Dashboard] Total assessment results found: ${results.length}`);
-    } catch (err) {
-      console.error('[Dashboard] Results fetch exception:', err);
+    if (resultsError) {
+      logSupabaseError('assessment results fetch failed', resultsError, {
+        candidateCount: candidateIds.length,
+      });
       return res.status(500).json({
         success: false,
         error: 'Unable to retrieve assessment reports',
-        code: 'ASSESSMENT_RESULTS_FETCH_EXCEPTION',
-        details: err.message
+        code: 'ASSESSMENT_RESULTS_FETCH_FAILED'
       });
     }
 
+    const resultRows = results || [];
+
     // ============================================================
-    // FETCH ASSESSMENT DETAILS
+    // FETCH ASSESSMENT DETAILS (chunked)
     // ============================================================
-    const assessmentIds = [...new Set(results.map(r => r.assessment_id).filter(Boolean))];
-    let assessmentMap = {};
-    
+    const assessmentIds = [...new Set(resultRows.map(r => r.assessment_id).filter(Boolean))];
+    const assessmentMap = {};
+
     if (assessmentIds.length > 0) {
-      try {
-        const { data: assessments, error: assmtError } = await supabase
+      const { data: assessments, error: assessmentError } = await chunkedIn(assessmentIds, (chunk) =>
+        supabase
           .from('assessments')
           .select('id, title, assessment_type_id')
-          .in('id', assessmentIds);
+          .in('id', chunk)
+      );
 
-        if (!assmtError && assessments) {
-          assessments.forEach(a => { assessmentMap[a.id] = a; });
-          console.log(`[Dashboard] Assessment details: ${assessments.length}`);
-        }
-      } catch (err) {
-        console.error('[Dashboard] Assessment details error:', err.message);
+      if (assessmentError) {
+        logSupabaseError('assessments lookup failed', assessmentError, {
+          assessmentCount: assessmentIds.length,
+        });
+      } else {
+        (assessments || []).forEach(a => { assessmentMap[a.id] = a; });
       }
     }
 
@@ -448,22 +392,23 @@ export default async function handler(req, res) {
 
     let totalCompleted = 0;
     let nationalServiceCount = 0;
+    let orphanCount = 0;
     const allReports = [];
 
-    results.forEach(r => {
+    resultRows.forEach(r => {
       const candidate = candidateMap[r.user_id];
       if (!candidate) {
-        console.log(`[Dashboard] Orphan result - user_id ${r.user_id} not found in candidates`);
+        orphanCount++;
         return;
       }
 
       const assessment = assessmentMap[r.assessment_id];
       const isNS = r.assessment_id === NS_ASSESSMENT_ID;
-      
+
       let score = calculateScore(r);
       let workplace = 0;
       let intellectual = 0;
-      
+
       if (isNS) {
         const nsScores = getNationalServiceScores(r);
         workplace = nsScores.workplaceReadiness || 0;
@@ -533,11 +478,8 @@ export default async function handler(req, res) {
     });
 
     // ============================================================
-    // RETURN SUCCESS
+    // RETURN
     // ============================================================
-    console.log(`[Dashboard] Success! Returning ${totalCandidates} candidates with ${allReports.length} reports`);
-    console.log(`[Dashboard] Stats - Completed: ${totalCompleted}, National Service: ${nationalServiceCount}`);
-
     return res.status(200).json({
       success: true,
       stats: {
@@ -550,21 +492,20 @@ export default async function handler(req, res) {
       nationalServiceReports: nsReports,
       otherReports: otherReports,
       diagnostics: {
-        assignedCandidateCount: totalCandidates,
-        legacyCount: legacyCount,
-        junctionCount: junctionCount,
-        resultCount: results.length,
+        supervisorId: supervisor.id,
+        supervisorName: supervisor.full_name,
+        candidateCount: totalCandidates,
+        resultCount: resultRows.length,
         reportCount: allReports.length,
-        orphanResultCount: results.filter(r => !candidateMap[r.user_id]).length
+        orphanResultCount: orphanCount
       }
     });
 
   } catch (error) {
-    console.error('[Dashboard] Fatal error:', error);
+    console.error('[Supervisor Dashboard] Fatal error:', error);
     return res.status(500).json({
       success: false,
       error: error.message || 'Internal server error',
-      ...(process.env.NODE_ENV === 'development' && { stack: error.stack })
     });
   }
 }
