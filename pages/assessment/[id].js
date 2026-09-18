@@ -1,15 +1,22 @@
-// pages/assessment/[id].js - FULLY CORRECTED WITH RESPONSE-SHAPE FIX
-// UPDATED: isMultipleCorrect now comes from the server (questions API),
-// since answer.score is no longer sent to the client (Phase 1 fix).
-// UPDATED (Phase Two / Item 2.3): session is created BEFORE questions
-// are fetched, and the session id is passed to the questions API so
-// it can return the frozen question set for that session.
-// UPDATED (Phase Two / Item 2.4b): the current question index is
-// persisted to localStorage and restored on refresh.
-// UPDATED (Phase Two / "Serve all questions"): duration is derived
-// from the session's expires_at and started_at timestamps. This is
-// immune to differences in what the session API returns — the DB row
-// is the single source of truth, and both fields are always present.
+// pages/assessment/[id].js - FORCED-CHOICE SUPPORT
+//
+// Adds forced-choice most/least UI for assessments whose type has
+// scoring_mode = 'forced_choice'. Single-select assessments behave
+// exactly as before.
+//
+// Phase 5 additions:
+//   - Fetches assessment_type.scoring_mode
+//   - When mode = 'forced_choice', renders a two-column most/least
+//     radio grid instead of single radio selection
+//   - Saves both picks via saveAnswer(sessionId, questionId, mostId,
+//     leastId, metadata)
+//   - Restores both picks on reload
+//   - Auto-clears the opposing pick when the candidate selects the
+//     same answer on both sides
+//   - Requires both picks before "answered"
+//
+// Everything else (proctoring, timer, navigator, submit flow) is
+// unchanged from the previous version.
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
@@ -35,17 +42,11 @@ function formatTime(seconds) {
   return `${String(hrs).padStart(2, "0")}:${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
 }
 
-// Derive the session duration (in seconds) from the timestamps on the
-// session row. Prefers the explicit duration_minutes field if the server
-// provides it, otherwise computes from expires_at - started_at, which is
-// always present on assessment_sessions.
 function deriveDurationSeconds(sessionData) {
   if (!sessionData) return 0;
 
   const explicit = safeNumber(sessionData.duration_minutes, 0);
-  if (explicit > 0) {
-    return Math.round(explicit * 60);
-  }
+  if (explicit > 0) return Math.round(explicit * 60);
 
   if (sessionData.expires_at && sessionData.started_at) {
     const expiresMs = new Date(sessionData.expires_at).getTime();
@@ -64,8 +65,12 @@ function getAnswerArray(value) {
   return [value];
 }
 
-function countAnswered(answerMap) {
-  return Object.values(answerMap || {}).filter((answer) => {
+function countAnswered(answerMap, questionCount, isForcedChoiceMap) {
+  return Object.values(answerMap || {}).filter((answer, idx) => {
+    // For forced-choice, we require an entry of shape { most, least }
+    if (isForcedChoiceMap && isForcedChoiceMap[idx]) {
+      return answer && answer.most != null && answer.least != null;
+    }
     if (Array.isArray(answer)) return answer.length > 0;
     return answer !== null && answer !== undefined && answer !== "";
   }).length;
@@ -135,8 +140,7 @@ async function apiCall(endpoint, options = {}) {
 }
 
 async function fetchAssessmentDetails(assessmentId) {
-  const result = await apiCall(`/api/assessment/${assessmentId}`);
-  return result;
+  return await apiCall(`/api/assessment/${assessmentId}`);
 }
 
 async function fetchAccess(assessmentId) {
@@ -167,12 +171,15 @@ async function getSessionResponses(sessionId) {
   return result.responses || {};
 }
 
-async function saveAnswer(sessionId, questionId, answer, metadata) {
-  const result = await apiCall('/api/assessment/save-response', {
+async function saveAnswer(sessionId, questionId, answer, leastAnswer, metadata) {
+  const body = { sessionId, questionId, answer, metadata };
+  if (leastAnswer !== undefined && leastAnswer !== null) {
+    body.leastAnswerId = leastAnswer;
+  }
+  return await apiCall('/api/assessment/save-response', {
     method: 'POST',
-    body: JSON.stringify({ sessionId, questionId, answer, metadata })
+    body: JSON.stringify(body)
   });
-  return result;
 }
 
 async function submitAssessment(sessionId, autoSubmitted, autoSubmitReason, allowIncomplete, proctoringData, assessmentId) {
@@ -199,6 +206,7 @@ function AssessmentContent() {
   const [assessment, setAssessment] = useState(null);
   const [assessmentType, setAssessmentType] = useState(null);
   const [assessmentTypeCode, setAssessmentTypeCode] = useState(null);
+  const [scoringMode, setScoringMode] = useState("single_select");
   const [questions, setQuestions] = useState([]);
   const [session, setSession] = useState(null);
   const [user, setUser] = useState(null);
@@ -208,6 +216,8 @@ function AssessmentContent() {
   const [initialAnswers, setInitialAnswers] = useState({});
   const [answerChangeCount, setAnswerChangeCount] = useState({});
   const [saveStatus, setSaveStatus] = useState({});
+  // Used only for forced-choice to flash the opposing pick briefly.
+  const [flashCell, setFlashCell] = useState(null);
 
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [timeLimitSeconds, setTimeLimitSeconds] = useState(7200);
@@ -255,8 +265,33 @@ function AssessmentContent() {
     (assessment && assessment.title && assessment.title.toLowerCase().includes('national service'));
 
   const isMultipleCorrect = isNationalService ? false : Boolean(currentQuestion.isMultipleCorrect);
+  const isForcedChoice = scoringMode === "forced_choice";
 
-  const totalAnswered = countAnswered(answers);
+  // ------------------------------------------------------------
+  // Forced-choice helpers
+  // ------------------------------------------------------------
+  function getForcedChoicePicks(questionId) {
+    const entry = answers[questionId];
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      return { most: null, least: null };
+    }
+    return {
+      most: entry.most !== undefined ? entry.most : null,
+      least: entry.least !== undefined ? entry.least : null
+    };
+  }
+
+  function isAnsweredForQuestion(questionId) {
+    if (isForcedChoice) {
+      const { most, least } = getForcedChoicePicks(questionId);
+      return most !== null && least !== null;
+    }
+    return getAnswerArray(answers[questionId]).length > 0 ||
+           (answers[questionId] !== undefined && answers[questionId] !== null && answers[questionId] !== "");
+  }
+
+  const answeredCount = questions.filter((q) => isAnsweredForQuestion(q.id)).length;
+  const totalAnswered = answeredCount;
   const totalChanges = Object.values(answerChangeCount).reduce((a, b) => a + safeNumber(b, 0), 0);
   const isLastQuestion = currentIndex === questions.length - 1;
   const remainingSeconds = Math.max(0, timeLimitSeconds - elapsedSeconds);
@@ -269,8 +304,18 @@ function AssessmentContent() {
   }
 
   function isAnswerSelected(questionId, answerId) {
+    if (isForcedChoice) {
+      const { most } = getForcedChoicePicks(questionId);
+      return String(most) === String(answerId);
+    }
     const selected = getSelectedAnswersForQuestion(questionId);
     return selected.map(String).includes(String(answerId));
+  }
+
+  function isLeastSelected(questionId, answerId) {
+    if (!isForcedChoice) return false;
+    const { least } = getForcedChoicePicks(questionId);
+    return String(least) === String(answerId);
   }
 
   function showViolation(message) {
@@ -354,9 +399,7 @@ function AssessmentContent() {
   }
 
   async function handleAutoSubmit(reason) {
-    if (alreadySubmitted || submittingRef.current || autoSubmitRef.current) {
-      return;
-    }
+    if (alreadySubmitted || submittingRef.current || autoSubmitRef.current) return;
 
     try {
       autoSubmitRef.current = true;
@@ -371,7 +414,35 @@ function AssessmentContent() {
       }
 
       const answerPromises = Object.entries(answers).map(([qId, answer]) => {
-        if (answer === null || answer === undefined || answer === '') return null;
+        if (answer === null || answer === undefined || answer === "") return null;
+
+        // Forced-choice: answer is { most, least }
+        if (isForcedChoice && typeof answer === "object" && !Array.isArray(answer)) {
+          if (answer.most == null) return null;
+          const changeCount = answerChangeCount[qId] || 0;
+          const initialAns = initialAnswers[qId] || answer.most;
+          return saveAnswer(
+            sessionIdRef.current,
+            qId,
+            String(answer.most),
+            answer.least != null ? String(answer.least) : undefined,
+            {
+              time_spent_seconds: Math.floor((Date.now() - questionStartTime) / 1000),
+              times_changed: changeCount,
+              initial_answer_id: String(initialAns),
+              is_answer_change: false,
+              tab_switches: tabSwitchCount,
+              copy_attempts: copyAttempts,
+              paste_attempts: pasteAttempts,
+              right_click_attempts: rightClickAttempts,
+              violations: violationCount,
+              external_urls_visited: externalUrlVisits,
+              domain_visits: domainVisits
+            }
+          );
+        }
+
+        // Single-select
         const answerToStore = Array.isArray(answer) ? answer.join(",") : String(answer);
         const changeCount = answerChangeCount[qId] || 0;
         const initialAns = initialAnswers[qId] || answer;
@@ -380,6 +451,7 @@ function AssessmentContent() {
           sessionIdRef.current,
           qId,
           answerToStore,
+          undefined,
           {
             time_spent_seconds: Math.floor((Date.now() - questionStartTime) / 1000),
             times_changed: changeCount,
@@ -445,70 +517,31 @@ function AssessmentContent() {
     }
   }
 
-  async function handleAnswerSelect(questionId, answerId, multipleCorrect) {
-    if (isTimeExpired || elapsedSeconds >= timeLimitSeconds) {
-      alert("Time has expired! The assessment is being submitted automatically.");
-      return;
+  async function persistAnswer(questionId, answerValue, leastValue, isChange) {
+    const currentChangeCount = safeNumber(answerChangeCount[questionId], 0);
+    const nextChangeCount = isChange ? currentChangeCount + 1 : currentChangeCount;
+
+    if (isChange) {
+      setAnswerChangeCount((previous) => ({ ...previous, [questionId]: nextChangeCount }));
     }
 
-    if (alreadySubmitted || !session || !user || !questionId || !answerId || accessDenied || isAutoSubmitting) return;
-
-    const isNationalServiceType = assessmentTypeCode === 'national_service';
-    const actualMultipleCorrect = multipleCorrect && !isNationalServiceType;
+    setSaveStatus((previous) => ({ ...previous, [questionId]: "saving" }));
 
     const timeSpentSeconds = Math.floor((Date.now() - questionStartTime) / 1000);
     const timeOnQuestion = Math.floor((Date.now() - (questionStartTimes[questionId] || questionStartTime)) / 1000);
 
-    let newSelectedAnswer;
-    let isAnswerChange = false;
-    let isFirstAnswer = false;
-
-    if (actualMultipleCorrect) {
-      const currentSelected = getSelectedAnswersForQuestion(questionId);
-      if (currentSelected.map(String).includes(String(answerId))) {
-        newSelectedAnswer = currentSelected.filter((id) => String(id) !== String(answerId));
-      } else {
-        newSelectedAnswer = currentSelected.concat([answerId]);
-      }
-      isFirstAnswer = currentSelected.length === 0 && newSelectedAnswer.length > 0;
-      isAnswerChange = !isFirstAnswer && currentSelected.map(String).join(",") !== newSelectedAnswer.map(String).join(",");
-    } else {
-      const previousAnswer = answers[questionId];
-      newSelectedAnswer = answerId;
-      isFirstAnswer = previousAnswer === undefined || previousAnswer === null || previousAnswer === "";
-      isAnswerChange = !isFirstAnswer && String(previousAnswer) !== String(answerId);
-    }
-
-    const currentChangeCount = safeNumber(answerChangeCount[questionId], 0);
-    const nextChangeCount = isAnswerChange ? currentChangeCount + 1 : currentChangeCount;
-    let initialAnswerId = initialAnswers[questionId];
-
-    if (isFirstAnswer) {
-      initialAnswerId = actualMultipleCorrect ? newSelectedAnswer : answerId;
-      setInitialAnswers((previous) => ({ ...previous, [questionId]: initialAnswerId }));
-    }
-
-    if (isAnswerChange) {
-      setAnswerChangeCount((previous) => ({ ...previous, [questionId]: nextChangeCount }));
-    }
-
-    const nextAnswers = { ...answers, [questionId]: newSelectedAnswer };
-    setAnswers(nextAnswers);
-    setSaveStatus((previous) => ({ ...previous, [questionId]: "saving" }));
-
     try {
-      const answerToStore = Array.isArray(newSelectedAnswer) ? newSelectedAnswer.join(",") : newSelectedAnswer;
-
       await saveAnswer(
         sessionIdRef.current,
         questionId,
-        answerToStore,
+        answerValue,
+        leastValue,
         {
           time_spent_seconds: timeSpentSeconds,
           time_on_question: timeOnQuestion,
           times_changed: nextChangeCount,
-          initial_answer_id: Array.isArray(initialAnswerId) ? initialAnswerId.join(",") : initialAnswerId,
-          is_answer_change: isAnswerChange,
+          initial_answer_id: initialAnswers[questionId] != null ? String(initialAnswers[questionId]) : String(answerValue),
+          is_answer_change: isChange,
           tab_switches: tabSwitchCount,
           copy_attempts: copyAttempts,
           paste_attempts: pasteAttempts,
@@ -534,6 +567,112 @@ function AssessmentContent() {
       });
     }, 900);
     setQuestionStartTime(Date.now());
+  }
+
+  async function handleAnswerSelect(questionId, answerId, multipleCorrect) {
+    if (isTimeExpired || elapsedSeconds >= timeLimitSeconds) {
+      alert("Time has expired! The assessment is being submitted automatically.");
+      return;
+    }
+
+    if (alreadySubmitted || !session || !user || !questionId || !answerId || accessDenied || isAutoSubmitting) return;
+
+    const isNationalServiceType = assessmentTypeCode === 'national_service';
+    const actualMultipleCorrect = multipleCorrect && !isNationalServiceType && !isForcedChoice;
+
+    let newSelectedAnswer;
+    let isAnswerChange = false;
+    let isFirstAnswer = false;
+
+    if (actualMultipleCorrect) {
+      const currentSelected = getSelectedAnswersForQuestion(questionId);
+      if (currentSelected.map(String).includes(String(answerId))) {
+        newSelectedAnswer = currentSelected.filter((id) => String(id) !== String(answerId));
+      } else {
+        newSelectedAnswer = currentSelected.concat([answerId]);
+      }
+      isFirstAnswer = currentSelected.length === 0 && newSelectedAnswer.length > 0;
+      isAnswerChange = !isFirstAnswer && currentSelected.map(String).join(",") !== newSelectedAnswer.map(String).join(",");
+    } else {
+      const previousAnswer = answers[questionId];
+      newSelectedAnswer = answerId;
+      isFirstAnswer = previousAnswer === undefined || previousAnswer === null || previousAnswer === "";
+      isAnswerChange = !isFirstAnswer && String(previousAnswer) !== String(answerId);
+    }
+
+    if (isFirstAnswer) {
+      setInitialAnswers((previous) => ({
+        ...previous,
+        [questionId]: actualMultipleCorrect ? newSelectedAnswer : answerId
+      }));
+    }
+
+    const nextAnswers = { ...answers, [questionId]: newSelectedAnswer };
+    setAnswers(nextAnswers);
+
+    await persistAnswer(questionId, actualMultipleCorrect ? newSelectedAnswer.join(",") : newSelectedAnswer, undefined, isAnswerChange);
+  }
+
+  // ------------------------------------------------------------
+  // Forced-choice selection handler
+  // ------------------------------------------------------------
+  async function handleForcedChoiceSelect(questionId, answerId, side) {
+    if (isTimeExpired || elapsedSeconds >= timeLimitSeconds) {
+      alert("Time has expired! The assessment is being submitted automatically.");
+      return;
+    }
+    if (alreadySubmitted || !session || !user || !questionId || !answerId || accessDenied || isAutoSubmitting) return;
+
+    const current = getForcedChoicePicks(questionId);
+    const next = { ...current };
+
+    if (side === "most") {
+      if (String(next.most) === String(answerId)) {
+        next.most = null;
+      } else {
+        next.most = answerId;
+        // Auto-clear least if it collides
+        if (next.least != null && String(next.least) === String(answerId)) {
+          next.least = null;
+          setFlashCell({ questionId, answerId, side: "least" });
+          setTimeout(() => setFlashCell(null), 700);
+        }
+      }
+    } else {
+      if (String(next.least) === String(answerId)) {
+        next.least = null;
+      } else {
+        next.least = answerId;
+        if (next.most != null && String(next.most) === String(answerId)) {
+          next.most = null;
+          setFlashCell({ questionId, answerId, side: "most" });
+          setTimeout(() => setFlashCell(null), 700);
+        }
+      }
+    }
+
+    const previousEntry = answers[questionId];
+    const wasAnsweredBefore = previousEntry && typeof previousEntry === "object" &&
+      !Array.isArray(previousEntry) &&
+      previousEntry.most != null && previousEntry.least != null;
+
+    const isNowAnswered = next.most != null && next.least != null;
+    const isChange = wasAnsweredBefore || previousEntry != null;
+
+    if (previousEntry === undefined || previousEntry === null) {
+      setInitialAnswers((previous) => ({
+        ...previous,
+        [questionId]: next.most != null ? next.most : null
+      }));
+    }
+
+    setAnswers((previous) => ({ ...previous, [questionId]: next }));
+
+    // Only persist when we have a most pick. least is optional in the write
+    // (but the submit gate requires both before the candidate can submit).
+    if (next.most != null) {
+      await persistAnswer(questionId, String(next.most), next.least != null ? String(next.least) : undefined, isChange);
+    }
   }
 
   // ============================================================
@@ -741,11 +880,18 @@ function AssessmentContent() {
           assessmentInfo.type_code ||
           null;
 
-        console.log(`[Assessment] Type: ${resolvedTypeCode || 'unknown'}`);
+        // Resolve scoring mode from the assessment_type object.
+        const resolvedScoringMode =
+          assessmentInfo.assessment_type?.scoring_mode ||
+          assessmentInfo.assessmentType?.scoring_mode ||
+          "single_select";
+
+        console.log(`[Assessment] Type: ${resolvedTypeCode || 'unknown'}, Scoring: ${resolvedScoringMode}`);
 
         setAssessment(assessmentInfo);
         setAssessmentType(assessmentInfo.assessment_type || assessmentInfo.assessmentType || null);
         setAssessmentTypeCode(resolvedTypeCode);
+        setScoringMode(resolvedScoringMode);
 
         const accessData = await fetchAccess(assessmentId);
 
@@ -770,11 +916,6 @@ function AssessmentContent() {
           throw new Error('Assessment type could not be determined');
         }
 
-        // ============================================================
-        // Phase Two: create-or-get the session FIRST. Derive the
-        // duration from the session's timestamps — the DB row is the
-        // single source of truth, independent of what the API returns.
-        // ============================================================
         const sessionData = await createOrGetSession(assessmentId, assessmentTypeId);
 
         if (sessionData) {
@@ -827,7 +968,13 @@ function AssessmentContent() {
 
           if (responses && responses.answerMap) {
             Object.entries(responses.answerMap).forEach(([qId, answer]) => {
-              if (typeof answer === "string" && answer.includes(",")) {
+              // Forced-choice shape: { most, least }
+              if (answer && typeof answer === "object" && !Array.isArray(answer) && ("most" in answer || "least" in answer)) {
+                restoredAnswers[qId] = {
+                  most: answer.most != null ? parseInt(answer.most, 10) : null,
+                  least: answer.least != null ? parseInt(answer.least, 10) : null
+                };
+              } else if (typeof answer === "string" && answer.includes(",")) {
                 const answerList = answer.split(",").map((id) => parseInt(id, 10)).filter((id) => !Number.isNaN(id));
                 restoredAnswers[qId] = answerList;
               } else if (answer !== null && answer !== undefined && answer !== "") {
@@ -896,17 +1043,13 @@ function AssessmentContent() {
   useEffect(() => {
     if ((alreadySubmitted || isTimeExpired) && sessionIdRef.current) {
       localStorage.removeItem(`timer_${sessionIdRef.current}`);
-      console.log(`[Timer] Cleared localStorage for session ${sessionIdRef.current}`);
     }
-  }, [alreadySubmitted, isTimeExpired, sessionIdRef.current]);
+  }, [alreadySubmitted, isTimeExpired]);
 
   useEffect(() => {
     if (!sessionIdRef.current) return;
     if (loading || questions.length === 0) return;
-    localStorage.setItem(
-      `current_index_${sessionIdRef.current}`,
-      String(currentIndex)
-    );
+    localStorage.setItem(`current_index_${sessionIdRef.current}`, String(currentIndex));
   }, [currentIndex, loading, questions.length]);
 
   useEffect(() => {
@@ -921,55 +1064,17 @@ function AssessmentContent() {
   useEffect(() => {
     if (loading || alreadySubmitted || accessDenied || !session || isTimeExpired) return;
 
-    const handleCopy = (event) => {
-      event.preventDefault();
-      setCopyAttempts(prev => prev + 1);
-      logViolation("Copy attempt");
-      return false;
-    };
-
-    const handlePaste = (event) => {
-      event.preventDefault();
-      setPasteAttempts(prev => prev + 1);
-      logViolation("Paste attempt");
-      return false;
-    };
-
-    const handleCut = (event) => {
-      event.preventDefault();
-      logViolation("Cut attempt");
-      return false;
-    };
-
-    const handleContextMenu = (event) => {
-      event.preventDefault();
-      setRightClickAttempts(prev => prev + 1);
-      logViolation("Right-click attempt");
-      return false;
-    };
+    const handleCopy = (event) => { event.preventDefault(); setCopyAttempts(prev => prev + 1); logViolation("Copy attempt"); return false; };
+    const handlePaste = (event) => { event.preventDefault(); setPasteAttempts(prev => prev + 1); logViolation("Paste attempt"); return false; };
+    const handleCut = (event) => { event.preventDefault(); logViolation("Cut attempt"); return false; };
+    const handleContextMenu = (event) => { event.preventDefault(); setRightClickAttempts(prev => prev + 1); logViolation("Right-click attempt"); return false; };
 
     const handleKeyDown = (event) => {
       const key = String(event.key || "").toLowerCase();
-      if (event.key === "PrintScreen") {
-        event.preventDefault();
-        logViolation("Screenshot attempt");
-        return false;
-      }
-      if (event.key === "F12") {
-        event.preventDefault();
-        logViolation("DevTools attempt");
-        return false;
-      }
-      if (event.ctrlKey && event.shiftKey && ["i", "j", "c"].includes(key)) {
-        event.preventDefault();
-        logViolation("DevTools shortcut attempt");
-        return false;
-      }
-      if (event.ctrlKey && key === "u") {
-        event.preventDefault();
-        logViolation("View source attempt");
-        return false;
-      }
+      if (event.key === "PrintScreen") { event.preventDefault(); logViolation("Screenshot attempt"); return false; }
+      if (event.key === "F12") { event.preventDefault(); logViolation("DevTools attempt"); return false; }
+      if (event.ctrlKey && event.shiftKey && ["i", "j", "c"].includes(key)) { event.preventDefault(); logViolation("DevTools shortcut attempt"); return false; }
+      if (event.ctrlKey && key === "u") { event.preventDefault(); logViolation("View source attempt"); return false; }
       return true;
     };
 
@@ -993,7 +1098,6 @@ function AssessmentContent() {
       alert("Time has expired! The assessment is being submitted automatically.");
       return;
     }
-
     if (isAutoSubmitting || nextIndex < 0 || nextIndex >= questions.length) return;
     setCurrentIndex(nextIndex);
     setQuestionStartTime(Date.now());
@@ -1005,29 +1109,18 @@ function AssessmentContent() {
       alert('Unable to submit: No active session found. Please refresh the page and try again.');
       return;
     }
+    if (alreadySubmitted) { alert('This assessment has already been submitted.'); return; }
+    if (accessDenied) { alert('Access denied for this assessment.'); return; }
+    if (isAutoSubmitting || submittingRef.current) return;
+    if (isTimeExpired) { alert('Time has expired! The assessment is being submitted automatically.'); return; }
 
-    if (alreadySubmitted) {
-      alert('This assessment has already been submitted.');
-      return;
-    }
-
-    if (accessDenied) {
-      alert('Access denied for this assessment.');
-      return;
-    }
-
-    if (isAutoSubmitting || submittingRef.current) {
-      return;
-    }
-
-    if (isTimeExpired) {
-      alert('Time has expired! The assessment is being submitted automatically.');
-      return;
-    }
-
-    const unansweredCount = questions.length - countAnswered(answers);
+    const unansweredCount = questions.length - countAnswered(answers, questions.length, isForcedChoice);
     if (unansweredCount > 0) {
-      alert("Please answer all questions before submitting. " + unansweredCount + " question(s) remaining.");
+      if (isForcedChoice) {
+        alert("Please set BOTH a most-likely and a least-likely answer for every question. " + unansweredCount + " question(s) incomplete.");
+      } else {
+        alert("Please answer all questions before submitting. " + unansweredCount + " question(s) remaining.");
+      }
       return;
     }
 
@@ -1053,14 +1146,6 @@ function AssessmentContent() {
         domainVisits: domainVisits,
         sessionId: sessionIdRef.current
       };
-
-      console.log('[Assessment] Submitting with proctoring data:', {
-        externalUrlsCount: externalUrlVisits.length,
-        domainVisits: domainVisits,
-        tabSwitches: tabSwitchCount,
-        violations: violationCount,
-        tabSwitchDetailsCount: tabSwitchDetails.length
-      });
 
       const result = await submitAssessment(
         sessionIdRef.current,
@@ -1251,7 +1336,13 @@ function AssessmentContent() {
             <span style={styles.headerMetaItem}>Question {currentIndex + 1}</span>
             <span style={styles.headerMetaDivider}>•</span>
             <span style={styles.headerMetaItem}>{currentQuestion.section || "General"}</span>
-            {isMultipleCorrect && !isNationalService && (
+            {isForcedChoice && (
+              <>
+                <span style={styles.headerMetaDivider}>•</span>
+                <span style={{ ...styles.headerMetaItem, color: accentColor, fontWeight: 600 }}>Pick most AND least likely</span>
+              </>
+            )}
+            {!isForcedChoice && isMultipleCorrect && !isNationalService && (
               <>
                 <span style={styles.headerMetaDivider}>•</span>
                 <span style={{ ...styles.headerMetaItem, color: accentColor, fontWeight: 600 }}>Select all that apply</span>
@@ -1273,7 +1364,7 @@ function AssessmentContent() {
             <div style={styles.statusCard}>
               <div style={styles.statusNumber}>Question {currentIndex + 1}</div>
               <div style={styles.statusBadge}>
-                {totalAnswered > 0 ? 'Answered' : 'Not yet answered'}
+                {isAnsweredForQuestion(currentQuestion.id) ? 'Answered' : 'Not yet answered'}
               </div>
             </div>
 
@@ -1316,16 +1407,95 @@ function AssessmentContent() {
                 {currentQuestion.question_text}
               </div>
 
-              {isMultipleCorrect && !isNationalService && (
+              {!isForcedChoice && isMultipleCorrect && !isNationalService && (
                 <div style={styles.multipleHint}>
                   💡 Select one or more answers
                 </div>
               )}
 
+              {isForcedChoice && (
+                <>
+                  <div style={styles.forcedChoiceHint}>
+                    <strong>Most likely:</strong> which action would you <em>most</em> likely take? &nbsp;
+                    <strong>Least likely:</strong> which would you <em>least</em> likely take?
+                  </div>
+                  <div style={styles.forcedChoiceHeaderRow}>
+                    <div style={styles.forcedChoiceHeaderSpacer} />
+                    <div style={styles.forcedChoiceHeaderCol}>Most</div>
+                    <div style={styles.forcedChoiceHeaderCol}>Least</div>
+                  </div>
+                </>
+              )}
+
               <div style={styles.answersContainer}>
                 {safeArray(currentQuestion.answers).map((answer, index) => {
-                  const selected = isAnswerSelected(currentQuestion.id, answer.id);
                   const optionLetter = String.fromCharCode(65 + index);
+
+                  if (isForcedChoice) {
+                    const mostSelected = isLeastSelected(currentQuestion.id, null) ? false : false; // placeholder, computed below
+                    const isMost = String(getForcedChoicePicks(currentQuestion.id).most) === String(answer.id);
+                    const isLeast = String(getForcedChoicePicks(currentQuestion.id).least) === String(answer.id);
+                    const isFlashingMost = flashCell && flashCell.questionId === currentQuestion.id &&
+                      String(flashCell.answerId) === String(answer.id) && flashCell.side === "most";
+                    const isFlashingLeast = flashCell && flashCell.questionId === currentQuestion.id &&
+                      String(flashCell.answerId) === String(answer.id) && flashCell.side === "least";
+
+                    return (
+                      <div
+                        key={answer.id}
+                        className="answer-option"
+                        style={{
+                          ...styles.forcedChoiceRow,
+                          opacity: isDisabled ? 0.6 : 1
+                        }}
+                      >
+                        <div style={styles.forcedChoiceTextWrap}>
+                          <span style={{
+                            color: (isMost || isLeast) ? primaryColor : "#1e293b",
+                            fontSize: "15px",
+                            fontWeight: (isMost || isLeast) ? 600 : 400
+                          }}>
+                            {optionLetter}. {answer.answer_text}
+                          </span>
+                        </div>
+                        <div style={styles.forcedChoiceChoiceCol}>
+                          <button
+                            type="button"
+                            onClick={() => handleForcedChoiceSelect(currentQuestion.id, answer.id, "most")}
+                            disabled={isDisabled}
+                            aria-label="Most likely"
+                            style={{
+                              ...styles.choiceButton,
+                              background: isMost ? successColor : (isFlashingMost ? "#fff3e0" : "white"),
+                              borderColor: isMost ? successColor : "#cbd5e1",
+                              color: isMost ? "white" : "#0b2a4e"
+                            }}
+                          >
+                            {isMost ? "✓" : ""}
+                          </button>
+                        </div>
+                        <div style={styles.forcedChoiceChoiceCol}>
+                          <button
+                            type="button"
+                            onClick={() => handleForcedChoiceSelect(currentQuestion.id, answer.id, "least")}
+                            disabled={isDisabled}
+                            aria-label="Least likely"
+                            style={{
+                              ...styles.choiceButton,
+                              background: isLeast ? dangerColor : (isFlashingLeast ? "#fff3e0" : "white"),
+                              borderColor: isLeast ? dangerColor : "#cbd5e1",
+                              color: isLeast ? "white" : "#0b2a4e"
+                            }}
+                          >
+                            {isLeast ? "✕" : ""}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  // Single-select / multi-select (original)
+                  const selected = isAnswerSelected(currentQuestion.id, answer.id);
                   return (
                     <button
                       key={answer.id}
@@ -1396,8 +1566,7 @@ function AssessmentContent() {
               </div>
               <div style={styles.questionGrid}>
                 {questions.map((question, index) => {
-                  const questionAnswer = answers[question.id];
-                  const answered = questionAnswer !== undefined && (Array.isArray(questionAnswer) ? questionAnswer.length > 0 : questionAnswer !== null);
+                  const answered = isAnsweredForQuestion(question.id);
                   const current = index === currentIndex;
                   const changed = answerChangeCount[question.id] > 0;
 
@@ -1463,29 +1632,20 @@ function AssessmentContent() {
           transition: all 0.2s ease;
           border-radius: 8px;
         }
-
         .answer-option:hover:not(:disabled) {
           transform: translateY(-2px);
           box-shadow: 0 4px 12px rgba(11, 42, 78, 0.15);
-          border-color: #0b2a4e !important;
         }
-
-        .answer-option:active:not(:disabled) {
-          transform: scale(0.98);
-        }
-
         .navigator-item {
           transition: all 0.15s ease;
           border-radius: 6px;
           font-size: 12px;
         }
-
         .navigator-item:hover:not(:disabled) {
           transform: scale(1.08);
           box-shadow: 0 4px 12px rgba(0,0,0,0.12);
           z-index: 2;
         }
-
         @keyframes spin {
           0% { transform: rotate(0deg); }
           100% { transform: rotate(360deg); }
@@ -1496,645 +1656,96 @@ function AssessmentContent() {
 }
 
 const styles = {
-  loadingContainer: {
-    minHeight: "100vh",
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    justifyContent: "center",
-    background: "linear-gradient(135deg, #f8fafc 0%, #e8eaf6 100%)",
-    gap: "20px"
-  },
-  loadingSpinner: {
-    width: "50px",
-    height: "50px",
-    border: "4px solid #e2e8f0",
-    borderTop: "4px solid #0b2a4e",
-    borderRadius: "50%",
-    animation: "spin 1s linear infinite"
-  },
-  messageContainer: {
-    minHeight: "100vh",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    background: "#f8fafc",
-    padding: "20px"
-  },
-  messageCard: {
-    background: "white",
-    padding: "40px",
-    borderRadius: "16px",
-    maxWidth: "500px",
-    textAlign: "center",
-    boxShadow: "0 2px 12px rgba(0,0,0,0.08)"
-  },
+  loadingContainer: { minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "linear-gradient(135deg, #f8fafc 0%, #e8eaf6 100%)", gap: "20px" },
+  loadingSpinner: { width: "50px", height: "50px", border: "4px solid #e2e8f0", borderTop: "4px solid #0b2a4e", borderRadius: "50%", animation: "spin 1s linear infinite" },
+  messageContainer: { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#f8fafc", padding: "20px" },
+  messageCard: { background: "white", padding: "40px", borderRadius: "16px", maxWidth: "500px", textAlign: "center", boxShadow: "0 2px 12px rgba(0,0,0,0.08)" },
   errorIcon: { fontSize: "64px", marginBottom: "20px" },
   successIcon: { fontSize: "64px", marginBottom: "20px" },
-  successIconLarge: {
-    width: "80px",
-    height: "80px",
-    background: "#2e7d32",
-    borderRadius: "50%",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    margin: "0 auto 20px",
-    fontSize: "40px",
-    color: "white"
-  },
-  primaryButton: {
-    padding: "12px 30px",
-    background: "#0b2a4e",
-    color: "white",
-    border: "none",
-    borderRadius: "8px",
-    cursor: "pointer",
-    fontSize: "14px"
-  },
-  violationBanner: {
-    position: "fixed",
-    top: "20px",
-    left: "50%",
-    transform: "translateX(-50%)",
-    background: "#c62828",
-    color: "white",
-    padding: "12px 24px",
-    borderRadius: "8px",
-    fontWeight: "bold",
-    zIndex: 10001,
-    fontSize: "14px",
-    boxShadow: "0 4px 12px rgba(0,0,0,0.2)",
-    display: "flex",
-    alignItems: "center",
-    gap: "10px"
-  },
-  urlWarningBanner: {
-    position: "fixed",
-    top: "70px",
-    left: "50%",
-    transform: "translateX(-50%)",
-    background: "#dc2626",
-    color: "white",
-    padding: "12px 20px",
-    borderRadius: "8px",
-    zIndex: 10000,
-    fontSize: "13px",
-    boxShadow: "0 4px 20px rgba(220, 38, 38, 0.3)",
-    display: "flex",
-    alignItems: "center",
-    gap: "12px",
-    maxWidth: "90%",
-    flexWrap: "wrap",
-    justifyContent: "center"
-  },
-  urlWarningButton: {
-    padding: "6px 16px",
-    background: "white",
-    color: "#dc2626",
-    border: "none",
-    borderRadius: "6px",
-    fontSize: "12px",
-    fontWeight: 600,
-    cursor: "pointer",
-    transition: "0.2s"
-  },
-  autoSubmitOverlay: {
-    position: "fixed",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    background: "rgba(0,0,0,0.7)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 10002
-  },
-  autoSubmitCard: {
-    background: "white",
-    padding: "30px",
-    borderRadius: "16px",
-    textAlign: "center",
-    maxWidth: "400px"
-  },
-  autoSubmitSpinner: {
-    width: "40px",
-    height: "40px",
-    border: "4px solid #e2e8f0",
-    borderTop: "4px solid #c62828",
-    borderRadius: "50%",
-    animation: "spin 1s linear infinite",
-    margin: "0 auto 20px"
-  },
-  container: {
-    minHeight: "100vh",
-    background: "#f4f7fc",
-    display: "flex",
-    flexDirection: "column"
-  },
-  header: {
-    position: "sticky",
-    top: 0,
-    zIndex: 100,
-    background: "linear-gradient(135deg, #0b2a4e 0%, #1b4a7a 100%)",
-    borderBottom: "3px solid #f9b83a",
-    boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
-    flexShrink: 0
-  },
-  headerContent: {
-    maxWidth: "1400px",
-    margin: "0 auto",
-    padding: "10px 24px",
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    flexWrap: "wrap",
-    gap: "8px"
-  },
-  headerMetaBar: {
-    maxWidth: "1400px",
-    margin: "0 auto",
-    padding: "4px 24px 8px 24px",
-    display: "flex",
-    alignItems: "center",
-    gap: "6px",
-    flexWrap: "wrap",
-    borderTop: "1px solid rgba(255,255,255,0.08)"
-  },
+  successIconLarge: { width: "80px", height: "80px", background: "#2e7d32", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 20px", fontSize: "40px", color: "white" },
+  primaryButton: { padding: "12px 30px", background: "#0b2a4e", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "14px" },
+  violationBanner: { position: "fixed", top: "20px", left: "50%", transform: "translateX(-50%)", background: "#c62828", color: "white", padding: "12px 24px", borderRadius: "8px", fontWeight: "bold", zIndex: 10001, fontSize: "14px", boxShadow: "0 4px 12px rgba(0,0,0,0.2)", display: "flex", alignItems: "center", gap: "10px" },
+  urlWarningBanner: { position: "fixed", top: "70px", left: "50%", transform: "translateX(-50%)", background: "#dc2626", color: "white", padding: "12px 20px", borderRadius: "8px", zIndex: 10000, fontSize: "13px", boxShadow: "0 4px 20px rgba(220, 38, 38, 0.3)", display: "flex", alignItems: "center", gap: "12px", maxWidth: "90%", flexWrap: "wrap", justifyContent: "center" },
+  urlWarningButton: { padding: "6px 16px", background: "white", color: "#dc2626", border: "none", borderRadius: "6px", fontSize: "12px", fontWeight: 600, cursor: "pointer" },
+  autoSubmitOverlay: { position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 10002 },
+  autoSubmitCard: { background: "white", padding: "30px", borderRadius: "16px", textAlign: "center", maxWidth: "400px" },
+  autoSubmitSpinner: { width: "40px", height: "40px", border: "4px solid #e2e8f0", borderTop: "4px solid #c62828", borderRadius: "50%", animation: "spin 1s linear infinite", margin: "0 auto 20px" },
+  container: { minHeight: "100vh", background: "#f4f7fc", display: "flex", flexDirection: "column" },
+  header: { position: "sticky", top: 0, zIndex: 100, background: "linear-gradient(135deg, #0b2a4e 0%, #1b4a7a 100%)", borderBottom: "3px solid #f9b83a", boxShadow: "0 4px 12px rgba(0,0,0,0.1)", flexShrink: 0 },
+  headerContent: { maxWidth: "1400px", margin: "0 auto", padding: "10px 24px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" },
+  headerMetaBar: { maxWidth: "1400px", margin: "0 auto", padding: "4px 24px 8px 24px", display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap", borderTop: "1px solid rgba(255,255,255,0.08)" },
   headerLeft: { display: "flex", alignItems: "center", gap: "12px" },
   headerRight: { display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" },
-  backButton: {
-    width: "36px",
-    height: "36px",
-    background: "rgba(255,255,255,0.1)",
-    border: "1px solid rgba(255,255,255,0.2)",
-    borderRadius: "8px",
-    color: "white",
-    fontSize: "16px",
-    cursor: "pointer",
-    transition: "0.2s",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center"
-  },
-  brandSection: {
-    display: "flex",
-    alignItems: "center",
-    gap: "16px",
-    flexWrap: "wrap"
-  },
-  logoContainer: {
-    display: "flex",
-    alignItems: "center"
-  },
-  logoText: {
-    display: "flex",
-    flexDirection: "column",
-    lineHeight: 1.1
-  },
-  logoMain: {
-    fontSize: "18px",
-    fontWeight: 700,
-    color: "white",
-    letterSpacing: "1px"
-  },
-  logoSub: {
-    fontSize: "9px",
-    fontWeight: 300,
-    color: "rgba(255,255,255,0.7)",
-    letterSpacing: "2px",
-    textTransform: "uppercase"
-  },
-  nationalBadge: {
-    display: "flex",
-    alignItems: "center",
-    gap: "6px",
-    background: "rgba(255,255,255,0.12)",
-    padding: "4px 14px 4px 10px",
-    borderRadius: "40px",
-    border: "1px solid rgba(255,255,255,0.15)",
-    backdropFilter: "blur(4px)"
-  },
-  nationalBadgeIcon: {
-    fontSize: "16px"
-  },
-  nationalBadgeText: {
-    fontSize: "11px",
-    fontWeight: 500,
-    color: "white",
-    letterSpacing: "0.3px"
-  },
-  headerMetaItem: {
-    color: "rgba(255,255,255,0.7)",
-    fontSize: "12px"
-  },
-  headerMetaDivider: {
-    color: "rgba(255,255,255,0.3)",
-    fontSize: "12px"
-  },
-  timer: {
-    textAlign: "right"
-  },
-  timerLabel: {
-    fontSize: "9px",
-    fontWeight: 600,
-    textTransform: "uppercase",
-    letterSpacing: "0.5px",
-    color: "rgba(255,255,255,0.6)"
-  },
-  timerValue: {
-    fontSize: "20px",
-    fontWeight: 700,
-    fontFamily: "monospace",
-    color: "#f9b83a"
-  },
-  mainContent: {
-    maxWidth: "1400px",
-    margin: "0 auto",
-    padding: "20px 24px",
-    display: "grid",
-    gridTemplateColumns: "180px 1fr 220px",
-    gap: "20px",
-    flex: 1,
-    minHeight: 0,
-    height: "calc(100vh - 100px)",
-    maxHeight: "calc(100vh - 100px)",
-    overflow: "hidden",
-    boxSizing: "border-box"
-  },
-  leftSidebar: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "12px",
-    height: "100%",
-    overflow: "hidden",
-    flexShrink: 0
-  },
-  statusCard: {
-    background: "white",
-    borderRadius: "12px",
-    padding: "14px 16px",
-    border: "1px solid #e2e8f0",
-    flexShrink: 0
-  },
-  statusNumber: {
-    fontSize: "16px",
-    fontWeight: 600,
-    color: "#0f172a"
-  },
-  statusBadge: {
-    fontSize: "12px",
-    color: "#64748b",
-    fontStyle: "italic",
-    marginTop: "2px"
-  },
-  statsCard: {
-    background: "white",
-    borderRadius: "12px",
-    padding: "14px 16px",
-    border: "1px solid #e2e8f0",
-    flexShrink: 0
-  },
-  statsRow: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: "3px 0"
-  },
-  statsLabel: {
-    fontSize: "13px",
-    color: "#64748b"
-  },
-  statsValue: {
-    fontSize: "14px",
-    fontWeight: 600,
-    color: "#0f172a"
-  },
-  statsDivider: {
-    height: "1px",
-    background: "#e2e8f0",
-    margin: "6px 0"
-  },
-  progressBar: {
-    height: "4px",
-    background: "#e2e8f0",
-    borderRadius: "4px",
-    overflow: "hidden",
-    marginTop: "4px"
-  },
-  progressFill: {
-    height: "100%",
-    background: "linear-gradient(90deg, #f9b83a, #f5a623)",
-    borderRadius: "4px",
-    transition: "width 0.3s ease"
-  },
-  metaCard: {
-    background: "white",
-    borderRadius: "12px",
-    padding: "12px 16px",
-    border: "1px solid #e2e8f0",
-    flexShrink: 0,
-    overflow: "hidden"
-  },
-  metaItem: {
-    fontSize: "13px",
-    color: "#64748b",
-    padding: "2px 0"
-  },
-  middleColumn: {
-    display: "flex",
-    flexDirection: "column",
-    height: "100%",
-    overflow: "hidden",
-    gap: "12px",
-    minWidth: 0
-  },
-  questionCard: {
-    background: "white",
-    borderRadius: "12px",
-    padding: "20px 24px",
-    border: "1px solid #e2e8f0",
-    display: "flex",
-    flexDirection: "column",
-    flex: "1",
-    overflow: "hidden",
-    boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
-    minHeight: "350px",
-    maxHeight: "450px",
-  },
-  questionText: {
-    fontSize: "16px",
-    lineHeight: "1.7",
-    color: "#0f172a",
-    fontWeight: 500,
-    padding: "0 4px 12px 4px",
-    flexShrink: 0,
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-    display: "-webkit-box",
-    WebkitLineClamp: 3,
-    WebkitBoxOrient: "vertical",
-  },
-  multipleHint: {
-    padding: "8px 14px",
-    background: "#f0f4ff",
-    borderRadius: "8px",
-    fontSize: "13px",
-    color: "#0b2a4e",
-    flexShrink: 0,
-    marginBottom: "12px",
-    borderLeft: "3px solid #f9b83a"
-  },
-  answersContainer: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "8px",
-    flex: "1",
-    overflowY: "auto",
-    paddingRight: "4px",
-    scrollbarWidth: "thin",
-  },
-  answerCard: {
-    padding: "10px 14px",
-    border: "2px solid",
-    borderRadius: "8px",
-    cursor: "pointer",
-    textAlign: "left",
-    display: "flex",
-    alignItems: "center",
-    gap: "12px",
-    transition: "all 0.2s ease",
-    fontSize: "15px",
-    flexShrink: 0,
-    minHeight: "44px",
-    background: "white"
-  },
-  answerCheckbox: {
-    width: "22px",
-    height: "22px",
-    borderRadius: "4px",
-    border: "2px solid",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    flexShrink: 0,
-    transition: "all 0.2s ease"
-  },
-  navButtons: {
-    display: "flex",
-    gap: "8px",
-    flexShrink: 0
-  },
-  navButton: {
-    flex: 1,
-    padding: "10px 16px",
-    borderRadius: "8px",
-    fontSize: "14px",
-    fontWeight: 500,
-    border: "2px solid #e2e8f0",
-    background: "white",
-    color: "#475569",
-    cursor: "pointer",
-    transition: "0.2s ease"
-  },
-  nextButton: {
-    flex: 1,
-    padding: "10px 16px",
-    borderRadius: "8px",
-    fontSize: "14px",
-    fontWeight: 500,
-    border: "none",
-    background: "#0b2a4e",
-    color: "white",
-    cursor: "pointer",
-    transition: "0.2s ease"
-  },
-  submitButton: {
-    flex: 1,
-    padding: "10px 16px",
-    borderRadius: "8px",
-    fontSize: "14px",
-    fontWeight: 500,
-    border: "none",
-    background: "#2e7d32",
-    color: "white",
-    cursor: "pointer",
-    transition: "0.2s ease"
-  },
-  rightColumn: {
-    display: "flex",
-    flexDirection: "column",
-    height: "100%",
-    overflow: "hidden",
-    flexShrink: 0
-  },
-  navigatorCard: {
-    background: "white",
-    borderRadius: "12px",
-    padding: "16px",
-    border: "1px solid #e2e8f0",
-    display: "flex",
-    flexDirection: "column",
-    flex: 1,
-    overflow: "hidden",
-    boxShadow: "0 2px 8px rgba(0,0,0,0.05)"
-  },
-  navigatorHeader: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: "12px",
-    flexShrink: 0
-  },
-  navigatorTitle: {
-    fontSize: "14px",
-    fontWeight: 600,
-    color: "#0f172a"
-  },
-  questionGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(10, 1fr)",
-    gap: "4px",
-    flex: 1,
-    overflowY: "auto",
-    padding: "2px",
-    alignContent: "start"
-  },
-  gridItem: {
-    aspectRatio: "1",
-    border: "2px solid",
-    borderRadius: "6px",
-    fontSize: "11px",
-    fontWeight: 500,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    cursor: "pointer",
-    transition: "all 0.15s ease",
-    minWidth: "0",
-    minHeight: "0",
-    position: "relative"
-  },
-  legend: {
-    display: "flex",
-    justifyContent: "space-between",
-    padding: "8px 0 0",
-    borderTop: "1px solid #e2e8f0",
-    flexWrap: "wrap",
-    gap: "4px",
-    flexShrink: 0,
-    marginTop: "8px"
-  },
-  legendItem: {
-    display: "flex",
-    alignItems: "center",
-    gap: "4px",
-    fontSize: "9px",
-    color: "#64748b"
-  },
-  legendDot: {
-    width: "10px",
-    height: "10px",
-    borderRadius: "4px"
-  },
-  navigatorTimer: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: "8px",
-    padding: "8px 0 0",
-    borderTop: "1px solid #e2e8f0",
-    marginTop: "8px",
-    flexShrink: 0
-  },
-  navigatorTimerLabel: {
-    fontSize: "14px"
-  },
-  navigatorTimerValue: {
-    fontSize: "16px",
-    fontWeight: 700,
-    color: "#0b2a4e",
-    fontFamily: "monospace"
-  },
-  modalOverlay: {
-    position: "fixed",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    background: "rgba(0,0,0,0.5)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 1000,
-    backdropFilter: "blur(4px)"
-  },
-  modalContent: {
-    background: "white",
-    padding: "32px",
-    borderRadius: "20px",
-    maxWidth: "440px",
-    width: "90%",
-    boxShadow: "0 20px 60px rgba(0,0,0,0.2)"
-  },
+  backButton: { width: "36px", height: "36px", background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: "8px", color: "white", fontSize: "16px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" },
+  brandSection: { display: "flex", alignItems: "center", gap: "16px", flexWrap: "wrap" },
+  logoContainer: { display: "flex", alignItems: "center" },
+  logoText: { display: "flex", flexDirection: "column", lineHeight: 1.1 },
+  logoMain: { fontSize: "18px", fontWeight: 700, color: "white", letterSpacing: "1px" },
+  logoSub: { fontSize: "9px", fontWeight: 300, color: "rgba(255,255,255,0.7)", letterSpacing: "2px", textTransform: "uppercase" },
+  nationalBadge: { display: "flex", alignItems: "center", gap: "6px", background: "rgba(255,255,255,0.12)", padding: "4px 14px 4px 10px", borderRadius: "40px", border: "1px solid rgba(255,255,255,0.15)" },
+  nationalBadgeIcon: { fontSize: "16px" },
+  nationalBadgeText: { fontSize: "11px", fontWeight: 500, color: "white", letterSpacing: "0.3px" },
+  headerMetaItem: { color: "rgba(255,255,255,0.7)", fontSize: "12px" },
+  headerMetaDivider: { color: "rgba(255,255,255,0.3)", fontSize: "12px" },
+  timer: { textAlign: "right" },
+  timerLabel: { fontSize: "9px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px", color: "rgba(255,255,255,0.6)" },
+  timerValue: { fontSize: "20px", fontWeight: 700, fontFamily: "monospace", color: "#f9b83a" },
+  mainContent: { maxWidth: "1400px", margin: "0 auto", padding: "20px 24px", display: "grid", gridTemplateColumns: "180px 1fr 220px", gap: "20px", flex: 1, minHeight: 0, height: "calc(100vh - 100px)", maxHeight: "calc(100vh - 100px)", overflow: "hidden", boxSizing: "border-box" },
+  leftSidebar: { display: "flex", flexDirection: "column", gap: "12px", height: "100%", overflow: "hidden", flexShrink: 0 },
+  statusCard: { background: "white", borderRadius: "12px", padding: "14px 16px", border: "1px solid #e2e8f0", flexShrink: 0 },
+  statusNumber: { fontSize: "16px", fontWeight: 600, color: "#0f172a" },
+  statusBadge: { fontSize: "12px", color: "#64748b", fontStyle: "italic", marginTop: "2px" },
+  statsCard: { background: "white", borderRadius: "12px", padding: "14px 16px", border: "1px solid #e2e8f0", flexShrink: 0 },
+  statsRow: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "3px 0" },
+  statsLabel: { fontSize: "13px", color: "#64748b" },
+  statsValue: { fontSize: "14px", fontWeight: 600, color: "#0f172a" },
+  statsDivider: { height: "1px", background: "#e2e8f0", margin: "6px 0" },
+  progressBar: { height: "4px", background: "#e2e8f0", borderRadius: "4px", overflow: "hidden", marginTop: "4px" },
+  progressFill: { height: "100%", background: "linear-gradient(90deg, #f9b83a, #f5a623)", borderRadius: "4px", transition: "width 0.3s ease" },
+  metaCard: { background: "white", borderRadius: "12px", padding: "12px 16px", border: "1px solid #e2e8f0", flexShrink: 0, overflow: "hidden" },
+  metaItem: { fontSize: "13px", color: "#64748b", padding: "2px 0" },
+  middleColumn: { display: "flex", flexDirection: "column", height: "100%", overflow: "hidden", gap: "12px", minWidth: 0 },
+  questionCard: { background: "white", borderRadius: "12px", padding: "20px 24px", border: "1px solid #e2e8f0", display: "flex", flexDirection: "column", flex: "1", overflow: "hidden", boxShadow: "0 2px 8px rgba(0,0,0,0.05)", minHeight: "350px" },
+  questionText: { fontSize: "16px", lineHeight: "1.7", color: "#0f172a", fontWeight: 500, padding: "0 4px 12px 4px", flexShrink: 0 },
+  multipleHint: { padding: "8px 14px", background: "#f0f4ff", borderRadius: "8px", fontSize: "13px", color: "#0b2a4e", flexShrink: 0, marginBottom: "12px", borderLeft: "3px solid #f9b83a" },
+  forcedChoiceHint: { padding: "10px 14px", background: "#f0f4ff", borderRadius: "8px", fontSize: "13px", color: "#0b2a4e", flexShrink: 0, marginBottom: "12px", borderLeft: "3px solid #f9b83a" },
+  forcedChoiceHeaderRow: { display: "grid", gridTemplateColumns: "1fr 60px 60px", gap: "8px", padding: "0 4px 8px 4px", flexShrink: 0 },
+  forcedChoiceHeaderSpacer: {},
+  forcedChoiceHeaderCol: { textAlign: "center", fontSize: "11px", fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em" },
+  forcedChoiceRow: { display: "grid", gridTemplateColumns: "1fr 60px 60px", gap: "8px", padding: "12px 14px", border: "2px solid #e2e8f0", borderRadius: "8px", alignItems: "center", background: "white", flexShrink: 0, minHeight: "60px" },
+  forcedChoiceTextWrap: { textAlign: "left" },
+  forcedChoiceChoiceCol: { display: "flex", justifyContent: "center" },
+  choiceButton: { width: "32px", height: "32px", borderRadius: "50%", border: "2px solid", fontSize: "14px", fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.15s ease" },
+  answersContainer: { display: "flex", flexDirection: "column", gap: "8px", flex: "1", overflowY: "auto", paddingRight: "4px" },
+  answerCard: { padding: "10px 14px", border: "2px solid", borderRadius: "8px", cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: "12px", fontSize: "15px", flexShrink: 0, minHeight: "44px", background: "white" },
+  answerCheckbox: { width: "22px", height: "22px", borderRadius: "4px", border: "2px solid", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 },
+  navButtons: { display: "flex", gap: "8px", flexShrink: 0 },
+  navButton: { flex: 1, padding: "10px 16px", borderRadius: "8px", fontSize: "14px", fontWeight: 500, border: "2px solid #e2e8f0", background: "white", color: "#475569", cursor: "pointer" },
+  nextButton: { flex: 1, padding: "10px 16px", borderRadius: "8px", fontSize: "14px", fontWeight: 500, border: "none", background: "#0b2a4e", color: "white", cursor: "pointer" },
+  submitButton: { flex: 1, padding: "10px 16px", borderRadius: "8px", fontSize: "14px", fontWeight: 500, border: "none", background: "#2e7d32", color: "white", cursor: "pointer" },
+  rightColumn: { display: "flex", flexDirection: "column", height: "100%", overflow: "hidden", flexShrink: 0 },
+  navigatorCard: { background: "white", borderRadius: "12px", padding: "16px", border: "1px solid #e2e8f0", display: "flex", flexDirection: "column", flex: 1, overflow: "hidden", boxShadow: "0 2px 8px rgba(0,0,0,0.05)" },
+  navigatorHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px", flexShrink: 0 },
+  navigatorTitle: { fontSize: "14px", fontWeight: 600, color: "#0f172a" },
+  questionGrid: { display: "grid", gridTemplateColumns: "repeat(10, 1fr)", gap: "4px", flex: 1, overflowY: "auto", padding: "2px", alignContent: "start" },
+  gridItem: { aspectRatio: "1", border: "2px solid", borderRadius: "6px", fontSize: "11px", fontWeight: 500, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", minWidth: "0", minHeight: "0" },
+  legend: { display: "flex", justifyContent: "space-between", padding: "8px 0 0", borderTop: "1px solid #e2e8f0", flexWrap: "wrap", gap: "4px", flexShrink: 0, marginTop: "8px" },
+  legendItem: { display: "flex", alignItems: "center", gap: "4px", fontSize: "9px", color: "#64748b" },
+  legendDot: { width: "10px", height: "10px", borderRadius: "4px" },
+  navigatorTimer: { display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", padding: "8px 0 0", borderTop: "1px solid #e2e8f0", marginTop: "8px", flexShrink: 0 },
+  navigatorTimerLabel: { fontSize: "14px" },
+  navigatorTimerValue: { fontSize: "16px", fontWeight: 700, color: "#0b2a4e", fontFamily: "monospace" },
+  modalOverlay: { position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 },
+  modalContent: { background: "white", padding: "32px", borderRadius: "20px", maxWidth: "440px", width: "90%", boxShadow: "0 20px 60px rgba(0,0,0,0.2)" },
   modalIcon: { fontSize: "48px", textAlign: "center", marginBottom: "16px" },
   modalTitle: { fontSize: "22px", fontWeight: 700, textAlign: "center", marginBottom: "20px", color: "#0f172a" },
-  modalStats: {
-    background: "#f8fafc",
-    padding: "16px",
-    borderRadius: "12px",
-    marginBottom: "20px"
-  },
-  modalStat: {
-    display: "flex",
-    justifyContent: "space-between",
-    marginBottom: "8px",
-    fontSize: "14px"
-  },
-  modalUrlWarning: {
-    display: "flex",
-    gap: "10px",
-    padding: "12px",
-    background: "#fee2e2",
-    borderRadius: "10px",
-    fontSize: "13px",
-    marginBottom: "12px",
-    borderLeft: "3px solid #dc2626"
-  },
-  modalWarning: {
-    display: "flex",
-    gap: "10px",
-    padding: "12px",
-    background: "#fff8e1",
-    borderRadius: "10px",
-    fontSize: "13px",
-    marginBottom: "20px",
-    borderLeft: "3px solid #f9b83a"
-  },
-  modalActions: {
-    display: "flex",
-    gap: "12px"
-  },
-  modalSecondaryButton: {
-    flex: 1,
-    padding: "12px",
-    background: "#f1f5f9",
-    border: "none",
-    borderRadius: "10px",
-    cursor: "pointer",
-    fontWeight: 500
-  },
-  modalPrimaryButton: {
-    flex: 1,
-    padding: "12px",
-    background: "#2e7d32",
-    color: "white",
-    border: "none",
-    borderRadius: "10px",
-    cursor: "pointer",
-    fontWeight: 500
-  }
+  modalStats: { background: "#f8fafc", padding: "16px", borderRadius: "12px", marginBottom: "20px" },
+  modalStat: { display: "flex", justifyContent: "space-between", marginBottom: "8px", fontSize: "14px" },
+  modalUrlWarning: { display: "flex", gap: "10px", padding: "12px", background: "#fee2e2", borderRadius: "10px", fontSize: "13px", marginBottom: "12px", borderLeft: "3px solid #dc2626" },
+  modalWarning: { display: "flex", gap: "10px", padding: "12px", background: "#fff8e1", borderRadius: "10px", fontSize: "13px", marginBottom: "20px", borderLeft: "3px solid #f9b83a" },
+  modalActions: { display: "flex", gap: "12px" },
+  modalSecondaryButton: { flex: 1, padding: "12px", background: "#f1f5f9", border: "none", borderRadius: "10px", cursor: "pointer", fontWeight: 500 },
+  modalPrimaryButton: { flex: 1, padding: "12px", background: "#2e7d32", color: "white", border: "none", borderRadius: "10px", cursor: "pointer", fontWeight: 500 }
 };
 
 export default AssessmentPage;
