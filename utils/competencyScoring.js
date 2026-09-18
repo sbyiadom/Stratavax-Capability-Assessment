@@ -3,24 +3,15 @@
 /**
  * COMPETENCY SCORING
  *
- * Corrected version:
- * - Uses the shared scoring engine from utils/scoring.js
- * - Supports BOTH scoring models:
- *   1) Baseline exact-match scoring
- *   2) Weighted single-select scoring
- * - Removes hardcoded max-score assumptions (no fixed 5)
- * - Keeps existing export: calculateCompetencyScores
- *
- * Phase 5 change:
- * - The previous version fell back to the question's section / category /
- *   dimension when a question had no competency mapping, producing "phantom"
- *   competencies named after sections (e.g. "Mechanical Engineering").
- *   That collided with the integer `competency_id` column on
- *   candidate_competency_scores and produced misleading data.
- *
- *   Now: only questions with a real mapping in question_competencies
- *   contribute to competency scores. Unmapped questions are ignored here —
- *   they still count toward the overall assessment_result score.
+ * Phase 5 update:
+ * - Reads assessmentType scoring mode ('single_select' or 'forced_choice')
+ *   via the assessmentType parameter, which can now be an object:
+ *     { code: 'leadership', scoring_mode: 'forced_choice' }
+ *   or a plain code string (legacy callers).
+ * - Passes mode through to scoreQuestionResponse so forced-choice responses
+ *   are scored correctly.
+ * - Only questions with a real mapping in question_competencies contribute
+ *   to competency scores. Unmapped questions are ignored (per Phase 5 fix).
  */
 
 import {
@@ -36,6 +27,20 @@ import {
   scoreQuestionResponse,
   isBaselineAssessmentType
 } from "./scoring";
+
+// Accepts either a code string or an object { code, scoring_mode }.
+// Returns 'baseline' | 'forced_choice' | 'single_select'.
+const resolveScoringMode = (assessmentType) => {
+  if (assessmentType && typeof assessmentType === "object") {
+    const code = assessmentType.code || assessmentType.id;
+    if (isBaselineAssessmentType(code)) return "baseline";
+    if (assessmentType.scoring_mode === "forced_choice") return "forced_choice";
+    return "single_select";
+  }
+
+  if (isBaselineAssessmentType(assessmentType)) return "baseline";
+  return "single_select";
+};
 
 const getQuestionFromResponse = (response) => {
   if (!response) return null;
@@ -114,16 +119,11 @@ const buildResultObject = (name, competencyId, rawScore, maxPossible, questionCo
 /**
  * calculateCompetencyScores
  *
- * Expected inputs:
- * - responses: response rows with question and answer joins
- * - questionCompetencies: rows from question_competencies
- * - assessmentType: assessment type code or id
+ * @param responses              - response rows with question + answer joins
+ * @param questionCompetencies   - rows from question_competencies
+ * @param assessmentType         - string code OR { code, scoring_mode }
  *
- * Returns object keyed by competency name.
- *
- * Only questions with a real mapping contribute to competency scores.
- * Unmapped questions are ignored (they still count toward the overall
- * assessment_result score, which is computed elsewhere).
+ * Only mapped questions contribute (Phase 5).
  */
 export const calculateCompetencyScores = (
   responses,
@@ -133,23 +133,24 @@ export const calculateCompetencyScores = (
   const safeResponses = safeArray(responses);
   const mappings = safeArray(questionCompetencies);
   const mappingLookup = getCompetencyMappingLookup(mappings);
-  const isBaseline = isBaselineAssessmentType(assessmentType);
+  const scoringMode = resolveScoringMode(assessmentType);
   const results = {};
 
   safeResponses.forEach((response) => {
     const question = getQuestionFromResponse(response);
     const questionId = question?.id || response?.question_id;
-    const scored = scoreQuestionResponse(response, isBaseline);
+    const scored = scoreQuestionResponse(
+      response,
+      scoringMode === "baseline",
+      scoringMode
+    );
 
     const score = toNumber(scored.score, 0);
     const maxScore = toNumber(scored.maxScore, 0);
 
     const linkedMappings = questionId ? mappingLookup[questionId] || [] : [];
 
-    // Phase 5: no mapping means no competency contribution.
-    // We used to fall back to question.section / category / dimension here,
-    // which produced phantom competencies named after sections and collided
-    // with the integer competency_id FK. Now unmapped questions are skipped.
+    // Only mapped questions contribute to competency scores.
     if (linkedMappings.length === 0) {
       return;
     }
@@ -158,8 +159,7 @@ export const calculateCompetencyScores = (
       const weight = toNumber(mapping?.weight, 1);
       const identity = getCompetencyIdentity(mapping, null, null);
 
-      // Defensive: a mapping without a numeric competency_id can't be saved.
-      // Skip rather than produce a bad row.
+      // Defensive: numeric competency_id required.
       const numericId = Number(identity.id);
       if (!Number.isFinite(numericId) || numericId <= 0) {
         return;
