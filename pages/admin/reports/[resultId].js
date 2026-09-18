@@ -1,5 +1,6 @@
 // pages/admin/reports/[resultId].js - COMPLETE FIXED FILE
 // FIX: Properly extracts and passes behavioral matrix to NationalServiceReport
+// Phase 6: Passes competencySummary from the API response into StratavaxReport
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -51,9 +52,9 @@ function extractBehavioralMatrix(reportData) {
     return null;
   }
 
-  const proctoring = reportData.proctoring || 
-                     reportData.behavioral || 
-                     reportData.behavioralMatrix || 
+  const proctoring = reportData.proctoring ||
+                     reportData.behavioral ||
+                     reportData.behavioralMatrix ||
                      {};
 
   if (Object.keys(proctoring).length === 0) {
@@ -200,7 +201,7 @@ function getCategoryScores(data, result, report) {
 // ============================================================
 async function getValidAdminSession() {
   const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-  
+
   if (sessionError || !sessionData?.session) {
     return { session: null, error: 'No valid session. Please sign in again.' };
   }
@@ -256,7 +257,7 @@ export default function AdminReportView() {
         setError(null);
 
         const { session: validSession, error: authError } = await getValidAdminSession();
-        
+
         if (authError || !validSession) {
           setError(authError || 'Authentication failed');
           setLoading(false);
@@ -443,8 +444,8 @@ export default function AdminReportView() {
           <h2>Access Denied</h2>
           <p style={styles.errorMessage}>{error}</p>
           <button onClick={handleBack} style={styles.errorButton}>Go Back</button>
-          <button 
-            onClick={() => router.push('/login')} 
+          <button
+            onClick={() => router.push('/login')}
             style={{ ...styles.errorButton, ...styles.secondaryButton }}
           >
             Sign In Again
@@ -511,7 +512,10 @@ export default function AdminReportView() {
       completed_at: reportData.result?.completed_at || null,
       candidateName: report.candidateInfo?.fullName || reportData.candidateName || 'Candidate',
       proctoring: report.proctoring,
-      behavioralMatrix: behavioralMatrix
+      behavioralMatrix: behavioralMatrix,
+
+      // Phase 6 — competency summary flows through from the API response
+      competencySummary: reportData.competencySummary || null
     };
 
     return (
