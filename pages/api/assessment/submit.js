@@ -1,36 +1,31 @@
-// pages/api/assessment/submit.js - FULLY CORRECTED WITH UNIFIED SCORING
-// Version: submit-behavioral-v10-unified-scoring
+// pages/api/assessment/submit.js
+// Version: submit-behavioral-v11-competency-write
 //
-// WHAT CHANGED FROM v9
-// --------------------
-// Previous versions computed the candidate's score inline:
-//     const earned = Number(selectedAnswer.score) > 0 ? 1 : 0;
-// Every non-zero answer earned a full point. For a graded question whose
-// answers score [2,5,3,1], that meant three of the four answers all
-// earned a full point. The candidate's overall percentage barely reflected
-// the quality of their choices.
+// v10 replaced inline scoring with the unified engine in utils/scoring.js
+// so single_select, baseline, and forced_choice all score uniformly.
 //
-// v10 replaces the inline loop with the shared scoring engine in
-// utils/scoring.js, which:
-//   • single_select → answer-weighted, real max per question
-//   • baseline      → exact-match multi-select
-//   • forced_choice → most/least picks (0.7 / 0.3 weights)
+// v11 adds the competency scoring step at the end of submission. After
+// the transactional RPC succeeds and resultId is available, this file:
+//   1. Fetches question_competencies for the frozen question set
+//   2. Runs calculateCompetencyScores using the SAME scoring engine
+//   3. Upserts rows into candidate_competency_scores on the
+//      (candidate_id, assessment_id, competency_id) unique key
 //
-// CONSEQUENCE: new submissions will produce different (generally lower)
-// percentages than the same answers scored under v9. That is the point.
-// Existing historical results are untouched — they retain the value they
-// had when they were written.
+// The competency block is wrapped in try/catch and is NON-FATAL. If it
+// fails, the assessment result is still saved, the candidate still sees
+// their score, and only the competency section is missing.
 //
 // Behavioural tracking, proctoring, RPC call, and response shape are all
-// unchanged.
+// unchanged from v10.
 
 import { createClient } from "@supabase/supabase-js";
 import {
   scoreQuestionResponse,
   isBaselineAssessmentType
 } from "../../../utils/scoring";
+import { calculateCompetencyScores } from "../../../utils/competencyScoring";
 
-const SUBMIT_BUILD = "submit-behavioral-v10-unified-scoring";
+const SUBMIT_BUILD = "submit-behavioral-v11-competency-write";
 
 const PRACTICAL_ASSESSMENT_IDS = [
   'c2bc4994-1c4a-4094-a763-8d9d560b759e',
@@ -39,11 +34,8 @@ const PRACTICAL_ASSESSMENT_IDS = [
   '928f81fc-35ea-40ac-83cb-7c3a0c1c18dc'
 ];
 const NATIONAL_SERVICE_ASSESSMENT_ID = 'bdb9d46e-9fac-4d00-8478-1f649e7ac600';
-const MAX_REASONABLE_SECONDS = 8 * 60 * 60; // 8 hours
+const MAX_REASONABLE_SECONDS = 8 * 60 * 60;
 
-// ============================================================
-// HELPERS
-// ============================================================
 function formatDuration(seconds) {
   if (!seconds || seconds <= 0) return '00:00:00';
   const hours = Math.floor(seconds / 3600);
@@ -73,10 +65,6 @@ function safeArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
-// ============================================================
-// Load the frozen question set for a session.
-// Returns { questions, assessmentVersion, scoringVersion } or null.
-// ============================================================
 async function loadFrozenQuestions(serviceClient, sessionId) {
   const { data: frozen, error: frozenErr } = await serviceClient
     .from("session_questions")
@@ -170,9 +158,6 @@ async function loadFrozenQuestions(serviceClient, sessionId) {
   };
 }
 
-// ============================================================
-// MAIN HANDLER
-// ============================================================
 export default async function handler(req, res) {
   console.log(`[Submit] Build: ${SUBMIT_BUILD}`);
   console.log(`[Submit] Method: ${req.method}`);
@@ -207,9 +192,6 @@ export default async function handler(req, res) {
       auth: { persistSession: false, autoRefreshToken: false }
     });
 
-    // ============================================================
-    // STEP 1: Verify user
-    // ============================================================
     const { data: userData, error: userError } = await serviceClient.auth.getUser(token);
     if (userError || !userData?.user) {
       console.error("[Submit] Auth error:", userError);
@@ -217,9 +199,6 @@ export default async function handler(req, res) {
     }
     const userId = userData.user.id;
 
-    // ============================================================
-    // STEP 2: Get session
-    // ============================================================
     const { data: session, error: sessionError } = await serviceClient
       .from("assessment_sessions")
       .select("*")
@@ -238,9 +217,6 @@ export default async function handler(req, res) {
 
     console.log(`[Submit] Session found: ${session.id}, assessment_id: ${session.assessment_id}`);
 
-    // ============================================================
-    // STEP 3: Validate session has assessment_id
-    // ============================================================
     if (!session.assessment_id) {
       console.error("[Submit] Session missing assessment_id");
       return res.status(409).json({
@@ -250,9 +226,6 @@ export default async function handler(req, res) {
       });
     }
 
-    // ============================================================
-    // STEP 4: Get assessment
-    // ============================================================
     console.log(`[Submit] Looking up assessment: ${session.assessment_id}`);
     const { data: assessment, error: assessmentError } = await serviceClient
       .from("assessments")
@@ -275,9 +248,6 @@ export default async function handler(req, res) {
 
     console.log(`[Submit] Assessment found: ${assessment.id} - ${assessment.title}`);
 
-    // ============================================================
-    // STEP 5: Get assessment type (now including scoring_mode)
-    // ============================================================
     const { data: assessmentType, error: typeError } = await serviceClient
       .from("assessment_types")
       .select("id, code, name, question_count, scoring_mode")
@@ -297,8 +267,6 @@ export default async function handler(req, res) {
     const isNationalService = assessmentType?.code === 'national_service' ||
                              session.assessment_id === NATIONAL_SERVICE_ASSESSMENT_ID;
 
-    // Determine scoring mode. Baseline is a special case of single-select
-    // that uses exact-match multi-select.
     const typeCode = assessmentType?.code || 'general';
     const isBaseline = isBaselineAssessmentType(typeCode);
     const scoringMode = isBaseline
@@ -307,9 +275,6 @@ export default async function handler(req, res) {
 
     console.log(`[Submit] Resolved scoring mode: ${scoringMode}`);
 
-    // ============================================================
-    // STEP 6: Get responses (now including least_answer_id)
-    // ============================================================
     const { data: responses, error: responsesError } = await serviceClient
       .from("responses")
       .select("question_id, answer_id, least_answer_id, metadata, times_changed")
@@ -335,9 +300,6 @@ export default async function handler(req, res) {
       });
     }
 
-    // ============================================================
-    // STEP 7: Get questions for scoring (frozen first, fallback second)
-    // ============================================================
     let questions = null;
     let frozenUsed = false;
     let denominatorOverridden = false;
@@ -394,15 +356,6 @@ export default async function handler(req, res) {
       console.log(`[Submit] Questions found: ${questions.length} (source: unique_questions / fallback)`);
     }
 
-    // ============================================================
-    // STEP 8: Calculate scores using the unified scoring engine
-    // ------------------------------------------------------------
-    // Previously this used `Number(selectedAnswer.score) > 0 ? 1 : 0`
-    // which awarded a full point for ANY non-zero answer and therefore
-    // could not distinguish a candidate who picked the best answer from
-    // one who picked the second-worst. v10 uses scoreQuestionResponse,
-    // which handles single_select, baseline, and forced_choice uniformly.
-    // ============================================================
     const responseLookup = {};
     (responses || []).forEach(r => {
       responseLookup[r.question_id] = r;
@@ -423,7 +376,6 @@ export default async function handler(req, res) {
       }
 
       if (!response) {
-        // Unanswered question still contributes to the denominator.
         const answeredShape = {
           question_id: q.id,
           answer_id: null,
@@ -436,7 +388,6 @@ export default async function handler(req, res) {
         return;
       }
 
-      // Attach the full question object so the engine can resolve answer scores.
       const responseShape = {
         ...response,
         unique_questions: q
@@ -453,9 +404,6 @@ export default async function handler(req, res) {
       categoryMaxMap[section] += max;
     });
 
-    // ============================================================
-    // STEP 9: Validate question count (fallback path only)
-    // ============================================================
     if (frozenUsed) {
       console.log(`[Submit] Frozen denominator locked: ${totalMax} max points`);
     } else {
@@ -487,9 +435,6 @@ export default async function handler(req, res) {
     const finalPercentage = totalMax > 0 ? Math.round((totalEarned / totalMax) * 100) : 0;
     console.log(`[Submit] Score: ${totalEarned}/${totalMax} = ${finalPercentage}% (mode=${scoringMode})`);
 
-    // ============================================================
-    // STEP 10: category_scores
-    // ============================================================
     const categoryScores = Object.keys(categoryEarnedMap).map(category => {
       const earned = categoryEarnedMap[category];
       const max = categoryMaxMap[category] || 1;
@@ -497,9 +442,6 @@ export default async function handler(req, res) {
       return { category, earned, max, percentage };
     });
 
-    // ============================================================
-    // STEP 11: recommendation
-    // ============================================================
     let recommendation = null;
     if (isNationalService) {
       if (finalPercentage >= 85) recommendation = 'Highly Recommended';
@@ -514,9 +456,6 @@ export default async function handler(req, res) {
       else recommendation = 'Not Recommended';
     }
 
-    // ============================================================
-    // STEP 12: proctoring data
-    // ============================================================
     const proctoring = proctoringData || {};
     const externalUrls = Array.isArray(proctoring.externalUrls) ? proctoring.externalUrls : [];
     const violations = Array.isArray(proctoring.violations) ? proctoring.violations : [];
@@ -535,9 +474,6 @@ export default async function handler(req, res) {
       }
     }
 
-    // ============================================================
-    // STEP 13: risk
-    // ============================================================
     let riskScore = 0;
     if (totalTabSwitches > 50) riskScore += 30;
     else if (totalTabSwitches > 10) riskScore += 20;
@@ -560,9 +496,6 @@ export default async function handler(req, res) {
     if (riskScore >= 70) riskLevel = 'high';
     else if (riskScore >= 40) riskLevel = 'medium';
 
-    // ============================================================
-    // STEP 14: time tracking
-    // ============================================================
     const completedAt = new Date().toISOString();
     let assessmentStartedAt = null;
     let totalSeconds = 0;
@@ -585,9 +518,6 @@ export default async function handler(req, res) {
     const totalDurationFormatted = formatDuration(totalSeconds);
     const avgTimePerQuestion = calculateAvgTimePerQuestion(totalSeconds, questions.length);
 
-    // ============================================================
-    // STEP 15-18: TRANSACTIONAL SUBMISSION
-    // ============================================================
     const reportData = {
       categoryScores: categoryScores,
       totalEarned: totalEarned,
@@ -722,8 +652,88 @@ export default async function handler(req, res) {
     console.log(`[Submit] Result saved (transactional): ${resultId}`);
 
     // ============================================================
-    // STEP 19: Return response
+    // STEP 19: COMPETENCY SCORING (NON-FATAL)
     // ============================================================
+    try {
+      const validQuestionIds = questions
+        .map(q => q.id)
+        .filter(id => id && !String(id).startsWith('placeholder-'));
+
+      console.log(`[Submit] Competency: evaluating ${validQuestionIds.length} question IDs`);
+
+      if (validQuestionIds.length > 0) {
+        const { data: questionCompetencies, error: qcError } = await serviceClient
+          .from('question_competencies')
+          .select('question_id, competency_id, weight, competencies(id, name, category)')
+          .in('question_id', validQuestionIds);
+
+        if (qcError) {
+          console.error('[Submit] Competency: question_competencies fetch failed:', qcError);
+        } else if (questionCompetencies && questionCompetencies.length > 0) {
+          console.log(`[Submit] Competency: found ${questionCompetencies.length} mapping rows`);
+
+          const responsesWithQuestions = questions.map(question => {
+            const response = responseLookup[question.id];
+            return {
+              ...(response || {}),
+              unique_questions: {
+                id: question.id,
+                question_text: question.question_text,
+                section: question.section,
+                subsection: question.subsection,
+                unique_answers: question.answers || []
+              }
+            };
+          });
+
+          const competencyScores = calculateCompetencyScores(
+            responsesWithQuestions,
+            questionCompetencies,
+            {
+              code: typeCode,
+              scoring_mode: scoringMode
+            }
+          );
+
+          const rows = Object.values(competencyScores)
+            .map(c => ({
+              candidate_id: userId,
+              assessment_id: assessment.id,
+              competency_id: c.id,
+              raw_score: c.rawScore,
+              max_possible: c.maxPossible,
+              percentage: c.percentage,
+              classification: c.classification,
+              question_count: c.questionCount
+            }))
+            .filter(r => Number.isFinite(Number(r.competency_id)) && Number(r.competency_id) > 0);
+
+          if (rows.length > 0) {
+            const { error: upsertError } = await serviceClient
+              .from('candidate_competency_scores')
+              .upsert(rows, { onConflict: 'candidate_id,assessment_id,competency_id' });
+
+            if (upsertError) {
+              console.error('[Submit] Competency: upsert failed:', {
+                message: upsertError.message,
+                code: upsertError.code,
+                details: upsertError.details,
+                hint: upsertError.hint
+              });
+            } else {
+              console.log(`[Submit] Competency: wrote ${rows.length} rows for assessment ${assessment.id}`);
+            }
+          } else {
+            console.log('[Submit] Competency: no rows produced by scorer');
+          }
+        } else {
+          console.log('[Submit] Competency: no mappings found for these questions');
+        }
+      }
+    } catch (competencyError) {
+      console.error('[Submit] Competency: non-fatal error:', competencyError);
+    }
+
     return res.status(200).json({
       success: true,
       resultId: resultId,
