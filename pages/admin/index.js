@@ -1,9 +1,9 @@
-// pages/admin/index.js - CLEAN DASHBOARD WITH SCROLLING FIX
-// Sidebar is now a shared component from components/AdminSidebar.js
+// pages/admin/index.js - CLEAN DASHBOARD WITH REAL METRICS
+// Phase 6.5: All numbers come from real data. No hardcoded deltas.
+// Fake formulas removed. Neutral delta badges.
 
-import { useEffect, useState, useMemo, Fragment } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/router";
-import Link from "next/link";
 import { supabase } from "../../supabase/client";
 import AssessmentExpiration from "../../components/admin/AssessmentExpiration";
 import AdminSidebar from "../../components/AdminSidebar";
@@ -24,7 +24,7 @@ import {
   LineElement,
   Filler,
 } from 'chart.js';
-import { Bar, Doughnut, Line } from 'react-chartjs-2';
+import { Bar, Doughnut } from 'react-chartjs-2';
 
 ChartJS.register(
   CategoryScale,
@@ -105,27 +105,43 @@ function formatTimeAgo(date) {
   const minutes = Math.floor(diff / 60000);
   const hours = Math.floor(diff / 3600000);
   const days = Math.floor(diff / 86400000);
-  
+
   if (minutes < 1) return "Just now";
   if (minutes < 60) return `${minutes}m ago`;
   if (hours < 24) return `${hours}h ago`;
   return `${days}d ago`;
 }
 
+// Render a neutral delta. Both directions use the same style.
+// Arrow + magnitude only. No color editorializing.
+function formatDelta(deltaPct) {
+  if (deltaPct === null || deltaPct === undefined) {
+    return { text: '—', direction: 'flat' };
+  }
+  const rounded = Math.round(deltaPct * 10) / 10;
+  if (rounded === 0) return { text: 'no change', direction: 'flat' };
+  const arrow = rounded > 0 ? '↑' : '↓';
+  const magnitude = Math.abs(rounded);
+  return {
+    text: `${arrow} ${magnitude}%`,
+    direction: rounded > 0 ? 'up' : 'down',
+  };
+}
+
 // ============================================================
-// CONSOLIDATION FUNCTIONS
+// CONSOLIDATION FUNCTIONS (unchanged — used for university/program filters)
 // ============================================================
 function consolidateUniversityName(raw) {
   if (!raw || typeof raw !== 'string' || raw.trim() === '') return 'Not Specified';
   const lower = raw.toLowerCase().trim();
   const cleaned = raw.replace(/\s+/g, ' ').trim();
-  
+
   if (lower === 'knust' || lower.includes('knust') || lower.includes('k.n.u.s.t') ||
       lower.includes('kwame nkrumah') || lower.includes('kwmane nkrumah') ||
       (lower.includes('kwame') && lower.includes('nkrumah'))) {
     return 'Kwame Nkrumah University of Science and Technology (KNUST)';
   }
-  
+
   if (lower === 'umat' || lower.includes('umat') || lower.includes('u.m.a.t') ||
       (lower.includes('mines') && lower.includes('technology')) ||
       (lower.includes('mine') && lower.includes('technology')) ||
@@ -134,24 +150,24 @@ function consolidateUniversityName(raw) {
       (lower.includes('university of mines'))) {
     return 'University of Mines and Technology (UMaT)';
   }
-  
+
   if (lower === 'ug' || lower.includes('ug ') || lower.includes('u.g') ||
       lower === 'legon' || lower.includes('legon') || lower.includes('university of ghana')) {
     return 'University of Ghana (UG)';
   }
-  
+
   if (lower === 'ucc' || lower.includes('ucc ') || lower.includes('u.c.c') ||
       lower.includes('cape coast') || lower.includes('capecoast') ||
       lower.includes('university of cape coast')) {
     return 'University of Cape Coast (UCC)';
   }
-  
+
   if (lower === 'kstu' || lower.includes('kstu ') || lower.includes('k.s.t.u') ||
       (lower.includes('kumasi') && lower.includes('technical')) ||
       (lower.includes('kumasi') && lower.includes('tech'))) {
     return 'Kumasi Technical University (KSTU)';
   }
-  
+
   if (lower.includes('takoradi') && lower.includes('technical')) return 'Takoradi Technical University';
   if (lower.includes('accra') && lower.includes('technical')) return 'Accra Technical University';
   if ((lower.includes('koforidua') || lower.includes('korforidua')) && lower.includes('technical')) {
@@ -162,50 +178,50 @@ function consolidateUniversityName(raw) {
   if ((lower.includes('ho') || lower.includes('ho ')) && lower.includes('technical')) return 'Ho Technical University';
   if (lower.includes('tamale') && lower.includes('technical')) return 'Tamale Technical University';
   if (lower.includes('energy') && lower.includes('natural resources')) return 'University of Energy and Natural Resources';
-  
+
   if (lower === 'uds' || lower.includes('uds ') || lower.includes('u.d.s') ||
       lower.includes('development studies') || lower.includes('university for development')) {
     return 'University for Development Studies (UDS)';
   }
-  
+
   if (lower === 'gctu' || lower.includes('gctu ') || lower.includes('g.c.t.u') ||
       lower.includes('communication technology') || lower.includes('communications technology') ||
       lower.includes('ghana communication')) {
     return 'Ghana Communication Technology University (GCTU)';
   }
-  
+
   if (lower === 'upsa' || lower.includes('upsa ') || lower.includes('u.p.s.a') ||
       lower.includes('professional studies')) {
     return 'University of Professional Studies (UPSA)';
   }
-  
+
   if (lower === 'rmu' || lower.includes('rmu ') || lower.includes('regional maritime') ||
       lower.includes('maritime')) {
     return 'Regional Maritime University (RMU)';
   }
-  
+
   if (lower === 'kpoly' || lower.includes('kpoly ') || lower.includes('k.poly') ||
       lower.includes('koforidua poly') || lower.includes('koforidua polytechnic')) {
     return 'Koforidua Polytechnic (KPoly)';
   }
-  
+
   if (lower.includes('skills training') || lower.includes('entrepreneurial')) {
     return 'University of Skills Training and Entrepreneurial Development';
   }
-  
+
   if (lower.includes('pentecost')) return 'Pentecost University';
   if (lower.includes('ashesi')) return 'Ashesi University';
   if (lower.includes('valley view')) return 'Valley View University';
   if (lower.includes('central university')) return 'Central University';
-  
+
   if (lower === 'anu' || lower.includes('anu ') || lower.includes('all nations')) {
     return 'All Nations University';
   }
-  
+
   if (lower.includes('ait') || lower.includes('a.i.t') || lower.includes('accra institute')) {
     return 'Accra Institute of Technology (AIT)';
   }
-  
+
   if (!raw || raw.trim() === '') return 'Not Specified';
   return cleaned;
 }
@@ -213,7 +229,7 @@ function consolidateUniversityName(raw) {
 function consolidateProgramName(raw) {
   if (!raw || typeof raw !== 'string') return 'Unknown';
   const lower = raw.toLowerCase().trim();
-  
+
   const cleanForMatch = (str) => {
     return str
       .toLowerCase()
@@ -222,134 +238,98 @@ function consolidateProgramName(raw) {
       .replace(/\s+/g, ' ')
       .trim();
   };
-  
+
   const cleanLower = cleanForMatch(raw);
-  
-  if (cleanLower.includes('electrical') || cleanLower.includes('electronic') || 
+
+  if (cleanLower.includes('electrical') || cleanLower.includes('electronic') ||
       cleanLower.includes('elect/electron') || cleanLower.includes('electrical/electronic') ||
       cleanLower.includes('electrical electronic') || cleanLower.includes('electrical and electronic') ||
       cleanLower.includes('electrical & electronic') || lower === 'eee' || lower.includes('eee ')) {
     return 'BSc Electrical/Electronic Engineering';
   }
-  
-  if (cleanLower.includes('mechanical') || cleanLower.includes('mech') ||
-      lower === 'me' || lower.includes('me ')) {
+  if (cleanLower.includes('mechanical') || cleanLower.includes('mech') || lower === 'me' || lower.includes('me ')) {
     return 'BSc Mechanical Engineering';
   }
-  
-  if (cleanLower.includes('chemical') || cleanLower.includes('chem') ||
-      lower === 'che' || lower.includes('che ')) {
+  if (cleanLower.includes('chemical') || cleanLower.includes('chem') || lower === 'che' || lower.includes('che ')) {
     return 'BSc Chemical Engineering';
   }
-  
   if (cleanLower.includes('civil') || lower === 'ce' || lower.includes('ce ')) {
     return 'BSc Civil Engineering';
   }
-  
   if (cleanLower.includes('computer') || lower === 'cpe' || lower.includes('cpe ')) {
     return 'BSc Computer Engineering';
   }
-  
   if (cleanLower.includes('industrial') || lower === 'ie' || lower.includes('ie ')) {
     return 'BSc Industrial Engineering';
   }
-  
-  if (cleanLower.includes('agricultural') || cleanLower.includes('agric') ||
-      lower === 'age' || lower.includes('age ')) {
+  if (cleanLower.includes('agricultural') || cleanLower.includes('agric') || lower === 'age' || lower.includes('age ')) {
     return 'BSc Agricultural Engineering';
   }
-  
-  if (cleanLower.includes('petroleum') || cleanLower.includes('petrol') ||
-      lower === 'pe' || lower.includes('pe ')) {
+  if (cleanLower.includes('petroleum') || cleanLower.includes('petrol') || lower === 'pe' || lower.includes('pe ')) {
     return 'BSc Petroleum Engineering';
   }
-  
-  if (cleanLower.includes('geological') || cleanLower.includes('geo') ||
-      lower === 'ge' || lower.includes('ge ')) {
+  if (cleanLower.includes('geological') || cleanLower.includes('geo') || lower === 'ge' || lower.includes('ge ')) {
     return 'BSc Geological Engineering';
   }
-  
   if (cleanLower.includes('geomatic')) return 'BSc Geomatic Engineering';
-  
-  if (cleanLower.includes('materials') || cleanLower.includes('material') ||
-      lower === 'mte' || lower.includes('mte ')) {
+  if (cleanLower.includes('materials') || cleanLower.includes('material') || lower === 'mte' || lower.includes('mte ')) {
     return 'BSc Materials Engineering';
   }
-  
   if (cleanLower.includes('telecommunications') || cleanLower.includes('telecom') ||
       cleanLower.includes('telecommunication') || lower === 'tele' || lower.includes('tele ')) {
     return 'BSc Telecommunications Engineering';
   }
-  
   if (cleanLower.includes('renewable') || cleanLower.includes('energy')) {
     return 'BSc Renewable Energy Engineering';
   }
-  
   if (cleanLower.includes('automobile') || cleanLower.includes('auto')) {
     return 'BSc Automobile Engineering';
   }
-  
   if (cleanLower.includes('information technology') || cleanLower.includes('info tech') ||
       lower === 'it' || lower.includes('it ')) {
     return 'BSc Information Technology';
   }
-  
   if (cleanLower.includes('information systems') || cleanLower.includes('info systems')) {
     return 'BSc Information Systems';
   }
-  
   if (cleanLower.includes('biomedical') || cleanLower.includes('bio medical')) {
     return 'BSc Biomedical Engineering';
   }
-  
   if (cleanLower.includes('minerals') || cleanLower.includes('mining')) {
     return 'BSc Minerals Engineering';
   }
-  
   if (cleanLower.includes('psychology') || cleanLower.includes('psych')) {
     return 'BA Psychology';
   }
-  
-  if (cleanLower.includes('political science') || cleanLower.includes('politics') ||
-      cleanLower.includes('political')) {
+  if (cleanLower.includes('political science') || cleanLower.includes('politics') || cleanLower.includes('political')) {
     return 'BA Political Science';
   }
-  
   if (cleanLower.includes('laboratory') || cleanLower.includes('lab')) {
     return 'BSc Laboratory Technology';
   }
-  
   if (cleanLower.includes('food science') || cleanLower.includes('food')) {
     return 'BSc Food Science and Postharvest Technology';
   }
-  
-  if ((cleanLower.includes('statistics') || cleanLower.includes('stat')) && 
+  if ((cleanLower.includes('statistics') || cleanLower.includes('stat')) &&
       (cleanLower.includes('mathematics') || cleanLower.includes('math'))) {
     return 'BSc Statistics and Mathematics';
   }
-  
-  if (cleanLower.includes('mathematics') || cleanLower.includes('math') ||
-      lower === 'maths' || lower.includes('maths ')) {
+  if (cleanLower.includes('mathematics') || cleanLower.includes('math') || lower === 'maths' || lower.includes('maths ')) {
     return 'BSc Mathematics';
   }
-  
   if (cleanLower.includes('statistics') || cleanLower.includes('stat')) {
     return 'BSc Statistics';
   }
-  
   if (cleanLower.includes('accounting') && cleanLower.includes('economics')) {
     return 'BSc Accounting and Economics';
   }
-  
   if (cleanLower.includes('accounting')) return 'BSc Accounting';
   if (cleanLower.includes('economics')) return 'BSc Economics';
-  
   if (cleanLower.includes('business administration') || cleanLower.includes('business admin') ||
-      cleanLower.includes('management') || cleanLower.includes('admin') || 
+      cleanLower.includes('management') || cleanLower.includes('admin') ||
       cleanLower.includes('secretariat') || cleanLower.includes('secretariatship')) {
     return 'Business Administration';
   }
-  
   if (cleanLower.includes('marketing')) return 'BSc Marketing';
   if (cleanLower.includes('human resource') || cleanLower.includes('hr')) {
     return 'BSc Human Resource Management';
@@ -365,17 +345,15 @@ function consolidateProgramName(raw) {
   if (cleanLower.includes('quantity surveying') || cleanLower.includes('surveying')) {
     return 'BSc Quantity Surveying';
   }
-  
   if (cleanLower.includes('arts') || lower.includes('ba ') || lower.includes('b.a ')) {
     return 'BA Arts';
   }
-  
   if (cleanLower.includes('biological') || cleanLower.includes('biology')) {
     return 'BSc Biological Sciences';
   }
   if (cleanLower.includes('chemistry')) return 'BSc Chemistry';
   if (cleanLower.includes('physics')) return 'BSc Physics';
-  
+
   let cleaned = raw.replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, ' ').replace(/\s+/g, ' ').trim();
   cleaned = cleaned.split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()).join(' ');
   return cleaned || 'Unknown';
@@ -411,16 +389,8 @@ const customSelectStyles = {
     '&:active': { backgroundColor: COLORS.primary },
     fontSize: '13px',
   }),
-  multiValue: (base) => ({
-    ...base,
-    backgroundColor: '#e3f2fd',
-  }),
-  multiValueLabel: (base) => ({
-    ...base,
-    color: COLORS.primary,
-    fontWeight: 600,
-    fontSize: '12px',
-  }),
+  multiValue: (base) => ({ ...base, backgroundColor: '#e3f2fd' }),
+  multiValueLabel: (base) => ({ ...base, color: COLORS.primary, fontWeight: 600, fontSize: '12px' }),
   multiValueRemove: (base) => ({
     ...base,
     color: COLORS.primary,
@@ -439,24 +409,15 @@ export default function AdminDashboard() {
   const [lastUpdated, setLastUpdated] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  
+
   const [selectedUniversityOption, setSelectedUniversityOption] = useState(null);
   const [selectedProgramOptions, setSelectedProgramOptions] = useState([]);
   const [minScore, setMinScore] = useState(0);
   const [maxScore, setMaxScore] = useState(100);
 
-  const [stats, setStats] = useState({
-    totalSupervisors: 0,
-    totalCandidates: 0,
-    totalAssessments: 0,
-    completedAssessments: 0,
-    unblockedAssessments: 0,
-    blockedAssessments: 0,
-    inProgressSessions: 0,
-    totalResults: 0,
-    nationalServiceReports: 0,
-    stratavaxReports: 0
-  });
+  // Real metrics from /api/admin/dashboard-stats
+  const [dashStats, setDashStats] = useState(null);
+  const [dashStatsError, setDashStatsError] = useState(null);
 
   const [allCandidates, setAllCandidates] = useState([]);
   const [recentCandidates, setRecentCandidates] = useState([]);
@@ -464,19 +425,14 @@ export default function AdminDashboard() {
   const [candidateAssessmentsData, setCandidateAssessmentsData] = useState([]);
 
   // ============================================================
-  // TOGGLE SIDEBAR
+  // SIDEBAR TOGGLE
   // ============================================================
-  const toggleSidebar = () => {
-    setSidebarOpen(!sidebarOpen);
-  };
+  const toggleSidebar = () => setSidebarOpen(!sidebarOpen);
 
   useEffect(() => {
     const handleResize = () => {
-      if (window.innerWidth < 768) {
-        setSidebarOpen(false);
-      } else {
-        setSidebarOpen(true);
-      }
+      if (window.innerWidth < 768) setSidebarOpen(false);
+      else setSidebarOpen(true);
     };
     window.addEventListener('resize', handleResize);
     handleResize();
@@ -484,12 +440,12 @@ export default function AdminDashboard() {
   }, []);
 
   // ============================================================
-  // DATA PREPARATION
+  // DATA PREPARATION (for filters + charts + recent lists)
   // ============================================================
   const candidatesWithScores = useMemo(() => {
     const scoreMap = {};
     const resultMap = {};
-    
+
     allResults.forEach(r => {
       const userId = r.user_id;
       const score = toNumber(r.percentage_score);
@@ -523,9 +479,6 @@ export default function AdminDashboard() {
     });
   }, [allCandidates, allResults, candidateAssessmentsData]);
 
-  // ============================================================
-  // GROUP NORMALIZATION
-  // ============================================================
   const rawUniversities = useMemo(() => candidatesWithScores.map(c => c.university).filter(Boolean), [candidatesWithScores]);
   const rawPrograms = useMemo(() => candidatesWithScores.map(c => c.programme).filter(Boolean), [candidatesWithScores]);
 
@@ -560,11 +513,11 @@ export default function AdminDashboard() {
   }, [candidatesWithScores, selectedUniversityOption, selectedProgramOptions, minScore, maxScore]);
 
   // ============================================================
-  // METRICS
+  // FILTERED METRICS (real, from filtered candidate set)
   // ============================================================
   const completedFiltered = filteredCandidates.filter(c => c.hasResult && c.score !== null && Number.isFinite(c.score));
-  const completionRate = filteredCandidates.length > 0 
-    ? Math.round((completedFiltered.length / filteredCandidates.length) * 100) 
+  const completionRate = filteredCandidates.length > 0
+    ? Math.round((completedFiltered.length / filteredCandidates.length) * 100)
     : 0;
 
   const filteredGlobalAverageScore = useMemo(() => {
@@ -592,26 +545,19 @@ export default function AdminDashboard() {
       const hasBlocked = statuses.some(s => s === 'blocked');
       const hasUnblocked = statuses.some(s => s === 'unblocked');
       const hasScheduled = statuses.some(s => s === 'scheduled');
-      
-      if (hasCompleted) {
-        map.completed += 1;
-      } else if (hasInProgress) {
-        map.inProgress += 1;
-      } else if (hasScheduled) {
-        map.scheduled += 1;
-      } else if (hasUnblocked) {
-        map.unblocked += 1;
-      } else if (hasBlocked) {
-        map.blocked += 1;
-      } else {
-        map.notStarted += 1;
-      }
+
+      if (hasCompleted) map.completed += 1;
+      else if (hasInProgress) map.inProgress += 1;
+      else if (hasScheduled) map.scheduled += 1;
+      else if (hasUnblocked) map.unblocked += 1;
+      else if (hasBlocked) map.blocked += 1;
+      else map.notStarted += 1;
     });
     return map;
   }, [filteredCandidates]);
 
   // ============================================================
-  // FILTERED ANALYTICS
+  // UNIVERSITY ANALYTICS (real, from filtered set)
   // ============================================================
   const filteredUniversityAnalytics = useMemo(() => {
     const map = {};
@@ -635,6 +581,27 @@ export default function AdminDashboard() {
       completionRate: data.totalCandidates > 0 ? Math.round((data.completedCandidates / data.totalCandidates) * 100) : 0,
       avgScore: data.completedCandidates > 0 ? Math.round(data.scoreTotal / data.completedCandidates) : null,
     })).sort((a, b) => b.completedCandidates - a.completedCandidates).slice(0, 10);
+  }, [filteredCandidates]);
+
+  // Top performer by completion rate (min 10 candidates)
+  const topPerformerByRate = useMemo(() => {
+    const map = {};
+    filteredCandidates.forEach(c => {
+      if (!c.university) return;
+      const name = c.consolidatedUniversity || c.university;
+      if (!map[name]) map[name] = { total: 0, completed: 0 };
+      map[name].total += 1;
+      if (c.hasResult) map[name].completed += 1;
+    });
+    const eligible = Object.entries(map)
+      .filter(([, d]) => d.total >= 10)
+      .map(([name, d]) => ({
+        name,
+        rate: Math.round((d.completed / d.total) * 100),
+        total: d.total,
+      }))
+      .sort((a, b) => b.rate - a.rate);
+    return eligible[0] || null;
   }, [filteredCandidates]);
 
   // ============================================================
@@ -664,57 +631,45 @@ export default function AdminDashboard() {
     try {
       if (showRefresh) setRefreshing(true);
 
-      const NATIONAL_SERVICE_ASSESSMENT_ID = 'bdb9d46e-9fac-4d00-8478-1f649e7ac600';
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
 
+      // Real dashboard stats from the new API
+      if (token) {
+        try {
+          const statsRes = await fetch('/api/admin/dashboard-stats', {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          const statsJson = await statsRes.json();
+          if (statsRes.ok && statsJson.success) {
+            setDashStats(statsJson);
+            setDashStatsError(null);
+          } else {
+            setDashStatsError(statsJson.error || `HTTP ${statsRes.status}`);
+          }
+        } catch (err) {
+          console.error('[Admin Dashboard] dashboard-stats fetch error:', err);
+          setDashStatsError(err.message || 'Failed to load dashboard stats');
+        }
+      }
+
+      // Charts + recent lists data
       const [
-        supervisorCount,
-        candidateCount,
-        assessmentCount,
-        completedCount,
-        resultCount,
-        inProgressCount,
-        accessResponse,
         allCandidatesResponse,
         recentCandidatesResponse,
-        resultsResponse
+        resultsResponse,
+        accessResponse,
       ] = await Promise.all([
-        supabase.from("supervisor_profiles").select("*", { count: "exact", head: true }),
-        supabase.from("candidate_profiles").select("*", { count: "exact", head: true }),
-        supabase.from("assessments").select("*", { count: "exact", head: true }).eq("is_active", true),
-        supabase.from("candidate_assessments").select("*", { count: "exact", head: true }).eq("status", "completed"),
-        supabase.from("assessment_results").select("*", { count: "exact", head: true }),
-        supabase.from("assessment_sessions").select("*", { count: "exact", head: true }).eq("status", "in_progress"),
-        supabase.from("candidate_assessments").select("*"),
         supabase.from("candidate_profiles").select("id, full_name, email, university, programme, created_at").order("created_at", { ascending: false }),
         supabase.from("candidate_profiles").select("id, full_name, email, created_at").order("created_at", { ascending: false }).limit(6),
-        supabase.from("assessment_results").select(`id, user_id, assessment_id, total_score, max_score, percentage_score, completed_at, recommendation`).order("completed_at", { ascending: false })
+        supabase.from("assessment_results").select(`id, user_id, assessment_id, total_score, max_score, percentage_score, completed_at, recommendation`).order("completed_at", { ascending: false }),
+        supabase.from("candidate_assessments").select("*"),
       ]);
-
-      const accessRows = safeArray(accessResponse?.data || []);
-      const unblockedCount = accessRows.filter((item) => item.status === "unblocked").length;
-      const blockedCount = accessRows.filter((item) => item.status === "blocked").length;
-
-      const resultsData = resultsResponse?.data || [];
-      const nationalServiceCount = resultsData.filter(r => r.assessment_id === NATIONAL_SERVICE_ASSESSMENT_ID).length;
-      const stratavaxCount = resultsData.length - nationalServiceCount;
-
-      setStats({
-        totalSupervisors: supervisorCount.count || 0,
-        totalCandidates: candidateCount.count || 0,
-        totalAssessments: assessmentCount.count || 0,
-        completedAssessments: completedCount.count || 0,
-        unblockedAssessments: unblockedCount || 0,
-        blockedAssessments: blockedCount || 0,
-        inProgressSessions: inProgressCount.count || 0,
-        totalResults: resultCount.count || 0,
-        nationalServiceReports: nationalServiceCount,
-        stratavaxReports: stratavaxCount
-      });
 
       setAllCandidates(allCandidatesResponse?.data || []);
       setRecentCandidates(recentCandidatesResponse?.data || []);
-      setAllResults(resultsData);
-      setCandidateAssessmentsData(accessRows || []);
+      setAllResults(resultsResponse?.data || []);
+      setCandidateAssessmentsData(safeArray(accessResponse?.data || []));
       setLastUpdated(new Date().toISOString());
     } catch (error) {
       console.error("Error fetching admin dashboard data:", error);
@@ -815,9 +770,13 @@ export default function AdminDashboard() {
   const totalFilteredInProgress = statusDistribution.inProgress;
   const totalFilteredBlocked = statusDistribution.blocked;
 
+  // Delta renderers (neutral style)
+  const candidatesDelta = dashStats ? formatDelta(dashStats.candidates?.deltaPct30) : { text: '—' };
+  const results7Delta = dashStats ? formatDelta(dashStats.results?.deltaPct7) : { text: '—' };
+  const results30Delta = dashStats ? formatDelta(dashStats.results?.deltaPct30) : { text: '—' };
+
   return (
     <div style={stylesModern.appContainer}>
-      {/* Sidebar — shared component */}
       <AdminSidebar
         isOpen={sidebarOpen}
         toggleSidebar={toggleSidebar}
@@ -825,7 +784,6 @@ export default function AdminDashboard() {
         userRole="admin"
       />
 
-      {/* Main Content */}
       <div style={stylesModern.mainContent}>
         {/* Top Bar */}
         <div style={stylesModern.topBar}>
@@ -842,7 +800,7 @@ export default function AdminDashboard() {
           </div>
           <div style={stylesModern.topBarRight}>
             <button onClick={() => fetchDashboardData(true)} style={stylesModern.refreshBtn} disabled={refreshing}>
-              {refreshing ? '⟳' : '⟳'}
+              ⟳
             </button>
             <div style={stylesModern.userBadge}>
               <span style={stylesModern.userAvatar}>A</span>
@@ -851,7 +809,7 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* Welcome Section */}
+        {/* Welcome */}
         <div style={stylesModern.welcomeSection}>
           <div>
             <h1 style={stylesModern.welcomeTitle}>Welcome back, Admin! 👋</h1>
@@ -873,6 +831,13 @@ export default function AdminDashboard() {
           </div>
         </div>
 
+        {/* API Error banner */}
+        {dashStatsError && (
+          <div style={stylesModern.apiError}>
+            <strong>Dashboard stats error:</strong> {dashStatsError}
+          </div>
+        )}
+
         {/* KPI Cards */}
         <div style={stylesModern.kpiGrid}>
           <div style={{ ...stylesModern.kpiCard, ...stylesModern.kpiCardStyle }}>
@@ -882,9 +847,19 @@ export default function AdminDashboard() {
             <div>
               <div style={stylesModern.kpiLabel}>Total Candidates</div>
               <div style={stylesModern.kpiValue}>{totalFilteredCandidates}</div>
-              <div style={stylesModern.kpiSub}>+{Math.round(totalFilteredCandidates * 0.12)} this month</div>
+              <div style={stylesModern.kpiSub}>
+                {dashStats ? (
+                  <>
+                    <span style={stylesModern.deltaNeutral}>{candidatesDelta.text}</span>
+                    <span style={stylesModern.deltaNote}> vs prev 30 days</span>
+                  </>
+                ) : (
+                  <span style={stylesModern.deltaNote}>loading trend…</span>
+                )}
+              </div>
             </div>
           </div>
+
           <div style={{ ...stylesModern.kpiCard, ...stylesModern.kpiCardStyle }}>
             <div style={{ ...stylesModern.kpiIconWrapper, background: '#dcfce7' }}>
               <span style={stylesModern.kpiIcon}>📊</span>
@@ -895,6 +870,7 @@ export default function AdminDashboard() {
               <div style={stylesModern.kpiSub}>{totalFilteredCompleted} completed</div>
             </div>
           </div>
+
           <div style={{ ...stylesModern.kpiCard, ...stylesModern.kpiCardStyle }}>
             <div style={{ ...stylesModern.kpiIconWrapper, background: '#fef3c7' }}>
               <span style={stylesModern.kpiIcon}>🔄</span>
@@ -905,6 +881,7 @@ export default function AdminDashboard() {
               <div style={stylesModern.kpiSub}>Active assessments</div>
             </div>
           </div>
+
           <div style={{ ...stylesModern.kpiCard, ...stylesModern.kpiCardStyle }}>
             <div style={{ ...stylesModern.kpiIconWrapper, background: '#fee2e2' }}>
               <span style={stylesModern.kpiIcon}>🔒</span>
@@ -915,20 +892,20 @@ export default function AdminDashboard() {
               <div style={stylesModern.kpiSub}>Needs attention</div>
             </div>
           </div>
+
           <div style={{ ...stylesModern.kpiCard, ...stylesModern.kpiCardStyle }}>
             <div style={{ ...stylesModern.kpiIconWrapper, background: '#e0f2fe' }}>
               <span style={stylesModern.kpiIcon}>📄</span>
             </div>
             <div>
               <div style={stylesModern.kpiLabel}>Total Reports</div>
-              <div style={stylesModern.kpiValue}>{stats.totalResults || 0}</div>
+              <div style={stylesModern.kpiValue}>{dashStats?.results?.total ?? allResults.length}</div>
               <div style={stylesModern.kpiSub}>
-                <span style={{ color: COLORS.success }}>{stats.nationalServiceReports || 0} NS</span>
-                {' · '}
-                <span style={{ color: COLORS.accent }}>{stats.stratavaxReports || 0} SV</span>
+                <span style={{ color: COLORS.accent }}>{dashStats?.results?.last30 ?? '—'} this month</span>
               </div>
             </div>
           </div>
+
           <div style={{ ...stylesModern.kpiCard, ...stylesModern.kpiCardStyle }}>
             <div style={{ ...stylesModern.kpiIconWrapper, background: '#f3e8ff' }}>
               <span style={stylesModern.kpiIcon}>🎯</span>
@@ -975,7 +952,7 @@ export default function AdminDashboard() {
           <button onClick={resetFilters} style={stylesModern.resetButtonModern}>Reset</button>
         </div>
 
-        {/* Charts Row */}
+        {/* Charts */}
         <div style={stylesModern.chartsRow}>
           <div style={stylesModern.chartCard}>
             <h3 style={stylesModern.chartCardTitle}>Status Distribution</h3>
@@ -1041,11 +1018,11 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* Target vs Actual Row */}
+        {/* Target / Activity / Top Performer row — all real now */}
         <div style={stylesModern.targetRow}>
           <div style={stylesModern.targetCard}>
             <div style={stylesModern.targetHeader}>
-              <span style={stylesModern.targetLabel}>🎯 Target Completion</span>
+              <span style={stylesModern.targetLabel}>🎯 Completion Goal</span>
               <span style={stylesModern.targetValue}>75%</span>
             </div>
             <div style={stylesModern.targetProgress}>
@@ -1057,40 +1034,47 @@ export default function AdminDashboard() {
             </div>
             <div style={stylesModern.targetMeta}>
               <span>Current: {completionRate}%</span>
-              <span style={{ color: completionRate >= 75 ? COLORS.success : COLORS.critical }}>
-                {completionRate >= 75 ? '✅ On track' : '⚠️ Below target'}
+              <span style={{ color: COLORS.muted }}>
+                Goal: 75%
               </span>
             </div>
           </div>
+
           <div style={stylesModern.targetCard}>
             <div style={stylesModern.targetHeader}>
-              <span style={stylesModern.targetLabel}>📈 This Week</span>
-              <span style={stylesModern.targetValue}>{Math.round(totalFilteredCandidates * 0.05)}</span>
+              <span style={stylesModern.targetLabel}>📄 Results (7 days)</span>
+              <span style={stylesModern.targetValue}>{dashStats?.results?.last7 ?? '—'}</span>
             </div>
             <div style={stylesModern.targetMeta}>
-              <span>New registrations</span>
-              <span style={{ color: COLORS.success }}>↑ 12%</span>
+              <span>vs prev 7 days ({dashStats?.results?.prev7 ?? '—'})</span>
+              <span style={stylesModern.deltaNeutral}>{results7Delta.text}</span>
             </div>
           </div>
+
           <div style={stylesModern.targetCard}>
             <div style={stylesModern.targetHeader}>
-              <span style={stylesModern.targetLabel}>📊 This Month</span>
-              <span style={stylesModern.targetValue}>{Math.round(totalFilteredCandidates * 0.12)}</span>
+              <span style={stylesModern.targetLabel}>📄 Results (30 days)</span>
+              <span style={stylesModern.targetValue}>{dashStats?.results?.last30 ?? '—'}</span>
             </div>
             <div style={stylesModern.targetMeta}>
-              <span>New candidates</span>
-              <span style={{ color: COLORS.success }}>↑ 8%</span>
+              <span>vs prev 30 days ({dashStats?.results?.prev30 ?? '—'})</span>
+              <span style={stylesModern.deltaNeutral}>{results30Delta.text}</span>
             </div>
           </div>
+
           <div style={stylesModern.targetCard}>
             <div style={stylesModern.targetHeader}>
-              <span style={stylesModern.targetLabel}>🏆 Top Performer</span>
+              <span style={stylesModern.targetLabel}>🏆 Top by Completion Rate</span>
               <span style={stylesModern.targetValue}>
-                {filteredUniversityAnalytics.length > 0 ? filteredUniversityAnalytics[0].name.substring(0, 15) : 'N/A'}
+                {topPerformerByRate ? topPerformerByRate.name.substring(0, 15) + (topPerformerByRate.name.length > 15 ? '…' : '') : 'N/A'}
               </span>
             </div>
             <div style={stylesModern.targetMeta}>
-              <span>{filteredUniversityAnalytics.length > 0 ? `${filteredUniversityAnalytics[0].completionRate}% completion` : 'No data'}</span>
+              <span>
+                {topPerformerByRate
+                  ? `${topPerformerByRate.rate}% completion (n=${topPerformerByRate.total})`
+                  : 'No university has ≥10 candidates'}
+              </span>
             </div>
           </div>
         </div>
@@ -1143,7 +1127,6 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* Assessment Expiration */}
         <AssessmentExpiration />
       </div>
 
@@ -1158,7 +1141,7 @@ export default function AdminDashboard() {
 }
 
 // ============================================================
-// MODERN STYLES - WITH SCROLLING FIX & REDUCED WHITESPACE
+// STYLES
 // ============================================================
 const stylesModern = {
   appContainer: {
@@ -1249,12 +1232,7 @@ const stylesModern = {
     border: `1px solid ${COLORS.border}`,
     width: '240px',
   },
-  searchIcon: {
-    color: COLORS.muted,
-    marginRight: '8px',
-    display: 'flex',
-    alignItems: 'center',
-  },
+  searchIcon: { color: COLORS.muted, marginRight: '8px', display: 'flex', alignItems: 'center' },
   searchInput: {
     border: 'none',
     outline: 'none',
@@ -1263,11 +1241,7 @@ const stylesModern = {
     width: '100%',
     background: 'transparent',
   },
-  topBarRight: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-  },
+  topBarRight: { display: 'flex', alignItems: 'center', gap: '12px' },
   refreshBtn: {
     background: 'none',
     border: 'none',
@@ -1275,7 +1249,6 @@ const stylesModern = {
     fontSize: '18px',
     color: COLORS.muted,
     padding: '4px 8px',
-    '&:hover': { color: COLORS.primary },
   },
   userBadge: {
     display: 'flex',
@@ -1298,11 +1271,7 @@ const stylesModern = {
     fontSize: '12px',
     fontWeight: 600,
   },
-  userName: {
-    fontSize: '12px',
-    fontWeight: 500,
-    color: COLORS.text,
-  },
+  userName: { fontSize: '12px', fontWeight: 500, color: COLORS.text },
   welcomeSection: {
     display: 'flex',
     justifyContent: 'space-between',
@@ -1311,27 +1280,10 @@ const stylesModern = {
     flexWrap: 'wrap',
     gap: '8px',
   },
-  welcomeTitle: {
-    fontSize: '20px',
-    fontWeight: 700,
-    color: COLORS.primary,
-    margin: 0,
-  },
-  welcomeSubtitle: {
-    fontSize: '13px',
-    color: COLORS.muted,
-    margin: '2px 0 0 0',
-  },
-  lastUpdated: {
-    color: COLORS.muted,
-    fontSize: '11px',
-    marginLeft: '8px',
-  },
-  filterBadges: {
-    display: 'flex',
-    gap: '6px',
-    flexWrap: 'wrap',
-  },
+  welcomeTitle: { fontSize: '20px', fontWeight: 700, color: COLORS.primary, margin: 0 },
+  welcomeSubtitle: { fontSize: '13px', color: COLORS.muted, margin: '2px 0 0 0' },
+  lastUpdated: { color: COLORS.muted, fontSize: '11px', marginLeft: '8px' },
+  filterBadges: { display: 'flex', gap: '6px', flexWrap: 'wrap' },
   filterBadge: {
     padding: '3px 10px',
     background: 'white',
@@ -1339,6 +1291,15 @@ const stylesModern = {
     border: `1px solid ${COLORS.border}`,
     fontSize: '11px',
     color: COLORS.text,
+  },
+  apiError: {
+    background: '#fee2e2',
+    border: '1px solid #fecaca',
+    color: '#991b1b',
+    borderRadius: '8px',
+    padding: '10px 14px',
+    marginBottom: '10px',
+    fontSize: '13px',
   },
   kpiGrid: {
     display: 'grid',
@@ -1355,6 +1316,7 @@ const stylesModern = {
     alignItems: 'center',
     gap: '12px',
   },
+  kpiCardStyle: { minHeight: '72px' },
   kpiIconWrapper: {
     width: '38px',
     height: '38px',
@@ -1362,10 +1324,9 @@ const stylesModern = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
+    flexShrink: 0,
   },
-  kpiIcon: {
-    fontSize: '18px',
-  },
+  kpiIcon: { fontSize: '18px' },
   kpiLabel: {
     fontSize: '10px',
     color: COLORS.muted,
@@ -1373,17 +1334,19 @@ const stylesModern = {
     textTransform: 'uppercase',
     letterSpacing: '0.04em',
   },
-  kpiValue: {
-    fontSize: '18px',
-    fontWeight: 700,
-    color: COLORS.primary,
-    lineHeight: 1.2,
-  },
-  kpiSub: {
+  kpiValue: { fontSize: '18px', fontWeight: 700, color: COLORS.primary, lineHeight: 1.2 },
+  kpiSub: { fontSize: '10px', color: COLORS.muted, marginTop: '2px' },
+  // Neutral delta — same style for up and down
+  deltaNeutral: {
+    display: 'inline-block',
+    padding: '1px 6px',
+    borderRadius: '8px',
+    background: '#f1f5f9',
+    color: '#334155',
+    fontWeight: 600,
     fontSize: '10px',
-    color: COLORS.muted,
-    marginTop: '2px',
   },
+  deltaNote: { color: COLORS.muted },
   filtersRowModern: {
     display: 'flex',
     flexWrap: 'wrap',
@@ -1456,13 +1419,8 @@ const stylesModern = {
     color: COLORS.primary,
     margin: '0 0 10px 0',
   },
-  doughnutContainer: {
-    height: '180px',
-    position: 'relative',
-  },
-  barContainer: {
-    height: '180px',
-  },
+  doughnutContainer: { height: '180px', position: 'relative' },
+  barContainer: { height: '180px' },
   targetRow: {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))',
@@ -1481,15 +1439,8 @@ const stylesModern = {
     alignItems: 'center',
     marginBottom: '6px',
   },
-  targetLabel: {
-    fontSize: '12px',
-    color: COLORS.muted,
-  },
-  targetValue: {
-    fontSize: '16px',
-    fontWeight: 700,
-    color: COLORS.primary,
-  },
+  targetLabel: { fontSize: '12px', color: COLORS.muted },
+  targetValue: { fontSize: '16px', fontWeight: 700, color: COLORS.primary },
   targetProgress: {
     height: '5px',
     background: COLORS.border,
@@ -1497,16 +1448,13 @@ const stylesModern = {
     overflow: 'hidden',
     marginBottom: '6px',
   },
-  targetProgressBar: {
-    height: '100%',
-    borderRadius: '4px',
-    transition: 'width 0.5s ease',
-  },
+  targetProgressBar: { height: '100%', borderRadius: '4px', transition: 'width 0.5s ease' },
   targetMeta: {
     display: 'flex',
     justifyContent: 'space-between',
     fontSize: '11px',
     color: COLORS.muted,
+    alignItems: 'center',
   },
   recentGrid: {
     display: 'grid',
@@ -1526,43 +1474,20 @@ const stylesModern = {
     color: COLORS.primary,
     margin: '0 0 10px 0',
   },
-  recentList: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '6px',
-  },
+  recentList: { display: 'flex', flexDirection: 'column', gap: '6px' },
   recentItem: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: '6px 0',
     borderBottom: `1px solid ${COLORS.border}`,
-    '&:last-child': { borderBottom: 'none' },
   },
-  recentName: {
-    fontSize: '12px',
-    fontWeight: 600,
-    color: COLORS.text,
-  },
-  recentMeta: {
-    fontSize: '11px',
-    color: COLORS.muted,
-  },
-  recentTime: {
-    fontSize: '11px',
-    color: COLORS.muted,
-    flexShrink: 0,
-    marginLeft: '10px',
-  },
-  emptyState: {
-    textAlign: 'center',
-    padding: '16px',
-    color: COLORS.muted,
-    fontSize: '12px',
-  },
+  recentName: { fontSize: '12px', fontWeight: 600, color: COLORS.text },
+  recentMeta: { fontSize: '11px', color: COLORS.muted },
+  recentTime: { fontSize: '11px', color: COLORS.muted, flexShrink: 0, marginLeft: '10px' },
+  emptyState: { textAlign: 'center', padding: '16px', color: COLORS.muted, fontSize: '12px' },
 };
 
-// Add spin animation
 if (typeof document !== 'undefined') {
   const style = document.createElement('style');
   style.textContent = `
