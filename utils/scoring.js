@@ -3,13 +3,18 @@
 /**
  * CENTRAL SCORING ENGINE
  *
- * Corrected version:
- * - Supports TWO scoring models:
- *   1) Baseline exact-match scoring (multi-select, exact set match = 1, else 0)
- *   2) All other assessments (single-select, answer-weighted, real max per question)
- * - Removes incorrect fixed max-score assumptions
- * - Keeps broad backward compatibility for existing imports across the project
- * - Provides shared helpers for category, competency, API, report, and PDF generation
+ * Supports THREE scoring models now:
+ *   1) Baseline exact-match (multi-select, exact set match = 1, else 0)
+ *   2) Single-select weighted (one answer, answer-weighted, real max per question)
+ *   3) Forced-choice most/least (TWO picks per question: most-likely and
+ *      least-likely; both contribute, and rejecting the best answer is a
+ *      strong negative signal)
+ *
+ * Phase 5 addition:
+ *   - scoreForcedChoiceResponse(response, question) handles model (3)
+ *   - scoreQuestionResponse(response, isBaseline, mode) dispatches.
+ *     Existing callers pass no mode and get legacy behavior, so nothing
+ *     downstream breaks.
  */
 
 // ======================================================
@@ -29,27 +34,22 @@ export const toNumber = function (value, fallback) {
 
 export const clampPercentage = function (value) {
   const num = toNumber(value, 0);
-
   if (num < 0) return 0;
   if (num > 100) return 100;
-
   return num;
 };
 
 export const roundNumber = function (value, decimals) {
   const d = decimals === undefined ? 2 : decimals;
   const factor = Math.pow(10, d);
-
   return Math.round(toNumber(value, 0) * factor) / factor;
 };
 
 export const normalizeText = function (value, fallback) {
   const fallbackValue = fallback === undefined ? "" : fallback;
-
   if (value === null || value === undefined || value === "") {
     return fallbackValue;
   }
-
   return String(value)
     .replace(/&amp;amp;/g, "&")
     .replace(/&amp;lt;/g, "<")
@@ -90,8 +90,7 @@ export const PERFORMANCE_BANDS = [
     classification: "Exceptional",
     color: "#0f766e",
     bg: "#ecfdf5",
-    description:
-      "Strong evidence of capability and readiness for advanced responsibility."
+    description: "Strong evidence of capability and readiness for advanced responsibility."
   },
   {
     key: "strong",
@@ -101,8 +100,7 @@ export const PERFORMANCE_BANDS = [
     classification: "Strong Performer",
     color: "#2563eb",
     bg: "#eff6ff",
-    description:
-      "Reliable capability with clear strengths applicable in role situations."
+    description: "Reliable capability with clear strengths applicable in role situations."
   },
   {
     key: "adequate",
@@ -112,8 +110,7 @@ export const PERFORMANCE_BANDS = [
     classification: "Capable Contributor",
     color: "#4f46e5",
     bg: "#eef2ff",
-    description:
-      "Functional capability with some areas requiring reinforcement."
+    description: "Functional capability with some areas requiring reinforcement."
   },
   {
     key: "developing",
@@ -123,8 +120,7 @@ export const PERFORMANCE_BANDS = [
     classification: "Developing",
     color: "#d97706",
     bg: "#fff7ed",
-    description:
-      "Foundational capability requiring structured support."
+    description: "Foundational capability requiring structured support."
   },
   {
     key: "priority_development",
@@ -134,8 +130,7 @@ export const PERFORMANCE_BANDS = [
     classification: "At Risk",
     color: "#ea580c",
     bg: "#fff7ed",
-    description:
-      "Significant gaps requiring targeted development."
+    description: "Significant gaps requiring targeted development."
   },
   {
     key: "critical_gap",
@@ -145,8 +140,7 @@ export const PERFORMANCE_BANDS = [
     classification: "High Risk",
     color: "#b42318",
     bg: "#fef3f2",
-    description:
-      "Critical gaps requiring immediate intervention."
+    description: "Critical gaps requiring immediate intervention."
   }
 ];
 
@@ -211,7 +205,6 @@ export const getQuestionAnswers = function (question) {
 
 export const getAnswerScoreValue = function (answer) {
   if (!answer) return 0;
-
   return toNumber(
     answer.score !== undefined
       ? answer.score
@@ -268,7 +261,129 @@ export const arraysMatchExactly = function (left, right) {
   return true;
 };
 
-export const scoreQuestionResponse = function (response, isBaseline) {
+// ======================================================
+// FORCED-CHOICE SCORING (Phase 5)
+// ------------------------------------------------------
+// Candidate picks TWO answers per question:
+//   answer_id       = most likely  (what they'd do)
+//   least_answer_id = least likely (what they'd never do)
+//
+// Scoring model (per question, out of a max of 1.0):
+//   Let maxAnsScore = max score across all answers for the question (usually 5)
+//   Let minAnsScore = min score across all answers for the question (usually 1)
+//   Let range = maxAnsScore - minAnsScore
+//
+//   mostScore  = (selected.score - minAnsScore) / range    // 0..1
+//   leastScore = (maxAnsScore - rejected.score) / range    // 0..1
+//
+//   questionScore = (mostScore * 0.7) + (leastScore * 0.3)
+//
+// Interpretation:
+//   - Picking the best answer most-likely           -> mostScore ~1.0
+//   - Rejecting the worst answer                    -> leastScore ~1.0
+//   - Rejecting the BEST answer (red flag)          -> leastScore ~0.0
+//
+// Result is a 0..1 value, which the caller multiplies by a weight so the
+// competency engine can aggregate it consistently with single-select.
+//
+// If least_answer_id is missing (single-select response submitted before
+// this change), we fall back to the single-select formula.
+// ======================================================
+
+export const FORCED_CHOICE_WEIGHT_MOST = 0.7;
+export const FORCED_CHOICE_WEIGHT_LEAST = 0.3;
+
+export const scoreForcedChoiceResponse = function (response) {
+  const question = getQuestionFromResponse(response);
+  const answers = getQuestionAnswers(question);
+
+  if (!question || answers.length === 0) {
+    return { score: 0, maxScore: 1, mode: "forced_choice", fallback: true };
+  }
+
+  const answerScores = answers.map(getAnswerScoreValue);
+  const maxAns = Math.max.apply(null, answerScores);
+  const minAns = Math.min.apply(null, answerScores);
+  const range = maxAns - minAns;
+
+  if (range <= 0) {
+    // Degenerate question; no differentiation possible.
+    return { score: 0, maxScore: 1, mode: "forced_choice", degenerate: true };
+  }
+
+  const mostId = parseInt(
+    response && (response.answer_id !== undefined
+      ? response.answer_id
+      : response.selected_answer_id),
+    10
+  );
+  const leastId = parseInt(
+    response && response.least_answer_id,
+    10
+  );
+
+  const mostAnswer = Number.isNaN(mostId)
+    ? null
+    : answers.find(function (a) { return Number(a.id) === mostId; }) || null;
+  const leastAnswer = Number.isNaN(leastId)
+    ? null
+    : answers.find(function (a) { return Number(a.id) === leastId; }) || null;
+
+  let mostScore = 0;
+  if (mostAnswer) {
+    const s = getAnswerScoreValue(mostAnswer);
+    mostScore = (s - minAns) / range;
+  }
+
+  let leastScore = 0;
+  if (leastAnswer) {
+    const s = getAnswerScoreValue(leastAnswer);
+    leastScore = (maxAns - s) / range;
+  } else {
+    // If candidate didn't submit a least pick, we can only use most.
+    // Fall back to most-only scoring so we don't give free points.
+    return {
+      score: mostScore,
+      maxScore: 1,
+      mode: "forced_choice",
+      partial: true
+    };
+  }
+
+  const combined =
+    (mostScore * FORCED_CHOICE_WEIGHT_MOST) +
+    (leastScore * FORCED_CHOICE_WEIGHT_LEAST);
+
+  return {
+    score: combined,
+    maxScore: 1,
+    mode: "forced_choice",
+    mostScore,
+    leastScore,
+    mostAnswerId: mostId,
+    leastAnswerId: leastId
+  };
+};
+
+// ======================================================
+// UNIFIED QUESTION SCORER
+// ------------------------------------------------------
+// mode = "baseline"      -> exact-match multi-select
+// mode = "forced_choice" -> most/least picks
+// mode = "single_select" -> legacy single-select (default)
+// ======================================================
+
+export const scoreQuestionResponse = function (response, isBaseline, mode) {
+  const resolvedMode = mode
+    ? mode
+    : isBaseline
+    ? "baseline"
+    : "single_select";
+
+  if (resolvedMode === "forced_choice") {
+    return scoreForcedChoiceResponse(response);
+  }
+
   const question = getQuestionFromResponse(response);
   const answers = getQuestionAnswers(question);
   const selectedAnswerIds = parseSelectedAnswerIds(
@@ -278,22 +393,25 @@ export const scoreQuestionResponse = function (response, isBaseline) {
   if (!question || answers.length === 0) {
     return {
       score: toNumber(response && response.score, 0),
-      maxScore: isBaseline ? 1 : toNumber(response && response.max_score, 0)
+      maxScore: resolvedMode === "baseline" ? 1 : toNumber(response && response.max_score, 0),
+      mode: resolvedMode
     };
   }
 
-  if (isBaseline) {
+  if (resolvedMode === "baseline") {
     const correctAnswerIds = getCorrectAnswerIdsForBaseline(question);
     const earned = arraysMatchExactly(selectedAnswerIds, correctAnswerIds) ? 1 : 0;
 
     return {
       score: earned,
       maxScore: 1,
+      mode: "baseline",
       correctAnswerIds: correctAnswerIds,
       selectedAnswerIds: selectedAnswerIds
     };
   }
 
+  // single_select
   const selectedId = selectedAnswerIds.length > 0 ? selectedAnswerIds[0] : null;
   let selectedAnswer = null;
 
@@ -311,6 +429,7 @@ export const scoreQuestionResponse = function (response, isBaseline) {
           0
         ),
     maxScore: getQuestionMaxScore(question, false),
+    mode: "single_select",
     selectedAnswerIds: selectedAnswerIds
   };
 };
@@ -413,7 +532,6 @@ export const getPerformanceBand = function (percentage) {
 
   for (let i = 0; i < PERFORMANCE_BANDS.length; i += 1) {
     const band = PERFORMANCE_BANDS[i];
-
     if (value >= band.min && value <= band.max) {
       return band;
     }
@@ -427,7 +545,6 @@ export const getGradeInfo = function (percentage) {
 
   for (let i = 0; i < GRADE_SCALE.length; i += 1) {
     const grade = GRADE_SCALE[i];
-
     if (value >= grade.min && value <= grade.max) {
       return grade;
     }
@@ -499,15 +616,10 @@ export const classifyScore = function (score, maxScore) {
   };
 };
 
-/**
- * Backward-compatible helper.
- * Returns the classification STRING because several API files save this directly to the DB.
- */
 export const getOverallClassification = function (scoreOrPercentage, maxScore) {
   if (maxScore !== undefined && maxScore !== null) {
     return getClassificationFromPercentage(calculatePercentage(scoreOrPercentage, maxScore));
   }
-
   return getClassificationFromPercentage(scoreOrPercentage);
 };
 
@@ -550,69 +662,50 @@ export const isCriticalGap = function (percentage) {
 
 export const isPriorityDevelopment = function (percentage) {
   const value = clampPercentage(percentage);
-
   return value >= REPORT_THRESHOLDS.criticalThreshold && value < REPORT_THRESHOLDS.priorityThreshold;
 };
 
 export const getScoreComment = function (percentage) {
   const value = clampPercentage(percentage);
-
   if (value >= 85) return "Exceptional performance";
   if (value >= 75) return "Strong performance";
   if (value >= 65) return "Adequate capability";
   if (value >= 55) return "Developing capability";
   if (value >= 40) return "Priority development needed";
-
   return "Critical development needed";
 };
 
 export const getSupervisorImplication = function (percentage) {
   const value = clampPercentage(percentage);
-
-  if (value >= 75) {
-    return "Candidate can perform reliably with standard supervision.";
-  }
-
-  if (value >= 65) {
-    return "Candidate can perform with guidance and reinforcement.";
-  }
-
-  if (value >= 55) {
-    return "Candidate requires structured support and supervision.";
-  }
-
+  if (value >= 75) return "Candidate can perform reliably with standard supervision.";
+  if (value >= 65) return "Candidate can perform with guidance and reinforcement.";
+  if (value >= 55) return "Candidate requires structured support and supervision.";
   return "Candidate requires close supervision and targeted development.";
 };
 
 export const calculateGapToTarget = function (percentage, target) {
   const tgt = target === undefined ? REPORT_THRESHOLDS.targetScore : target;
   const value = clampPercentage(percentage);
-
   if (value >= tgt) return 0;
-
   return roundNumber(tgt - value, 2);
 };
 
 export const getRiskLevel = function (percentage) {
   const value = clampPercentage(percentage);
-
   if (value >= 75) return "Low";
   if (value >= 65) return "Moderate";
   if (value >= 55) return "Elevated";
   if (value >= 40) return "High";
-
   return "Critical";
 };
 
 export const getReadinessLevel = function (percentage) {
   const value = clampPercentage(percentage);
-
   if (value >= 85) return "Ready for advanced responsibility";
   if (value >= 75) return "Ready with normal supervision";
   if (value >= 65) return "Ready with reinforcement";
   if (value >= 55) return "Partially ready";
   if (value >= 40) return "Not yet ready";
-
   return "Requires immediate development";
 };
 
@@ -771,12 +864,8 @@ export const getStrengthAreas = function (categoryScores, limit) {
   const maxItems = limit === undefined ? 3 : limit;
 
   return normalized
-    .filter(function (item) {
-      return item && isStrength(item.percentage);
-    })
-    .sort(function (a, b) {
-      return toNumber(b.percentage, 0) - toNumber(a.percentage, 0);
-    })
+    .filter(function (item) { return item && isStrength(item.percentage); })
+    .sort(function (a, b) { return toNumber(b.percentage, 0) - toNumber(a.percentage, 0); })
     .slice(0, maxItems);
 };
 
@@ -789,12 +878,8 @@ export const getDevelopmentAreas = function (categoryScores, limit) {
   const maxItems = limit === undefined ? 3 : limit;
 
   return normalized
-    .filter(function (item) {
-      return item && isDevelopmentArea(item.percentage);
-    })
-    .sort(function (a, b) {
-      return toNumber(a.percentage, 0) - toNumber(b.percentage, 0);
-    })
+    .filter(function (item) { return item && isDevelopmentArea(item.percentage); })
+    .sort(function (a, b) { return toNumber(a.percentage, 0) - toNumber(b.percentage, 0); })
     .slice(0, maxItems);
 };
 
@@ -806,6 +891,8 @@ export default {
   REPORT_THRESHOLDS: REPORT_THRESHOLDS,
   PERFORMANCE_BANDS: PERFORMANCE_BANDS,
   GRADE_SCALE: GRADE_SCALE,
+  FORCED_CHOICE_WEIGHT_MOST: FORCED_CHOICE_WEIGHT_MOST,
+  FORCED_CHOICE_WEIGHT_LEAST: FORCED_CHOICE_WEIGHT_LEAST,
 
   toNumber: toNumber,
   clampPercentage: clampPercentage,
@@ -821,6 +908,7 @@ export default {
   getCorrectAnswerIdsForBaseline: getCorrectAnswerIdsForBaseline,
   arraysMatchExactly: arraysMatchExactly,
   scoreQuestionResponse: scoreQuestionResponse,
+  scoreForcedChoiceResponse: scoreForcedChoiceResponse,
   isBaselineAssessmentType: isBaselineAssessmentType,
 
   calculateTotalScore: calculateTotalScore,
