@@ -1,7 +1,10 @@
-// components/reports/StratavaxReport.js - FIXED: Derive strengths/weaknesses from category scores
+// components/reports/StratavaxReport.js
+// FIXED: Derive strengths/weaknesses from category scores
+// Phase 6: Added CompetencyReport section (reads result.competencySummary)
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../supabase/client';
+import CompetencyReport from './CompetencyReport';
 import {
   getScorePhrase,
   getManufacturingPhrase,
@@ -38,15 +41,15 @@ function extractBehavioralMatrix(report) {
   if (!report) return null;
 
   const reportData = report.report_data || report || {};
-  
+
   let proctoringData = reportData.proctoring || report.proctoring_data || null;
-  
+
   if (!proctoringData) {
     return null;
   }
 
   const summary = proctoringData.summary || proctoringData;
-  
+
   const totalSeconds = summary.duration || 0;
   const totalDurationFormatted = formatTime(totalSeconds);
   const totalQuestions = reportData.totalQuestions || report.totalQuestions || 10;
@@ -93,7 +96,7 @@ function safeArray(value) {
 // ============================================================
 function calculateScore(result) {
   let categoryScores = [];
-  
+
   if (result.category_scores && Array.isArray(result.category_scores) && result.category_scores.length > 0) {
     categoryScores = result.category_scores;
   } else if (result.categoryScores && Array.isArray(result.categoryScores) && result.categoryScores.length > 0) {
@@ -101,7 +104,7 @@ function calculateScore(result) {
   } else if (result.category_scores && typeof result.category_scores === 'object' && !Array.isArray(result.category_scores)) {
     categoryScores = Object.values(result.category_scores);
   }
-  
+
   if (categoryScores.length === 0 && result.report_data) {
     try {
       let reportData = result.report_data;
@@ -117,46 +120,46 @@ function calculateScore(result) {
       }
     } catch (e) {}
   }
-  
+
   if (categoryScores.length > 0) {
     let totalEarned = 0;
     let totalMax = 0;
     let validPercentages = [];
-    
+
     categoryScores.forEach(cat => {
       let score = safeNumber(cat.score || cat.earned || 0);
       let maxScore = safeNumber(cat.maxScore || cat.max || 0);
       let pct = safeNumber(cat.percentage || 0);
-      
+
       if (score > 0 && maxScore > 0) {
         totalEarned += score;
         totalMax += maxScore;
       }
-      
+
       if (pct > 0 && pct <= 100) {
         validPercentages.push(pct);
       }
     });
-    
+
     if (totalEarned > 0 && totalMax > 0) {
       const calc = Math.round((totalEarned / totalMax) * 100);
       if (calc >= 0 && calc <= 100) {
         return calc;
       }
     }
-    
+
     if (validPercentages.length > 0) {
       return Math.round(validPercentages.reduce((a, b) => a + b, 0) / validPercentages.length);
     }
   }
-  
+
   if (result.percentage_score !== undefined && result.percentage_score !== null) {
     const val = safeNumber(result.percentage_score);
     if (val > 0 && val <= 100) {
       return val;
     }
   }
-  
+
   if (result.total_score !== undefined && result.max_score !== undefined) {
     const total = safeNumber(result.total_score);
     const max = safeNumber(result.max_score);
@@ -167,7 +170,7 @@ function calculateScore(result) {
       }
     }
   }
-  
+
   return 0;
 }
 
@@ -720,13 +723,13 @@ const styles = {
 // ============================================================
 // COMPONENT
 // ============================================================
-export default function StratavaxReport({ 
-  result, 
-  candidate, 
-  assessment, 
+export default function StratavaxReport({
+  result,
+  candidate,
+  assessment,
   onBack,
   behavioralMatrix: propBehavioralMatrix,
-  loadingBehavioral: propLoadingBehavioral 
+  loadingBehavioral: propLoadingBehavioral
 }) {
   const [localBehavioralMatrix, setLocalBehavioralMatrix] = useState(null);
   const [localLoadingBehavioral, setLocalLoadingBehavioral] = useState(false);
@@ -735,17 +738,20 @@ export default function StratavaxReport({
 
   // Extract report data
   const reportData = result?.report_data || result || {};
-  
+
   // Extract behavioral matrix from report data
   const extractedMatrix = extractBehavioralMatrix(result || reportData);
-  
+
   const behavioralMatrix = extractedMatrix ?? propBehavioralMatrix ?? localBehavioralMatrix ?? null;
   const loadingBehavioral = propLoadingBehavioral ?? localLoadingBehavioral ?? false;
-  
-  const hasBehavioralData = behavioralMatrix !== null && 
-                            behavioralMatrix !== undefined && 
+
+  const hasBehavioralData = behavioralMatrix !== null &&
+                            behavioralMatrix !== undefined &&
                             typeof behavioralMatrix === 'object' &&
                             Object.keys(behavioralMatrix).length > 0;
+
+  // Phase 6 — competency summary comes down with the result envelope
+  const competencySummary = result?.competencySummary || null;
 
   const getBehavioralValue = (key, fallback = '0') => {
     if (!hasBehavioralData) return fallback;
@@ -820,18 +826,16 @@ export default function StratavaxReport({
   }
 
   // ============================================================
-  // 🟢 FIXED: Normalize category scores from multiple sources
+  // 🟢 Normalize category scores from multiple sources
   // ============================================================
-  
-  // 1. Extract raw category scores from various possible locations
-  const rawCategoryScores = 
+
+  const rawCategoryScores =
     result.categoryScores ??
     result.category_scores ??
     reportData.categoryScores ??
     reportData.category_scores ??
     [];
-  
-  // 2. Normalize to array format
+
   const categoryScoresArray = Array.isArray(rawCategoryScores)
     ? rawCategoryScores
     : rawCategoryScores && typeof rawCategoryScores === 'object'
@@ -840,11 +844,10 @@ export default function StratavaxReport({
           ...(value && typeof value === 'object' ? value : { percentage: value })
         }))
       : [];
-  
-  // 3. Helper to extract category name from various field names
+
   const getCategoryName = (item) => {
     if (!item) return '';
-    const name = 
+    const name =
       item.category ??
       item.name ??
       item.categoryName ??
@@ -856,32 +859,28 @@ export default function StratavaxReport({
       '';
     return String(name).trim();
   };
-  
-  // 4. Helper to extract percentage from various formats
+
   const getCategoryPercentage = (item) => {
     if (!item) return 0;
-    
-    // Check for explicit percentage
+
     const explicit = safeNumber(item.percentage ?? item.percentage_score, NaN);
     if (Number.isFinite(explicit)) {
       return Math.max(0, Math.min(100, explicit));
     }
-    
-    // Calculate from score/max
+
     const earned = safeNumber(item.score ?? item.earned, NaN);
     const maximum = safeNumber(
       item.maxScore ?? item.max_score ?? item.max ?? item.maxPossible ?? item.total,
       NaN
     );
-    
+
     if (Number.isFinite(earned) && Number.isFinite(maximum) && maximum > 0) {
       return Math.max(0, Math.min(100, Math.round((earned / maximum) * 100)));
     }
-    
+
     return 0;
   };
-  
-  // 5. Build normalized category scores with proper names and percentages
+
   const normalizedCategoryScores = categoryScoresArray
     .map((item) => ({
       ...item,
@@ -890,23 +889,19 @@ export default function StratavaxReport({
       percentage: getCategoryPercentage(item)
     }))
     .filter((item) => item.category && item.category !== '');
-  
-  // 6. 🟢 FIXED: Derive strengths from normalized categories (>= 75%)
+
   const strengths = normalizedCategoryScores
     .filter((item) => item.percentage >= 75)
     .sort((a, b) => b.percentage - a.percentage);
-  
-  // 7. 🟢 FIXED: Derive weaknesses from normalized categories (< 65%)
+
   const weaknesses = normalizedCategoryScores
     .filter((item) => item.percentage < 65)
     .sort((a, b) => a.percentage - b.percentage);
-  
-  // 8. Get recommendations (keep as-is, may need separate fix)
+
   const recommendations = safeArray(result.recommendations || []);
-  
-  // 9. Calculate overall score
+
   let overallScore = 0;
-  
+
   if (normalizedCategoryScores.length > 0) {
     const validScores = normalizedCategoryScores
       .map(cat => cat.percentage)
@@ -915,11 +910,11 @@ export default function StratavaxReport({
       overallScore = Math.round(validScores.reduce((a, b) => a + b, 0) / validScores.length);
     }
   }
-  
+
   if (overallScore === 0 && result.percentage_score) {
     overallScore = safeNumber(result.percentage_score);
   }
-  
+
   if (overallScore === 0 && result.total_score !== undefined && result.max_score !== undefined) {
     const total = safeNumber(result.total_score);
     const max = safeNumber(result.max_score);
@@ -930,14 +925,14 @@ export default function StratavaxReport({
       }
     }
   }
-  
+
   const classification = safeText(result.classification || 'Standard Profile');
   const riskLevel = safeText(result.riskLevel || result.risk_level || 'Medium');
-  
+
   const candidateName = safeText(candidate?.full_name || result.candidateName || 'Candidate');
   const candidateEmail = safeText(candidate?.email || result.candidateEmail || '');
   const assessmentName = safeText(assessment?.title || result.assessmentName || 'Assessment');
-  
+
   const completedAt = result.completed_at || result.completedAt || null;
   const totalQuestions = safeNumber(result.total_questions || result.totalQuestions || 0);
   const answeredQuestions = safeNumber(result.answered_questions || result.answeredQuestions || 0);
@@ -950,29 +945,29 @@ export default function StratavaxReport({
     const levelKey = getScoreLevelKey(percentage);
     const levelLabel = getLevelLabel(percentage);
     const grade = getGrade(percentage);
-    
+
     const summaryPhrases = scoreLevelPhrases[levelKey]?.summary || [];
     const supervisorPhrases = scoreLevelPhrases[levelKey]?.supervisor || [];
-    
+
     const summary = selectPhrase(
       summaryPhrases,
       `${category}-${percentage}-summary`
     ) || `${category} shows ${levelLabel.toLowerCase()} evidence of capability.`;
-    
+
     const supervisorNote = selectPhrase(
       supervisorPhrases,
       `${category}-${percentage}-supervisor`
     ) || `Supervisor should provide appropriate guidance and feedback for this area.`;
-    
+
     return {
       level: levelKey,
       label: levelLabel,
       grade: grade,
-      summary: replaceVariables(summary, { 
+      summary: replaceVariables(summary, {
         area: category,
         percentage: Math.round(percentage)
       }),
-      supervisorNote: replaceVariables(supervisorNote, { 
+      supervisorNote: replaceVariables(supervisorNote, {
         area: category,
         percentage: Math.round(percentage)
       })
@@ -992,9 +987,9 @@ export default function StratavaxReport({
   const generateExecutiveSummary = () => {
     const strengthNames = strengths.slice(0, 3).map(s => s.category || s.name || '');
     const weaknessNames = weaknesses.slice(0, 2).map(w => w.category || w.name || '');
-    
+
     let summary = '';
-    
+
     if (overallScore >= 75) {
       summary = `${candidateName} completed the ${assessmentName} with a score of ${Math.round(overallScore)}%, indicating strong overall performance. `;
     } else if (overallScore >= 65) {
@@ -1004,7 +999,7 @@ export default function StratavaxReport({
     } else {
       summary = `${candidateName} completed the ${assessmentName} with a score of ${Math.round(overallScore)}%, indicating significant development opportunities. `;
     }
-    
+
     if (strengthNames.length > 0 && strengthNames[0]) {
       const topStrengths = strengthNames.filter(n => n && n !== 'Unknown').join(', ');
       if (topStrengths) {
@@ -1015,7 +1010,7 @@ export default function StratavaxReport({
     } else {
       summary += `No dominant strength areas were identified above the current threshold. `;
     }
-    
+
     if (weaknessNames.length > 0 && weaknessNames[0]) {
       const topWeaknesses = weaknessNames.filter(n => n && n !== 'Unknown').join(' and ');
       if (topWeaknesses) {
@@ -1026,7 +1021,7 @@ export default function StratavaxReport({
     } else {
       summary += `No major development areas were identified below the current threshold. `;
     }
-    
+
     if (overallScore >= 75) {
       summary += `This profile suggests strong potential for professional growth and increased responsibility.`;
     } else if (overallScore >= 65) {
@@ -1036,7 +1031,7 @@ export default function StratavaxReport({
     } else {
       summary += `Immediate intervention and comprehensive development are recommended in the identified areas.`;
     }
-    
+
     return summary;
   };
 
@@ -1114,7 +1109,7 @@ export default function StratavaxReport({
               color: riskLevel === 'High Risk' || riskLevel === 'high' ? '#991b1b' :
                      riskLevel === 'Medium Risk' || riskLevel === 'medium' ? '#92400e' : '#166534'
             }}>
-              {typeof riskLevel === 'string' 
+              {typeof riskLevel === 'string'
                 ? riskLevel.charAt(0).toUpperCase() + riskLevel.slice(1)
                 : 'Low Risk'}
             </span>
@@ -1123,8 +1118,8 @@ export default function StratavaxReport({
 
         <div style={styles.riskSummary}>
           <p>
-            Behavioral flags: {violations} violation(s), 
-            {tabSwitches} tab switch(es), and 
+            Behavioral flags: {violations} violation(s),
+            {tabSwitches} tab switch(es), and
             {answerChanges} answer change(s).
           </p>
           {Array.isArray(riskFactors) && riskFactors.length > 0 && (
@@ -1271,7 +1266,7 @@ export default function StratavaxReport({
             const maxScore = safeNumber(cat.maxScore || cat.max || 100, 100);
             const earnedScore = safeNumber(cat.score || cat.earned || 0);
             const analysis = categoryAnalysis[name] || generateCategoryAnalysis(name, percentage);
-            
+
             return (
               <div key={index} style={styles.categoryCard}>
                 <div style={styles.categoryHeader}>
@@ -1280,19 +1275,19 @@ export default function StratavaxReport({
                     {Math.round(percentage)}%
                   </span>
                 </div>
-                
+
                 <div style={styles.categoryBar}>
-                  <div style={{ 
-                    ...styles.categoryBarFill, 
+                  <div style={{
+                    ...styles.categoryBarFill,
                     width: Math.min(percentage, 100) + '%',
                     backgroundColor: getLevelColor(percentage)
                   }} />
                 </div>
-                
+
                 <div style={styles.categoryDetail}>
                   Score: {Math.round(earnedScore)} / {Math.round(maxScore)} • Grade: {analysis.grade} • {analysis.label}
                 </div>
-                
+
                 <div style={styles.categoryAnalysis}>
                   <p style={styles.categorySummary}>{analysis.summary}</p>
                   <p style={styles.categorySupervisor}><strong>Supervisor Note:</strong> {analysis.supervisorNote}</p>
@@ -1303,7 +1298,19 @@ export default function StratavaxReport({
         </div>
       </div>
 
-      {/* 🟢 FIXED: Strengths Section - Now using derived strengths */}
+      {/* Phase 6 — Competency Analysis (only when the attempt has competency scores) */}
+      {competencySummary && competencySummary.hasCompetencies === true && (
+        <div style={styles.section}>
+          <CompetencyReport
+            mode="single"
+            data={competencySummary}
+            title="Competency Analysis"
+            subtitle="Competency-level results for this attempt, with cohort comparison."
+          />
+        </div>
+      )}
+
+      {/* Strengths Section — derived from categories */}
       {strengths.length > 0 && (
         <div style={styles.section}>
           <h2 style={styles.sectionTitle}>Strengths</h2>
@@ -1315,7 +1322,7 @@ export default function StratavaxReport({
               const name = strength.category || strength.name || 'Unknown';
               const percentage = strength.percentage;
               const analysis = categoryAnalysis[name] || generateCategoryAnalysis(name, percentage);
-              
+
               return (
                 <div key={index} style={styles.strengthCard}>
                   <div style={styles.strengthHeader}>
@@ -1338,7 +1345,7 @@ export default function StratavaxReport({
         </div>
       )}
 
-      {/* 🟢 FIXED: Development Areas Section - Now using derived weaknesses */}
+      {/* Development Areas Section */}
       {weaknesses.length > 0 && (
         <div style={styles.section}>
           <h2 style={styles.sectionTitle}>Development Areas</h2>
@@ -1350,7 +1357,7 @@ export default function StratavaxReport({
               const name = weakness.category || weakness.name || 'Unknown';
               const percentage = weakness.percentage;
               const analysis = categoryAnalysis[name] || generateCategoryAnalysis(name, percentage);
-              
+
               return (
                 <div key={index} style={styles.developmentCard}>
                   <div style={styles.developmentHeader}>
