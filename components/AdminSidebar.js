@@ -1,9 +1,9 @@
 // components/AdminSidebar.js
 // Shared admin sidebar. Renders for role === 'admin' only.
 // Active item is derived from router.pathname — always accurate.
-// Phase 6: restructured into grouped sections with parent headers.
+// Phase 6: grouped sections with parent headers. All links verified against
+// pages/admin/* — no dead routes.
 
-import Link from 'next/link';
 import { useRouter } from 'next/router';
 
 const COLORS = {
@@ -83,9 +83,9 @@ const MENU_GROUPS = [
         ),
       },
       {
-        id: 'assign-supervisors',
+        id: 'assign-candidates',
         label: 'Assign Supervisors',
-        href: '/admin/assign-supervisors',
+        href: '/admin/assign-candidates',
         icon: (
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
         ),
@@ -240,11 +240,6 @@ const FLAT_ITEMS = flattenItems();
 
 // ============================================================
 // ACTIVE-ITEM DERIVATION
-// - Exact match wins.
-// - Otherwise, longest href that is a prefix of pathname wins.
-// - For children with query strings (e.g. ?type=ns), compare the
-//   pathname without query; the parent will highlight if any of its
-//   children match or if pathname === parent href.
 // ============================================================
 function normalizePath(href) {
   if (!href) return '';
@@ -252,27 +247,17 @@ function normalizePath(href) {
   return qIdx === -1 ? href : href.slice(0, qIdx);
 }
 
-function getActiveId(pathname, asPath) {
+function getActiveId(pathname) {
   if (!pathname) return null;
 
-  // exact match (including children paths)
-  const exact = FLAT_ITEMS.find((m) => {
-    const p = normalizePath(m.href);
-    return p === pathname;
-  });
-  if (exact) {
-    // If exact match is a parent that has children AND the current
-    // path matches a child path exactly, prefer the parent — the
-    // children all point to the same page with query strings.
-    return exact.id;
-  }
+  const exact = FLAT_ITEMS.find((m) => normalizePath(m.href) === pathname);
+  if (exact) return exact.id;
 
-  // longest-prefix match against normalized hrefs
   let best = null;
   let bestLen = 0;
   for (const m of FLAT_ITEMS) {
     const p = normalizePath(m.href);
-    if (p === '/admin') continue; // don't let '/admin' match everything
+    if (p === '/admin') continue;
     if (pathname === p || pathname.startsWith(p + '/')) {
       if (p.length > bestLen) {
         best = m;
@@ -283,11 +268,9 @@ function getActiveId(pathname, asPath) {
   return best ? best.id : null;
 }
 
-// Whether a parent should be considered "active" because the current
-// page matches one of its children.
-function isParentActive(item, activeChildId) {
+function isParentActive(item, activeId) {
   if (!Array.isArray(item.children)) return false;
-  return item.children.some((c) => c.id === activeChildId);
+  return item.children.some((c) => c.id === activeId);
 }
 
 // ============================================================
@@ -298,8 +281,7 @@ export default function AdminSidebar({ isOpen, toggleSidebar, handleLogout, user
 
   if (userRole !== 'admin') return null;
 
-  const activeId = getActiveId(router.pathname, router.asPath);
-  const activeChildId = Array.isArray(router.query?.type) ? null : null; // reserved for future
+  const activeId = getActiveId(router.pathname);
 
   const handleNavigation = (href) => {
     if (typeof window !== 'undefined' && window.innerWidth < 768 && toggleSidebar) {
@@ -343,7 +325,6 @@ export default function AdminSidebar({ isOpen, toggleSidebar, handleLogout, user
                     <span style={stylesSidebar.navLabel}>{item.label}</span>
                   </button>
 
-                  {/* Children — always rendered when present, indented */}
                   {Array.isArray(item.children) && item.children.length > 0 && (
                     <div style={stylesSidebar.childrenContainer}>
                       {item.children.map((child) => {
