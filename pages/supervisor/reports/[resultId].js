@@ -1,4 +1,5 @@
 // pages/supervisor/reports/[resultId].js - COMPLETE FIXED
+// Phase 6: Passes competencySummary from the API response into StratavaxReport
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -31,16 +32,16 @@ function getReportDataObject(rawReportData) {
 function calculateScore(result) {
   const isBehavioral = result.assessment_id === BEHAVIORAL_ASSESSMENT_ID ||
                        result.assessment_title === 'Behavioral & Soft Skills';
-  
+
   if (isBehavioral) {
     if (result.percentage_score) {
       const val = safeNumber(result.percentage_score);
       if (val > 0 && val <= 100) return val;
     }
   }
-  
+
   let categoryScores = [];
-  
+
   if (result.category_scores && Array.isArray(result.category_scores) && result.category_scores.length > 0) {
     categoryScores = result.category_scores;
   } else if (result.categoryScores && Array.isArray(result.categoryScores) && result.categoryScores.length > 0) {
@@ -48,7 +49,7 @@ function calculateScore(result) {
   } else if (result.category_scores && typeof result.category_scores === 'object' && !Array.isArray(result.category_scores)) {
     categoryScores = Object.values(result.category_scores);
   }
-  
+
   if (categoryScores.length === 0 && result.report_data) {
     try {
       let reportData = result.report_data;
@@ -62,42 +63,42 @@ function calculateScore(result) {
       }
     } catch {}
   }
-  
+
   if (categoryScores.length > 0) {
     let totalEarned = 0;
     let totalMax = 0;
     let validPercentages = [];
-    
+
     categoryScores.forEach(cat => {
       let score = safeNumber(cat.score || cat.earned || 0);
       let maxScore = safeNumber(cat.maxScore || cat.max || 0);
       let pct = safeNumber(cat.percentage || 0);
-      
+
       if (maxScore > 0 && score >= 0) {
         totalEarned += score;
         totalMax += maxScore;
       }
-      
+
       if (pct > 0 && pct <= 100) {
         validPercentages.push(pct);
       }
     });
-    
+
     if (totalMax > 0) {
       const calc = Math.round((totalEarned / totalMax) * 100);
       if (calc >= 0 && calc <= 100) return calc;
     }
-    
+
     if (validPercentages.length > 0) {
       return Math.round(validPercentages.reduce((a, b) => a + b, 0) / validPercentages.length);
     }
   }
-  
+
   if (result.percentage_score) {
     const val = safeNumber(result.percentage_score);
     if (val > 0 && val <= 100) return val;
   }
-  
+
   if (result.total_score !== undefined && result.max_score !== undefined) {
     const total = safeNumber(result.total_score);
     const max = safeNumber(result.max_score);
@@ -106,7 +107,7 @@ function calculateScore(result) {
       if (calc >= 0 && calc <= 100) return calc;
     }
   }
-  
+
   return 0;
 }
 
@@ -291,7 +292,10 @@ export default function SupervisorReportView() {
         answered_questions: reportObject.answered_questions,
         completed_at: result?.completed_at,
         candidateName: candidateInfo.fullName,
-        behavioralMatrix: matrix
+        behavioralMatrix: matrix,
+
+        // Phase 6 — competency summary flows through from the API response
+        competencySummary: data.competencySummary || null
       };
 
       setReportData({
@@ -312,7 +316,6 @@ export default function SupervisorReportView() {
   };
 
   const handleBack = () => {
-    // ✅ FIX: Return to candidate reports page if returnTo exists
     if (returnTo) {
       router.push(returnTo);
     } else {
