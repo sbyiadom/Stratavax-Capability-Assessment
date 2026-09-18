@@ -1,12 +1,13 @@
 // pages/api/reports/competency-summary.js
-// Phase 6 — Competency Reports API (v3)
+// Phase 6 — Competency Reports API (v4)
 //
 // Modes:
 //   GET ?resultId=<uuid>            → single candidate profile + cohort band
 //   GET ?assessmentId=<uuid>        → per-assessment rollup (role-scoped)
 //   GET ?scope=list                 → list of assessments with competency data in caller's scope
 //
-// Source of truth: candidate_competency_scores. No client re-derivation.
+// v4 change: supervisor scope now unions candidate_profiles.supervisor_id
+//            with candidate_supervisors.supervisor_id.
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -105,18 +106,43 @@ async function resolveCaller(serviceClient, token) {
   };
 }
 
+// ============================================================
+// SCOPE — union of primary (candidate_profiles.supervisor_id) and
+// junction (candidate_supervisors.supervisor_id) assignments.
+// ============================================================
 async function getSupervisorCandidateIds(serviceClient, supervisorId) {
-  const { data, error } = await serviceClient
+  const ids = new Set();
+
+  // 1. Primary assignments
+  const { data: primaryRows, error: primaryError } = await serviceClient
     .from('candidate_profiles')
     .select('id')
     .eq('supervisor_id', supervisorId);
 
-  if (error) {
-    logSupabaseError('supervisor candidate scope lookup failed', error, { supervisorId });
-    return [];
+  if (primaryError) {
+    logSupabaseError('primary scope lookup failed', primaryError, { supervisorId });
+  } else {
+    (primaryRows || []).forEach((row) => {
+      if (row?.id) ids.add(row.id);
+    });
   }
 
-  return (data || []).map((row) => row.id);
+  // 2. Junction assignments
+  const { data: junctionRows, error: junctionError } = await serviceClient
+    .from('candidate_supervisors')
+    .select('candidate_id')
+    .eq('supervisor_id', supervisorId);
+
+  if (junctionError) {
+    logSupabaseError('junction scope lookup failed', junctionError, { supervisorId });
+    // Continue — primary rows are still valid
+  } else {
+    (junctionRows || []).forEach((row) => {
+      if (row?.candidate_id) ids.add(row.candidate_id);
+    });
+  }
+
+  return [...ids];
 }
 
 // ============================================================
@@ -387,8 +413,6 @@ async function handleAssessmentRollup(serviceClient, caller, assessmentId) {
 
 // ============================================================
 // MODE C — SCOPE LIST
-// Returns the assessments that have competency data for the caller's scope.
-// Admin → all. Supervisor → only assessments with their candidates' rows.
 // ============================================================
 async function handleScopeList(serviceClient, caller) {
   let allowedCandidateIds = null;
@@ -438,7 +462,6 @@ async function handleScopeList(serviceClient, caller) {
     return { error: assessmentError.message, status: 500 };
   }
 
-  // Count candidates per assessment within scope, for sorting
   const candidateCounts = {};
   rows.forEach((r) => {
     const key = r.assessment_id;
@@ -507,15 +530,8 @@ export default async function handler(req, res) {
       return res.status(caller.status || 401).json({ success: false, error: caller.error });
     }
 
-    console.log('[Competency Summary] caller resolved', {
-      userId: caller.userId,
-      role: caller.role,
-      isAdmin: caller.isAdmin,
-    });
-
     const { resultId, assessmentId, scope } = req.query || {};
 
-    // -------- scope=list mode --------
     if (scope === 'list') {
       const payload = await handleScopeList(serviceClient, caller);
       if (payload.error) {
@@ -524,7 +540,6 @@ export default async function handler(req, res) {
       return res.status(200).json({ success: true, ...payload });
     }
 
-    // -------- resultId mode --------
     if (resultId) {
       const cleanResultId = String(resultId).trim();
       if (!cleanResultId) {
@@ -537,7 +552,6 @@ export default async function handler(req, res) {
       return res.status(200).json({ success: true, ...payload });
     }
 
-    // -------- assessmentId mode --------
     if (assessmentId) {
       const cleanAssessmentId = String(assessmentId).trim();
       if (!cleanAssessmentId) {
