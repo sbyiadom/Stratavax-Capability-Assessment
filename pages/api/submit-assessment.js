@@ -1,4 +1,6 @@
 // pages/api/submit-assessment.js
+// Phase 6.5: adds competency scoring + write to candidate_competency_scores.
+// Non-fatal: any competency failure leaves the assessment_results row intact.
 
 import { createClient } from "@supabase/supabase-js";
 import {
@@ -17,6 +19,7 @@ import {
   generateNationalServiceReport,
   calculateCategoryBreakdown
 } from "../../utils/nationalServiceReportGenerator";
+import { calculateCompetencyScores } from "../../utils/competencyScoring";
 
 export const config = {
   maxDuration: 60,
@@ -33,7 +36,7 @@ function nowIso() {
 
 export default async function handler(req, res) {
   console.log(`[Submit Assessment] Request received at ${new Date().toISOString()}`);
-  
+
   if (req.method !== "POST") {
     return res.status(405).json({ success: false, error: "Method not allowed" });
   }
@@ -67,7 +70,7 @@ export default async function handler(req, res) {
 
     // Verify user
     const { data: userData, error: authError } = await supabase.auth.getUser(accessToken);
-    
+
     if (authError || !userData?.user) {
       console.error('[Submit Assessment] Auth error:', authError);
       return res.status(401).json({ success: false, error: "Invalid token" });
@@ -80,7 +83,7 @@ export default async function handler(req, res) {
     // Get session
     // ============================================================
     console.log(`[Submit Assessment] Looking for session with ID: ${sessionId}`);
-    
+
     const { data: session, error: sessionError } = await supabase
       .from("assessment_sessions")
       .select("id, user_id, assessment_id, status, violation_count, total_questions")
@@ -89,8 +92,8 @@ export default async function handler(req, res) {
 
     if (sessionError) {
       console.error('[Submit Assessment] Session error:', sessionError);
-      return res.status(500).json({ 
-        success: false, 
+      return res.status(500).json({
+        success: false,
         error: "Database error fetching session",
         details: sessionError.message
       });
@@ -98,8 +101,8 @@ export default async function handler(req, res) {
 
     if (!session) {
       console.error('[Submit Assessment] Session not found for ID:', sessionId);
-      return res.status(404).json({ 
-        success: false, 
+      return res.status(404).json({
+        success: false,
         error: "Session not found",
         details: `No session found with ID: ${sessionId}`
       });
@@ -134,8 +137,8 @@ export default async function handler(req, res) {
 
     if (assessmentError) {
       console.error('[Submit Assessment] Assessment error:', assessmentError);
-      return res.status(500).json({ 
-        success: false, 
+      return res.status(500).json({
+        success: false,
         error: "Database error fetching assessment",
         details: assessmentError.message
       });
@@ -143,8 +146,8 @@ export default async function handler(req, res) {
 
     if (!assessment) {
       console.error('[Submit Assessment] Assessment not found for ID:', session.assessment_id);
-      return res.status(404).json({ 
-        success: false, 
+      return res.status(404).json({
+        success: false,
         error: "Assessment not found",
         details: `No assessment found with ID: ${session.assessment_id}`
       });
@@ -156,18 +159,20 @@ export default async function handler(req, res) {
       assessment_type_id: assessment.assessment_type_id
     });
 
-    // Get the assessment type
+    // Get the assessment type — now also fetches scoring_mode for competency scoring
     let assessmentTypeCode = null;
+    let assessmentTypeScoringMode = null;
     if (assessment.assessment_type_id) {
       const { data: typeData, error: typeError } = await supabase
         .from("assessment_types")
-        .select("code, name")
+        .select("code, name, scoring_mode")
         .eq("id", assessment.assessment_type_id)
         .single();
-      
+
       if (!typeError && typeData) {
         assessmentTypeCode = typeData.code;
-        console.log(`[Submit Assessment] Assessment type: ${assessmentTypeCode}`);
+        assessmentTypeScoringMode = typeData.scoring_mode || null;
+        console.log(`[Submit Assessment] Assessment type: ${assessmentTypeCode} (scoring_mode: ${assessmentTypeScoringMode})`);
       }
     }
 
@@ -182,7 +187,7 @@ export default async function handler(req, res) {
 
     if (assessmentTypeId) {
       console.log(`[Submit Assessment] Assessment type ID: ${assessmentTypeId}`);
-      
+
       try {
         const { data, error } = await supabase
           .from("unique_questions")
@@ -225,10 +230,10 @@ export default async function handler(req, res) {
     console.log(`[Submit Assessment] Final questions count: ${questions.length}`);
 
     if (!questions || questions.length === 0) {
-      return res.status(400).json({ 
-        success: false, 
-        error: "no_questions", 
-        message: "No questions found for this assessment" 
+      return res.status(400).json({
+        success: false,
+        error: "no_questions",
+        message: "No questions found for this assessment"
       });
     }
 
@@ -313,22 +318,22 @@ export default async function handler(req, res) {
     if (isNationalService) {
       console.log('[Submit Assessment] Generating National Service report');
       reportType = 'national_service';
-      
+
       const nsScores = calculateNationalServiceScores(responses, questions);
-      
-      workplaceReadiness = nsScores.workplaceMax > 0 
-        ? roundNumber((nsScores.workplaceEarned / nsScores.workplaceMax) * 100, 2) 
+
+      workplaceReadiness = nsScores.workplaceMax > 0
+        ? roundNumber((nsScores.workplaceEarned / nsScores.workplaceMax) * 100, 2)
         : 0;
-        
-      intellectualCapability = nsScores.intellectualMax > 0 
-        ? roundNumber((nsScores.intellectualEarned / nsScores.intellectualMax) * 100, 2) 
+
+      intellectualCapability = nsScores.intellectualMax > 0
+        ? roundNumber((nsScores.intellectualEarned / nsScores.intellectualMax) * 100, 2)
         : 0;
-      
+
       const workplaceClass = classifyWorkplaceReadiness(workplaceReadiness);
       const intellectualClass = classifyIntellectualCapability(intellectualCapability);
       recommendation = getRecommendation(workplaceReadiness, intellectualCapability);
       suggestedDepartments = getSuggestedDepartments(workplaceReadiness, intellectualCapability);
-      
+
       categoryBreakdown = calculateCategoryBreakdown(responses, questions);
       console.log(`[Submit Assessment] Category breakdown calculated: ${categoryBreakdown.length} categories`);
 
@@ -346,13 +351,13 @@ export default async function handler(req, res) {
         intellectualClass,
         categoryBreakdown
       });
-      
+
       console.log('[Submit Assessment] National Service report generated');
     } else {
       // Stratavax report generation...
       console.log('[Submit Assessment] Generating Stratavax report');
       reportType = 'stratavax';
-      
+
       const stratavaxResponses = questions.map(question => {
         const response = responses.find(r => String(r.question_id) === String(question.id));
         return {
@@ -366,9 +371,9 @@ export default async function handler(req, res) {
           }
         };
       });
-      
+
       const generatorAssessmentType = assessmentTypeCode || 'general';
-      
+
       const stratavaxReport = generateStratavaxReport(
         user.id,
         generatorAssessmentType,
@@ -376,26 +381,26 @@ export default async function handler(req, res) {
         profile?.full_name || 'Candidate',
         new Date().toISOString()
       );
-      
-      const categoryScoresArray = stratavaxReport.categoryScores ? 
+
+      const categoryScoresArray = stratavaxReport.categoryScores ?
         Object.keys(stratavaxReport.categoryScores).map(category => ({
           category: category,
           score: stratavaxReport.categoryScores[category].score || 0,
           percentage: stratavaxReport.categoryScores[category].percentage || 0,
           maxScore: stratavaxReport.categoryScores[category].maxPossible || 0
         })) : [];
-      
+
       const strengths = stratavaxReport.strengths || stratavaxReport.stratavaxReport?.strengths?.items || [];
       const weaknesses = stratavaxReport.weaknesses || stratavaxReport.stratavaxReport?.weaknesses?.items || [];
       const recommendations = stratavaxReport.recommendations || stratavaxReport.stratavaxReport?.recommendations || [];
-      
-      const executiveSummary = stratavaxReport.executiveSummary || 
-                               stratavaxReport.stratavaxReport?.executiveSummary?.narrative || 
+
+      const executiveSummary = stratavaxReport.executiveSummary ||
+                               stratavaxReport.stratavaxReport?.executiveSummary?.narrative ||
                                '';
-      
-      const supervisorImplication = stratavaxReport.stratavaxReport?.scoreBreakdown?.[0]?.supervisorImplication || 
+
+      const supervisorImplication = stratavaxReport.stratavaxReport?.scoreBreakdown?.[0]?.supervisorImplication ||
                                     'Please review the full report for supervisor guidance.';
-      
+
       report = {
         candidateName: profile?.full_name || 'Candidate',
         assessmentName: assessment.title || 'Assessment',
@@ -417,7 +422,7 @@ export default async function handler(req, res) {
         classification: stratavaxReport.classification?.label || '',
         _fullReport: stratavaxReport
       };
-      
+
       console.log('[Submit Assessment] Stratavax report generated');
     }
 
@@ -453,37 +458,32 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // FIX: Process and extract proctoring data from session & request body
+    // Process and extract proctoring data from session & request body
     // ============================================================
     console.log(`[Submit Assessment] Processing proctoring data...`);
-    
-    // Extract proctoring data sent from the frontend
+
     const proctoringData = body.proctoringData || {};
     const summary = proctoringData.summary || {};
-    
-    // 1. Get the raw counts (frontend calculated numbers)
+
     let totalViolations = Number(summary.totalViolations) || 0;
     let totalTabSwitches = Number(summary.tabSwitches) || 0;
     let copyPasteAttempts = Number(summary.copyPasteAttempts) || 0;
     let rightClickAttempts = Number(summary.rightClickAttempts) || 0;
     let durationSeconds = Number(summary.duration) || 0;
-    
-    // 2. Fallback to session's raw violation_count if frontend didn't send it
+
     if (totalViolations === 0 && session.violation_count > 0) {
       totalViolations = session.violation_count;
     }
 
     console.log(`[Submit Assessment] Proctoring counts: Violations=${totalViolations}, TabSwitches=${totalTabSwitches}`);
 
-    // 3. Prepare arrays for detailed logs
     const violationsList = Array.isArray(proctoringData.violations) ? proctoringData.violations : [];
     const tabSwitchesList = Array.isArray(proctoringData.tabSwitches) ? proctoringData.tabSwitches : [];
     const externalUrlsList = Array.isArray(proctoringData.externalUrls) ? proctoringData.externalUrls : [];
-    
+
     const totalExternalUrls = externalUrlsList.length;
     const uniqueDomains = [...new Set(externalUrlsList.map(u => u.domain || u.url))].length;
-    
-    // 4. Calculate Risk Level based on the actual numbers
+
     const hasSearchEngineUsage = externalUrlsList.some(u => u.category === 'search_engine');
     const hasAIToolUsage = externalUrlsList.some(u => u.category === 'ai_tool');
     const hasExcessiveTabSwitches = totalTabSwitches > 10;
@@ -491,13 +491,13 @@ export default async function handler(req, res) {
 
     let riskLevel = 'low';
     let riskScore = 0;
-    
+
     if (hasSearchEngineUsage) riskScore += 30;
     if (hasAIToolUsage) riskScore += 35;
     if (hasExcessiveTabSwitches) riskScore += 20;
     if (hasExcessiveViolations) riskScore += 15;
     riskScore = Math.min(riskScore, 100);
-    
+
     if (riskScore >= 70) riskLevel = 'high';
     else if (riskScore >= 40) riskLevel = 'medium';
     else riskLevel = 'low';
@@ -552,15 +552,12 @@ export default async function handler(req, res) {
       recommendation: isNationalService ? (recommendation?.recommendation || null) : null,
       category_scores: categoryScoresForDb,
       report_data: reportDataWithType,
-      
-      // ============================================================
-      // FIX: Write actual proctoring data to the result row
-      // ============================================================
+
       violation_count: totalViolations,
       total_tab_switches: totalTabSwitches,
       risk_score: riskScore,
-      risk_level: riskLevel, // lowercase: 'low', 'medium', 'high'
-      
+      risk_level: riskLevel,
+
       proctoring_data: {
         summary: {
           totalViolations: totalViolations,
@@ -580,15 +577,13 @@ export default async function handler(req, res) {
         violations: violationsList,
         tabSwitches: tabSwitchesList
       },
-      
-      // Flattened columns for easier frontend querying
+
       external_urls_visited: externalUrlsList,
       domain_visits: proctoringData.domainVisits || {},
       tab_switch_details: tabSwitchesList,
       violations: violationsList
     };
 
-    // Inject the proctoring summary into report_data as well so the UI picks it up
     if (resultData.report_data) {
       resultData.report_data.proctoring = {
         riskLevel: riskLevel,
@@ -692,6 +687,83 @@ export default async function handler(req, res) {
       .eq("user_id", user.id)
       .eq("assessment_id", session.assessment_id);
 
+    // ============================================================
+    // 🟢 PHASE 6.5 — Competency scoring
+    // Non-fatal. Any error here leaves the assessment_results row intact.
+    // Runs for any assessment whose questions have competency mappings.
+    // ============================================================
+    try {
+      const validQuestionIds = questions
+        .map(q => q.id)
+        .filter(id => id && !String(id).startsWith('placeholder-'));
+
+      if (validQuestionIds.length > 0) {
+        const { data: questionCompetencies, error: qcError } = await supabase
+          .from('question_competencies')
+          .select('question_id, competency_id, weight, competencies(id, name, category)')
+          .in('question_id', validQuestionIds);
+
+        if (qcError) {
+          console.error('[Submit Assessment] question_competencies fetch failed:', qcError);
+        } else if (questionCompetencies && questionCompetencies.length > 0) {
+          // Build the response array the scorer expects (with nested unique_questions)
+          const responsesWithQuestions = questions.map(question => {
+            const response = responses.find(r => String(r.question_id) === String(question.id));
+            return {
+              ...(response || {}),
+              unique_questions: {
+                id: question.id,
+                question_text: question.question_text,
+                section: question.section,
+                subsection: question.subsection,
+                unique_answers: question.answers || []
+              }
+            };
+          });
+
+          const competencyScores = calculateCompetencyScores(
+            responsesWithQuestions,
+            questionCompetencies,
+            {
+              code: assessmentTypeCode || 'general',
+              scoring_mode: assessmentTypeScoringMode || 'single_select',
+            }
+          );
+
+          const rows = Object.values(competencyScores)
+            .map(c => ({
+              candidate_id: user.id,
+              assessment_id: session.assessment_id,
+              competency_id: c.id,
+              raw_score: c.rawScore,
+              max_possible: c.maxPossible,
+              percentage: c.percentage,
+              classification: c.classification,
+              question_count: c.questionCount,
+            }))
+            .filter(r => Number.isFinite(Number(r.competency_id)) && Number(r.competency_id) > 0);
+
+          if (rows.length > 0) {
+            const { error: upsertError } = await supabase
+              .from('candidate_competency_scores')
+              .upsert(rows, { onConflict: 'candidate_id,assessment_id,competency_id' });
+
+            if (upsertError) {
+              console.error('[Submit Assessment] competency upsert failed:', upsertError);
+            } else {
+              console.log(`[Submit Assessment] Wrote ${rows.length} competency rows for assessment ${session.assessment_id}`);
+            }
+          } else {
+            console.log('[Submit Assessment] No competency rows produced (no mapped questions)');
+          }
+        } else {
+          console.log('[Submit Assessment] No competency mappings found for this assessment');
+        }
+      }
+    } catch (competencyError) {
+      console.error('[Submit Assessment] Competency scoring failed (non-fatal):', competencyError);
+    }
+
     console.log('[Submit Assessment] Success!');
 
     const responsePayload = {
@@ -711,7 +783,6 @@ export default async function handler(req, res) {
       message: (!isComplete || isAutoSubmit)
         ? `Assessment auto-submitted. ${answeredCount} of ${totalQuestions} questions answered.`
         : "Assessment submitted successfully!",
-      // Return proctoring summary in the API response for debugging
       proctoring: {
         totalViolations,
         totalTabSwitches,
