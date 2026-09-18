@@ -15,8 +15,13 @@
 //     same answer on both sides
 //   - Requires both picks before "answered"
 //
-// Everything else (proctoring, timer, navigator, submit flow) is
-// unchanged from the previous version.
+// FIX (this revision):
+//   The change counter (used for behavioral analysis of decision-making)
+//   was flagging the SECOND pick of a forced-choice question as a change.
+//   Picking Most, then picking Least for the first time was counted as a
+//   "change of answer", which inflated the counter to N+1 changes on N
+//   questions. The counter now only increments when a candidate actually
+//   REVISES a pick on the same side.
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
@@ -67,7 +72,6 @@ function getAnswerArray(value) {
 
 function countAnswered(answerMap, questionCount, isForcedChoiceMap) {
   return Object.values(answerMap || {}).filter((answer, idx) => {
-    // For forced-choice, we require an entry of shape { most, least }
     if (isForcedChoiceMap && isForcedChoiceMap[idx]) {
       return answer && answer.most != null && answer.least != null;
     }
@@ -216,7 +220,6 @@ function AssessmentContent() {
   const [initialAnswers, setInitialAnswers] = useState({});
   const [answerChangeCount, setAnswerChangeCount] = useState({});
   const [saveStatus, setSaveStatus] = useState({});
-  // Used only for forced-choice to flash the opposing pick briefly.
   const [flashCell, setFlashCell] = useState(null);
 
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
@@ -267,9 +270,6 @@ function AssessmentContent() {
   const isMultipleCorrect = isNationalService ? false : Boolean(currentQuestion.isMultipleCorrect);
   const isForcedChoice = scoringMode === "forced_choice";
 
-  // ------------------------------------------------------------
-  // Forced-choice helpers
-  // ------------------------------------------------------------
   function getForcedChoicePicks(questionId) {
     const entry = answers[questionId];
     if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
@@ -416,7 +416,6 @@ function AssessmentContent() {
       const answerPromises = Object.entries(answers).map(([qId, answer]) => {
         if (answer === null || answer === undefined || answer === "") return null;
 
-        // Forced-choice: answer is { most, least }
         if (isForcedChoice && typeof answer === "object" && !Array.isArray(answer)) {
           if (answer.most == null) return null;
           const changeCount = answerChangeCount[qId] || 0;
@@ -442,7 +441,6 @@ function AssessmentContent() {
           );
         }
 
-        // Single-select
         const answerToStore = Array.isArray(answer) ? answer.join(",") : String(answer);
         const changeCount = answerChangeCount[qId] || 0;
         const initialAns = initialAnswers[qId] || answer;
@@ -615,6 +613,11 @@ function AssessmentContent() {
 
   // ------------------------------------------------------------
   // Forced-choice selection handler
+  //
+  // FIX: isChange now only increments when the candidate actually
+  // REVISES a pick on the same side (most → different most, or
+  // least → different least). Setting the second side for the first
+  // time is NOT a change — it's completing the question.
   // ------------------------------------------------------------
   async function handleForcedChoiceSelect(questionId, answerId, side) {
     if (isTimeExpired || elapsedSeconds >= timeLimitSeconds) {
@@ -626,12 +629,15 @@ function AssessmentContent() {
     const current = getForcedChoicePicks(questionId);
     const next = { ...current };
 
+    // Was there a previous value on this specific side?
+    const hadPreviousMost = current.most !== null && current.most !== undefined;
+    const hadPreviousLeast = current.least !== null && current.least !== undefined;
+
     if (side === "most") {
       if (String(next.most) === String(answerId)) {
         next.most = null;
       } else {
         next.most = answerId;
-        // Auto-clear least if it collides
         if (next.least != null && String(next.least) === String(answerId)) {
           next.least = null;
           setFlashCell({ questionId, answerId, side: "least" });
@@ -651,33 +657,33 @@ function AssessmentContent() {
       }
     }
 
-    const previousEntry = answers[questionId];
-    const wasAnsweredBefore = previousEntry && typeof previousEntry === "object" &&
-      !Array.isArray(previousEntry) &&
-      previousEntry.most != null && previousEntry.least != null;
+    // isChange = TRUE only if the candidate changed their pick on the SAME side.
+    // Picking Most then picking Least for the first time is NOT a change.
+    const isMostChange =
+      side === "most" &&
+      hadPreviousMost &&
+      String(current.most) !== String(answerId);
 
-    const isNowAnswered = next.most != null && next.least != null;
-    const isChange = wasAnsweredBefore || previousEntry != null;
+    const isLeastChange =
+      side === "least" &&
+      hadPreviousLeast &&
+      String(current.least) !== String(answerId);
 
-    if (previousEntry === undefined || previousEntry === null) {
+    const isChange = isMostChange || isLeastChange;
+
+    if (!hadPreviousMost && !hadPreviousLeast) {
       setInitialAnswers((previous) => ({
         ...previous,
-        [questionId]: next.most != null ? next.most : null
+        [questionId]: next.most != null ? next.most : (next.least != null ? next.least : null)
       }));
     }
 
     setAnswers((previous) => ({ ...previous, [questionId]: next }));
 
-    // Only persist when we have a most pick. least is optional in the write
-    // (but the submit gate requires both before the candidate can submit).
     if (next.most != null) {
       await persistAnswer(questionId, String(next.most), next.least != null ? String(next.least) : undefined, isChange);
     }
   }
-
-  // ============================================================
-  // BEHAVIORAL TRACKING EFFECTS
-  // ============================================================
 
   useEffect(() => {
     if (loading || alreadySubmitted || accessDenied || !session || isTimeExpired) return;
@@ -822,9 +828,6 @@ function AssessmentContent() {
     };
   }, [loading, alreadySubmitted, accessDenied, session, isTimeExpired]);
 
-  // ============================================================
-  // INITIALIZATION
-  // ============================================================
   useEffect(() => {
     const init = async () => {
       try {
@@ -880,7 +883,6 @@ function AssessmentContent() {
           assessmentInfo.type_code ||
           null;
 
-        // Resolve scoring mode from the assessment_type object.
         const resolvedScoringMode =
           assessmentInfo.assessment_type?.scoring_mode ||
           assessmentInfo.assessmentType?.scoring_mode ||
@@ -968,7 +970,6 @@ function AssessmentContent() {
 
           if (responses && responses.answerMap) {
             Object.entries(responses.answerMap).forEach(([qId, answer]) => {
-              // Forced-choice shape: { most, least }
               if (answer && typeof answer === "object" && !Array.isArray(answer) && ("most" in answer || "least" in answer)) {
                 restoredAnswers[qId] = {
                   most: answer.most != null ? parseInt(answer.most, 10) : null,
@@ -1012,9 +1013,6 @@ function AssessmentContent() {
     if (assessmentId) init();
   }, [assessmentId, router]);
 
-  // ============================================================
-  // TIMER EFFECT
-  // ============================================================
   useEffect(() => {
     if (loading || alreadySubmitted || accessDenied || !session || isAutoSubmitting || questions.length === 0 || isTimeExpired) return;
 
@@ -1058,9 +1056,6 @@ function AssessmentContent() {
     }
   }, [alreadySubmitted, isTimeExpired]);
 
-  // ============================================================
-  // ANTI-CHEAT EFFECT
-  // ============================================================
   useEffect(() => {
     if (loading || alreadySubmitted || accessDenied || !session || isTimeExpired) return;
 
@@ -1432,7 +1427,6 @@ function AssessmentContent() {
                   const optionLetter = String.fromCharCode(65 + index);
 
                   if (isForcedChoice) {
-                    const mostSelected = isLeastSelected(currentQuestion.id, null) ? false : false; // placeholder, computed below
                     const isMost = String(getForcedChoicePicks(currentQuestion.id).most) === String(answer.id);
                     const isLeast = String(getForcedChoicePicks(currentQuestion.id).least) === String(answer.id);
                     const isFlashingMost = flashCell && flashCell.questionId === currentQuestion.id &&
@@ -1494,7 +1488,6 @@ function AssessmentContent() {
                     );
                   }
 
-                  // Single-select / multi-select (original)
                   const selected = isAnswerSelected(currentQuestion.id, answer.id);
                   return (
                     <button
