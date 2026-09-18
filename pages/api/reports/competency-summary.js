@@ -1,13 +1,9 @@
 // pages/api/reports/competency-summary.js
-// Phase 6 — Competency Reports API (v4)
+// Phase 6 — Competency Reports API (v5)
 //
-// Modes:
-//   GET ?resultId=<uuid>            → single candidate profile + cohort band
-//   GET ?assessmentId=<uuid>        → per-assessment rollup (role-scoped)
-//   GET ?scope=list                 → list of assessments with competency data in caller's scope
-//
-// v4 change: supervisor scope now unions candidate_profiles.supervisor_id
-//            with candidate_supervisors.supervisor_id.
+// v5 change: any query that filters by a large list of candidate IDs is
+//            now chunked (150 per request) to avoid PostgREST/Vercel URL
+//            length limits that caused "Bad Request" at scale.
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -24,6 +20,10 @@ const DISCRIMINATION = {
   LOW: 5,
   MODERATE: 10,
 };
+
+// PostgREST serializes .in() into the URL. UUIDs are 37 chars each, so
+// 150 IDs is ~5.5KB — safely under Vercel's request-line limit.
+const IN_CHUNK_SIZE = 150;
 
 function safeNumber(value, fallback = 0) {
   const n = Number(value);
@@ -64,6 +64,37 @@ function logSupabaseError(tag, error, extra = {}) {
     hint: error?.hint,
     ...extra,
   });
+}
+
+function chunkArray(arr, size) {
+  const out = [];
+  for (let i = 0; i < arr.length; i += size) {
+    out.push(arr.slice(i, i + size));
+  }
+  return out;
+}
+
+/**
+ * Run a Supabase query that filters by an .in() over a potentially large ID
+ * list, chunked to keep each request short. `queryBuilder(idsChunk)` must
+ * return the chained query object. Returns { data, error }.
+ */
+async function chunkedIn(ids, queryBuilder) {
+  if (!ids || ids.length === 0) {
+    return { data: [], error: null };
+  }
+  const chunks = chunkArray(ids, IN_CHUNK_SIZE);
+  const allData = [];
+  for (const chunk of chunks) {
+    const { data, error } = await queryBuilder(chunk);
+    if (error) {
+      return { data: allData, error };
+    }
+    if (Array.isArray(data)) {
+      allData.push(...data);
+    }
+  }
+  return { data: allData, error: null };
 }
 
 async function resolveCaller(serviceClient, token) {
@@ -107,13 +138,11 @@ async function resolveCaller(serviceClient, token) {
 }
 
 // ============================================================
-// SCOPE — union of primary (candidate_profiles.supervisor_id) and
-// junction (candidate_supervisors.supervisor_id) assignments.
+// SCOPE — union of primary and junction assignments.
 // ============================================================
 async function getSupervisorCandidateIds(serviceClient, supervisorId) {
   const ids = new Set();
 
-  // 1. Primary assignments
   const { data: primaryRows, error: primaryError } = await serviceClient
     .from('candidate_profiles')
     .select('id')
@@ -127,7 +156,6 @@ async function getSupervisorCandidateIds(serviceClient, supervisorId) {
     });
   }
 
-  // 2. Junction assignments
   const { data: junctionRows, error: junctionError } = await serviceClient
     .from('candidate_supervisors')
     .select('candidate_id')
@@ -135,7 +163,6 @@ async function getSupervisorCandidateIds(serviceClient, supervisorId) {
 
   if (junctionError) {
     logSupabaseError('junction scope lookup failed', junctionError, { supervisorId });
-    // Continue — primary rows are still valid
   } else {
     (junctionRows || []).forEach((row) => {
       if (row?.candidate_id) ids.add(row.candidate_id);
@@ -310,16 +337,28 @@ async function handleAssessmentRollup(serviceClient, caller, assessmentId) {
     }
   }
 
-  let rowsQuery = serviceClient
-    .from('candidate_competency_scores')
-    .select('competency_id, candidate_id, percentage, classification')
-    .eq('assessment_id', assessmentId);
+  // Chunked .in() to avoid URL-length limits
+  let rows = null;
+  let rowsError = null;
 
   if (allowedCandidateIds) {
-    rowsQuery = rowsQuery.in('candidate_id', allowedCandidateIds);
+    const result = await chunkedIn(allowedCandidateIds, (chunk) =>
+      serviceClient
+        .from('candidate_competency_scores')
+        .select('competency_id, candidate_id, percentage, classification')
+        .eq('assessment_id', assessmentId)
+        .in('candidate_id', chunk)
+    );
+    rows = result.data;
+    rowsError = result.error;
+  } else {
+    const result = await serviceClient
+      .from('candidate_competency_scores')
+      .select('competency_id, candidate_id, percentage, classification')
+      .eq('assessment_id', assessmentId);
+    rows = result.data;
+    rowsError = result.error;
   }
-
-  const { data: rows, error: rowsError } = await rowsQuery;
 
   if (rowsError) {
     logSupabaseError('rollup rows lookup failed', rowsError, { assessmentId });
@@ -427,15 +466,26 @@ async function handleScopeList(serviceClient, caller) {
     }
   }
 
-  let rowsQuery = serviceClient
-    .from('candidate_competency_scores')
-    .select('assessment_id, candidate_id');
+  // Chunked .in() to avoid URL-length limits
+  let rows = null;
+  let rowsError = null;
 
   if (allowedCandidateIds) {
-    rowsQuery = rowsQuery.in('candidate_id', allowedCandidateIds);
+    const result = await chunkedIn(allowedCandidateIds, (chunk) =>
+      serviceClient
+        .from('candidate_competency_scores')
+        .select('assessment_id, candidate_id')
+        .in('candidate_id', chunk)
+    );
+    rows = result.data;
+    rowsError = result.error;
+  } else {
+    const result = await serviceClient
+      .from('candidate_competency_scores')
+      .select('assessment_id, candidate_id');
+    rows = result.data;
+    rowsError = result.error;
   }
-
-  const { data: rows, error: rowsError } = await rowsQuery;
 
   if (rowsError) {
     logSupabaseError('scope-list rows lookup failed', rowsError, {
