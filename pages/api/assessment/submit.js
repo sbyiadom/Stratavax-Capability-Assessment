@@ -1,27 +1,37 @@
-// pages/api/assessment/submit.js - FULLY CORRECTED WITH BEHAVIORAL TRACKING
-// Version: submit-behavioral-v9
-// - Complete behavioral data saved to database
-// - Proper proctoring_data structure for Behavioral Matrix
-// - Answer changes tracking
-// - Time cap for unreasonable session durations
-// - UPDATED (Phase 1): gracefully handle a concurrent-submission race.
-// - UPDATED (Phase 1 hotfix): STEP 7 reads from unique_questions + unique_answers.
-// - UPDATED (Phase Two / Item 2.5): STEP 7 prefers the frozen set in
-//   session_questions for this session.
-// - UPDATED (Phase Two / Item 2.6): STEP 9's denominator override is
-//   loud, structured, and recorded on the result via report_data.
-// - UPDATED (Phase Two / Item 2.7): version tags captured from the
-//   frozen set and stamped on both columns and report_data.
-// - UPDATED (Phase Two / Item 2.8): Steps 15-18 collapsed into a
-//   single atomic RPC to public.submit_assessment_transactional.
-//   Race handling is native via ON CONFLICT (session_id).
-// - UPDATED (Phase Two / 2.8 fix): p_answered_questions is now passed
-//   as a JSON array of question IDs (matches the jsonb column on
-//   assessment_results), not an integer count.
+// pages/api/assessment/submit.js - FULLY CORRECTED WITH UNIFIED SCORING
+// Version: submit-behavioral-v10-unified-scoring
+//
+// WHAT CHANGED FROM v9
+// --------------------
+// Previous versions computed the candidate's score inline:
+//     const earned = Number(selectedAnswer.score) > 0 ? 1 : 0;
+// Every non-zero answer earned a full point. For a graded question whose
+// answers score [2,5,3,1], that meant three of the four answers all
+// earned a full point. The candidate's overall percentage barely reflected
+// the quality of their choices.
+//
+// v10 replaces the inline loop with the shared scoring engine in
+// utils/scoring.js, which:
+//   • single_select → answer-weighted, real max per question
+//   • baseline      → exact-match multi-select
+//   • forced_choice → most/least picks (0.7 / 0.3 weights)
+//
+// CONSEQUENCE: new submissions will produce different (generally lower)
+// percentages than the same answers scored under v9. That is the point.
+// Existing historical results are untouched — they retain the value they
+// had when they were written.
+//
+// Behavioural tracking, proctoring, RPC call, and response shape are all
+// unchanged.
 
 import { createClient } from "@supabase/supabase-js";
+import {
+  scoreQuestionResponse,
+  isBaselineAssessmentType
+} from "../../../utils/scoring";
 
-const SUBMIT_BUILD = "submit-behavioral-v9";
+const SUBMIT_BUILD = "submit-behavioral-v10-unified-scoring";
+
 const PRACTICAL_ASSESSMENT_IDS = [
   'c2bc4994-1c4a-4094-a763-8d9d560b759e',
   '243275ec-9bb5-43ce-9f02-1111b2ca66e0',
@@ -64,9 +74,8 @@ function safeArray(value) {
 }
 
 // ============================================================
-// Phase Two (Items 2.5 + 2.7): load the frozen question set for
-// a session. Returns { questions, assessmentVersion, scoringVersion }
-// or null if the session has no frozen set (legacy session).
+// Load the frozen question set for a session.
+// Returns { questions, assessmentVersion, scoringVersion } or null.
 // ============================================================
 async function loadFrozenQuestions(serviceClient, sessionId) {
   const { data: frozen, error: frozenErr } = await serviceClient
@@ -267,11 +276,11 @@ export default async function handler(req, res) {
     console.log(`[Submit] Assessment found: ${assessment.id} - ${assessment.title}`);
 
     // ============================================================
-    // STEP 5: Get assessment type
+    // STEP 5: Get assessment type (now including scoring_mode)
     // ============================================================
     const { data: assessmentType, error: typeError } = await serviceClient
       .from("assessment_types")
-      .select("id, code, name, question_count")
+      .select("id, code, name, question_count, scoring_mode")
       .eq("id", assessment.assessment_type_id)
       .single();
 
@@ -282,18 +291,28 @@ export default async function handler(req, res) {
         message: typeError?.message
       });
     } else {
-      console.log(`[Submit] Assessment type: ${assessmentType.code} (${assessmentType.id})`);
+      console.log(`[Submit] Assessment type: ${assessmentType.code} (${assessmentType.id}) mode=${assessmentType.scoring_mode || 'single_select'}`);
     }
 
     const isNationalService = assessmentType?.code === 'national_service' ||
                              session.assessment_id === NATIONAL_SERVICE_ASSESSMENT_ID;
 
+    // Determine scoring mode. Baseline is a special case of single-select
+    // that uses exact-match multi-select.
+    const typeCode = assessmentType?.code || 'general';
+    const isBaseline = isBaselineAssessmentType(typeCode);
+    const scoringMode = isBaseline
+      ? 'baseline'
+      : (assessmentType?.scoring_mode === 'forced_choice' ? 'forced_choice' : 'single_select');
+
+    console.log(`[Submit] Resolved scoring mode: ${scoringMode}`);
+
     // ============================================================
-    // STEP 6: Get responses
+    // STEP 6: Get responses (now including least_answer_id)
     // ============================================================
     const { data: responses, error: responsesError } = await serviceClient
       .from("responses")
-      .select("question_id, answer_id, metadata, times_changed")
+      .select("question_id, answer_id, least_answer_id, metadata, times_changed")
       .eq("session_id", sessionId);
 
     if (responsesError) {
@@ -376,44 +395,69 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 8: Calculate scores
+    // STEP 8: Calculate scores using the unified scoring engine
+    // ------------------------------------------------------------
+    // Previously this used `Number(selectedAnswer.score) > 0 ? 1 : 0`
+    // which awarded a full point for ANY non-zero answer and therefore
+    // could not distinguish a candidate who picked the best answer from
+    // one who picked the second-worst. v10 uses scoreQuestionResponse,
+    // which handles single_select, baseline, and forced_choice uniformly.
     // ============================================================
-    const responseMap = {};
+    const responseLookup = {};
     (responses || []).forEach(r => {
-      responseMap[r.question_id] = r.answer_id;
+      responseLookup[r.question_id] = r;
     });
 
-    const categoryMap = {};
+    const categoryEarnedMap = {};
     const categoryMaxMap = {};
     let totalEarned = 0;
     let totalMax = 0;
 
     questions.forEach(q => {
-      const answers = q.answers || [];
-      totalMax += 1;
+      const response = responseLookup[q.id];
       const section = q.section || "General";
-      if (!categoryMap[section]) {
-        categoryMap[section] = 0;
+
+      if (!categoryEarnedMap[section]) {
+        categoryEarnedMap[section] = 0;
         categoryMaxMap[section] = 0;
       }
-      categoryMaxMap[section] += 1;
 
-      const userAnswer = responseMap[q.id];
-      if (userAnswer) {
-        const selectedAnswer = answers.find(a => String(a.id) === String(userAnswer));
-        if (selectedAnswer) {
-          const earned = Number(selectedAnswer.score) > 0 ? 1 : 0;
-          totalEarned += earned;
-          categoryMap[section] += earned;
-        }
+      if (!response) {
+        // Unanswered question still contributes to the denominator.
+        const answeredShape = {
+          question_id: q.id,
+          answer_id: null,
+          least_answer_id: null,
+          unique_questions: q
+        };
+        const scored = scoreQuestionResponse(answeredShape, isBaseline, scoringMode);
+        totalMax += Number(scored.maxScore) || 0;
+        categoryMaxMap[section] += Number(scored.maxScore) || 0;
+        return;
       }
+
+      // Attach the full question object so the engine can resolve answer scores.
+      const responseShape = {
+        ...response,
+        unique_questions: q
+      };
+
+      const scored = scoreQuestionResponse(responseShape, isBaseline, scoringMode);
+      const earned = Number(scored.score) || 0;
+      const max = Number(scored.maxScore) || 0;
+
+      totalEarned += earned;
+      totalMax += max;
+
+      categoryEarnedMap[section] += earned;
+      categoryMaxMap[section] += max;
     });
 
     // ============================================================
     // STEP 9: Validate question count (fallback path only)
     // ============================================================
     if (frozenUsed) {
-      console.log(`[Submit] Frozen denominator locked: ${totalMax} questions`);
+      console.log(`[Submit] Frozen denominator locked: ${totalMax} max points`);
     } else {
       let expectedTotalQuestions = 0;
       if (assessmentType?.question_count && assessmentType.question_count > 0) {
@@ -423,7 +467,7 @@ export default async function handler(req, res) {
       } else {
         expectedTotalQuestions = getTotalQuestions(assessment.id);
       }
-      console.log(`[Submit] Expected: ${expectedTotalQuestions}, Actual: ${questions.length}`);
+      console.log(`[Submit] Expected questions: ${expectedTotalQuestions}, Actual: ${questions.length}`);
       if (questions.length !== expectedTotalQuestions) {
         denominatorOverridden = true;
         expectedDenominator = expectedTotalQuestions;
@@ -437,25 +481,24 @@ export default async function handler(req, res) {
           sessionId: sessionId,
           source: 'legacy_fallback_path'
         });
-        totalMax = questions.length;
       }
     }
 
     const finalPercentage = totalMax > 0 ? Math.round((totalEarned / totalMax) * 100) : 0;
-    console.log(`[Submit] Score: ${totalEarned}/${totalMax} = ${finalPercentage}%`);
+    console.log(`[Submit] Score: ${totalEarned}/${totalMax} = ${finalPercentage}% (mode=${scoringMode})`);
 
     // ============================================================
     // STEP 10: category_scores
     // ============================================================
-    const categoryScores = Object.keys(categoryMap).map(category => {
-      const earned = categoryMap[category];
+    const categoryScores = Object.keys(categoryEarnedMap).map(category => {
+      const earned = categoryEarnedMap[category];
       const max = categoryMaxMap[category] || 1;
       const percentage = Math.round((earned / max) * 100);
       return { category, earned, max, percentage };
     });
 
     // ============================================================
-    // STEP 11: recommendation (may be overridden by NS trigger)
+    // STEP 11: recommendation
     // ============================================================
     let recommendation = null;
     if (isNationalService) {
@@ -540,12 +583,10 @@ export default async function handler(req, res) {
     }
     if (totalSeconds < 0) totalSeconds = 0;
     const totalDurationFormatted = formatDuration(totalSeconds);
-    const avgTimePerQuestion = calculateAvgTimePerQuestion(totalSeconds, totalMax);
+    const avgTimePerQuestion = calculateAvgTimePerQuestion(totalSeconds, questions.length);
 
     // ============================================================
-    // STEP 15-18 (Phase Two / 2.8): TRANSACTIONAL SUBMISSION
-    // All writes happen atomically in
-    // public.submit_assessment_transactional.
+    // STEP 15-18: TRANSACTIONAL SUBMISSION
     // ============================================================
     const reportData = {
       categoryScores: categoryScores,
@@ -558,7 +599,7 @@ export default async function handler(req, res) {
       totalSeconds: totalSeconds,
       totalDurationFormatted: totalDurationFormatted,
       avgTimePerQuestion: avgTimePerQuestion,
-      totalQuestions: totalMax,
+      totalQuestions: questions.length,
       isTimeAbnormal: totalSeconds > MAX_REASONABLE_SECONDS,
       frozenSetUsed: frozenUsed,
       denominatorOverridden: denominatorOverridden,
@@ -566,6 +607,7 @@ export default async function handler(req, res) {
       actualDenominator: actualDenominator,
       assessmentVersion: frozenAssessmentVersion || 1,
       scoringVersion: frozenScoringVersion || 1,
+      scoringMode: scoringMode,
       behavioral: {
         tabSwitches: totalTabSwitches,
         violations: totalViolations,
@@ -623,8 +665,6 @@ export default async function handler(req, res) {
       is_time_abnormal: totalSeconds > MAX_REASONABLE_SECONDS
     };
 
-    // Phase Two / 2.8 fix: answered_questions is a jsonb column on
-    // assessment_results. Pass the array of question IDs, not a count.
     const answeredQuestionIds = (responses || []).map(r => r.question_id);
 
     console.log('[Submit] Calling transactional RPC for session:', sessionId);
@@ -640,7 +680,7 @@ export default async function handler(req, res) {
         p_total_score: totalEarned,
         p_max_score: totalMax,
         p_percentage_score: finalPercentage,
-        p_total_questions: totalMax,
+        p_total_questions: questions.length,
         p_answered_questions: answeredQuestionIds,
         p_category_scores: categoryScores,
         p_started_at: assessmentStartedAt,
@@ -696,6 +736,7 @@ export default async function handler(req, res) {
       isNationalService: isNationalService,
       isAutoSubmitted: autoSubmitted || false,
       submitBuild: SUBMIT_BUILD,
+      scoringMode: scoringMode,
       frozenSetUsed: frozenUsed,
       denominatorOverridden: denominatorOverridden,
       assessmentVersion: frozenAssessmentVersion || 1,
@@ -706,7 +747,7 @@ export default async function handler(req, res) {
         totalSeconds: totalSeconds,
         totalDurationFormatted: totalDurationFormatted,
         avgTimePerQuestion: avgTimePerQuestion,
-        totalQuestions: totalMax,
+        totalQuestions: questions.length,
         isTimeAbnormal: totalSeconds > MAX_REASONABLE_SECONDS
       },
       behavioral: {
