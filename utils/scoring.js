@@ -1,947 +1,864 @@
-// utils/scoring.js
+// pages/api/assessment/submit.js - FULLY CORRECTED WITH UNIFIED SCORING + COMPETENCY WRITE
+// Version: submit-behavioral-v11-competency-write
+//
+// WHAT CHANGED FROM v10
+// ---------------------
+// v11 adds the competency scoring step at the end of submission.
+// After the transactional RPC succeeds and resultId is available, this
+// file now:
+//   1. Fetches question_competencies for the frozen question set
+//   2. Runs calculateCompetencyScores using the SAME scoring engine
+//      already used for overall scoring (forced_choice / single_select
+//      / baseline all handled uniformly)
+//   3. Upserts rows into candidate_competency_scores on the
+//      (candidate_id, assessment_id, competency_id) unique key
+//
+// The block is wrapped in try/catch and is NON-FATAL. If it fails for any
+// reason, the assessment result is still saved, the candidate still sees
+// their score, and only the competency section is missing. That is better
+// than failing the whole submission because of an analytics step.
+//
+// Behavioural tracking, proctoring, RPC call, and response shape are all
+// unchanged.
 
-/**
- * CENTRAL SCORING ENGINE
- *
- * Supports THREE scoring models now:
- *   1) Baseline exact-match (multi-select, exact set match = 1, else 0)
- *   2) Single-select weighted (one answer, answer-weighted, real max per question)
- *   3) Forced-choice most/least (TWO picks per question: most-likely and
- *      least-likely; both contribute, and rejecting the best answer is a
- *      strong negative signal)
- *
- * Phase 5 addition:
- *   - scoreForcedChoiceResponse(response, question) handles model (3)
- *   - scoreQuestionResponse(response, isBaseline, mode) dispatches.
- *     Existing callers pass no mode and get legacy behavior, so nothing
- *     downstream breaks.
- */
+import { createClient } from "@supabase/supabase-js";
+import {
+  scoreQuestionResponse,
+  isBaselineAssessmentType
+} from "../../../utils/scoring";
+import { calculateCompetencyScores } from "../../../utils/competencyScoring";
 
-// ======================================================
-// BASIC HELPERS
-// ======================================================
+const SUBMIT_BUILD = "submit-behavioral-v11-competency-write";
 
-export const toNumber = function (value, fallback) {
-  const defaultValue = fallback === undefined ? 0 : fallback;
-  const number = Number(value);
+const PRACTICAL_ASSESSMENT_IDS = [
+  'c2bc4994-1c4a-4094-a763-8d9d560b759e',
+  '243275ec-9bb5-43ce-9f02-1111b2ca66e0',
+  'a6000077-095d-4115-bc4e-5936fce953e9',
+  '928f81fc-35ea-40ac-83cb-7c3a0c1c18dc'
+];
+const NATIONAL_SERVICE_ASSESSMENT_ID = 'bdb9d46e-9fac-4d00-8478-1f649e7ac600';
+const MAX_REASONABLE_SECONDS = 8 * 60 * 60; // 8 hours
 
-  if (Number.isNaN(number) || !Number.isFinite(number)) {
-    return defaultValue;
-  }
+// ============================================================
+// HELPERS
+// ============================================================
+function formatDuration(seconds) {
+  if (!seconds || seconds <= 0) return '00:00:00';
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = seconds % 60;
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+}
 
-  return number;
-};
+function calculateAvgTimePerQuestion(totalSeconds, questionCount) {
+  if (!totalSeconds || totalSeconds <= 0 || !questionCount || questionCount <= 0) return '0s';
+  if (totalSeconds > MAX_REASONABLE_SECONDS) return 'Session left open';
+  const avgSeconds = Math.round(totalSeconds / questionCount);
+  if (avgSeconds < 60) return `${avgSeconds}s`;
+  const minutes = Math.floor(avgSeconds / 60);
+  const seconds = avgSeconds % 60;
+  if (seconds === 0) return `${minutes}m`;
+  return `${minutes}m ${seconds}s`;
+}
 
-export const clampPercentage = function (value) {
-  const num = toNumber(value, 0);
-  if (num < 0) return 0;
-  if (num > 100) return 100;
-  return num;
-};
+function getTotalQuestions(assessmentId) {
+  if (PRACTICAL_ASSESSMENT_IDS.includes(assessmentId)) return 40;
+  if (assessmentId === NATIONAL_SERVICE_ASSESSMENT_ID) return 80;
+  return 100;
+}
 
-export const roundNumber = function (value, decimals) {
-  const d = decimals === undefined ? 2 : decimals;
-  const factor = Math.pow(10, d);
-  return Math.round(toNumber(value, 0) * factor) / factor;
-};
-
-export const normalizeText = function (value, fallback) {
-  const fallbackValue = fallback === undefined ? "" : fallback;
-  if (value === null || value === undefined || value === "") {
-    return fallbackValue;
-  }
-  return String(value)
-    .replace(/&amp;amp;/g, "&")
-    .replace(/&amp;lt;/g, "<")
-    .replace(/&amp;gt;/g, ">")
-    .replace(/&amp;quot;/g, '"')
-    .replace(/&amp;#039;/g, "'")
-    .replace(/&amp;#39;/g, "'")
-    .replace(/&amp;nbsp;/g, " ");
-};
-
-export const safeArray = function (value) {
+function safeArray(value) {
   return Array.isArray(value) ? value : [];
-};
+}
 
-// ======================================================
-// THRESHOLDS
-// ======================================================
+// ============================================================
+// Load the frozen question set for a session.
+// Returns { questions, assessmentVersion, scoringVersion } or null.
+// ============================================================
+async function loadFrozenQuestions(serviceClient, sessionId) {
+  const { data: frozen, error: frozenErr } = await serviceClient
+    .from("session_questions")
+    .select("question_id, display_order, answer_order, assessment_version, scoring_version")
+    .eq("session_id", sessionId)
+    .order("display_order", { ascending: true });
 
-export const REPORT_THRESHOLDS = {
-  strongStrengthThreshold: 85,
-  strengthThreshold: 75,
-  developmentThreshold: 65,
-  priorityThreshold: 55,
-  criticalThreshold: 40,
-  targetScore: 80
-};
-
-// ======================================================
-// PERFORMANCE BANDS
-// ======================================================
-
-export const PERFORMANCE_BANDS = [
-  {
-    key: "exceptional",
-    min: 85,
-    max: 100,
-    label: "Exceptional",
-    classification: "Exceptional",
-    color: "#0f766e",
-    bg: "#ecfdf5",
-    description: "Strong evidence of capability and readiness for advanced responsibility."
-  },
-  {
-    key: "strong",
-    min: 75,
-    max: 84.9999,
-    label: "Strong",
-    classification: "Strong Performer",
-    color: "#2563eb",
-    bg: "#eff6ff",
-    description: "Reliable capability with clear strengths applicable in role situations."
-  },
-  {
-    key: "adequate",
-    min: 65,
-    max: 74.9999,
-    label: "Capable",
-    classification: "Capable Contributor",
-    color: "#4f46e5",
-    bg: "#eef2ff",
-    description: "Functional capability with some areas requiring reinforcement."
-  },
-  {
-    key: "developing",
-    min: 55,
-    max: 64.9999,
-    label: "Developing",
-    classification: "Developing",
-    color: "#d97706",
-    bg: "#fff7ed",
-    description: "Foundational capability requiring structured support."
-  },
-  {
-    key: "priority_development",
-    min: 40,
-    max: 54.9999,
-    label: "At Risk",
-    classification: "At Risk",
-    color: "#ea580c",
-    bg: "#fff7ed",
-    description: "Significant gaps requiring targeted development."
-  },
-  {
-    key: "critical_gap",
-    min: 0,
-    max: 39.9999,
-    label: "High Risk",
-    classification: "High Risk",
-    color: "#b42318",
-    bg: "#fef3f2",
-    description: "Critical gaps requiring immediate intervention."
+  if (frozenErr) {
+    console.error("[Submit] Frozen set read error:", frozenErr);
+    return null;
   }
-];
+  if (!frozen || frozen.length === 0) return null;
 
-// ======================================================
-// GRADE SCALE
-// ======================================================
+  const questionIds = frozen.map((r) => r.question_id);
 
-export const GRADE_SCALE = [
-  { grade: "A+", min: 95, max: 100, description: "Exceptional", color: "#0f766e", bg: "#ecfdf5" },
-  { grade: "A", min: 90, max: 94.9999, description: "Excellent", color: "#059669", bg: "#ecfdf5" },
-  { grade: "A-", min: 85, max: 89.9999, description: "Very Good", color: "#047857", bg: "#ecfdf5" },
-  { grade: "B+", min: 80, max: 84.9999, description: "Good", color: "#2563eb", bg: "#eff6ff" },
-  { grade: "B", min: 75, max: 79.9999, description: "Satisfactory", color: "#1d4ed8", bg: "#eff6ff" },
-  { grade: "B-", min: 70, max: 74.9999, description: "Adequate", color: "#4f46e5", bg: "#eef2ff" },
-  { grade: "C+", min: 65, max: 69.9999, description: "Developing", color: "#7c3aed", bg: "#f5f3ff" },
-  { grade: "C", min: 60, max: 64.9999, description: "Basic Competency", color: "#d97706", bg: "#fff7ed" },
-  { grade: "C-", min: 55, max: 59.9999, description: "Minimum Competency", color: "#ea580c", bg: "#fff7ed" },
-  { grade: "D", min: 40, max: 54.9999, description: "Below Expectations", color: "#dc2626", bg: "#fef2f2" },
-  { grade: "F", min: 0, max: 39.9999, description: "Unsatisfactory", color: "#991b1b", bg: "#fef2f2" }
-];
+  const { data: questions, error: qErr } = await serviceClient
+    .from("unique_questions")
+    .select("id, question_text, section, subsection")
+    .in("id", questionIds);
 
-// ======================================================
-// BASELINE + WEIGHTED QUESTION HELPERS
-// ======================================================
-
-export const parseSelectedAnswerIds = function (answerValue) {
-  if (answerValue === null || answerValue === undefined || answerValue === "") return [];
-
-  if (Array.isArray(answerValue)) {
-    return answerValue
-      .map(function (value) { return parseInt(value, 10); })
-      .filter(function (value) { return !Number.isNaN(value); });
+  if (qErr || !questions) {
+    console.error("[Submit] Frozen questions fetch error:", qErr);
+    return null;
   }
 
-  const text = String(answerValue);
+  const { data: answers, error: aErr } = await serviceClient
+    .from("unique_answers")
+    .select("id, question_id, answer_text, score, display_order")
+    .in("question_id", questionIds);
 
-  if (text.indexOf(",") >= 0) {
-    return text
-      .split(",")
-      .map(function (value) { return parseInt(String(value).trim(), 10); })
-      .filter(function (value) { return !Number.isNaN(value); });
+  if (aErr) {
+    console.error("[Submit] Frozen answers fetch error:", aErr);
+    return null;
   }
 
-  const parsed = parseInt(text, 10);
-  return Number.isNaN(parsed) ? [] : [parsed];
-};
-
-export const getQuestionFromResponse = function (response) {
-  if (!response) return null;
-  return response.unique_questions || response.question || null;
-};
-
-export const getQuestionAnswers = function (question) {
-  if (!question) return [];
-
-  if (Array.isArray(question.unique_answers)) return question.unique_answers;
-  if (Array.isArray(question.answers)) return question.answers;
-  if (Array.isArray(question.options)) return question.options;
-
-  return [];
-};
-
-export const getAnswerScoreValue = function (answer) {
-  if (!answer) return 0;
-  return toNumber(
-    answer.score !== undefined
-      ? answer.score
-      : answer.value !== undefined
-      ? answer.value
-      : answer.points !== undefined
-      ? answer.points
-      : 0,
-    0
-  );
-};
-
-export const getQuestionMaxScore = function (question, isBaseline) {
-  const answers = getQuestionAnswers(question);
-
-  if (isBaseline) return 1;
-  if (answers.length === 0) return 0;
-
-  return Math.max.apply(
-    null,
-    answers.map(function (answer) {
-      return getAnswerScoreValue(answer);
-    })
-  );
-};
-
-export const getCorrectAnswerIdsForBaseline = function (question) {
-  return getQuestionAnswers(question)
-    .filter(function (answer) {
-      return getAnswerScoreValue(answer) === 1;
-    })
-    .map(function (answer) {
-      return parseInt(answer.id, 10);
-    })
-    .filter(function (id) {
-      return !Number.isNaN(id);
-    });
-};
-
-export const arraysMatchExactly = function (left, right) {
-  const a = Array.isArray(left)
-    ? Array.from(new Set(left)).sort(function (x, y) { return x - y; })
-    : [];
-  const b = Array.isArray(right)
-    ? Array.from(new Set(right)).sort(function (x, y) { return x - y; })
-    : [];
-
-  if (a.length !== b.length) return false;
-
-  for (let index = 0; index < a.length; index += 1) {
-    if (a[index] !== b[index]) return false;
-  }
-
-  return true;
-};
-
-// ======================================================
-// FORCED-CHOICE SCORING (Phase 5)
-// ------------------------------------------------------
-// Candidate picks TWO answers per question:
-//   answer_id       = most likely  (what they'd do)
-//   least_answer_id = least likely (what they'd never do)
-//
-// Scoring model (per question, out of a max of 1.0):
-//   Let maxAnsScore = max score across all answers for the question (usually 5)
-//   Let minAnsScore = min score across all answers for the question (usually 1)
-//   Let range = maxAnsScore - minAnsScore
-//
-//   mostScore  = (selected.score - minAnsScore) / range    // 0..1
-//   leastScore = (maxAnsScore - rejected.score) / range    // 0..1
-//
-//   questionScore = (mostScore * 0.7) + (leastScore * 0.3)
-//
-// Interpretation:
-//   - Picking the best answer most-likely           -> mostScore ~1.0
-//   - Rejecting the worst answer                    -> leastScore ~1.0
-//   - Rejecting the BEST answer (red flag)          -> leastScore ~0.0
-//
-// Result is a 0..1 value, which the caller multiplies by a weight so the
-// competency engine can aggregate it consistently with single-select.
-//
-// If least_answer_id is missing (single-select response submitted before
-// this change), we fall back to the single-select formula.
-// ======================================================
-
-export const FORCED_CHOICE_WEIGHT_MOST = 0.7;
-export const FORCED_CHOICE_WEIGHT_LEAST = 0.3;
-
-export const scoreForcedChoiceResponse = function (response) {
-  const question = getQuestionFromResponse(response);
-  const answers = getQuestionAnswers(question);
-
-  if (!question || answers.length === 0) {
-    return { score: 0, maxScore: 1, mode: "forced_choice", fallback: true };
-  }
-
-  const answerScores = answers.map(getAnswerScoreValue);
-  const maxAns = Math.max.apply(null, answerScores);
-  const minAns = Math.min.apply(null, answerScores);
-  const range = maxAns - minAns;
-
-  if (range <= 0) {
-    // Degenerate question; no differentiation possible.
-    return { score: 0, maxScore: 1, mode: "forced_choice", degenerate: true };
-  }
-
-  const mostId = parseInt(
-    response && (response.answer_id !== undefined
-      ? response.answer_id
-      : response.selected_answer_id),
-    10
-  );
-  const leastId = parseInt(
-    response && response.least_answer_id,
-    10
-  );
-
-  const mostAnswer = Number.isNaN(mostId)
-    ? null
-    : answers.find(function (a) { return Number(a.id) === mostId; }) || null;
-  const leastAnswer = Number.isNaN(leastId)
-    ? null
-    : answers.find(function (a) { return Number(a.id) === leastId; }) || null;
-
-  let mostScore = 0;
-  if (mostAnswer) {
-    const s = getAnswerScoreValue(mostAnswer);
-    mostScore = (s - minAns) / range;
-  }
-
-  let leastScore = 0;
-  if (leastAnswer) {
-    const s = getAnswerScoreValue(leastAnswer);
-    leastScore = (maxAns - s) / range;
-  } else {
-    // If candidate didn't submit a least pick, we can only use most.
-    // Fall back to most-only scoring so we don't give free points.
-    return {
-      score: mostScore,
-      maxScore: 1,
-      mode: "forced_choice",
-      partial: true
-    };
-  }
-
-  const combined =
-    (mostScore * FORCED_CHOICE_WEIGHT_MOST) +
-    (leastScore * FORCED_CHOICE_WEIGHT_LEAST);
-
-  return {
-    score: combined,
-    maxScore: 1,
-    mode: "forced_choice",
-    mostScore,
-    leastScore,
-    mostAnswerId: mostId,
-    leastAnswerId: leastId
-  };
-};
-
-// ======================================================
-// UNIFIED QUESTION SCORER
-// ------------------------------------------------------
-// mode = "baseline"      -> exact-match multi-select
-// mode = "forced_choice" -> most/least picks
-// mode = "single_select" -> legacy single-select (default)
-// ======================================================
-
-export const scoreQuestionResponse = function (response, isBaseline, mode) {
-  const resolvedMode = mode
-    ? mode
-    : isBaseline
-    ? "baseline"
-    : "single_select";
-
-  if (resolvedMode === "forced_choice") {
-    return scoreForcedChoiceResponse(response);
-  }
-
-  const question = getQuestionFromResponse(response);
-  const answers = getQuestionAnswers(question);
-  const selectedAnswerIds = parseSelectedAnswerIds(
-    response && (response.answer_id !== undefined ? response.answer_id : response.selected_answer_id)
-  );
-
-  if (!question || answers.length === 0) {
-    return {
-      score: toNumber(response && response.score, 0),
-      maxScore: resolvedMode === "baseline" ? 1 : toNumber(response && response.max_score, 0),
-      mode: resolvedMode
-    };
-  }
-
-  if (resolvedMode === "baseline") {
-    const correctAnswerIds = getCorrectAnswerIdsForBaseline(question);
-    const earned = arraysMatchExactly(selectedAnswerIds, correctAnswerIds) ? 1 : 0;
-
-    return {
-      score: earned,
-      maxScore: 1,
-      mode: "baseline",
-      correctAnswerIds: correctAnswerIds,
-      selectedAnswerIds: selectedAnswerIds
-    };
-  }
-
-  // single_select
-  const selectedId = selectedAnswerIds.length > 0 ? selectedAnswerIds[0] : null;
-  let selectedAnswer = null;
-
-  if (selectedId !== null) {
-    selectedAnswer = answers.find(function (answer) {
-      return String(answer.id) === String(selectedId);
-    }) || null;
-  }
-
-  return {
-    score: selectedAnswer
-      ? getAnswerScoreValue(selectedAnswer)
-      : toNumber(
-          response && (response.score !== undefined ? response.score : response.selected_score),
-          0
-        ),
-    maxScore: getQuestionMaxScore(question, false),
-    mode: "single_select",
-    selectedAnswerIds: selectedAnswerIds
-  };
-};
-
-export const isBaselineAssessmentType = function (assessmentTypeOrId) {
-  const normalized = String(assessmentTypeOrId === undefined || assessmentTypeOrId === null ? "" : assessmentTypeOrId)
-    .trim()
-    .toLowerCase();
-
-  return (
-    normalized === "19" ||
-    normalized === "baseline" ||
-    normalized === "manufacturing_baseline_baseline"
-  );
-};
-
-// ======================================================
-// SCORING CALCULATIONS
-// ======================================================
-
-export const calculateTotalScore = function (responses, isBaseline) {
-  if (!Array.isArray(responses)) return 0;
-
-  return responses.reduce(function (sum, response) {
-    if (!response) return sum;
-
-    if (getQuestionFromResponse(response)) {
-      return sum + scoreQuestionResponse(response, Boolean(isBaseline)).score;
-    }
-
-    const score =
-      response.score !== undefined
-        ? response.score
-        : response.answer && response.answer.score !== undefined
-        ? response.answer.score
-        : response.selected_score !== undefined
-        ? response.selected_score
-        : response.value !== undefined
-        ? response.value
-        : 0;
-
-    return sum + toNumber(score, 0);
-  }, 0);
-};
-
-export const calculateMaxScore = function (questions, fallbackMaxPerQuestion, isBaseline) {
-  if (!Array.isArray(questions)) return 0;
-
-  const defaultMax = fallbackMaxPerQuestion === undefined ? 0 : fallbackMaxPerQuestion;
-
-  return questions.reduce(function (sum, question) {
-    if (!question) return sum;
-
-    const max = getQuestionMaxScore(question, Boolean(isBaseline));
-
-    if (max > 0) return sum + max;
-
-    const directMax =
-      question.maxScore !== undefined
-        ? question.maxScore
-        : question.max_score !== undefined
-        ? question.max_score
-        : question.score !== undefined
-        ? question.score
-        : question.points !== undefined
-        ? question.points
-        : null;
-
-    if (directMax !== undefined && directMax !== null) {
-      return sum + toNumber(directMax, defaultMax);
-    }
-
-    return sum + toNumber(defaultMax, 0);
-  }, 0);
-};
-
-export const calculatePercentage = function (score, maxScore) {
-  const earned = toNumber(score, 0);
-  const max = toNumber(maxScore, 0);
-
-  if (max <= 0) return 0;
-
-  return roundNumber((earned / max) * 100, 2);
-};
-
-export const calculateAverageScore = function (responses, isBaseline) {
-  if (!Array.isArray(responses) || responses.length === 0) return 0;
-
-  const total = calculateTotalScore(responses, isBaseline);
-
-  return roundNumber(total / responses.length, 2);
-};
-
-// ======================================================
-// LOOKUPS
-// ======================================================
-
-export const getPerformanceBand = function (percentage) {
-  const value = clampPercentage(percentage);
-
-  for (let i = 0; i < PERFORMANCE_BANDS.length; i += 1) {
-    const band = PERFORMANCE_BANDS[i];
-    if (value >= band.min && value <= band.max) {
-      return band;
-    }
-  }
-
-  return PERFORMANCE_BANDS[PERFORMANCE_BANDS.length - 1];
-};
-
-export const getGradeInfo = function (percentage) {
-  const value = clampPercentage(percentage);
-
-  for (let i = 0; i < GRADE_SCALE.length; i += 1) {
-    const grade = GRADE_SCALE[i];
-    if (value >= grade.min && value <= grade.max) {
-      return grade;
-    }
-  }
-
-  return GRADE_SCALE[GRADE_SCALE.length - 1];
-};
-
-export const getGrade = function (percentage) {
-  return getGradeInfo(percentage).grade;
-};
-
-export const getGradeDescription = function (percentage) {
-  return getGradeInfo(percentage).description;
-};
-
-export const getClassificationDetailsFromPercentage = function (percentage) {
-  const band = getPerformanceBand(percentage);
-  const gradeInfo = getGradeInfo(percentage);
-
-  return {
-    percentage: clampPercentage(percentage),
-    grade: gradeInfo.grade,
-    gradeDescription: gradeInfo.description,
-    classification: band.classification,
-    band: band.key,
-    label: band.label,
-    color: band.color,
-    bg: band.bg,
-    description: band.description,
-    min: gradeInfo.min,
-    max: gradeInfo.max
-  };
-};
-
-export const getClassificationFromPercentage = function (percentage) {
-  return getClassificationDetailsFromPercentage(percentage).classification;
-};
-
-export const getScoreLevel = function (percentage) {
-  const details = getClassificationDetailsFromPercentage(percentage);
-
-  return {
-    key: details.band,
-    label: details.label,
-    classification: details.classification,
-    color: details.color,
-    bg: details.bg,
-    description: details.description
-  };
-};
-
-export const classifyScore = function (score, maxScore) {
-  const percentage = calculatePercentage(score, maxScore);
-  const details = getClassificationDetailsFromPercentage(percentage);
-
-  return {
-    totalScore: toNumber(score, 0),
-    maxScore: toNumber(maxScore, 0),
-    percentage: percentage,
-    grade: details.grade,
-    gradeDescription: details.gradeDescription,
-    classification: details.classification,
-    band: details.band,
-    label: details.label,
-    color: details.color,
-    bg: details.bg,
-    description: details.description
-  };
-};
-
-export const getOverallClassification = function (scoreOrPercentage, maxScore) {
-  if (maxScore !== undefined && maxScore !== null) {
-    return getClassificationFromPercentage(calculatePercentage(scoreOrPercentage, maxScore));
-  }
-  return getClassificationFromPercentage(scoreOrPercentage);
-};
-
-export const calculateAssessmentScore = function (responses, questions, isBaseline) {
-  const totalScore = calculateTotalScore(responses, isBaseline);
-  const maxScore = calculateMaxScore(questions, 0, isBaseline);
-  const percentage = calculatePercentage(totalScore, maxScore);
-  const details = getClassificationDetailsFromPercentage(percentage);
-
-  return {
-    totalScore: totalScore,
-    maxScore: maxScore,
-    percentage: percentage,
-    grade: details.grade,
-    gradeDescription: details.gradeDescription,
-    classification: details.classification,
-    band: details.band,
-    label: details.label,
-    color: details.color,
-    bg: details.bg,
-    description: details.description
-  };
-};
-
-// ======================================================
-// INTERPRETATION HELPERS
-// ======================================================
-
-export const isStrength = function (percentage) {
-  return clampPercentage(percentage) >= REPORT_THRESHOLDS.strengthThreshold;
-};
-
-export const isDevelopmentArea = function (percentage) {
-  return clampPercentage(percentage) < REPORT_THRESHOLDS.developmentThreshold;
-};
-
-export const isCriticalGap = function (percentage) {
-  return clampPercentage(percentage) < REPORT_THRESHOLDS.criticalThreshold;
-};
-
-export const isPriorityDevelopment = function (percentage) {
-  const value = clampPercentage(percentage);
-  return value >= REPORT_THRESHOLDS.criticalThreshold && value < REPORT_THRESHOLDS.priorityThreshold;
-};
-
-export const getScoreComment = function (percentage) {
-  const value = clampPercentage(percentage);
-  if (value >= 85) return "Exceptional performance";
-  if (value >= 75) return "Strong performance";
-  if (value >= 65) return "Adequate capability";
-  if (value >= 55) return "Developing capability";
-  if (value >= 40) return "Priority development needed";
-  return "Critical development needed";
-};
-
-export const getSupervisorImplication = function (percentage) {
-  const value = clampPercentage(percentage);
-  if (value >= 75) return "Candidate can perform reliably with standard supervision.";
-  if (value >= 65) return "Candidate can perform with guidance and reinforcement.";
-  if (value >= 55) return "Candidate requires structured support and supervision.";
-  return "Candidate requires close supervision and targeted development.";
-};
-
-export const calculateGapToTarget = function (percentage, target) {
-  const tgt = target === undefined ? REPORT_THRESHOLDS.targetScore : target;
-  const value = clampPercentage(percentage);
-  if (value >= tgt) return 0;
-  return roundNumber(tgt - value, 2);
-};
-
-export const getRiskLevel = function (percentage) {
-  const value = clampPercentage(percentage);
-  if (value >= 75) return "Low";
-  if (value >= 65) return "Moderate";
-  if (value >= 55) return "Elevated";
-  if (value >= 40) return "High";
-  return "Critical";
-};
-
-export const getReadinessLevel = function (percentage) {
-  const value = clampPercentage(percentage);
-  if (value >= 85) return "Ready for advanced responsibility";
-  if (value >= 75) return "Ready with normal supervision";
-  if (value >= 65) return "Ready with reinforcement";
-  if (value >= 55) return "Partially ready";
-  if (value >= 40) return "Not yet ready";
-  return "Requires immediate development";
-};
-
-// ======================================================
-// CATEGORY / DIMENSION HELPERS
-// ======================================================
-
-export const normalizeCategoryScore = function (category, data) {
-  const safeCategory = normalizeText(category, "General");
-  const item = data || {};
-
-  const score = toNumber(
-    item.score !== undefined
-      ? item.score
-      : item.total !== undefined
-      ? item.total
-      : item.totalScore !== undefined
-      ? item.totalScore
-      : item.rawScore !== undefined
-      ? item.rawScore
-      : 0,
-    0
-  );
-
-  const maxPossible = toNumber(
-    item.maxPossible !== undefined
-      ? item.maxPossible
-      : item.max_score !== undefined
-      ? item.max_score
-      : item.maxScore !== undefined
-      ? item.maxScore
-      : 0,
-    0
-  );
-
-  const percentage =
-    item.percentage !== undefined && item.percentage !== null
-      ? clampPercentage(item.percentage)
-      : maxPossible > 0
-      ? calculatePercentage(score, maxPossible)
-      : 0;
-
-  const details = getClassificationDetailsFromPercentage(percentage);
-
-  return {
-    category: safeCategory,
-    name: safeCategory,
-    score: score,
-    totalScore: score,
-    maxPossible: maxPossible,
-    maxScore: maxPossible,
-    percentage: percentage,
-    grade: details.grade,
-    gradeDescription: details.gradeDescription,
-    classification: details.classification,
-    band: details.band,
-    label: details.label,
-    color: details.color,
-    bg: details.bg,
-    description: details.description,
-    performanceComment: getScoreComment(percentage),
-    supervisorImplication: getSupervisorImplication(percentage),
-    riskLevel: getRiskLevel(percentage),
-    gapToTarget: calculateGapToTarget(percentage)
-  };
-};
-
-export const normalizeCategoryScores = function (categoryScores) {
-  if (Array.isArray(categoryScores)) {
-    return categoryScores.map(function (item) {
-      const category =
-        item && (item.category !== undefined ? item.category : item.name !== undefined ? item.name : "General");
-      return normalizeCategoryScore(category, item || {});
-    });
-  }
-
-  return Object.keys(categoryScores || {}).map(function (category) {
-    return normalizeCategoryScore(category, categoryScores[category] || {});
+  const questionMap = {};
+  questions.forEach((q) => { questionMap[q.id] = q; });
+
+  const answersByQuestion = {};
+  safeArray(answers).forEach((a) => {
+    if (!answersByQuestion[a.question_id]) answersByQuestion[a.question_id] = [];
+    answersByQuestion[a.question_id].push(a);
   });
-};
 
-export const calculateCategoryScores = function (responses, isBaseline) {
-  if (!Array.isArray(responses)) return [];
+  const assembled = [];
+  for (const row of frozen) {
+    const q = questionMap[row.question_id];
+    if (!q) {
+      console.warn("[Submit] Frozen question missing from unique_questions:", row.question_id);
+      continue;
+    }
 
-  const grouped = {};
+    const answersForQ = answersByQuestion[row.question_id] || [];
+    const answerOrder = Array.isArray(row.answer_order) ? row.answer_order : [];
+    let orderedAnswers;
 
-  responses.forEach(function (response) {
-    if (!response) return;
+    if (answerOrder.length > 0) {
+      const answerMap = {};
+      answersForQ.forEach((a) => { answerMap[a.id] = a; });
+      orderedAnswers = answerOrder
+        .map((entry) => {
+          const a = answerMap[entry.answer_id];
+          if (!a) return null;
+          return { id: a.id, answer_text: a.answer_text, score: a.score || 0 };
+        })
+        .filter(Boolean);
+    } else {
+      orderedAnswers = answersForQ.map((a) => ({
+        id: a.id,
+        answer_text: a.answer_text,
+        score: a.score || 0
+      }));
+    }
 
-    const question = getQuestionFromResponse(response) || {};
-    const category = normalizeText(
-      question.section !== undefined
-        ? question.section
-        : question.category !== undefined
-        ? question.category
-        : question.competency !== undefined
-        ? question.competency
-        : question.dimension !== undefined
-        ? question.dimension
-        : response.category !== undefined
-        ? response.category
-        : response.dimension !== undefined
-        ? response.dimension
-        : response.competency !== undefined
-        ? response.competency
-        : "General",
-      "General"
+    assembled.push({
+      id: q.id,
+      question_text: q.question_text,
+      section: q.section || "General",
+      subsection: q.subsection || "",
+      answers: orderedAnswers
+    });
+  }
+
+  const assessmentVersion = frozen[0]?.assessment_version ?? 1;
+  const scoringVersion = frozen[0]?.scoring_version ?? 1;
+
+  return {
+    questions: assembled,
+    assessmentVersion,
+    scoringVersion
+  };
+}
+
+// ============================================================
+// MAIN HANDLER
+// ============================================================
+export default async function handler(req, res) {
+  console.log(`[Submit] Build: ${SUBMIT_BUILD}`);
+  console.log(`[Submit] Method: ${req.method}`);
+
+  if (req.method !== "POST") {
+    return res.status(405).json({ success: false, error: "Method not allowed" });
+  }
+
+  try {
+    const { sessionId, autoSubmitted, proctoringData, startedAt } = req.body;
+
+    console.log(`[Submit] SessionId: ${sessionId}`);
+
+    if (!sessionId) {
+      return res.status(400).json({ success: false, error: "Missing sessionId" });
+    }
+
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!supabaseUrl || !supabaseKey) {
+      console.error("[Submit] Missing environment variables");
+      return res.status(500).json({ success: false, error: "Server configuration error" });
+    }
+
+    const token = req.headers.authorization?.replace("Bearer ", "");
+    if (!token) {
+      return res.status(401).json({ success: false, error: "Unauthorized" });
+    }
+
+    const serviceClient = createClient(supabaseUrl, supabaseKey, {
+      auth: { persistSession: false, autoRefreshToken: false }
+    });
+
+    // ============================================================
+    // STEP 1: Verify user
+    // ============================================================
+    const { data: userData, error: userError } = await serviceClient.auth.getUser(token);
+    if (userError || !userData?.user) {
+      console.error("[Submit] Auth error:", userError);
+      return res.status(401).json({ success: false, error: "Invalid token" });
+    }
+    const userId = userData.user.id;
+
+    // ============================================================
+    // STEP 2: Get session
+    // ============================================================
+    const { data: session, error: sessionError } = await serviceClient
+      .from("assessment_sessions")
+      .select("*")
+      .eq("id", sessionId)
+      .eq("user_id", userId)
+      .single();
+
+    if (sessionError || !session) {
+      console.error("[Submit] Session error:", sessionError);
+      return res.status(404).json({
+        success: false,
+        error: "Session not found",
+        diagnosticCode: sessionError?.code || "SESSION_NOT_FOUND"
+      });
+    }
+
+    console.log(`[Submit] Session found: ${session.id}, assessment_id: ${session.assessment_id}`);
+
+    // ============================================================
+    // STEP 3: Validate session has assessment_id
+    // ============================================================
+    if (!session.assessment_id) {
+      console.error("[Submit] Session missing assessment_id");
+      return res.status(409).json({
+        success: false,
+        error: "Session is missing assessment_id. Please start a new assessment session.",
+        diagnosticCode: "MISSING_ASSESSMENT_ID"
+      });
+    }
+
+    // ============================================================
+    // STEP 4: Get assessment
+    // ============================================================
+    console.log(`[Submit] Looking up assessment: ${session.assessment_id}`);
+    const { data: assessment, error: assessmentError } = await serviceClient
+      .from("assessments")
+      .select("id, title, assessment_type_id")
+      .eq("id", session.assessment_id)
+      .single();
+
+    if (assessmentError || !assessment) {
+      console.error("[Submit] Assessment lookup failed:", {
+        assessmentId: session.assessment_id,
+        code: assessmentError?.code,
+        message: assessmentError?.message
+      });
+      return res.status(500).json({
+        success: false,
+        error: "Assessment lookup failed",
+        diagnosticCode: assessmentError?.code || "ASSESSMENT_NOT_FOUND"
+      });
+    }
+
+    console.log(`[Submit] Assessment found: ${assessment.id} - ${assessment.title}`);
+
+    // ============================================================
+    // STEP 5: Get assessment type (now including scoring_mode)
+    // ============================================================
+    const { data: assessmentType, error: typeError } = await serviceClient
+      .from("assessment_types")
+      .select("id, code, name, question_count, scoring_mode")
+      .eq("id", assessment.assessment_type_id)
+      .single();
+
+    if (typeError || !assessmentType) {
+      console.error("[Submit] Assessment type lookup failed:", {
+        typeId: assessment.assessment_type_id,
+        code: typeError?.code,
+        message: typeError?.message
+      });
+    } else {
+      console.log(`[Submit] Assessment type: ${assessmentType.code} (${assessmentType.id}) mode=${assessmentType.scoring_mode || 'single_select'}`);
+    }
+
+    const isNationalService = assessmentType?.code === 'national_service' ||
+                             session.assessment_id === NATIONAL_SERVICE_ASSESSMENT_ID;
+
+    // Determine scoring mode. Baseline is a special case of single-select
+    // that uses exact-match multi-select.
+    const typeCode = assessmentType?.code || 'general';
+    const isBaseline = isBaselineAssessmentType(typeCode);
+    const scoringMode = isBaseline
+      ? 'baseline'
+      : (assessmentType?.scoring_mode === 'forced_choice' ? 'forced_choice' : 'single_select');
+
+    console.log(`[Submit] Resolved scoring mode: ${scoringMode}`);
+
+    // ============================================================
+    // STEP 6: Get responses (now including least_answer_id)
+    // ============================================================
+    const { data: responses, error: responsesError } = await serviceClient
+      .from("responses")
+      .select("question_id, answer_id, least_answer_id, metadata, times_changed")
+      .eq("session_id", sessionId);
+
+    if (responsesError) {
+      console.error("[Submit] Responses error:", responsesError);
+    }
+    console.log(`[Submit] Found ${responses?.length || 0} responses`);
+
+    let totalAnswerChanges = 0;
+    let totalCopyAttempts = 0;
+    let totalPasteAttempts = 0;
+    let totalRightClickAttempts = 0;
+
+    if (responses && responses.length > 0) {
+      responses.forEach(r => {
+        totalAnswerChanges += Number(r.times_changed) || 0;
+        const metadata = r.metadata || {};
+        totalCopyAttempts += Number(metadata.copy_attempts) || 0;
+        totalPasteAttempts += Number(metadata.paste_attempts) || 0;
+        totalRightClickAttempts += Number(metadata.right_click_attempts) || 0;
+      });
+    }
+
+    // ============================================================
+    // STEP 7: Get questions for scoring (frozen first, fallback second)
+    // ============================================================
+    let questions = null;
+    let frozenUsed = false;
+    let denominatorOverridden = false;
+    let expectedDenominator = null;
+    let actualDenominator = null;
+    let frozenAssessmentVersion = null;
+    let frozenScoringVersion = null;
+
+    const frozenResult = await loadFrozenQuestions(serviceClient, sessionId);
+    if (frozenResult && frozenResult.questions && frozenResult.questions.length > 0) {
+      questions = frozenResult.questions;
+      frozenUsed = true;
+      frozenAssessmentVersion = frozenResult.assessmentVersion;
+      frozenScoringVersion = frozenResult.scoringVersion;
+      console.log(`[Submit] Questions found: ${questions.length} (source: session_questions / frozen)`);
+      console.log(`[Submit] Versions: assessment=v${frozenAssessmentVersion}, scoring=v${frozenScoringVersion}`);
+    }
+
+    if (!frozenUsed) {
+      const { data: questionsData, error: questionsError } = await serviceClient
+        .from("unique_questions")
+        .select(`
+          id,
+          question_text,
+          section,
+          unique_answers (
+            id,
+            answer_text,
+            score
+          )
+        `)
+        .eq("assessment_type_id", assessment.assessment_type_id);
+
+      if (questionsError) {
+        console.error("[Submit] Questions error:", questionsError);
+      }
+
+      questions = (questionsData || []).map((q) => ({
+        id: q.id,
+        question_text: q.question_text,
+        section: q.section,
+        answers: q.unique_answers || []
+      }));
+
+      if (questions.length === 0) {
+        console.error("[Submit] No questions found for assessment_type_id:", assessment.assessment_type_id);
+        return res.status(409).json({
+          success: false,
+          error: "No questions found for this assessment",
+          diagnosticCode: "NO_QUESTIONS_FOUND"
+        });
+      }
+
+      console.log(`[Submit] Questions found: ${questions.length} (source: unique_questions / fallback)`);
+    }
+
+    // ============================================================
+    // STEP 8: Calculate scores using the unified scoring engine
+    // ============================================================
+    const responseLookup = {};
+    (responses || []).forEach(r => {
+      responseLookup[r.question_id] = r;
+    });
+
+    const categoryEarnedMap = {};
+    const categoryMaxMap = {};
+    let totalEarned = 0;
+    let totalMax = 0;
+
+    questions.forEach(q => {
+      const response = responseLookup[q.id];
+      const section = q.section || "General";
+
+      if (!categoryEarnedMap[section]) {
+        categoryEarnedMap[section] = 0;
+        categoryMaxMap[section] = 0;
+      }
+
+      if (!response) {
+        const answeredShape = {
+          question_id: q.id,
+          answer_id: null,
+          least_answer_id: null,
+          unique_questions: q
+        };
+        const scored = scoreQuestionResponse(answeredShape, isBaseline, scoringMode);
+        totalMax += Number(scored.maxScore) || 0;
+        categoryMaxMap[section] += Number(scored.maxScore) || 0;
+        return;
+      }
+
+      const responseShape = {
+        ...response,
+        unique_questions: q
+      };
+
+      const scored = scoreQuestionResponse(responseShape, isBaseline, scoringMode);
+      const earned = Number(scored.score) || 0;
+      const max = Number(scored.maxScore) || 0;
+
+      totalEarned += earned;
+      totalMax += max;
+
+      categoryEarnedMap[section] += earned;
+      categoryMaxMap[section] += max;
+    });
+
+    // ============================================================
+    // STEP 9: Validate question count (fallback path only)
+    // ============================================================
+    if (frozenUsed) {
+      console.log(`[Submit] Frozen denominator locked: ${totalMax} max points`);
+    } else {
+      let expectedTotalQuestions = 0;
+      if (assessmentType?.question_count && assessmentType.question_count > 0) {
+        expectedTotalQuestions = assessmentType.question_count;
+      } else if (questions.length > 0) {
+        expectedTotalQuestions = questions.length;
+      } else {
+        expectedTotalQuestions = getTotalQuestions(assessment.id);
+      }
+      console.log(`[Submit] Expected questions: ${expectedTotalQuestions}, Actual: ${questions.length}`);
+      if (questions.length !== expectedTotalQuestions) {
+        denominatorOverridden = true;
+        expectedDenominator = expectedTotalQuestions;
+        actualDenominator = questions.length;
+        console.error('[Submit] DENOMINATOR OVERRIDE:', {
+          assessmentId: assessment.id,
+          assessmentTypeId: assessment.assessment_type_id,
+          assessmentTypeCode: assessmentType?.code || null,
+          configuredQuestionCount: expectedTotalQuestions,
+          actualQuestionsFound: questions.length,
+          sessionId: sessionId,
+          source: 'legacy_fallback_path'
+        });
+      }
+    }
+
+    const finalPercentage = totalMax > 0 ? Math.round((totalEarned / totalMax) * 100) : 0;
+    console.log(`[Submit] Score: ${totalEarned}/${totalMax} = ${finalPercentage}% (mode=${scoringMode})`);
+
+    // ============================================================
+    // STEP 10: category_scores
+    // ============================================================
+    const categoryScores = Object.keys(categoryEarnedMap).map(category => {
+      const earned = categoryEarnedMap[category];
+      const max = categoryMaxMap[category] || 1;
+      const percentage = Math.round((earned / max) * 100);
+      return { category, earned, max, percentage };
+    });
+
+    // ============================================================
+    // STEP 11: recommendation
+    // ============================================================
+    let recommendation = null;
+    if (isNationalService) {
+      if (finalPercentage >= 85) recommendation = 'Highly Recommended';
+      else if (finalPercentage >= 75) recommendation = 'Recommended';
+      else if (finalPercentage >= 65) recommendation = 'Reserve Pool';
+      else recommendation = 'Not Recommended';
+    } else {
+      if (finalPercentage >= 85) recommendation = 'Highly Recommended';
+      else if (finalPercentage >= 75) recommendation = 'Recommended';
+      else if (finalPercentage >= 65) recommendation = 'Reserve Pool';
+      else if (finalPercentage >= 50) recommendation = 'Consider for Development';
+      else recommendation = 'Not Recommended';
+    }
+
+    // ============================================================
+    // STEP 12: proctoring data
+    // ============================================================
+    const proctoring = proctoringData || {};
+    const externalUrls = Array.isArray(proctoring.externalUrls) ? proctoring.externalUrls : [];
+    const violations = Array.isArray(proctoring.violations) ? proctoring.violations : [];
+    const tabSwitches = Array.isArray(proctoring.tabSwitches) ? proctoring.tabSwitches : [];
+
+    const summary = proctoring.summary || {};
+    let totalViolations = Number(summary.totalViolations) || 0;
+    let totalTabSwitches = Number(summary.tabSwitches) || 0;
+    const externalUrlsVisited = Array.isArray(proctoring.externalUrls) ? proctoring.externalUrls.length : 0;
+
+    if (responses && responses.length > 0) {
+      const responseMetadata = responses.map(r => r.metadata || {});
+      const totalViolationsFromResponses = responseMetadata.reduce((sum, meta) => sum + (Number(meta.violations) || 0), 0);
+      if (totalViolationsFromResponses > totalViolations) {
+        totalViolations = totalViolationsFromResponses;
+      }
+    }
+
+    // ============================================================
+    // STEP 13: risk
+    // ============================================================
+    let riskScore = 0;
+    if (totalTabSwitches > 50) riskScore += 30;
+    else if (totalTabSwitches > 10) riskScore += 20;
+    else if (totalTabSwitches > 0) riskScore += 5;
+
+    if (totalViolations > 10) riskScore += 30;
+    else if (totalViolations > 5) riskScore += 20;
+    else if (totalViolations > 0) riskScore += 10;
+
+    if (externalUrlsVisited > 0) {
+      const hasSearchEngine = externalUrls.some(u => u.category === 'search_engine');
+      const hasAITool = externalUrls.some(u => u.category === 'ai_tool');
+      if (hasAITool) riskScore += 35;
+      else if (hasSearchEngine) riskScore += 30;
+      else riskScore += 15;
+    }
+
+    riskScore = Math.min(riskScore, 100);
+    let riskLevel = 'low';
+    if (riskScore >= 70) riskLevel = 'high';
+    else if (riskScore >= 40) riskLevel = 'medium';
+
+    // ============================================================
+    // STEP 14: time tracking
+    // ============================================================
+    const completedAt = new Date().toISOString();
+    let assessmentStartedAt = null;
+    let totalSeconds = 0;
+
+    if (startedAt) {
+      assessmentStartedAt = startedAt;
+      totalSeconds = Math.floor((new Date(completedAt) - new Date(startedAt)) / 1000);
+    } else if (session.started_at) {
+      assessmentStartedAt = session.started_at;
+      totalSeconds = Math.floor((new Date(completedAt) - new Date(session.started_at)) / 1000);
+    } else if (session.created_at) {
+      assessmentStartedAt = session.created_at;
+      totalSeconds = Math.floor((new Date(completedAt) - new Date(session.created_at)) / 1000);
+    }
+
+    if (totalSeconds > MAX_REASONABLE_SECONDS) {
+      console.warn(`[Submit] Total time ${totalSeconds}s exceeds reasonable limit, capping for display`);
+    }
+    if (totalSeconds < 0) totalSeconds = 0;
+    const totalDurationFormatted = formatDuration(totalSeconds);
+    const avgTimePerQuestion = calculateAvgTimePerQuestion(totalSeconds, questions.length);
+
+    // ============================================================
+    // STEP 15-18: TRANSACTIONAL SUBMISSION
+    // ============================================================
+    const reportData = {
+      categoryScores: categoryScores,
+      totalEarned: totalEarned,
+      totalMax: totalMax,
+      percentageScore: finalPercentage,
+      recommendation: recommendation,
+      startedAt: assessmentStartedAt,
+      completedAt: completedAt,
+      totalSeconds: totalSeconds,
+      totalDurationFormatted: totalDurationFormatted,
+      avgTimePerQuestion: avgTimePerQuestion,
+      totalQuestions: questions.length,
+      isTimeAbnormal: totalSeconds > MAX_REASONABLE_SECONDS,
+      frozenSetUsed: frozenUsed,
+      denominatorOverridden: denominatorOverridden,
+      expectedDenominator: expectedDenominator,
+      actualDenominator: actualDenominator,
+      assessmentVersion: frozenAssessmentVersion || 1,
+      scoringVersion: frozenScoringVersion || 1,
+      scoringMode: scoringMode,
+      behavioral: {
+        tabSwitches: totalTabSwitches,
+        violations: totalViolations,
+        externalUrlsVisited: externalUrlsVisited,
+        copyPasteAttempts: totalCopyAttempts + totalPasteAttempts,
+        rightClickAttempts: totalRightClickAttempts,
+        answerChanges: totalAnswerChanges,
+        totalTime: totalSeconds,
+        totalTimeFormatted: totalDurationFormatted,
+        avgTimePerQuestion: avgTimePerQuestion,
+        riskLevel: riskLevel,
+        riskScore: riskScore,
+        isTimeAbnormal: totalSeconds > MAX_REASONABLE_SECONDS
+      },
+      proctoring: {
+        riskLevel: riskLevel,
+        riskScore: riskScore,
+        totalViolations: totalViolations,
+        externalUrlsVisited: externalUrlsVisited,
+        tabSwitches: totalTabSwitches,
+        duration: totalSeconds,
+        durationFormatted: totalDurationFormatted,
+        avgTimePerQuestion: avgTimePerQuestion,
+        isTimeAbnormal: totalSeconds > MAX_REASONABLE_SECONDS
+      }
+    };
+
+    const proctoringDataForDb = {
+      summary: {
+        totalViolations: totalViolations,
+        tabSwitches: totalTabSwitches,
+        externalUrlsVisited: externalUrlsVisited,
+        copyPasteAttempts: totalCopyAttempts + totalPasteAttempts,
+        rightClickAttempts: totalRightClickAttempts,
+        duration: totalSeconds,
+        durationFormatted: totalDurationFormatted,
+        avgTimePerQuestion: avgTimePerQuestion,
+        riskLevel: riskLevel,
+        riskScore: riskScore,
+        answerChanges: totalAnswerChanges,
+        isTimeAbnormal: totalSeconds > MAX_REASONABLE_SECONDS
+      },
+      externalUrls: externalUrls,
+      domainVisits: proctoring.domainVisits || {},
+      violations: violations,
+      tabSwitches: tabSwitches,
+      total_tab_switches: totalTabSwitches,
+      total_violations: totalViolations,
+      copy_attempts: totalCopyAttempts,
+      paste_attempts: totalPasteAttempts,
+      right_click_attempts: totalRightClickAttempts,
+      answer_changes: totalAnswerChanges,
+      total_time_seconds: totalSeconds,
+      avg_time_per_question: avgTimePerQuestion,
+      is_time_abnormal: totalSeconds > MAX_REASONABLE_SECONDS
+    };
+
+    const answeredQuestionIds = (responses || []).map(r => r.question_id);
+
+    console.log('[Submit] Calling transactional RPC for session:', sessionId);
+
+    const { data: rpcResult, error: rpcError } = await serviceClient.rpc(
+      'submit_assessment_transactional',
+      {
+        p_session_id: sessionId,
+        p_user_id: session.user_id,
+        p_assessment_id: assessment.id,
+        p_assessment_type_id: assessment.assessment_type_id,
+        p_completed_at: completedAt,
+        p_total_score: totalEarned,
+        p_max_score: totalMax,
+        p_percentage_score: finalPercentage,
+        p_total_questions: questions.length,
+        p_answered_questions: answeredQuestionIds,
+        p_category_scores: categoryScores,
+        p_started_at: assessmentStartedAt,
+        p_total_seconds: totalSeconds,
+        p_recommendation: recommendation,
+        p_risk_level: riskLevel,
+        p_risk_score: riskScore,
+        p_is_valid: riskLevel !== 'high',
+        p_is_auto_submitted: autoSubmitted || false,
+        p_assessment_version: frozenAssessmentVersion || 1,
+        p_scoring_version: frozenScoringVersion || 1,
+        p_report_data: reportData,
+        p_proctoring_data: proctoringDataForDb,
+        p_external_urls_visited: externalUrls,
+        p_domain_visits: proctoring.domainVisits || {},
+        p_tab_switch_details: tabSwitches,
+        p_violations: violations,
+        p_total_tab_switches: totalTabSwitches,
+        p_total_external_urls: externalUrlsVisited
+      }
     );
 
-    const scored = scoreQuestionResponse(response, Boolean(isBaseline));
-
-    if (!grouped[category]) {
-      grouped[category] = {
-        category: category,
-        totalScore: 0,
-        maxPossible: 0,
-        count: 0
-      };
+    if (rpcError) {
+      console.error('[Submit] Transactional RPC failed:', rpcError);
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to save assessment result',
+        diagnosticCode: 'TRANSACTION_FAILED',
+        debug: {
+          code: rpcError?.code,
+          message: rpcError?.message,
+          details: rpcError?.details,
+          hint: rpcError?.hint
+        }
+      });
     }
 
-    grouped[category].totalScore += scored.score;
-    grouped[category].maxPossible += scored.maxScore;
-    grouped[category].count += 1;
-  });
+    const resultId = rpcResult;
+    console.log(`[Submit] Result saved (transactional): ${resultId}`);
 
-  return Object.keys(grouped).map(function (key) {
-    const item = grouped[key];
-    const percentage = calculatePercentage(item.totalScore, item.maxPossible);
-    const details = getClassificationDetailsFromPercentage(percentage);
+    // ============================================================
+    // STEP 19: 🟢 COMPETENCY SCORING
+    // ------------------------------------------------------------
+    // Non-fatal. Any error here leaves the assessment result intact.
+    // Runs for any assessment whose questions have competency mappings.
+    // Uses the SAME scoring engine (utils/scoring) as the overall score,
+    // so forced_choice / single_select / baseline all score correctly.
+    // ============================================================
+    try {
+      const validQuestionIds = questions
+        .map(q => q.id)
+        .filter(id => id && !String(id).startsWith('placeholder-'));
 
-    return {
-      category: item.category,
-      name: item.category,
-      totalScore: roundNumber(item.totalScore, 2),
-      score: roundNumber(item.totalScore, 2),
-      maxPossible: roundNumber(item.maxPossible, 2),
-      maxScore: roundNumber(item.maxPossible, 2),
-      count: item.count,
-      questionCount: item.count,
-      percentage: percentage,
-      grade: details.grade,
-      classification: details.classification,
-      label: details.label,
-      color: details.color,
-      bg: details.bg,
-      comment: getScoreComment(percentage),
-      supervisorImplication: getSupervisorImplication(percentage),
-      riskLevel: getRiskLevel(percentage),
-      gapToTarget: calculateGapToTarget(percentage)
-    };
-  });
-};
+      console.log(`[Submit] Competency: evaluating ${validQuestionIds.length} question IDs`);
 
-export const getStrengthAreas = function (categoryScores, limit) {
-  const normalized = normalizeCategoryScores(categoryScores);
-  const maxItems = limit === undefined ? 3 : limit;
+      if (validQuestionIds.length > 0) {
+        const { data: questionCompetencies, error: qcError } = await serviceClient
+          .from('question_competencies')
+          .select('question_id, competency_id, weight, competencies(id, name, category)')
+          .in('question_id', validQuestionIds);
 
-  return normalized
-    .filter(function (item) { return item && isStrength(item.percentage); })
-    .sort(function (a, b) { return toNumber(b.percentage, 0) - toNumber(a.percentage, 0); })
-    .slice(0, maxItems);
-};
+        if (qcError) {
+          console.error('[Submit] Competency: question_competencies fetch failed:', qcError);
+        } else if (questionCompetencies && questionCompetencies.length > 0) {
+          console.log(`[Submit] Competency: found ${questionCompetencies.length} mapping rows`);
 
-export const getTopStrengths = function (categoryScores, limit) {
-  return getStrengthAreas(categoryScores, limit);
-};
+          // Build the response array the scorer expects (with nested unique_questions)
+          const responsesWithQuestions = questions.map(question => {
+            const response = responseLookup[question.id];
+            return {
+              ...(response || {}),
+              unique_questions: {
+                id: question.id,
+                question_text: question.question_text,
+                section: question.section,
+                subsection: question.subsection,
+                unique_answers: question.answers || []
+              }
+            };
+          });
 
-export const getDevelopmentAreas = function (categoryScores, limit) {
-  const normalized = normalizeCategoryScores(categoryScores);
-  const maxItems = limit === undefined ? 3 : limit;
+          const competencyScores = calculateCompetencyScores(
+            responsesWithQuestions,
+            questionCompetencies,
+            {
+              code: typeCode,
+              scoring_mode: scoringMode
+            }
+          );
 
-  return normalized
-    .filter(function (item) { return item && isDevelopmentArea(item.percentage); })
-    .sort(function (a, b) { return toNumber(a.percentage, 0) - toNumber(b.percentage, 0); })
-    .slice(0, maxItems);
-};
+          const rows = Object.values(competencyScores)
+            .map(c => ({
+              candidate_id: userId,
+              assessment_id: assessment.id,
+              competency_id: c.id,
+              raw_score: c.rawScore,
+              max_possible: c.maxPossible,
+              percentage: c.percentage,
+              classification: c.classification,
+              question_count: c.questionCount
+            }))
+            .filter(r => Number.isFinite(Number(r.competency_id)) && Number(r.competency_id) > 0);
 
-// ======================================================
-// DEFAULT EXPORT
-// ======================================================
+          if (rows.length > 0) {
+            const { error: upsertError } = await serviceClient
+              .from('candidate_competency_scores')
+              .upsert(rows, { onConflict: 'candidate_id,assessment_id,competency_id' });
 
-export default {
-  REPORT_THRESHOLDS: REPORT_THRESHOLDS,
-  PERFORMANCE_BANDS: PERFORMANCE_BANDS,
-  GRADE_SCALE: GRADE_SCALE,
-  FORCED_CHOICE_WEIGHT_MOST: FORCED_CHOICE_WEIGHT_MOST,
-  FORCED_CHOICE_WEIGHT_LEAST: FORCED_CHOICE_WEIGHT_LEAST,
+            if (upsertError) {
+              console.error('[Submit] Competency: upsert failed:', {
+                message: upsertError.message,
+                code: upsertError.code,
+                details: upsertError.details,
+                hint: upsertError.hint
+              });
+            } else {
+              console.log(`[Submit] Competency: wrote ${rows.length} rows for assessment ${assessment.id}`);
+            }
+          } else {
+            console.log('[Submit] Competency: no rows produced by scorer');
+          }
+        } else {
+          console.log('[Submit] Competency: no mappings found for these questions');
+        }
+      }
+    } catch (competencyError) {
+      console.error('[Submit] Competency: non-fatal error:', competencyError);
+    }
 
-  toNumber: toNumber,
-  clampPercentage: clampPercentage,
-  roundNumber: roundNumber,
-  normalizeText: normalizeText,
-  safeArray: safeArray,
+    // ============================================================
+    // STEP 20: Return response
+    // ============================================================
+    return res.status(200).json({
+      success: true,
+      resultId: resultId,
+      sessionId: sessionId,
+      score: finalPercentage,
+      totalEarned: totalEarned,
+      totalMax: totalMax,
+      categoryScores: categoryScores,
+      recommendation: recommendation,
+      isNationalService: isNationalService,
+      isAutoSubmitted: autoSubmitted || false,
+      submitBuild: SUBMIT_BUILD,
+      scoringMode: scoringMode,
+      frozenSetUsed: frozenUsed,
+      denominatorOverridden: denominatorOverridden,
+      assessmentVersion: frozenAssessmentVersion || 1,
+      scoringVersion: frozenScoringVersion || 1,
+      timeTracking: {
+        startedAt: assessmentStartedAt,
+        completedAt: completedAt,
+        totalSeconds: totalSeconds,
+        totalDurationFormatted: totalDurationFormatted,
+        avgTimePerQuestion: avgTimePerQuestion,
+        totalQuestions: questions.length,
+        isTimeAbnormal: totalSeconds > MAX_REASONABLE_SECONDS
+      },
+      behavioral: {
+        tabSwitches: totalTabSwitches,
+        violations: totalViolations,
+        externalUrlsVisited: externalUrlsVisited,
+        copyPasteAttempts: totalCopyAttempts + totalPasteAttempts,
+        rightClickAttempts: totalRightClickAttempts,
+        answerChanges: totalAnswerChanges,
+        totalTime: totalSeconds,
+        totalTimeFormatted: totalDurationFormatted,
+        avgTimePerQuestion: avgTimePerQuestion,
+        riskLevel: riskLevel,
+        riskScore: riskScore,
+        isTimeAbnormal: totalSeconds > MAX_REASONABLE_SECONDS
+      },
+      proctoring: {
+        riskLevel: riskLevel,
+        riskScore: riskScore,
+        totalViolations: totalViolations,
+        externalUrlsVisited: externalUrlsVisited,
+        tabSwitches: totalTabSwitches,
+        isTimeAbnormal: totalSeconds > MAX_REASONABLE_SECONDS
+      }
+    });
 
-  parseSelectedAnswerIds: parseSelectedAnswerIds,
-  getQuestionFromResponse: getQuestionFromResponse,
-  getQuestionAnswers: getQuestionAnswers,
-  getAnswerScoreValue: getAnswerScoreValue,
-  getQuestionMaxScore: getQuestionMaxScore,
-  getCorrectAnswerIdsForBaseline: getCorrectAnswerIdsForBaseline,
-  arraysMatchExactly: arraysMatchExactly,
-  scoreQuestionResponse: scoreQuestionResponse,
-  scoreForcedChoiceResponse: scoreForcedChoiceResponse,
-  isBaselineAssessmentType: isBaselineAssessmentType,
-
-  calculateTotalScore: calculateTotalScore,
-  calculateMaxScore: calculateMaxScore,
-  calculatePercentage: calculatePercentage,
-  calculateAverageScore: calculateAverageScore,
-  calculateAssessmentScore: calculateAssessmentScore,
-  classifyScore: classifyScore,
-  getOverallClassification: getOverallClassification,
-
-  getPerformanceBand: getPerformanceBand,
-  getGradeInfo: getGradeInfo,
-  getGrade: getGrade,
-  getGradeDescription: getGradeDescription,
-  getScoreLevel: getScoreLevel,
-  getClassificationDetailsFromPercentage: getClassificationDetailsFromPercentage,
-  getClassificationFromPercentage: getClassificationFromPercentage,
-
-  isStrength: isStrength,
-  isDevelopmentArea: isDevelopmentArea,
-  isCriticalGap: isCriticalGap,
-  isPriorityDevelopment: isPriorityDevelopment,
-
-  getScoreComment: getScoreComment,
-  getSupervisorImplication: getSupervisorImplication,
-  calculateGapToTarget: calculateGapToTarget,
-  getRiskLevel: getRiskLevel,
-  getReadinessLevel: getReadinessLevel,
-
-  normalizeCategoryScore: normalizeCategoryScore,
-  normalizeCategoryScores: normalizeCategoryScores,
-  calculateCategoryScores: calculateCategoryScores,
-  getStrengthAreas: getStrengthAreas,
-  getTopStrengths: getTopStrengths,
-  getDevelopmentAreas: getDevelopmentAreas
-};
+  } catch (error) {
+    console.error("[Submit] Unhandled error:", error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || "Internal server error",
+      diagnosticCode: "UNHANDLED_ERROR"
+    });
+  }
+}
