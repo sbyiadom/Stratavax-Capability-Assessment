@@ -1,6 +1,9 @@
 // pages/admin/reports/[resultId].js - COMPLETE FIXED FILE
 // FIX: Properly extracts and passes behavioral matrix to NationalServiceReport
 // Phase 6: Passes competencySummary from the API response into StratavaxReport
+// Phase 7A: Removed client-side supervisor_profiles read. Role gating comes
+//   from useRequireAuth (user_metadata) for UX routing, and the server
+//   endpoint /api/assessment-report/[resultId] for actual authorization.
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -197,7 +200,12 @@ function getCategoryScores(data, result, report) {
 }
 
 // ============================================================
-// AUTH HELPER
+// AUTH HELPER — Phase 7A
+// Previously this read supervisor_profiles from the browser to double-check
+// the caller's role. That read would fail under RLS. The role check is now
+// enforced server-side by /api/assessment-report/[resultId], which returns
+// 401 without a token and 403 for non-admins. The client only needs the
+// access token from the current session.
 // ============================================================
 async function getValidAdminSession() {
   const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
@@ -207,27 +215,10 @@ async function getValidAdminSession() {
   }
 
   const session = sessionData.session;
-  const metadataRole = session.user?.user_metadata?.role || null;
+  const token = session.access_token;
 
-  const { data: adminProfile, error: profileError } = await supabase
-    .from('supervisor_profiles')
-    .select('id, role, is_active')
-    .eq('id', session.user.id)
-    .maybeSingle();
-
-  if (profileError) {
-    return { session: null, error: 'Unable to verify administrator access.' };
-  }
-
-  const resolvedRole = adminProfile?.role || metadataRole;
-
-  if (resolvedRole !== 'admin') {
-    return { session: null, error: 'You do not have permission to view this report.' };
-  }
-
-  if (adminProfile?.is_active === false) {
-    await supabase.auth.signOut();
-    return { session: null, error: 'Your account is inactive. Please contact support.' };
+  if (!token) {
+    return { session: null, error: 'No valid access token. Please sign in again.' };
   }
 
   return { session, error: null };
