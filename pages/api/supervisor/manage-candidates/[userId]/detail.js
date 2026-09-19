@@ -37,17 +37,14 @@ function safeNumber(value, fallback = 0) {
   return Number.isFinite(num) ? num : fallback;
 }
 
-// Score calculation: mirrors the client-side calculateScore logic
 function computeScoreFromResult(result) {
   if (!result) return 0;
 
-  // 1. Explicit percentage_score
   if (result.percentage_score !== undefined && result.percentage_score !== null) {
     const v = safeNumber(result.percentage_score);
     if (v > 0 && v <= 100) return Math.round(v);
   }
 
-  // 2. From category_scores
   let categoryScores = result.category_scores;
   if (!categoryScores && result.report_data) {
     try {
@@ -87,7 +84,6 @@ function computeScoreFromResult(result) {
     }
   }
 
-  // 3. From total_score / max_score
   if (result.total_score !== undefined && result.max_score !== undefined) {
     const total = safeNumber(result.total_score);
     const max = safeNumber(result.max_score);
@@ -122,8 +118,8 @@ export default async function handler(req, res) {
       return res.status(401).json({ success: false, error: 'Unauthorized: No token provided' });
     }
 
-    const { userId } = req.query;
-    const candidateId = String(userId || '').trim();
+    const { userId: userIdParam } = req.query;
+    const candidateId = String(userIdParam || '').trim();
     if (!candidateId) {
       return res.status(400).json({ success: false, error: 'Missing userId' });
     }
@@ -138,10 +134,10 @@ export default async function handler(req, res) {
       return res.status(401).json({ success: false, error: 'Unauthorized: Invalid token' });
     }
 
-    const userId = userData.user.id;
+    const callerUserId = userData.user.id;
     const userMetadata = userData.user.user_metadata || null;
 
-    const caller = await resolveCallerRole(serviceClient, userId, userMetadata);
+    const caller = await resolveCallerRole(serviceClient, callerUserId, userMetadata);
 
     if (caller.isActive === false) {
       return res.status(403).json({ success: false, error: 'Account is inactive' });
@@ -152,19 +148,17 @@ export default async function handler(req, res) {
     }
 
     const scopedCaller = {
-      userId,
+      userId: callerUserId,
       isAdmin: caller.isAdmin,
       isSupervisor: caller.isSupervisor,
       role: caller.role,
     };
 
-    // Access check
     const hasAccess = await canAccessCandidate(serviceClient, scopedCaller, candidateId);
     if (!hasAccess) {
       return res.status(403).json({ success: false, error: 'You do not have permission to view this candidate.' });
     }
 
-    // Load candidate profile
     const { data: candidate, error: candidateError } = await serviceClient
       .from('candidate_profiles')
       .select('*')
@@ -180,7 +174,6 @@ export default async function handler(req, res) {
       return res.status(404).json({ success: false, error: 'Candidate not found' });
     }
 
-    // Load results with assessment title via separate query (avoid embedded joins)
     const { data: results, error: resultsError } = await serviceClient
       .from('assessment_results')
       .select('*, assessments:assessment_id(id, title, description)')
@@ -189,7 +182,6 @@ export default async function handler(req, res) {
 
     if (resultsError) {
       logError('assessment_results lookup failed', resultsError, { candidateId });
-      // Non-fatal — return candidate with empty results
     }
 
     const reports = (results || []).map((result) => {
@@ -212,14 +204,9 @@ export default async function handler(req, res) {
         percentage_score: result.percentage_score,
         category_scores: result.category_scores,
         report_data: result.report_data,
-        // raw_result intentionally omitted from the response — the page
-        // currently uses it for nothing except display consistency, and
-        // it contains proctoring data that should be fetched via the
-        // assessment-report endpoint instead.
       };
     });
 
-    // Load assigned supervisors for display
     let assignedSupervisors = [];
     const { data: supervisorRows, error: supervisorError } = await serviceClient
       .from('candidate_supervisors')
