@@ -1,13 +1,16 @@
 // components/reports/CompetencyReport.js
 // Phase 6 — Competency Reports
+// Phase 6.5 — Renders the top-level narrative when present.
+//
 // Pure presentational component.
-// Consumes the payload shape from /api/reports/competency-summary.
+// Consumes the payload shape from /api/reports/competency-summary or
+// /api/assessment-report/[resultId] (via competencySummary).
 //
 // Two modes:
-//   mode="single" → per-candidate profile with cohort band
+//   mode="single" → per-candidate profile with cohort band + narrative
 //   mode="rollup" → per-assessment aggregate table
 //
-// No data fetching. No side effects. Renders whatever it is given.
+// No data fetching. No side effects.
 
 import React from 'react';
 
@@ -29,6 +32,12 @@ const DISCRIMINATION_UI = {
   good:     { label: 'Good discrimination',     bg: '#dcfce7', fg: '#166534', tip: 'This competency clearly separates candidates.' },
 };
 
+const SPREAD_COLORS = {
+  wide:     { bg: '#fee2e2', fg: '#991b1b', label: 'Uneven profile' },
+  moderate: { bg: '#e0f2fe', fg: '#075985', label: 'Mixed profile' },
+  narrow:   { bg: '#dcfce7', fg: '#166534', label: 'Even profile' },
+};
+
 function safeNumber(value, fallback = 0) {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
@@ -38,7 +47,6 @@ function fmtPct(value) {
   if (value === null || value === undefined) return '—';
   const n = Number(value);
   if (!Number.isFinite(n)) return '—';
-  // Preserve one decimal when present, drop trailing .0
   const rounded = Math.round(n * 10) / 10;
   return Number.isInteger(rounded) ? `${rounded}%` : `${rounded.toFixed(1)}%`;
 }
@@ -53,8 +61,12 @@ function discriminationStyle(level) {
   return DISCRIMINATION_UI[level] || null;
 }
 
+function spreadStyle(signal) {
+  return SPREAD_COLORS[signal] || null;
+}
+
 // ============================================================
-// STYLES (inline object — matches project convention)
+// STYLES
 // ============================================================
 const styles = {
   wrapper: {
@@ -92,6 +104,67 @@ const styles = {
     textAlign: 'right',
     lineHeight: 1.5,
   },
+
+  // ---------- NARRATIVE ----------
+  narrativeBox: {
+    background: '#f8fafc',
+    border: '1px solid #e2e8f0',
+    borderRadius: '10px',
+    padding: '16px 20px',
+    marginBottom: '20px',
+  },
+  narrativeHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '12px',
+    marginBottom: '10px',
+    flexWrap: 'wrap',
+  },
+  narrativeTitle: {
+    fontSize: '13px',
+    fontWeight: 700,
+    color: '#0b2a4e',
+    textTransform: 'uppercase',
+    letterSpacing: '0.05em',
+    margin: 0,
+  },
+  spreadBadge: {
+    display: 'inline-block',
+    padding: '3px 10px',
+    borderRadius: '12px',
+    fontSize: '11px',
+    fontWeight: 700,
+    letterSpacing: '0.02em',
+  },
+  narrativeText: {
+    fontSize: '14px',
+    lineHeight: 1.7,
+    color: '#1e293b',
+    margin: '0 0 12px 0',
+  },
+  supervisorBox: {
+    background: '#eef4ff',
+    border: '1px solid #c7d9f5',
+    borderRadius: '8px',
+    padding: '10px 14px',
+  },
+  supervisorLabel: {
+    fontSize: '11px',
+    fontWeight: 700,
+    color: '#1d4ed8',
+    textTransform: 'uppercase',
+    letterSpacing: '0.05em',
+    marginBottom: '4px',
+    display: 'block',
+  },
+  supervisorText: {
+    fontSize: '13px',
+    lineHeight: 1.6,
+    color: '#1e293b',
+    margin: 0,
+  },
+
   emptyState: {
     background: '#f8fafc',
     border: '1px solid #e2e8f0',
@@ -326,6 +399,50 @@ const styles = {
 };
 
 // ============================================================
+// NARRATIVE BLOCK
+// ============================================================
+function NarrativeBlock({ narrative }) {
+  if (!narrative || typeof narrative !== 'object') return null;
+
+  const paragraph = narrative.paragraph || narrative.spreadSummary || '';
+  const supervisor = narrative.supervisorImplication || '';
+  const signal = narrative.signal || 'moderate';
+  const spread = spreadStyle(signal);
+
+  if (!paragraph && !supervisor) return null;
+
+  return (
+    <div style={styles.narrativeBox}>
+      <div style={styles.narrativeHeader}>
+        <h4 style={styles.narrativeTitle}>Interpretation</h4>
+        {spread && (
+          <span
+            style={{
+              ...styles.spreadBadge,
+              background: spread.bg,
+              color: spread.fg,
+            }}
+          >
+            {spread.label}
+          </span>
+        )}
+      </div>
+
+      {paragraph && (
+        <p style={styles.narrativeText}>{paragraph}</p>
+      )}
+
+      {supervisor && (
+        <div style={styles.supervisorBox}>
+          <span style={styles.supervisorLabel}>Supervisor implication</span>
+          <p style={styles.supervisorText}>{supervisor}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
 // SINGLE MODE — one competency row with cohort band
 // ============================================================
 function SingleCompetencyRow({ competency, isLast }) {
@@ -341,8 +458,6 @@ function SingleCompetencyRow({ competency, isLast }) {
   const cohortN = safeNumber(cohort?.n, 0);
   const cohortMin = cohort?.min;
   const cohortMax = cohort?.max;
-  const cohortMean = cohort?.mean;
-  const cohortStddev = cohort?.stddev;
   const discrimination = cohort?.discrimination || null;
 
   const clsStyle = classificationStyle(classification);
@@ -353,11 +468,9 @@ function SingleCompetencyRow({ competency, isLast }) {
     && Number.isFinite(Number(cohortMax))
     && Number(cohortMax) > Number(cohortMin);
 
-  // Band layout: scale 0..100 across the track
   const bandLeft = hasBand ? Math.max(0, Math.min(100, Number(cohortMin))) : 0;
   const bandRight = hasBand ? Math.max(0, Math.min(100, Number(cohortMax))) : 0;
-  const bandWidth = hasBand ? Math.max(0.5, bandRight - bandLeft) : 0; // minimum visual width
-
+  const bandWidth = hasBand ? Math.max(0.5, bandRight - bandLeft) : 0;
   const markerLeft = Math.max(0, Math.min(100, pct));
 
   return (
@@ -383,7 +496,6 @@ function SingleCompetencyRow({ competency, isLast }) {
         </div>
       </div>
 
-      {/* Cohort band */}
       {hasBand ? (
         <>
           <div style={styles.bandTrack}>
@@ -456,7 +568,6 @@ function RollupRow({ competency, isLast }) {
 
   const discStyle = discriminationStyle(discrimination);
 
-  // Build classification distribution bar
   const order = [
     'Exceptional',
     'Strong Performer',
@@ -545,7 +656,6 @@ export default function CompetencyReport({
   subtitle,
   emptyMessage,
 }) {
-  // -------------------- Guard: no data at all --------------------
   if (!data) {
     return (
       <div style={styles.wrapper}>
@@ -564,9 +674,9 @@ export default function CompetencyReport({
     );
   }
 
-  // -------------------- Empty: no competencies for this attempt --------------------
   const competencies = Array.isArray(data.competencies) ? data.competencies : [];
   const hasCompetencies = data.hasCompetencies !== false && competencies.length > 0;
+  const narrative = data.narrative || null;
 
   if (!hasCompetencies) {
     return (
@@ -593,7 +703,6 @@ export default function CompetencyReport({
     );
   }
 
-  // -------------------- Header for populated views --------------------
   const headerMetaSingle = mode === 'single'
     ? `n = ${competencies[0]?.cohort?.n ?? '—'}`
     : `n = ${data.candidateCount ?? '—'}`;
@@ -622,9 +731,12 @@ export default function CompetencyReport({
         </div>
       </div>
 
-      {/* -------------------- SINGLE MODE -------------------- */}
+      {/* -------- SINGLE MODE -------- */}
       {mode === 'single' && (
         <div>
+          {/* Phase 6.5 — narrative block (only when narrative present) */}
+          <NarrativeBlock narrative={narrative} />
+
           {competencies.map((c, idx) => (
             <SingleCompetencyRow
               key={c.competencyId ?? idx}
@@ -635,7 +747,7 @@ export default function CompetencyReport({
         </div>
       )}
 
-      {/* -------------------- ROLLUP MODE -------------------- */}
+      {/* -------- ROLLUP MODE -------- */}
       {mode === 'rollup' && (
         <>
           <div style={{ overflowX: 'auto' }}>
@@ -662,7 +774,6 @@ export default function CompetencyReport({
             </table>
           </div>
 
-          {/* Distribution legend */}
           <div style={styles.distributionLegend}>
             <span><span style={{ ...styles.legendDot, background: CLASSIFICATION_COLORS['Exceptional'].bar }} />Exceptional</span>
             <span><span style={{ ...styles.legendDot, background: CLASSIFICATION_COLORS['Strong Performer'].bar }} />Strong Performer</span>
