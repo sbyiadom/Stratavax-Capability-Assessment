@@ -1,6 +1,8 @@
 // pages/admin/index.js - CLEAN DASHBOARD WITH REAL METRICS
 // Phase 6.5: All numbers come from real data. No hardcoded deltas.
 // Fake formulas removed. Neutral delta badges.
+// Phase 7A: row-level data fetched from /api/admin/dashboard-data.
+// Removed client-side supervisor_profiles read and four direct Supabase reads.
 
 import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/router";
@@ -653,24 +655,32 @@ export default function AdminDashboard() {
         }
       }
 
-      // Charts + recent lists data
-      const [
-        allCandidatesResponse,
-        recentCandidatesResponse,
-        resultsResponse,
-        accessResponse,
-      ] = await Promise.all([
-        supabase.from("candidate_profiles").select("id, full_name, email, university, programme, created_at").order("created_at", { ascending: false }),
-        supabase.from("candidate_profiles").select("id, full_name, email, created_at").order("created_at", { ascending: false }).limit(6),
-        supabase.from("assessment_results").select(`id, user_id, assessment_id, total_score, max_score, percentage_score, completed_at, recommendation`).order("completed_at", { ascending: false }),
-        supabase.from("candidate_assessments").select("*"),
-      ]);
+      // Row-level data for charts, filters, and recent lists
+      if (token) {
+        const dataRes = await fetch('/api/admin/dashboard-data', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const dataJson = await dataRes.json();
 
-      setAllCandidates(allCandidatesResponse?.data || []);
-      setRecentCandidates(recentCandidatesResponse?.data || []);
-      setAllResults(resultsResponse?.data || []);
-      setCandidateAssessmentsData(safeArray(accessResponse?.data || []));
-      setLastUpdated(new Date().toISOString());
+        if (dataRes.ok && dataJson.success) {
+          const candidates = dataJson.allCandidates || [];
+          const results = dataJson.allResults || [];
+          const assignments = safeArray(dataJson.candidateAssessments || []);
+
+          setAllCandidates(candidates);
+          // recentCandidates is derived from allCandidates — already ordered desc
+          setRecentCandidates(candidates.slice(0, 6));
+          setAllResults(results);
+          setCandidateAssessmentsData(assignments);
+          setLastUpdated(new Date().toISOString());
+        } else {
+          console.error('[Admin Dashboard] dashboard-data fetch failed:', dataJson.error);
+          setAllCandidates([]);
+          setRecentCandidates([]);
+          setAllResults([]);
+          setCandidateAssessmentsData([]);
+        }
+      }
     } catch (error) {
       console.error("Error fetching admin dashboard data:", error);
     } finally {
@@ -696,26 +706,12 @@ export default function AdminDashboard() {
         return;
       }
 
-      const userId = session.user.id;
+      // Role from user_metadata only. Endpoints enforce admin server-side.
       const metadataRole = session.user.user_metadata?.role || null;
 
-      const { data: profile, error: profileError } = await supabase
-        .from("supervisor_profiles")
-        .select("id, email, full_name, role, is_active")
-        .eq("id", userId)
-        .maybeSingle();
-
-      if (profileError && profileError.code !== "PGRST116") throw profileError;
-      const resolvedRole = profile?.role || metadataRole;
-
-      if (resolvedRole !== "admin") {
+      if (metadataRole !== "admin") {
         setAuthError("Admin access is required.");
         router.push("/supervisor");
-        return;
-      }
-      if (profile?.is_active === false) {
-        await supabase.auth.signOut();
-        router.push("/login");
         return;
       }
 
