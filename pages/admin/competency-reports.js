@@ -1,10 +1,9 @@
 // pages/admin/competency-reports.js
-// Phase 6 — Admin competency rollup page.
-// Picks an assessment, shows per-competency aggregate stats with discrimination flags.
+// Phase 7A: assessment list now fetched from /api/reports/competency-summary?scope=list
+// instead of reading Supabase directly from the browser. Prepares for RLS enforcement.
 
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/router';
-import { supabase } from '../../supabase/client';
 import { useRequireAuth } from '../../utils/requireAuth';
 import AppLayout from '../../components/AppLayout';
 import CompetencyReport from '../../components/reports/CompetencyReport';
@@ -24,7 +23,7 @@ export default function AdminCompetencyReports() {
   // LOAD ASSESSMENTS THAT HAVE COMPETENCY DATA
   // ============================================================
   useEffect(() => {
-    if (!session) return;
+    if (!session?.access_token) return;
     loadAssessments();
   }, [session]);
 
@@ -33,43 +32,34 @@ export default function AdminCompetencyReports() {
       setLoadingList(true);
       setError(null);
 
-      // Distinct assessment_ids that actually have competency scores
-      const { data: scoreRows, error: scoreError } = await supabase
-        .from('candidate_competency_scores')
-        .select('assessment_id');
-
-      if (scoreError) {
-        console.error('[Admin Competency Reports] score fetch error:', scoreError);
-        setError(scoreError.message || 'Failed to load competency scores');
+      const token = session?.access_token;
+      if (!token) {
+        setError('Your session has expired. Please sign in again.');
         setLoadingList(false);
         return;
       }
 
-      const distinctIds = [...new Set((scoreRows || []).map(r => r.assessment_id).filter(Boolean))];
+      const response = await fetch('/api/reports/competency-summary?scope=list', {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
 
-      if (distinctIds.length === 0) {
-        setAssessments([]);
-        setLoadingList(false);
-        return;
+      let payload;
+      try {
+        payload = await response.json();
+      } catch {
+        throw new Error(`The server returned an invalid response (HTTP ${response.status}).`);
       }
 
-      // Fetch assessment metadata
-      const { data: assessmentRows, error: assessmentError } = await supabase
-        .from('assessments')
-        .select('id, title, assessment_type_id, created_at')
-        .in('id', distinctIds);
-
-      if (assessmentError) {
-        console.error('[Admin Competency Reports] assessments fetch error:', assessmentError);
-        setError(assessmentError.message || 'Failed to load assessments');
-        setLoadingList(false);
-        return;
+      if (!response.ok || !payload.success) {
+        throw new Error(payload.error || `Failed to load assessments (HTTP ${response.status}).`);
       }
 
-      // Filter out TEST records and sort alphabetically, then pin the biggest
-      const cleaned = (assessmentRows || [])
-        .filter(a => !/^TEST\s*[—\-]/i.test(a.title || ''))
-        .sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+      // Server already filters TEST records and sorts by candidate count desc, then title.
+      const cleaned = Array.isArray(payload.assessments) ? payload.assessments : [];
 
       setAssessments(cleaned);
 
@@ -79,7 +69,7 @@ export default function AdminCompetencyReports() {
 
       setLoadingList(false);
     } catch (err) {
-      console.error('[Admin Competency Reports] unexpected error:', err);
+      console.error('[Admin Competency Reports] load error:', err);
       setError(err.message || 'Unexpected error');
       setLoadingList(false);
     }
@@ -89,7 +79,7 @@ export default function AdminCompetencyReports() {
   // LOAD ROLLUP FOR SELECTED ASSESSMENT
   // ============================================================
   useEffect(() => {
-    if (!selectedAssessmentId || !session) return;
+    if (!selectedAssessmentId || !session?.access_token) return;
     fetchRollup(selectedAssessmentId);
   }, [selectedAssessmentId, session]);
 
@@ -99,9 +89,7 @@ export default function AdminCompetencyReports() {
       setError(null);
       setRollupData(null);
 
-      const { data: sessionData } = await supabase.auth.getSession();
-      const token = sessionData?.session?.access_token;
-
+      const token = session?.access_token;
       if (!token) {
         setError('Your session has expired. Please sign in again.');
         setLoadingRollup(false);
