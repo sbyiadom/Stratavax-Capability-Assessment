@@ -1,101 +1,12 @@
-// pages/supervisor/manage-candidate/[userId]/index.js - COMPLETE FIXED
-// Candidate Report List - Shows all reports for a candidate
-// SUPPORTS MULTIPLE SUPERVISORS via junction table + RESET BUTTON
+// pages/supervisor/manage-candidate/[userId]/index.js
+// Phase 7A: fetches candidate detail from server-side endpoint instead of
+// reading Supabase directly. Prepares for RLS enforcement.
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import AppLayout from '../../../../components/AppLayout';
 import { supabase } from '../../../../supabase/client';
 import ResetAssessmentButton from '../../../../components/ResetAssessmentButton';
-
-// ============================================================
-// HELPER FUNCTIONS
-// ============================================================
-function safeNumber(value, fallback = 0) {
-  const num = Number(value);
-  return Number.isFinite(num) ? num : fallback;
-}
-
-function normalizeArray(value) {
-  if (Array.isArray(value)) return value.filter(Boolean);
-  if (value && typeof value === 'object') {
-    return Object.values(value).filter(Boolean);
-  }
-  return [];
-}
-
-function calculateScoreFromCategories(categoryScores) {
-  let totalEarned = 0;
-  let totalMax = 0;
-  let validPercentages = [];
-
-  const categories = normalizeArray(categoryScores);
-
-  categories.forEach(cat => {
-    let score = safeNumber(cat.score || cat.earned || 0);
-    let maxScore = safeNumber(cat.maxScore || cat.max || 0);
-    let pct = safeNumber(cat.percentage || 0);
-
-    if (maxScore > 0 && score >= 0) {
-      totalEarned += score;
-      totalMax += maxScore;
-    }
-
-    if (pct > 0 && pct <= 100) {
-      validPercentages.push(pct);
-    }
-  });
-
-  if (totalMax > 0) {
-    return Math.min(100, Math.max(0, Math.round((totalEarned / totalMax) * 100)));
-  }
-
-  if (validPercentages.length > 0) {
-    return Math.round(validPercentages.reduce((a, b) => a + b, 0) / validPercentages.length);
-  }
-
-  return 0;
-}
-
-function calculateScore(result) {
-  let categoryScores = [];
-
-  if (result.category_scores) {
-    categoryScores = result.category_scores;
-  } else if (result.report_data) {
-    try {
-      let reportData = result.report_data;
-      if (typeof reportData === 'string') {
-        reportData = JSON.parse(reportData);
-      }
-      if (reportData.categoryScores) {
-        categoryScores = reportData.categoryScores;
-      } else if (reportData.category_scores) {
-        categoryScores = reportData.category_scores;
-      }
-    } catch (e) {}
-  }
-
-  if (categoryScores && Object.keys(categoryScores).length > 0) {
-    return calculateScoreFromCategories(categoryScores);
-  }
-
-  if (result.percentage_score) {
-    const val = safeNumber(result.percentage_score);
-    if (val > 0 && val <= 100) return val;
-  }
-
-  if (result.total_score !== undefined && result.max_score !== undefined) {
-    const total = safeNumber(result.total_score);
-    const max = safeNumber(result.max_score);
-    if (max > 0) {
-      const calc = Math.round((total / max) * 100);
-      if (calc >= 0 && calc <= 100) return calc;
-    }
-  }
-
-  return 0;
-}
 
 function formatDate(dateString) {
   if (!dateString) return 'N/A';
@@ -110,15 +21,8 @@ function formatDate(dateString) {
   }
 }
 
-function getStatus(report) {
-  if (report.completed_at) {
-    return 'Completed';
-  }
-  return report.status || 'Pending';
-}
-
 function getStatusColor(status) {
-  switch(status) {
+  switch (status) {
     case 'Completed': return '#48bb78';
     case 'Pending': return '#ed8936';
     case 'In Progress': return '#4299e1';
@@ -133,9 +37,6 @@ function getScoreColor(score) {
   return '#fc8181';
 }
 
-// ============================================================
-// MAIN COMPONENT
-// ============================================================
 export default function CandidateReports() {
   const router = useRouter();
   const { userId } = router.query;
@@ -165,7 +66,9 @@ export default function CandidateReports() {
         return;
       }
 
-      // Get supervisor profile
+      const token = session.access_token;
+
+      // Load current supervisor identity for the header (own row read)
       const { data: profile, error: profileError } = await supabase
         .from('supervisor_profiles')
         .select('id, full_name, email, role')
@@ -180,93 +83,45 @@ export default function CandidateReports() {
 
       setCurrentSupervisor(profile);
 
-      // Get candidate details using userId
-      const { data: candidateData, error: candidateError } = await supabase
-        .from('candidate_profiles')
-        .select('*')
-        .eq('id', userId)
-        .maybeSingle();
+      // Load candidate detail via API (server-side, scoped)
+      const response = await fetch(
+        `/api/supervisor/manage-candidates/${encodeURIComponent(userId)}/detail`,
+        {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
 
-      if (candidateError || !candidateData) {
+      let payload;
+      try {
+        payload = await response.json();
+      } catch {
+        throw new Error(`The server returned an invalid response (HTTP ${response.status}).`);
+      }
+
+      if (!response.ok || !payload.success) {
+        if (response.status === 403) {
+          throw new Error(payload.error || 'You do not have permission to view this candidate.');
+        }
+        if (response.status === 404) {
+          throw new Error(payload.error || 'Candidate not found.');
+        }
+        throw new Error(payload.error || `Failed to load candidate (HTTP ${response.status}).`);
+      }
+
+      const candidateData = payload.candidate || null;
+      if (!candidateData) {
         setError('Candidate not found.');
         setLoading(false);
         return;
       }
 
-      // Check permission - admin, legacy supervisor, OR assigned via junction table
-      const isAdmin = profile?.role === 'admin';
-      const isLegacySupervisor = candidateData.supervisor_id === session.user.id;
-
-      // Check if current supervisor is assigned via junction table
-      const { data: supervisorAssignments, error: assignmentError } = await supabase
-        .from('candidate_supervisors')
-        .select('supervisor_id, supervisor_profiles!inner(id, full_name, email)')
-        .eq('candidate_id', userId);
-
-      if (!assignmentError && supervisorAssignments) {
-        setAssignedSupervisors(supervisorAssignments.map(s => s.supervisor_profiles).filter(Boolean));
-      }
-
-      const assignedSupervisorIds = supervisorAssignments?.map(a => a.supervisor_id) || [];
-      const isJunctionSupervisor = assignedSupervisorIds.includes(session.user.id);
-
-      const hasAccess = isAdmin || isLegacySupervisor || isJunctionSupervisor;
-
-      if (!hasAccess) {
-        setError('You do not have permission to view this candidate.');
-        setLoading(false);
-        return;
-      }
-
       setCandidate(candidateData);
-
-      // Get ALL assessment results for this candidate using user_id
-      const { data: results, error: resultsError } = await supabase
-        .from('assessment_results')
-        .select(`
-          *,
-          assessments:assessment_id (
-            id,
-            title,
-            description
-          )
-        `)
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false });
-
-      if (resultsError) {
-        setError('Failed to load assessment results.');
-        setLoading(false);
-        return;
-      }
-
-      // Process reports
-      const processedReports = (results || []).map(result => {
-        const assessment = result.assessments || {};
-        const displayScore = calculateScore(result);
-        const status = getStatus(result);
-        const isCompleted = !!result.completed_at;
-
-        return {
-          id: result.id,
-          assessment_id: result.assessment_id,
-          assessment_title: assessment?.title || 'Untitled Assessment',
-          score: displayScore,
-          status: status,
-          isCompleted: isCompleted,
-          completed_at: result.completed_at,
-          created_at: result.created_at,
-          total_score: result.total_score,
-          max_score: result.max_score,
-          percentage_score: result.percentage_score,
-          category_scores: result.category_scores,
-          report_data: result.report_data,
-          raw_result: result
-        };
-      });
-
-      setReports(processedReports);
-
+      setReports(Array.isArray(payload.reports) ? payload.reports : []);
+      setAssignedSupervisors(Array.isArray(payload.assignedSupervisors) ? payload.assignedSupervisors : []);
     } catch (error) {
       console.error('Error loading candidate reports:', error);
       setError(error.message || 'Failed to load data.');
@@ -348,7 +203,6 @@ export default function CandidateReports() {
           </div>
         </div>
 
-        {/* Candidate Info */}
         <div style={styles.candidateCard}>
           <div style={styles.candidateHeader}>
             <div style={styles.candidateAvatar}>
@@ -377,7 +231,6 @@ export default function CandidateReports() {
           )}
         </div>
 
-        {/* Reports Section */}
         <div style={styles.reportsSection}>
           <h2 style={styles.sectionTitle}>Assessment Reports ({reports.length})</h2>
 
@@ -430,8 +283,7 @@ export default function CandidateReports() {
                     >
                       View Report Details →
                     </button>
-                    
-                    {/* ✅ RESET BUTTON - Only for completed reports */}
+
                     {report.isCompleted && (
                       <div style={{ marginTop: '8px' }}>
                         <ResetAssessmentButton
@@ -463,224 +315,44 @@ export default function CandidateReports() {
 }
 
 const styles = {
-  container: {
-    padding: '24px',
-    maxWidth: '1200px',
-    margin: '0 auto'
-  },
-  loadingContainer: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: '400px',
-    gap: '16px'
-  },
-  spinner: {
-    width: '40px',
-    height: '40px',
-    border: '4px solid #E2E8F0',
-    borderTop: '4px solid #0A1929',
-    borderRadius: '50%',
-    animation: 'spin 1s linear infinite'
-  },
-  errorContainer: {
-    maxWidth: '500px',
-    margin: '40px auto',
-    textAlign: 'center',
-    padding: '40px',
-    background: 'white',
-    borderRadius: '12px',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-  },
+  container: { padding: '24px', maxWidth: '1200px', margin: '0 auto' },
+  loadingContainer: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '400px', gap: '16px' },
+  spinner: { width: '40px', height: '40px', border: '4px solid #E2E8F0', borderTop: '4px solid #0A1929', borderRadius: '50%', animation: 'spin 1s linear infinite' },
+  errorContainer: { maxWidth: '500px', margin: '40px auto', textAlign: 'center', padding: '40px', background: 'white', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.1)' },
   errorIcon: { fontSize: '48px', marginBottom: '16px' },
   errorMessage: { color: '#dc2626', marginBottom: '20px' },
   errorButtonGroup: { display: 'flex', gap: '8px', justifyContent: 'center', marginTop: '16px' },
   errorButton: { padding: '10px 24px', background: '#1a237e', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', fontWeight: '500' },
   retryButton: { padding: '10px 24px', background: '#e2e8f0', color: '#1a202c', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', fontWeight: '500' },
-  header: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '20px'
-  },
-  headerActions: {
-    display: 'flex',
-    gap: '10px'
-  },
-  backButton: {
-    padding: '8px 16px',
-    background: 'transparent',
-    border: '1px solid #e2e8f0',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    fontSize: '14px',
-    color: '#475569'
-  },
-  refreshButton: {
-    padding: '8px 16px',
-    background: '#e2e8f0',
-    border: 'none',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    fontSize: '14px',
-    color: '#475569'
-  },
-  candidateCard: {
-    background: 'white',
-    borderRadius: '12px',
-    padding: '24px',
-    marginBottom: '24px',
-    boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
-  },
-  candidateHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '20px'
-  },
-  candidateAvatar: {
-    width: '60px',
-    height: '60px',
-    borderRadius: '50%',
-    background: '#2563EB',
-    color: 'white',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontSize: '24px',
-    fontWeight: 'bold',
-    flexShrink: 0
-  },
+  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' },
+  headerActions: { display: 'flex', gap: '10px' },
+  backButton: { padding: '8px 16px', background: 'transparent', border: '1px solid #e2e8f0', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', color: '#475569' },
+  refreshButton: { padding: '8px 16px', background: '#e2e8f0', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', color: '#475569' },
+  candidateCard: { background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' },
+  candidateHeader: { display: 'flex', alignItems: 'center', gap: '20px' },
+  candidateAvatar: { width: '60px', height: '60px', borderRadius: '50%', background: '#2563EB', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px', fontWeight: 'bold', flexShrink: 0 },
   candidateInfo: { flex: 1 },
   candidateName: { fontSize: '22px', fontWeight: 'bold', color: '#0A1929', margin: '0 0 4px 0' },
   candidateEmail: { fontSize: '14px', color: '#718096', margin: '0 0 8px 0' },
   candidateDetails: { display: 'flex', gap: '12px', flexWrap: 'wrap' },
-  detailTag: {
-    fontSize: '13px',
-    color: '#4A5568',
-    background: '#f7fafc',
-    padding: '4px 12px',
-    borderRadius: '16px'
-  },
-  assignedSupervisors: {
-    marginTop: '12px',
-    paddingTop: '12px',
-    borderTop: '1px solid #eef2f7',
-    display: 'flex',
-    flexWrap: 'wrap',
-    alignItems: 'center',
-    gap: '4px'
-  },
-  assignedLabel: {
-    fontSize: '13px',
-    fontWeight: '600',
-    color: '#475569',
-    marginRight: '8px'
-  },
-  supervisorTag: {
-    fontSize: '13px',
-    color: '#2563EB',
-    background: '#eff6ff',
-    padding: '2px 10px',
-    borderRadius: '12px'
-  },
-  reportsSection: {
-    background: 'white',
-    borderRadius: '12px',
-    padding: '24px',
-    boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
-  },
+  detailTag: { fontSize: '13px', color: '#4A5568', background: '#f7fafc', padding: '4px 12px', borderRadius: '16px' },
+  assignedSupervisors: { marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #eef2f7', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '4px' },
+  assignedLabel: { fontSize: '13px', fontWeight: '600', color: '#475569', marginRight: '8px' },
+  supervisorTag: { fontSize: '13px', color: '#2563EB', background: '#eff6ff', padding: '2px 10px', borderRadius: '12px' },
+  reportsSection: { background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' },
   sectionTitle: { fontSize: '18px', fontWeight: '600', color: '#0A1929', margin: '0 0 16px 0' },
-  reportGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-    gap: '16px'
-  },
-  reportCard: {
-    background: '#f8fafc',
-    borderRadius: '12px',
-    padding: '16px',
-    border: '1px solid #e2e8f0',
-    cursor: 'pointer',
-    transition: 'all 0.2s ease'
-  },
-  reportHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: '12px'
-  },
-  reportTitle: {
-    fontSize: '16px',
-    fontWeight: '600',
-    color: '#0A1929',
-    margin: 0,
-    flex: 1,
-    marginRight: '12px'
-  },
-  reportBody: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '12px'
-  },
-  reportScore: {
-    display: 'flex',
-    alignItems: 'center'
-  },
-  reportMeta: {
-    fontSize: '13px',
-    color: '#94a3b8'
-  },
-  reportFooter: {
-    marginTop: '8px',
-    paddingTop: '12px',
-    borderTop: '1px solid #e2e8f0'
-  },
-  statusBadge: {
-    padding: '4px 12px',
-    borderRadius: '20px',
-    fontSize: '11px',
-    fontWeight: '600',
-    color: 'white',
-    whiteSpace: 'nowrap'
-  },
-  scoreBadge: {
-    display: 'inline-block',
-    padding: '4px 12px',
-    borderRadius: '12px',
-    fontSize: '16px',
-    fontWeight: '700',
-    color: 'white'
-  },
-  noScoreBadge: {
-    display: 'inline-block',
-    padding: '4px 12px',
-    borderRadius: '12px',
-    fontSize: '16px',
-    fontWeight: '500',
-    color: '#94a3b8',
-    background: '#f1f5f9'
-  },
-  viewButton: {
-    padding: '6px 16px',
-    background: '#2563EB',
-    color: 'white',
-    border: 'none',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    fontSize: '13px',
-    fontWeight: '500',
-    width: '100%'
-  },
-  emptyState: {
-    textAlign: 'center',
-    padding: '40px 20px',
-    color: '#94a3b8'
-  },
-  emptyIcon: {
-    fontSize: '48px',
-    display: 'block',
-    marginBottom: '16px'
-  }
+  reportGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' },
+  reportCard: { background: '#f8fafc', borderRadius: '12px', padding: '16px', border: '1px solid #e2e8f0', cursor: 'pointer', transition: 'all 0.2s ease' },
+  reportHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' },
+  reportTitle: { fontSize: '16px', fontWeight: '600', color: '#0A1929', margin: 0, flex: 1, marginRight: '12px' },
+  reportBody: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' },
+  reportScore: { display: 'flex', alignItems: 'center' },
+  reportMeta: { fontSize: '13px', color: '#94a3b8' },
+  reportFooter: { marginTop: '8px', paddingTop: '12px', borderTop: '1px solid #e2e8f0' },
+  statusBadge: { padding: '4px 12px', borderRadius: '20px', fontSize: '11px', fontWeight: '600', color: 'white', whiteSpace: 'nowrap' },
+  scoreBadge: { display: 'inline-block', padding: '4px 12px', borderRadius: '12px', fontSize: '16px', fontWeight: '700', color: 'white' },
+  noScoreBadge: { display: 'inline-block', padding: '4px 12px', borderRadius: '12px', fontSize: '16px', fontWeight: '500', color: '#94a3b8', background: '#f1f5f9' },
+  viewButton: { padding: '6px 16px', background: '#2563EB', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: '500', width: '100%' },
+  emptyState: { textAlign: 'center', padding: '40px 20px', color: '#94a3b8' },
+  emptyIcon: { fontSize: '48px', display: 'block', marginBottom: '16px' }
 };
