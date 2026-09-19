@@ -1,4 +1,6 @@
-// pages/candidate/profile.js (Update your existing profile page)
+// pages/candidate/profile.js
+// Phase 7A: fetches and saves profile via a server-side endpoint instead of
+// reading/writing Supabase directly. Prepares for RLS.
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -8,7 +10,7 @@ import { useRequireAuth } from '../../utils/requireAuth';
 export default function CandidateProfile() {
   const { session, loading: authLoading } = useRequireAuth();
   const router = useRouter();
-  
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState(null);
@@ -29,26 +31,45 @@ export default function CandidateProfile() {
   const fetchProfile = async () => {
     try {
       setLoading(true);
-      const { data, error } = await supabase
-        .from('candidate_profiles')
-        .select('*')
-        .eq('id', session.user.id)
-        .single();
 
-      if (error) throw error;
-      
-      if (data) {
-        setProfile({
-          full_name: data.full_name || '',
-          email: data.email || '',
-          university: data.university || '',
-          programme: data.programme || '',
-          graduation_year: data.graduation_year || '',
-          preferred_department: data.preferred_department || ''
-        });
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
+
+      if (!token) {
+        throw new Error('Not authenticated');
       }
+
+      const response = await fetch('/api/candidate/profile', {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      let payload;
+      try {
+        payload = await response.json();
+      } catch {
+        throw new Error(`The server returned an invalid response (HTTP ${response.status}).`);
+      }
+
+      if (!response.ok || !payload.success) {
+        throw new Error(payload.error || `Failed to load profile (HTTP ${response.status}).`);
+      }
+
+      const data = payload.profile || {};
+      setProfile({
+        full_name: data.full_name || '',
+        email: data.email || '',
+        university: data.university || '',
+        programme: data.programme || '',
+        graduation_year: data.graduation_year || '',
+        preferred_department: data.preferred_department || ''
+      });
     } catch (error) {
       console.error('Error fetching profile:', error);
+      setMessage({ type: 'error', text: error.message || 'Failed to load profile.' });
     } finally {
       setLoading(false);
     }
@@ -59,24 +80,43 @@ export default function CandidateProfile() {
       setSaving(true);
       setMessage(null);
 
-      const { error } = await supabase
-        .from('candidate_profiles')
-        .update({
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
+
+      if (!token) {
+        throw new Error('Not authenticated');
+      }
+
+      const response = await fetch('/api/candidate/profile', {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
           full_name: profile.full_name,
           university: profile.university,
           programme: profile.programme,
           graduation_year: profile.graduation_year,
-          preferred_department: profile.preferred_department,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', session.user.id);
+          preferred_department: profile.preferred_department
+        }),
+      });
 
-      if (error) throw error;
-      
+      let payload;
+      try {
+        payload = await response.json();
+      } catch {
+        throw new Error(`The server returned an invalid response (HTTP ${response.status}).`);
+      }
+
+      if (!response.ok || !payload.success) {
+        throw new Error(payload.error || `Failed to save profile (HTTP ${response.status}).`);
+      }
+
       setMessage({ type: 'success', text: 'Profile updated successfully!' });
     } catch (error) {
       console.error('Error saving profile:', error);
-      setMessage({ type: 'error', text: 'Failed to save profile. Please try again.' });
+      setMessage({ type: 'error', text: error.message || 'Failed to save profile. Please try again.' });
     } finally {
       setSaving(false);
     }
@@ -105,8 +145,8 @@ export default function CandidateProfile() {
         <p style={styles.subtitle}>Update your personal information</p>
 
         {message && (
-          <div style={{ 
-            ...styles.message, 
+          <div style={{
+            ...styles.message,
             background: message.type === 'success' ? '#e8f5e9' : '#ffebee',
             color: message.type === 'success' ? '#2e7d32' : '#c62828'
           }}>
@@ -196,8 +236,8 @@ export default function CandidateProfile() {
             </select>
           </div>
 
-          <button 
-            onClick={handleSave} 
+          <button
+            onClick={handleSave}
             disabled={saving}
             style={styles.saveButton}
           >
@@ -210,77 +250,15 @@ export default function CandidateProfile() {
 }
 
 const styles = {
-  container: {
-    minHeight: '100vh',
-    background: '#f8fafc',
-    padding: '40px 20px',
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'flex-start'
-  },
-  card: {
-    maxWidth: '600px',
-    width: '100%',
-    background: 'white',
-    padding: '40px',
-    borderRadius: '16px',
-    boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
-  },
-  title: {
-    fontSize: '28px',
-    fontWeight: '700',
-    color: '#1a237e',
-    marginBottom: '4px'
-  },
-  subtitle: {
-    fontSize: '16px',
-    color: '#64748b',
-    marginBottom: '24px'
-  },
-  message: {
-    padding: '12px 16px',
-    borderRadius: '8px',
-    marginBottom: '20px',
-    fontSize: '14px'
-  },
-  form: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '16px'
-  },
-  formGroup: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '4px'
-  },
-  label: {
-    fontSize: '14px',
-    fontWeight: '500',
-    color: '#1a202c'
-  },
-  input: {
-    padding: '10px 14px',
-    border: '1px solid #e2e8f0',
-    borderRadius: '8px',
-    fontSize: '14px',
-    outline: 'none',
-    transition: 'border-color 0.2s'
-  },
-  saveButton: {
-    padding: '12px 24px',
-    background: '#1a237e',
-    color: 'white',
-    border: 'none',
-    borderRadius: '8px',
-    fontSize: '16px',
-    fontWeight: '600',
-    cursor: 'pointer',
-    marginTop: '8px'
-  },
-  loading: {
-    textAlign: 'center',
-    padding: '40px',
-    fontSize: '18px',
-    color: '#64748b'
-  }
+  container: { minHeight: '100vh', background: '#f8fafc', padding: '40px 20px', display: 'flex', justifyContent: 'center', alignItems: 'flex-start' },
+  card: { maxWidth: '600px', width: '100%', background: 'white', padding: '40px', borderRadius: '16px', boxShadow: '0 4px 20px rgba(0,0,0,0.1)' },
+  title: { fontSize: '28px', fontWeight: '700', color: '#1a237e', marginBottom: '4px' },
+  subtitle: { fontSize: '16px', color: '#64748b', marginBottom: '24px' },
+  message: { padding: '12px 16px', borderRadius: '8px', marginBottom: '20px', fontSize: '14px' },
+  form: { display: 'flex', flexDirection: 'column', gap: '16px' },
+  formGroup: { display: 'flex', flexDirection: 'column', gap: '4px' },
+  label: { fontSize: '14px', fontWeight: '500', color: '#1a202c' },
+  input: { padding: '10px 14px', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '14px', outline: 'none', transition: 'border-color 0.2s' },
+  saveButton: { padding: '12px 24px', background: '#1a237e', color: 'white', border: 'none', borderRadius: '8px', fontSize: '16px', fontWeight: '600', cursor: 'pointer', marginTop: '8px' },
+  loading: { textAlign: 'center', padding: '40px', fontSize: '18px', color: '#64748b' }
 };
