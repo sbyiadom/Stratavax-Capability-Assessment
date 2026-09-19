@@ -1,4 +1,7 @@
 // pages/admin/audit-logs.js
+// Phase 7A: audit_logs read moved to /api/admin/audit-logs (server-side).
+// Removed client-side supervisor_profiles read in checkAdminAuth — role is
+// verified by the endpoint; client-side uses user_metadata only.
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
@@ -68,28 +71,6 @@ function formatDate(value) {
   }
 }
 
-function getDateBoundary(dateRange) {
-  const now = new Date();
-  const start = new Date();
-
-  if (dateRange === "today") {
-    start.setHours(0, 0, 0, 0);
-    return start.toISOString();
-  }
-
-  if (dateRange === "week") {
-    start.setDate(now.getDate() - 7);
-    return start.toISOString();
-  }
-
-  if (dateRange === "month") {
-    start.setDate(now.getDate() - 30);
-    return start.toISOString();
-  }
-
-  return null;
-}
-
 function stringifyJson(value) {
   if (!value) return "";
   try {
@@ -131,28 +112,14 @@ export default function AuditLogs() {
         return;
       }
 
+      // Phase 7A: role comes from user_metadata only. The /api/admin/audit-logs
+      // endpoint enforces the admin check server-side; if the user is not an
+      // admin, the fetch will return 403 and be handled below.
       const metadataRole = activeSession.user.user_metadata?.role || null;
 
-      const { data: profile, error: profileError } = await supabase
-        .from("supervisor_profiles")
-        .select("id, email, full_name, role, is_active")
-        .eq("id", activeSession.user.id)
-        .maybeSingle();
-
-      if (profileError && profileError.code !== "PGRST116") throw profileError;
-
-      const resolvedRole = profile?.role || metadataRole;
-
-      if (resolvedRole !== "admin") {
+      if (metadataRole !== "admin") {
         setMessage({ type: "error", text: "Admin access is required." });
         router.push("/supervisor");
-        return;
-      }
-
-      if (profile?.is_active === false) {
-        await supabase.auth.signOut();
-        if (typeof window !== "undefined") localStorage.removeItem("userSession");
-        router.push("/login");
         return;
       }
 
@@ -173,29 +140,52 @@ export default function AuditLogs() {
       setMessage({ type: "", text: "" });
       setAuditTableAvailable(true);
 
-      let query = supabase
-        .from("audit_logs")
-        .select("id, user_id, action, table_name, record_id, old_data, new_data, ip_address, user_agent, created_at, supervisor:supervisor_profiles(full_name, email)")
-        .order("created_at", { ascending: false })
-        .limit(200);
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
 
-      const boundary = getDateBoundary(dateRange);
-      if (boundary) query = query.gte("created_at", boundary);
+      if (!token) {
+        setMessage({ type: "error", text: "Your session has expired. Please sign in again." });
+        setLoading(false);
+        return;
+      }
 
-      const { data, error } = await query;
+      const response = await fetch(
+        `/api/admin/audit-logs?range=${encodeURIComponent(dateRange)}`,
+        {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
 
-      if (error) {
-        console.error("Audit logs fetch warning:", error);
+      let payload;
+      try {
+        payload = await response.json();
+      } catch {
+        setAuditTableAvailable(false);
+        setLogs([]);
+        setMessage({ type: "error", text: `The server returned an invalid response (HTTP ${response.status}).` });
+        return;
+      }
+
+      if (!response.ok || !payload.success) {
+        if (response.status === 403) {
+          setMessage({ type: "error", text: "Admin access is required." });
+          router.push("/supervisor");
+          return;
+        }
         setAuditTableAvailable(false);
         setLogs([]);
         setMessage({
           type: "error",
-          text: "Audit logs table is not available or is not accessible. Create/configure the audit_logs table to enable persistent audit logging."
+          text: payload.error || "Failed to load audit logs.",
         });
         return;
       }
 
-      setLogs(data || []);
+      setLogs(payload.logs || []);
     } catch (error) {
       console.error("Error fetching audit logs:", error);
       setAuditTableAvailable(false);
