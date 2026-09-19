@@ -1,4 +1,10 @@
 // pages/api/generate-pdf-report.js
+//
+// Phase 7A: added auth + role + scope check. Previously had no token
+// verification — userId and assessmentId came from the request body, so
+// anyone who knew a candidate's id could download their full report.
+// Now: token → verified user → supervisor/admin role → supervisor can
+// only generate for candidates in their scope.
 
 import { createClient } from "@supabase/supabase-js";
 import chromium from "@sparticuz/chromium";
@@ -92,16 +98,101 @@ function escapeHtml(value) {
 
 function getSupabaseClient() {
   var supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
-  var supabaseKey =
-    process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    process.env.SUPABASE_SERVICE_KEY ||
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  var supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
 
   if (!supabaseUrl || !supabaseKey) {
     throw new Error("Supabase environment variables are missing.");
   }
 
-  return createClient(supabaseUrl, supabaseKey);
+  return createClient(supabaseUrl, supabaseKey, {
+    auth: { persistSession: false, autoRefreshToken: false }
+  });
+}
+
+function getSupabaseAnonClient() {
+  var supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
+  var supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseKey) {
+    throw new Error("Supabase anon environment variables are missing.");
+  }
+
+  return createClient(supabaseUrl, supabaseKey, {
+    auth: { persistSession: false, autoRefreshToken: false }
+  });
+}
+
+async function resolveCaller(serviceClient, anonClient, token) {
+  if (!token) {
+    return { error: "Unauthorized: No token provided", status: 401 };
+  }
+
+  const { data: userData, error: authError } = await anonClient.auth.getUser(token);
+
+  if (authError || !userData?.user) {
+    return { error: "Unauthorized: Invalid token", status: 401 };
+  }
+
+  const { data: profile, error: profileError } = await serviceClient
+    .from("supervisor_profiles")
+    .select("id, role, is_active")
+    .eq("id", userData.user.id)
+    .maybeSingle();
+
+  if (profileError) {
+    console.error("[generate-pdf-report] profile lookup failed:", profileError.message);
+    return { error: "Unable to verify caller identity", status: 500 };
+  }
+
+  const metadataRole = userData.user.user_metadata?.role || null;
+  const resolvedRole = profile?.role || metadataRole;
+
+  if (profile?.is_active === false) {
+    return { error: "Account is inactive", status: 403 };
+  }
+
+  if (resolvedRole !== "admin" && resolvedRole !== "supervisor") {
+    return { error: "Supervisor or admin access required", status: 403 };
+  }
+
+  return {
+    userId: userData.user.id,
+    role: resolvedRole,
+    isAdmin: resolvedRole === "admin"
+  };
+}
+
+// Supervisors can only generate reports for candidates in their scope.
+// Admins can generate for anyone.
+async function isCandidateInScope(serviceClient, caller, candidateId) {
+  if (caller.isAdmin) return true;
+
+  const { data: profile, error: profileError } = await serviceClient
+    .from("candidate_profiles")
+    .select("id, supervisor_id")
+    .eq("id", candidateId)
+    .maybeSingle();
+
+  if (profileError) {
+    console.error("[generate-pdf-report] candidate profile lookup failed:", profileError.message);
+    return false;
+  }
+
+  if (profile?.supervisor_id === caller.userId) return true;
+
+  const { data: junction, error: junctionError } = await serviceClient
+    .from("candidate_supervisors")
+    .select("candidate_id")
+    .eq("candidate_id", candidateId)
+    .eq("supervisor_id", caller.userId)
+    .maybeSingle();
+
+  if (junctionError) {
+    console.error("[generate-pdf-report] junction scope lookup failed:", junctionError.message);
+    return false;
+  }
+
+  return !!junction;
 }
 
 function classifyScore(percentage) {
@@ -860,6 +951,10 @@ export default async function handler(req, res) {
   var assessmentId;
   var sessionId;
   var serviceClient;
+  var anonClient;
+  var token;
+  var caller;
+  var inScope;
   var candidate;
   var assessment;
   var responseResult;
@@ -876,6 +971,22 @@ export default async function handler(req, res) {
   }
 
   try {
+    // ======================================================
+    // AUTH — verify token and role before reading any data
+    // ======================================================
+    token = (req.headers.authorization || '').replace('Bearer ', '').trim();
+    if (!token) {
+      return res.status(401).json({ success: false, error: 'Unauthorized: No token provided' });
+    }
+
+    serviceClient = getSupabaseClient();
+    anonClient = getSupabaseAnonClient();
+
+    caller = await resolveCaller(serviceClient, anonClient, token);
+    if (caller.error) {
+      return res.status(caller.status || 401).json({ success: false, error: caller.error });
+    }
+
     userId = req.body.userId || req.body.user_id;
     assessmentId = req.body.assessmentId || req.body.assessment_id || req.body.assessment;
     sessionId = req.body.sessionId || req.body.session_id || null;
@@ -884,7 +995,14 @@ export default async function handler(req, res) {
       return res.status(400).json({ success: false, error: 'Missing required fields: userId and assessmentId are required.' });
     }
 
-    serviceClient = getSupabaseClient();
+    // ======================================================
+    // SCOPE — supervisors can only generate for their candidates
+    // ======================================================
+    inScope = await isCandidateInScope(serviceClient, caller, userId);
+    if (!inScope) {
+      return res.status(403).json({ success: false, error: 'You do not have permission to generate a report for this candidate.' });
+    }
+
     candidate = await fetchCandidate(serviceClient, userId);
     assessment = await fetchAssessment(serviceClient, assessmentId);
     responseResult = await fetchResponses(serviceClient, userId, assessmentId, sessionId);
