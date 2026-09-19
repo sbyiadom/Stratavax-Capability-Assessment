@@ -343,4 +343,3 @@ const styles = {
   emptyText: { fontSize: '14px', color: '#94a3b8', margin: '0 0 16px 0' },
   emptyButton: { padding: '10px 24px', background: '#0A1929', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', fontWeight: '500' }
 };
-
