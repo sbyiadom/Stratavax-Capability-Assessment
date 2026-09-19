@@ -14,6 +14,9 @@
 //   Priority: per-candidate (candidate_assessments.scheduled_start/end
 //   when is_scheduled = true) → falls back to per-assessment
 //   (assessments.starts_at/expires_at).
+// - Phase 7A: added PATCH method for caller-owned session updates
+//   (violation_count). Replaces the client-side supabase.from() write in
+//   pages/assessment/[id].js. Ownership enforced before update.
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -41,9 +44,6 @@ function shuffleArray(array) {
 
 // ============================================================
 // Phase Three / Item 6: resolve the effective scheduling window.
-// Per-candidate window (when is_scheduled = true) wins.
-// Falls back to per-assessment starts_at / expires_at.
-// Returns { start: Date|null, end: Date|null, source: string }
 // ============================================================
 function resolveWindow(candidateAssessment, assessment) {
   if (candidateAssessment?.is_scheduled) {
@@ -62,10 +62,101 @@ function resolveWindow(candidateAssessment, assessment) {
 }
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') {
+  if (req.method !== 'POST' && req.method !== 'PATCH') {
     return res.status(405).json({ success: false, error: 'Method not allowed' });
   }
 
+  // ============================================================
+  // PATCH — update session fields owned by the caller.
+  // Supports: { sessionId, violationCount }
+  // Ownership: session.user_id must equal the token's user id.
+  // ============================================================
+  if (req.method === 'PATCH') {
+    try {
+      const { sessionId, violationCount } = req.body || {};
+
+      if (!sessionId) {
+        return res.status(400).json({ success: false, error: 'Missing sessionId' });
+      }
+
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+      if (!supabaseUrl || !supabaseKey) {
+        console.error('[Session PATCH] Missing environment variables');
+        return res.status(500).json({ success: false, error: 'Server configuration error' });
+      }
+
+      const token = req.headers.authorization?.replace('Bearer ', '');
+      if (!token) {
+        return res.status(401).json({ success: false, error: 'Unauthorized' });
+      }
+
+      const serviceClient = createClient(supabaseUrl, supabaseKey, {
+        auth: { persistSession: false, autoRefreshToken: false }
+      });
+
+      const { data: userData, error: userError } = await serviceClient.auth.getUser(token);
+      if (userError || !userData?.user) {
+        return res.status(401).json({ success: false, error: 'Invalid token' });
+      }
+
+      const userId = userData.user.id;
+
+      // Ownership check: session must belong to caller.
+      const { data: existingSession, error: lookupError } = await serviceClient
+        .from('assessment_sessions')
+        .select('id, user_id, status, violation_count')
+        .eq('id', sessionId)
+        .maybeSingle();
+
+      if (lookupError) {
+        console.error('[Session PATCH] Lookup error:', lookupError);
+        return res.status(500).json({ success: false, error: 'Failed to look up session' });
+      }
+
+      if (!existingSession) {
+        return res.status(404).json({ success: false, error: 'Session not found' });
+      }
+
+      if (existingSession.user_id !== userId) {
+        return res.status(403).json({ success: false, error: 'Forbidden' });
+      }
+
+      if (existingSession.status !== 'in_progress') {
+        return res.status(409).json({ success: false, error: 'Session is not in progress' });
+      }
+
+      const patch = { updated_at: new Date().toISOString() };
+
+      if (typeof violationCount === 'number' && Number.isFinite(violationCount) && violationCount >= 0) {
+        patch.violation_count = Math.floor(violationCount);
+      }
+
+      const { error: updateError } = await serviceClient
+        .from('assessment_sessions')
+        .update(patch)
+        .eq('id', sessionId);
+
+      if (updateError) {
+        console.error('[Session PATCH] Update error:', updateError);
+        return res.status(500).json({ success: false, error: updateError.message });
+      }
+
+      return res.status(200).json({ success: true });
+    } catch (patchErr) {
+      console.error('[Session PATCH] Unhandled error:', patchErr);
+      return res.status(500).json({
+        success: false,
+        error: patchErr.message || 'Internal server error',
+      });
+    }
+  }
+
+  // ============================================================
+  // POST — create or retrieve an in-progress session.
+  // (Everything below this point is unchanged from the prior version.)
+  // ============================================================
   try {
     const { assessmentId, assessmentTypeId } = req.body;
 
@@ -143,7 +234,7 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // STEP 3: Get assessment (needed for window fallback + type resolution)
+    // STEP 3: Get assessment
     // ============================================================
     console.log(`[Session] Looking up assessment: ${assessmentId}`);
     const { data: assessment, error: assessmentError } = await serviceClient
@@ -173,7 +264,6 @@ export default async function handler(req, res) {
 
     // ============================================================
     // STEP 3.5: Enforce scheduling window
-    // Per-candidate window takes priority; falls back to per-assessment.
     // ============================================================
     const window = resolveWindow(candidateAssessment, assessment);
     const now = new Date();
@@ -259,7 +349,6 @@ export default async function handler(req, res) {
 
     // ============================================================
     // STEP 6: Fetch the FULL question pool for this assessment type.
-    // Phase Two "Serve all questions" policy: no slice, no sampling.
     // ============================================================
     const { data: allQuestions, error: qErr } = await serviceClient
       .from('unique_questions')
@@ -334,7 +423,6 @@ export default async function handler(req, res) {
 
     // ============================================================
     // STEP 9: Freeze the question set into session_questions.
-    // Fail-closed: if this fails, delete the session.
     // ============================================================
     try {
       const rows = chosen.map((q, index) => ({
