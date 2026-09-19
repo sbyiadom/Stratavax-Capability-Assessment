@@ -1,4 +1,7 @@
 // pages/forgot-password.js
+// Phase 7A: removed the client-side supervisor_profiles lookup.
+// Supabase's resetPasswordForEmail works for any auth user, so supervisors
+// and candidates use the same flow. No pre-auth DB read remains here.
 
 import { useState } from 'react';
 import { useRouter } from 'next/router';
@@ -25,21 +28,6 @@ export default function ForgotPassword() {
     }
 
     try {
-      // Check if this is a supervisor account
-      const { data: supervisor } = await supabase
-        .from('supervisor_profiles')
-        .select('id')
-        .eq('email', email.trim())
-        .maybeSingle();
-
-      // If supervisor, redirect to supervisor reset page
-      if (supervisor) {
-        router.push('/supervisor-forgot-password');
-        setLoading(false);
-        return;
-      }
-
-      // Otherwise, send reset email for candidate
       const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
         redirectTo: `${window.location.origin}/reset-password`,
       });
@@ -52,7 +40,6 @@ export default function ForgotPassword() {
       setTimeout(() => {
         router.push('/login');
       }, 4000);
-
     } catch (error) {
       console.error('Reset error:', error);
       setError(error.message || 'Failed to send reset email. Please try again.');
@@ -64,13 +51,13 @@ export default function ForgotPassword() {
     <div style={styles.container}>
       <div style={styles.backgroundImage} />
       <div style={styles.overlay} />
-      
+
       <div style={styles.card}>
         <div style={styles.logoContainer}>
-          <Image 
-            src="/images/stratavax-logo.png" 
-            alt="Stratavax" 
-            width={56} 
+          <Image
+            src="/images/stratavax-logo.png"
+            alt="Stratavax"
+            width={56}
             height={56}
             priority
           />
@@ -104,6 +91,7 @@ export default function ForgotPassword() {
                 placeholder="Enter your email"
                 required
                 disabled={loading}
+                autoComplete="email"
               />
             </div>
 
@@ -113,7 +101,7 @@ export default function ForgotPassword() {
               style={{
                 ...styles.submitButton,
                 opacity: loading ? 0.7 : 1,
-                cursor: loading ? 'not-allowed' : 'pointer'
+                cursor: loading ? 'not-allowed' : 'pointer',
               }}
             >
               {loading ? 'Sending...' : 'Send Reset Link'}
@@ -139,7 +127,7 @@ const styles = {
     justifyContent: 'center',
     padding: '20px',
     position: 'relative',
-    overflow: 'hidden'
+    overflow: 'hidden',
   },
   backgroundImage: {
     position: 'absolute',
@@ -152,7 +140,7 @@ const styles = {
     backgroundPosition: 'center',
     backgroundRepeat: 'no-repeat',
     zIndex: 0,
-    transform: 'scale(1.05)'
+    transform: 'scale(1.05)',
   },
   overlay: {
     position: 'absolute',
@@ -161,7 +149,7 @@ const styles = {
     right: 0,
     bottom: 0,
     background: 'linear-gradient(135deg, rgba(10, 22, 40, 0.85) 0%, rgba(26, 35, 126, 0.75) 50%, rgba(13, 71, 161, 0.85) 100%)',
-    zIndex: 1
+    zIndex: 1,
   },
   card: {
     position: 'relative',
@@ -173,24 +161,21 @@ const styles = {
     width: '100%',
     maxWidth: '420px',
     boxShadow: '0 30px 80px rgba(0,0,0,0.5)',
-    border: '1px solid rgba(255,255,255,0.15)'
+    border: '1px solid rgba(255,255,255,0.15)',
   },
-  logoContainer: {
-    textAlign: 'center',
-    marginBottom: '28px'
-  },
+  logoContainer: { textAlign: 'center', marginBottom: '28px' },
   title: {
     fontSize: '26px',
     fontWeight: '700',
     color: '#1a237e',
     margin: '10px 0 4px 0',
-    letterSpacing: '-0.5px'
+    letterSpacing: '-0.5px',
   },
   subtitle: {
     fontSize: '14px',
     color: '#64748b',
     margin: 0,
-    fontWeight: '400'
+    fontWeight: '400',
   },
   errorBox: {
     background: '#fee2e2',
@@ -202,54 +187,52 @@ const styles = {
     fontSize: '14px',
     display: 'flex',
     alignItems: 'center',
-    gap: '8px'
+    gap: '8px',
   },
-  errorIcon: {
-    fontSize: '16px'
-  },
+  errorIcon: { fontSize: '16px' },
   successBox: {
     background: '#dcfce7',
     border: '1px solid #bbf7d0',
     borderRadius: '10px',
     padding: '24px',
     textAlign: 'center',
-    marginBottom: '16px'
+    marginBottom: '16px',
   },
   successIcon: {
     fontSize: '48px',
     color: '#16a34a',
-    marginBottom: '8px'
+    marginBottom: '8px',
   },
   successTitle: {
     fontSize: '18px',
     fontWeight: '600',
     color: '#166534',
-    margin: '0 0 8px 0'
+    margin: '0 0 8px 0',
   },
   successText: {
     fontSize: '14px',
     color: '#15803d',
-    margin: '0 0 4px 0'
+    margin: '0 0 4px 0',
   },
   successSubtext: {
     fontSize: '13px',
     color: '#64748b',
-    margin: '8px 0 0 0'
+    margin: '8px 0 0 0',
   },
   form: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '16px'
+    gap: '16px',
   },
   field: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '6px'
+    gap: '6px',
   },
   label: {
     fontSize: '13px',
     fontWeight: '500',
-    color: '#475569'
+    color: '#475569',
   },
   input: {
     padding: '12px 16px',
@@ -259,7 +242,7 @@ const styles = {
     transition: 'all 0.2s',
     outline: 'none',
     fontFamily: 'inherit',
-    background: '#f8fafc'
+    background: '#f8fafc',
   },
   submitButton: {
     padding: '14px',
@@ -276,7 +259,7 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: '50px'
+    minHeight: '50px',
   },
   footer: {
     marginTop: '20px',
@@ -285,19 +268,16 @@ const styles = {
     color: '#64748b',
     display: 'flex',
     justifyContent: 'center',
-    gap: '8px'
+    gap: '8px',
   },
-  divider: {
-    color: '#e2e8f0'
-  },
+  divider: { color: '#e2e8f0' },
   link: {
     color: '#1a237e',
     fontWeight: '500',
-    textDecoration: 'none'
-  }
+    textDecoration: 'none',
+  },
 };
 
-// Add CSS animation
 if (typeof document !== 'undefined') {
   const style = document.createElement('style');
   style.textContent = `
