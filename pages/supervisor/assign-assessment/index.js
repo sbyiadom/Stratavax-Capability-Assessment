@@ -1,4 +1,7 @@
 // pages/supervisor/assign-assessment/index.js
+// Phase 7A: fetches candidates from server-side endpoint instead of
+// reading Supabase directly. Prepares for RLS enforcement.
+
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import AppLayout from '../../../components/AppLayout';
@@ -6,73 +9,83 @@ import { supabase } from '../../../supabase/client';
 
 export default function AssignAssessmentIndex() {
   const router = useRouter();
-  
+
   const [loading, setLoading] = useState(true);
   const [candidates, setCandidates] = useState([]);
   const [error, setError] = useState(null);
   const [currentSupervisor, setCurrentSupervisor] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
 
-  // Check authentication and load candidates
   useEffect(() => {
-    async function loadData() {
-      try {
-        setLoading(true);
-        setError(null);
-
-        // Get current session
-        const { data: sessionData } = await supabase.auth.getSession();
-        const session = sessionData?.session;
-
-        if (!session?.user) {
-          router.push('/login');
-          return;
-        }
-
-        // Get supervisor profile
-        const { data: profile, error: profileError } = await supabase
-          .from('supervisor_profiles')
-          .select('id, full_name, email, role')
-          .eq('id', session.user.id)
-          .maybeSingle();
-
-        if (profileError) {
-          throw new Error('Unable to verify your account.');
-        }
-
-        setCurrentSupervisor(profile);
-
-        // Fetch candidates assigned to this supervisor
-        const isAdmin = profile?.role === 'admin';
-        
-        let query = supabase
-          .from('candidate_profiles')
-          .select('id, full_name, email, university, programme, created_at, supervisor_id')
-          .order('full_name', { ascending: true });
-
-        // If not admin, only show their assigned candidates
-        if (!isAdmin) {
-          query = query.eq('supervisor_id', session.user.id);
-        }
-
-        const { data: candidatesData, error: candidatesError } = await query;
-
-        if (candidatesError) {
-          throw new Error('Failed to load candidates.');
-        }
-
-        setCandidates(candidatesData || []);
-
-      } catch (err) {
-        console.error('Error loading assign assessment page:', err);
-        setError(err.message || 'Failed to load data.');
-      } finally {
-        setLoading(false);
-      }
-    }
-
     loadData();
-  }, [router]);
+  }, []);
+
+  async function loadData() {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const { data: sessionData } = await supabase.auth.getSession();
+      const session = sessionData?.session;
+
+      if (!session?.user) {
+        router.push('/login');
+        return;
+      }
+
+      const token = session.access_token;
+
+      // Load supervisor profile (own row) for the header context
+      const { data: profile, error: profileError } = await supabase
+        .from('supervisor_profiles')
+        .select('id, full_name, email, role')
+        .eq('id', session.user.id)
+        .maybeSingle();
+
+      if (profileError) {
+        throw new Error('Unable to verify your account.');
+      }
+
+      setCurrentSupervisor(profile);
+
+      // Fetch candidates via API (server-side, scoped)
+      const response = await fetch('/api/supervisor/assign-assessment/candidates-list', {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      let payload;
+      try {
+        payload = await response.json();
+      } catch {
+        throw new Error(`The server returned an invalid response (HTTP ${response.status}).`);
+      }
+
+      if (!response.ok || !payload.success) {
+        throw new Error(payload.error || `Failed to load candidates (HTTP ${response.status}).`);
+      }
+
+      const rows = Array.isArray(payload.candidates) ? payload.candidates : [];
+
+      setCandidates(rows.map((c) => ({
+        id: c.id,
+        full_name: c.full_name || '',
+        email: c.email || '',
+        university: c.university || '',
+        programme: c.programme || '',
+        created_at: c.created_at || null,
+        supervisor_id: c.supervisor_id || null,
+      })));
+    } catch (err) {
+      console.error('Error loading assign assessment page:', err);
+      setError(err.message || 'Failed to load data.');
+    } finally {
+      setLoading(false);
+    }
+  }
 
   const handleAssign = (userId) => {
     router.push(`/supervisor/assign-assessment/${userId}`);
@@ -82,7 +95,6 @@ export default function AssignAssessmentIndex() {
     router.push(`/supervisor/manage-candidate/${userId}`);
   };
 
-  // Filter candidates based on search
   const filteredCandidates = candidates.filter(candidate => {
     if (!searchTerm) return true;
     const term = searchTerm.toLowerCase().trim();
@@ -143,7 +155,6 @@ export default function AssignAssessmentIndex() {
           </div>
         </div>
 
-        {/* Search Bar */}
         <div style={styles.searchContainer}>
           <input
             type="text"
@@ -153,20 +164,17 @@ export default function AssignAssessmentIndex() {
             style={styles.searchInput}
           />
           {searchTerm && (
-            <button onClick={() => setSearchTerm('')} style={styles.clearButton}>
-              ✕
-            </button>
+            <button onClick={() => setSearchTerm('')} style={styles.clearButton}>✕</button>
           )}
         </div>
 
-        {/* Candidates Table */}
         <div style={styles.tableContainer}>
           {filteredCandidates.length === 0 ? (
             <div style={styles.emptyState}>
               <div style={styles.emptyIcon}>👤</div>
               <h3>No Candidates Found</h3>
               <p>
-                {searchTerm 
+                {searchTerm
                   ? `No candidates match "${searchTerm}". Try a different search term.`
                   : candidates.length === 0
                     ? 'You have no candidates assigned yet. Add candidates first.'
@@ -174,7 +182,7 @@ export default function AssignAssessmentIndex() {
                 }
               </p>
               {candidates.length === 0 && (
-                <button 
+                <button
                   onClick={() => router.push('/supervisor/add-candidate')}
                   style={styles.addButton}
                 >
@@ -230,10 +238,9 @@ export default function AssignAssessmentIndex() {
           )}
         </div>
 
-        {/* Footer note */}
         <div style={styles.footerNote}>
           <p>
-            💡 <strong>Tip:</strong> Newly assigned assessments are blocked by default. 
+            💡 <strong>Tip:</strong> Newly assigned assessments are blocked by default.
             Unblock them from the candidate's profile when they should be allowed to start.
           </p>
         </div>
@@ -243,223 +250,34 @@ export default function AssignAssessmentIndex() {
 }
 
 const styles = {
-  container: {
-    padding: '24px',
-    maxWidth: '1200px',
-    margin: '0 auto'
-  },
-  loadingContainer: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: '400px',
-    gap: '16px'
-  },
-  spinner: {
-    width: '40px',
-    height: '40px',
-    border: '4px solid #E2E8F0',
-    borderTop: '4px solid #0A1929',
-    borderRadius: '50%',
-    animation: 'spin 1s linear infinite'
-  },
-  errorContainer: {
-    maxWidth: '500px',
-    margin: '60px auto',
-    textAlign: 'center',
-    padding: '40px',
-    background: 'white',
-    borderRadius: '12px',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-  },
-  errorIcon: {
-    fontSize: '48px',
-    marginBottom: '16px'
-  },
-  errorMessage: {
-    color: '#dc2626',
-    marginBottom: '20px'
-  },
-  retryButton: {
-    padding: '10px 24px',
-    background: '#2563EB',
-    color: 'white',
-    border: 'none',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    fontSize: '14px',
-    fontWeight: '500'
-  },
-  header: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: '24px',
-    flexWrap: 'wrap',
-    gap: '12px'
-  },
-  title: {
-    fontSize: '28px',
-    fontWeight: '700',
-    color: '#0A1929',
-    margin: '0 0 4px 0'
-  },
-  subtitle: {
-    fontSize: '15px',
-    color: '#64748b',
-    margin: 0
-  },
-  headerStats: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px'
-  },
-  statsBadge: {
-    padding: '6px 16px',
-    background: '#e2e8f0',
-    borderRadius: '20px',
-    fontSize: '14px',
-    fontWeight: '600',
-    color: '#475569'
-  },
-  searchContainer: {
-    position: 'relative',
-    marginBottom: '20px'
-  },
-  searchInput: {
-    width: '100%',
-    padding: '12px 16px',
-    paddingRight: '48px',
-    border: '1px solid #e2e8f0',
-    borderRadius: '10px',
-    fontSize: '14px',
-    outline: 'none',
-    transition: 'border-color 0.2s',
-    background: 'white',
-    boxSizing: 'border-box'
-  },
-  clearButton: {
-    position: 'absolute',
-    right: '12px',
-    top: '50%',
-    transform: 'translateY(-50%)',
-    background: 'none',
-    border: 'none',
-    color: '#94a3b8',
-    cursor: 'pointer',
-    fontSize: '18px',
-    padding: '4px 8px'
-  },
-  tableContainer: {
-    background: 'white',
-    borderRadius: '12px',
-    overflow: 'hidden',
-    boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
-    border: '1px solid #eef2f7'
-  },
-  table: {
-    width: '100%',
-    borderCollapse: 'collapse'
-  },
-  tableHeader: {
-    background: '#f8fafc'
-  },
-  th: {
-    padding: '14px 16px',
-    textAlign: 'left',
-    borderBottom: '1px solid #eef2f7',
-    fontSize: '13px',
-    fontWeight: '600',
-    color: '#64748b',
-    textTransform: 'uppercase',
-    letterSpacing: '0.04em'
-  },
-  tableRow: {
-    transition: 'background 0.15s',
-    cursor: 'default'
-  },
-  td: {
-    padding: '14px 16px',
-    borderBottom: '1px solid #f1f5f9',
-    fontSize: '14px',
-    color: '#1a202c',
-    verticalAlign: 'middle'
-  },
-  candidateName: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px'
-  },
-  avatar: {
-    width: '32px',
-    height: '32px',
-    borderRadius: '50%',
-    background: '#2563EB',
-    color: 'white',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontSize: '14px',
-    fontWeight: '600',
-    flexShrink: 0
-  },
-  actionContainer: {
-    display: 'flex',
-    gap: '8px',
-    flexWrap: 'wrap'
-  },
-  viewButton: {
-    padding: '6px 14px',
-    background: 'transparent',
-    color: '#475569',
-    border: '1px solid #e2e8f0',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    fontSize: '13px',
-    fontWeight: '500',
-    transition: 'all 0.15s'
-  },
-  assignButton: {
-    padding: '6px 16px',
-    background: '#2563EB',
-    color: 'white',
-    border: 'none',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    fontSize: '13px',
-    fontWeight: '500',
-    transition: 'background 0.15s',
-    whiteSpace: 'nowrap'
-  },
-  emptyState: {
-    padding: '60px 20px',
-    textAlign: 'center',
-    color: '#64748b'
-  },
-  emptyIcon: {
-    fontSize: '48px',
-    display: 'block',
-    marginBottom: '16px'
-  },
-  addButton: {
-    marginTop: '16px',
-    padding: '10px 24px',
-    background: '#2563EB',
-    color: 'white',
-    border: 'none',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    fontSize: '14px',
-    fontWeight: '500'
-  },
-  footerNote: {
-    marginTop: '20px',
-    padding: '16px 20px',
-    background: '#eff6ff',
-    borderRadius: '10px',
-    border: '1px solid #bfdbfe',
-    color: '#1e40af',
-    fontSize: '14px'
-  }
+  container: { padding: '24px', maxWidth: '1200px', margin: '0 auto' },
+  loadingContainer: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '400px', gap: '16px' },
+  spinner: { width: '40px', height: '40px', border: '4px solid #E2E8F0', borderTop: '4px solid #0A1929', borderRadius: '50%', animation: 'spin 1s linear infinite' },
+  errorContainer: { maxWidth: '500px', margin: '60px auto', textAlign: 'center', padding: '40px', background: 'white', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.1)' },
+  errorIcon: { fontSize: '48px', marginBottom: '16px' },
+  errorMessage: { color: '#dc2626', marginBottom: '20px' },
+  retryButton: { padding: '10px 24px', background: '#2563EB', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', fontWeight: '500' },
+  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px', flexWrap: 'wrap', gap: '12px' },
+  title: { fontSize: '28px', fontWeight: '700', color: '#0A1929', margin: '0 0 4px 0' },
+  subtitle: { fontSize: '15px', color: '#64748b', margin: 0 },
+  headerStats: { display: 'flex', alignItems: 'center', gap: '12px' },
+  statsBadge: { padding: '6px 16px', background: '#e2e8f0', borderRadius: '20px', fontSize: '14px', fontWeight: '600', color: '#475569' },
+  searchContainer: { position: 'relative', marginBottom: '20px' },
+  searchInput: { width: '100%', padding: '12px 16px', paddingRight: '48px', border: '1px solid #e2e8f0', borderRadius: '10px', fontSize: '14px', outline: 'none', transition: 'border-color 0.2s', background: 'white', boxSizing: 'border-box' },
+  clearButton: { position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '18px', padding: '4px 8px' },
+  tableContainer: { background: 'white', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', border: '1px solid #eef2f7' },
+  table: { width: '100%', borderCollapse: 'collapse' },
+  tableHeader: { background: '#f8fafc' },
+  th: { padding: '14px 16px', textAlign: 'left', borderBottom: '1px solid #eef2f7', fontSize: '13px', fontWeight: '600', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em' },
+  tableRow: { transition: 'background 0.15s', cursor: 'default' },
+  td: { padding: '14px 16px', borderBottom: '1px solid #f1f5f9', fontSize: '14px', color: '#1a202c', verticalAlign: 'middle' },
+  candidateName: { display: 'flex', alignItems: 'center', gap: '10px' },
+  avatar: { width: '32px', height: '32px', borderRadius: '50%', background: '#2563EB', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', fontWeight: '600', flexShrink: 0 },
+  actionContainer: { display: 'flex', gap: '8px', flexWrap: 'wrap' },
+  viewButton: { padding: '6px 14px', background: 'transparent', color: '#475569', border: '1px solid #e2e8f0', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: '500', transition: 'all 0.15s' },
+  assignButton: { padding: '6px 16px', background: '#2563EB', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: '500', transition: 'background 0.15s', whiteSpace: 'nowrap' },
+  emptyState: { padding: '60px 20px', textAlign: 'center', color: '#64748b' },
+  emptyIcon: { fontSize: '48px', display: 'block', marginBottom: '16px' },
+  addButton: { marginTop: '16px', padding: '10px 24px', background: '#2563EB', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', fontWeight: '500' },
+  footerNote: { marginTop: '20px', padding: '16px 20px', background: '#eff6ff', borderRadius: '10px', border: '1px solid #bfdbfe', color: '#1e40af', fontSize: '14px' }
 };
