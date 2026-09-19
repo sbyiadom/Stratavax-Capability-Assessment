@@ -1,14 +1,11 @@
-// pages/supervisor/manage-candidate/index.js - COMPLETE FIXED
+// pages/supervisor/manage-candidate/index.js
+// Phase 7A: fetches candidates from /api/supervisor/manage-candidates/list
+// instead of reading Supabase directly. Prepares for RLS enforcement.
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import AppLayout from '../../../components/AppLayout';
 import { supabase } from '../../../supabase/client';
-
-function safeNumber(value, fallback = 0) {
-  const num = Number(value);
-  return Number.isFinite(num) ? num : fallback;
-}
 
 export default function ManageCandidateIndex() {
   const router = useRouter();
@@ -35,57 +32,51 @@ export default function ManageCandidateIndex() {
         return;
       }
 
-      const { data: profile, error: profileError } = await supabase
+      const token = session.access_token;
+
+      const { data: profile } = await supabase
         .from('supervisor_profiles')
         .select('id, full_name, email, role')
         .eq('id', session.user.id)
         .maybeSingle();
 
-      if (profileError) {
-        console.error('Profile error:', profileError);
-        setError('Failed to load supervisor profile.');
-        setLoading(false);
-        return;
+      if (profile) {
+        setCurrentSupervisor(profile);
       }
 
-      setCurrentSupervisor(profile);
+      const response = await fetch('/api/supervisor/manage-candidates/list', {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
 
-      const { data: candidatesData, error: candidatesError } = await supabase
-        .from('candidate_profiles')
-        .select('*')
-        .eq('supervisor_id', session.user.id)
-        .order('full_name', { ascending: true });
-
-      if (candidatesError) {
-        console.error('Candidates error:', candidatesError);
-        setError('Failed to load candidates.');
-        setLoading(false);
-        return;
+      let payload;
+      try {
+        payload = await response.json();
+      } catch {
+        throw new Error(`The server returned an invalid response (HTTP ${response.status}).`);
       }
 
-      const enrichedCandidates = await Promise.all(
-        (candidatesData || []).map(async (candidate) => {
-          const { count: totalCount } = await supabase
-            .from('assessment_results')
-            .select('*', { count: 'exact', head: true })
-            .eq('user_id', candidate.id);
+      if (!response.ok || !payload.success) {
+        throw new Error(payload.error || `Failed to load candidates (HTTP ${response.status}).`);
+      }
 
-          const { count: completedCount } = await supabase
-            .from('assessment_results')
-            .select('*', { count: 'exact', head: true })
-            .eq('user_id', candidate.id)
-            .not('completed_at', 'is', null);
+      const rows = Array.isArray(payload.candidates) ? payload.candidates : [];
 
-          return {
-            ...candidate,
-            totalAssessments: totalCount || 0,
-            completedAssessments: completedCount || 0
-          };
-        })
-      );
+      const enriched = rows.map((c) => ({
+        id: c.id,
+        full_name: c.full_name || '',
+        email: c.email || '',
+        university: c.university || '',
+        programme: c.programme || '',
+        created_at: c.created_at || null,
+        totalAssessments: c.totalAssessments || 0,
+        completedAssessments: c.completedAssessments || 0,
+      }));
 
-      setCandidates(enrichedCandidates);
-
+      setCandidates(enriched);
     } catch (error) {
       console.error('Error loading candidates:', error);
       setError(error.message || 'Failed to load candidates.');
@@ -94,7 +85,6 @@ export default function ManageCandidateIndex() {
     }
   }
 
-  // ✅ FIX: Navigate to candidate reports page using userId
   const handleView = (userId) => {
     router.push(`/supervisor/manage-candidate/${userId}`);
   };
@@ -129,7 +119,6 @@ export default function ManageCandidateIndex() {
 
       setCandidates(candidates.filter(c => c.id !== userId));
       alert('Candidate deleted successfully!');
-
     } catch (error) {
       console.error('Error deleting candidate:', error);
       alert('An error occurred while deleting the candidate.');
@@ -209,9 +198,7 @@ export default function ManageCandidateIndex() {
             style={styles.searchInput}
           />
           {searchTerm && (
-            <button onClick={() => setSearchTerm('')} style={styles.clearButton}>
-              ✕
-            </button>
+            <button onClick={() => setSearchTerm('')} style={styles.clearButton}>✕</button>
           )}
           <span style={styles.searchCount}>
             {filteredCandidates.length} of {candidates.length}
@@ -225,10 +212,7 @@ export default function ManageCandidateIndex() {
               {searchTerm ? 'No candidates match your search' : 'No candidates found'}
             </h3>
             <p style={styles.emptyText}>
-              {searchTerm 
-                ? 'Try adjusting your search criteria.'
-                : 'Start by adding your first candidate.'
-              }
+              {searchTerm ? 'Try adjusting your search criteria.' : 'Start by adding your first candidate.'}
             </p>
             {!searchTerm && (
               <button
@@ -267,13 +251,11 @@ export default function ManageCandidateIndex() {
                         </div>
                       </td>
                       <td style={styles.tableCell}>
-                        <div style={styles.candidateEmail}>
-                          {candidate.email || 'No email'}
-                        </div>
+                        <div style={styles.candidateEmail}>{candidate.email || 'No email'}</div>
                       </td>
                       <td style={styles.tableCell}>
-                        {candidate.university && candidate.university !== 'Not Specified' 
-                          ? candidate.university 
+                        {candidate.university && candidate.university !== 'Not Specified'
+                          ? candidate.university
                           : <span style={styles.naText}>—</span>}
                       </td>
                       <td style={styles.tableCell}>
@@ -297,16 +279,10 @@ export default function ManageCandidateIndex() {
                       </td>
                       <td style={styles.tableCell}>
                         <div style={styles.actionButtons}>
-                          <button
-                            onClick={() => handleView(candidate.id)}
-                            style={styles.viewButton}
-                          >
+                          <button onClick={() => handleView(candidate.id)} style={styles.viewButton}>
                             View
                           </button>
-                          <button
-                            onClick={() => handleDelete(candidate.id)}
-                            style={styles.deleteButton}
-                          >
+                          <button onClick={() => handleDelete(candidate.id)} style={styles.deleteButton}>
                             Delete
                           </button>
                         </div>
@@ -331,125 +307,27 @@ export default function ManageCandidateIndex() {
 }
 
 const styles = {
-  container: {
-    padding: '24px',
-    maxWidth: '1400px',
-    margin: '0 auto'
-  },
-  loadingContainer: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: '400px',
-    gap: '16px'
-  },
-  spinner: {
-    width: '40px',
-    height: '40px',
-    border: '4px solid #E2E8F0',
-    borderTop: '4px solid #0A1929',
-    borderRadius: '50%',
-    animation: 'spin 1s linear infinite'
-  },
-  errorContainer: {
-    textAlign: 'center',
-    padding: '60px 20px',
-    background: 'white',
-    borderRadius: '12px',
-    boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-    maxWidth: '500px',
-    margin: '40px auto'
-  },
+  container: { padding: '24px', maxWidth: '1400px', margin: '0 auto' },
+  loadingContainer: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '400px', gap: '16px' },
+  spinner: { width: '40px', height: '40px', border: '4px solid #E2E8F0', borderTop: '4px solid #0A1929', borderRadius: '50%', animation: 'spin 1s linear infinite' },
+  errorContainer: { textAlign: 'center', padding: '60px 20px', background: 'white', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', maxWidth: '500px', margin: '40px auto' },
   errorIcon: { fontSize: '48px', display: 'block', marginBottom: '16px' },
   errorMessage: { color: '#dc2626', marginBottom: '16px' },
-  retryButton: {
-    padding: '10px 24px',
-    background: '#0A1929',
-    color: 'white',
-    border: 'none',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    fontSize: '14px',
-    fontWeight: '600',
-    marginTop: '16px'
-  },
-  header: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '24px',
-    flexWrap: 'wrap',
-    gap: '16px'
-  },
+  retryButton: { padding: '10px 24px', background: '#0A1929', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', fontWeight: '600', marginTop: '16px' },
+  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' },
   title: { fontSize: '28px', fontWeight: 'bold', color: '#0A1929', margin: '0 0 8px 0' },
   subtitle: { fontSize: '16px', color: '#718096', margin: 0 },
-  addButton: {
-    padding: '10px 24px',
-    background: '#0A1929',
-    color: 'white',
-    border: 'none',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    fontSize: '14px',
-    fontWeight: '600',
-    whiteSpace: 'nowrap'
-  },
-  searchBar: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    marginBottom: '20px',
-    background: 'white',
-    padding: '12px 16px',
-    borderRadius: '12px',
-    boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-    border: '1px solid #e2e8f0'
-  },
-  searchInput: {
-    flex: 1,
-    padding: '8px 12px',
-    border: 'none',
-    fontSize: '14px',
-    outline: 'none',
-    background: 'transparent',
-    minWidth: '200px'
-  },
-  clearButton: {
-    padding: '4px 8px',
-    background: 'transparent',
-    border: 'none',
-    cursor: 'pointer',
-    fontSize: '16px',
-    color: '#94a3b8'
-  },
+  addButton: { padding: '10px 24px', background: '#0A1929', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', fontWeight: '600', whiteSpace: 'nowrap' },
+  searchBar: { display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px', background: 'white', padding: '12px 16px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', border: '1px solid #e2e8f0' },
+  searchInput: { flex: 1, padding: '8px 12px', border: 'none', fontSize: '14px', outline: 'none', background: 'transparent', minWidth: '200px' },
+  clearButton: { padding: '4px 8px', background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '16px', color: '#94a3b8' },
   searchCount: { fontSize: '13px', color: '#94a3b8', whiteSpace: 'nowrap' },
-  tableContainer: {
-    background: 'white',
-    borderRadius: '12px',
-    overflow: 'auto',
-    boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-    border: '1px solid #e2e8f0'
-  },
+  tableContainer: { background: 'white', borderRadius: '12px', overflow: 'auto', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', border: '1px solid #e2e8f0' },
   table: { width: '100%', borderCollapse: 'collapse', fontSize: '14px', minWidth: '800px' },
   tableHeadRow: { background: '#F8FAFC' },
-  tableHeadCell: {
-    padding: '12px 16px',
-    textAlign: 'left',
-    borderBottom: '2px solid #E2E8F0',
-    fontSize: '13px',
-    fontWeight: '600',
-    color: '#4A5568',
-    whiteSpace: 'nowrap'
-  },
+  tableHeadCell: { padding: '12px 16px', textAlign: 'left', borderBottom: '2px solid #E2E8F0', fontSize: '13px', fontWeight: '600', color: '#4A5568', whiteSpace: 'nowrap' },
   tableRow: { transition: 'background 0.2s ease' },
-  tableCell: {
-    padding: '12px 16px',
-    borderBottom: '1px solid #E2E8F0',
-    fontSize: '13px',
-    color: '#2D3748',
-    verticalAlign: 'middle'
-  },
+  tableCell: { padding: '12px 16px', borderBottom: '1px solid #E2E8F0', fontSize: '13px', color: '#2D3748', verticalAlign: 'middle' },
   candidateName: { fontWeight: '500', color: '#1a202c' },
   candidateId: { fontSize: '11px', color: '#94a3b8', marginTop: '2px' },
   candidateEmail: { fontSize: '12px', color: '#64748b' },
@@ -457,36 +335,11 @@ const styles = {
   assessmentCount: { fontWeight: '600', color: '#0A1929' },
   statusBadge: { display: 'inline-block', padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: '600' },
   actionButtons: { display: 'flex', gap: '8px' },
-  viewButton: {
-    padding: '4px 12px',
-    background: '#4299e1',
-    color: 'white',
-    border: 'none',
-    borderRadius: '4px',
-    cursor: 'pointer',
-    fontSize: '12px'
-  },
-  deleteButton: {
-    padding: '4px 12px',
-    background: '#fc8181',
-    color: 'white',
-    border: 'none',
-    borderRadius: '4px',
-    cursor: 'pointer',
-    fontSize: '12px'
-  },
+  viewButton: { padding: '4px 12px', background: '#4299e1', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' },
+  deleteButton: { padding: '4px 12px', background: '#fc8181', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' },
   emptyState: { textAlign: 'center', padding: '60px 20px', background: 'white', borderRadius: '12px', border: '1px solid #e2e8f0' },
   emptyIcon: { fontSize: '48px', display: 'block', marginBottom: '16px' },
   emptyTitle: { fontSize: '18px', fontWeight: '600', color: '#0A1929', margin: '0 0 8px 0' },
   emptyText: { fontSize: '14px', color: '#94a3b8', margin: '0 0 16px 0' },
-  emptyButton: {
-    padding: '10px 24px',
-    background: '#0A1929',
-    color: 'white',
-    border: 'none',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    fontSize: '14px',
-    fontWeight: '500'
-  }
+  emptyButton: { padding: '10px 24px', background: '#0A1929', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', fontWeight: '500' }
 };
