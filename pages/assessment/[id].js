@@ -1,30 +1,6 @@
 // pages/assessment/[id].js - FORCED-CHOICE SUPPORT
-//
-// Adds forced-choice most/least UI for assessments whose type has
-// scoring_mode = 'forced_choice'. Single-select assessments behave
-// exactly as before.
-//
-// Phase 5 additions:
-//   - Fetches assessment_type.scoring_mode
-//   - When mode = 'forced_choice', renders a two-column most/least
-//     radio grid instead of single radio selection
-//   - Saves both picks via saveAnswer(sessionId, questionId, mostId,
-//     leastId, metadata)
-//   - Restores both picks on reload
-//   - Auto-clears the opposing pick when the candidate selects the
-//     same answer on both sides
-//   - Requires both picks before "answered"
-//
-// FIX (Phase 5 revision): The change counter was flagging the second
-// pick of a forced-choice question as a change. Now only counts actual
-// revisions on the same side.
-//
-// FIX (Phase 6.5 revision): Behavioral violations no longer trigger
-// auto-submit. Violations are logged, warned, and included in the
-// final report for supervisor review. Only the timer expiry
-// auto-submits the assessment. This prevents accidental termination
-// of genuine attempts from habitual right-clicks, accidental
-// PrintScreen key presses, or slow-JS DevTools false positives.
+// Phase 6.5 (responsive): mobile-first layout. Desktop 3-column unchanged.
+// Tablet 2-column. Mobile single column with sticky footer nav.
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
@@ -52,10 +28,8 @@ function formatTime(seconds) {
 
 function deriveDurationSeconds(sessionData) {
   if (!sessionData) return 0;
-
   const explicit = safeNumber(sessionData.duration_minutes, 0);
   if (explicit > 0) return Math.round(explicit * 60);
-
   if (sessionData.expires_at && sessionData.started_at) {
     const expiresMs = new Date(sessionData.expires_at).getTime();
     const startedMs = new Date(sessionData.started_at).getTime();
@@ -63,7 +37,6 @@ function deriveDurationSeconds(sessionData) {
       return Math.round((expiresMs - startedMs) / 1000);
     }
   }
-
   return 0;
 }
 
@@ -85,12 +58,7 @@ function countAnswered(answerMap, questionCount, isForcedChoiceMap) {
 
 function extractDomain(url) {
   if (!url) return null;
-  try {
-    const urlObj = new URL(url);
-    return urlObj.hostname;
-  } catch {
-    return null;
-  }
+  try { return new URL(url).hostname; } catch { return null; }
 }
 
 function isExternalUrl(url) {
@@ -99,15 +67,12 @@ function isExternalUrl(url) {
     const urlObj = new URL(url);
     const currentDomain = window.location.hostname;
     return urlObj.hostname !== currentDomain && !url.includes(currentDomain);
-  } catch {
-    return false;
-  }
+  } catch { return false; }
 }
 
 function getUrlCategory(url) {
   const domain = extractDomain(url);
   if (!domain) return 'unknown';
-
   const searchEngines = ['google.com', 'bing.com', 'yahoo.com', 'duckduckgo.com'];
   const aiTools = ['chatgpt.com', 'claude.ai', 'perplexity.ai', 'bard.google.com', 'copilot.microsoft.com'];
   const socialMedia = ['youtube.com', 'twitter.com', 'facebook.com', 'linkedin.com', 'reddit.com'];
@@ -115,7 +80,6 @@ function getUrlCategory(url) {
   const educational = ['wikipedia.org', 'khanacademy.org', 'coursera.org'];
   const codeRepos = ['github.com', 'gitlab.com', 'stackoverflow.com'];
   const email = ['gmail.com', 'outlook.com', 'mail.google.com'];
-
   if (searchEngines.some(s => domain.includes(s))) return 'search_engine';
   if (aiTools.some(s => domain.includes(s))) return 'ai_tool';
   if (socialMedia.some(s => domain.includes(s))) return 'social_media';
@@ -129,7 +93,6 @@ function getUrlCategory(url) {
 async function apiCall(endpoint, options = {}) {
   const { data: sessionData } = await supabase.auth.getSession();
   const token = sessionData?.session?.access_token;
-
   const response = await fetch(endpoint, {
     ...options,
     headers: {
@@ -138,23 +101,13 @@ async function apiCall(endpoint, options = {}) {
       ...(options.headers || {})
     }
   });
-
   const result = await response.json();
-  if (!response.ok) {
-    throw new Error(result.error || 'API call failed');
-  }
+  if (!response.ok) throw new Error(result.error || 'API call failed');
   return result;
 }
 
-async function fetchAssessmentDetails(assessmentId) {
-  return await apiCall(`/api/assessment/${assessmentId}`);
-}
-
-async function fetchAccess(assessmentId) {
-  const result = await apiCall(`/api/assessment/access?assessmentId=${assessmentId}`);
-  return result.access;
-}
-
+async function fetchAssessmentDetails(assessmentId) { return await apiCall(`/api/assessment/${assessmentId}`); }
+async function fetchAccess(assessmentId) { const r = await apiCall(`/api/assessment/access?assessmentId=${assessmentId}`); return r.access; }
 async function fetchQuestions(assessmentTypeId, assessmentTypeCode, sessionId) {
   const params = new URLSearchParams({
     assessmentTypeId,
@@ -164,44 +117,24 @@ async function fetchQuestions(assessmentTypeId, assessmentTypeCode, sessionId) {
   const result = await apiCall(`/api/assessment/questions?${params.toString()}`);
   return result.questions || [];
 }
-
 async function createOrGetSession(assessmentId, assessmentTypeId) {
-  const result = await apiCall('/api/assessment/session', {
-    method: 'POST',
-    body: JSON.stringify({ assessmentId, assessmentTypeId })
-  });
+  const result = await apiCall('/api/assessment/session', { method: 'POST', body: JSON.stringify({ assessmentId, assessmentTypeId }) });
   return result.session;
 }
-
 async function getSessionResponses(sessionId) {
   const result = await apiCall(`/api/assessment/responses?sessionId=${sessionId}`);
   return result.responses || {};
 }
-
 async function saveAnswer(sessionId, questionId, answer, leastAnswer, metadata) {
   const body = { sessionId, questionId, answer, metadata };
-  if (leastAnswer !== undefined && leastAnswer !== null) {
-    body.leastAnswerId = leastAnswer;
-  }
-  return await apiCall('/api/assessment/save-response', {
-    method: 'POST',
-    body: JSON.stringify(body)
-  });
+  if (leastAnswer !== undefined && leastAnswer !== null) body.leastAnswerId = leastAnswer;
+  return await apiCall('/api/assessment/save-response', { method: 'POST', body: JSON.stringify(body) });
 }
-
 async function submitAssessment(sessionId, autoSubmitted, autoSubmitReason, allowIncomplete, proctoringData, assessmentId) {
-  const result = await apiCall('/api/assessment/submit', {
+  return await apiCall('/api/assessment/submit', {
     method: 'POST',
-    body: JSON.stringify({
-      sessionId,
-      autoSubmitted,
-      autoSubmitReason,
-      allowIncomplete,
-      proctoringData,
-      assessmentId
-    })
+    body: JSON.stringify({ sessionId, autoSubmitted, autoSubmitReason, allowIncomplete, proctoringData, assessmentId })
   });
-  return result;
 }
 
 function AssessmentContent() {
@@ -254,6 +187,7 @@ function AssessmentContent() {
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [isTimeExpired, setIsTimeExpired] = useState(false);
+  const [showMobileNavigator, setShowMobileNavigator] = useState(false);
 
   const sessionIdRef = useRef(null);
   const submittingRef = useRef(false);
@@ -269,19 +203,13 @@ function AssessmentContent() {
   const currentQuestion = questions[currentIndex] || {};
   const isNationalService = assessmentTypeCode === 'national_service' ||
     (assessment && assessment.title && assessment.title.toLowerCase().includes('national service'));
-
   const isMultipleCorrect = isNationalService ? false : Boolean(currentQuestion.isMultipleCorrect);
   const isForcedChoice = scoringMode === "forced_choice";
 
   function getForcedChoicePicks(questionId) {
     const entry = answers[questionId];
-    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
-      return { most: null, least: null };
-    }
-    return {
-      most: entry.most !== undefined ? entry.most : null,
-      least: entry.least !== undefined ? entry.least : null
-    };
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return { most: null, least: null };
+    return { most: entry.most !== undefined ? entry.most : null, least: entry.least !== undefined ? entry.least : null };
   }
 
   function isAnsweredForQuestion(questionId) {
@@ -302,9 +230,7 @@ function AssessmentContent() {
   const timeUsedPercent = timeLimitSeconds > 0 ? (elapsedSeconds / timeLimitSeconds) * 100 : 0;
   const isTimeCritical = timeUsedPercent > 90;
 
-  function getSelectedAnswersForQuestion(questionId) {
-    return getAnswerArray(answers[questionId]);
-  }
+  function getSelectedAnswersForQuestion(questionId) { return getAnswerArray(answers[questionId]); }
 
   function isAnswerSelected(questionId, answerId) {
     if (isForcedChoice) {
@@ -313,12 +239,6 @@ function AssessmentContent() {
     }
     const selected = getSelectedAnswersForQuestion(questionId);
     return selected.map(String).includes(String(answerId));
-  }
-
-  function isLeastSelected(questionId, answerId) {
-    if (!isForcedChoice) return false;
-    const { least } = getForcedChoicePicks(questionId);
-    return String(least) === String(answerId);
   }
 
   function showViolation(message) {
@@ -330,35 +250,16 @@ function AssessmentContent() {
   function trackUrlChange() {
     const currentUrl = window.location.href;
     const currentDomain = extractDomain(currentUrl);
-
-    if (!previousUrl) {
-      setPreviousUrl(currentUrl);
-      return;
-    }
-
+    if (!previousUrl) { setPreviousUrl(currentUrl); return; }
     if (previousUrl === currentUrl) return;
-
     const isExternal = isExternalUrl(currentUrl);
     const duration = urlVisitStartTime ? (Date.now() - urlVisitStartTime) / 1000 : null;
     const category = getUrlCategory(currentUrl);
-
     if (currentDomain) {
-      setDomainVisits(prev => ({
-        ...prev,
-        [currentDomain]: (prev[currentDomain] || 0) + 1
-      }));
+      setDomainVisits(prev => ({ ...prev, [currentDomain]: (prev[currentDomain] || 0) + 1 }));
     }
-
     if (isExternal && currentDomain) {
-      const visit = {
-        url: currentUrl,
-        domain: currentDomain,
-        category: category,
-        timestamp: new Date().toISOString(),
-        duration: duration,
-        fromUrl: previousUrl
-      };
-
+      const visit = { url: currentUrl, domain: currentDomain, category, timestamp: new Date().toISOString(), duration, fromUrl: previousUrl };
       setExternalUrlVisits(prev => [...prev, visit]);
       setCurrentExternalUrl(currentUrl);
       setShowUrlWarning(true);
@@ -367,160 +268,94 @@ function AssessmentContent() {
       setShowUrlWarning(false);
       setCurrentExternalUrl(null);
     }
-
     setPreviousUrl(currentUrl);
     setUrlVisitStartTime(Date.now());
   }
 
-  // ------------------------------------------------------------
-  // logViolation
-  //
-  // Phase 6.5: behavioral violations are recorded but no longer
-  // auto-submit the assessment. The old behavior (submit at 3
-  // violations) was terminating genuine attempts from habitual
-  // right-clicks, accidental PrintScreen presses, or DevTools
-  // false positives. The final report includes all violations,
-  // and the supervisor decides whether the attempt is valid.
-  //
-  // Auto-submit now only fires on timer expiry.
-  // ------------------------------------------------------------
+  // Phase 6.5: violations no longer auto-submit. Recorded + reported only.
   async function logViolation(violationType) {
     if (!sessionIdRef.current || alreadySubmitted || isAutoSubmitting || isTimeExpired) return;
     const newCount = violationCount + 1;
     setViolationCount(newCount);
-
     try {
-      await supabase
-        .from("assessment_sessions")
-        .update({ violation_count: newCount })
-        .eq("id", sessionIdRef.current);
+      await supabase.from("assessment_sessions").update({ violation_count: newCount }).eq("id", sessionIdRef.current);
     } catch (err) {
       console.error("Failed to sync violation count to DB:", err);
     }
-
     let message = violationType;
     if (currentExternalUrl) {
       const domain = extractDomain(currentExternalUrl);
       const category = getUrlCategory(currentExternalUrl);
       message += ` (${domain} - ${category})`;
     }
-
     showViolation(message + ". Recorded in your report for review.");
-
-    // Phase 6.5: auto-submit-on-3-violations REMOVED intentionally.
-    // Violations are warnings + report data, not termination triggers.
   }
 
   async function handleAutoSubmit(reason) {
     if (alreadySubmitted || submittingRef.current || autoSubmitRef.current) return;
-
     try {
       autoSubmitRef.current = true;
       submittingRef.current = true;
       setIsSubmitting(true);
       setIsAutoSubmitting(true);
       setIsTimeExpired(true);
-
-      if (urlCheckIntervalRef.current) {
-        clearInterval(urlCheckIntervalRef.current);
-        urlCheckIntervalRef.current = null;
-      }
+      if (urlCheckIntervalRef.current) { clearInterval(urlCheckIntervalRef.current); urlCheckIntervalRef.current = null; }
 
       const answerPromises = Object.entries(answers).map(([qId, answer]) => {
         if (answer === null || answer === undefined || answer === "") return null;
-
         if (isForcedChoice && typeof answer === "object" && !Array.isArray(answer)) {
           if (answer.most == null) return null;
           const changeCount = answerChangeCount[qId] || 0;
           const initialAns = initialAnswers[qId] || answer.most;
-          return saveAnswer(
-            sessionIdRef.current,
-            qId,
-            String(answer.most),
-            answer.least != null ? String(answer.least) : undefined,
-            {
-              time_spent_seconds: Math.floor((Date.now() - questionStartTime) / 1000),
-              times_changed: changeCount,
-              initial_answer_id: String(initialAns),
-              is_answer_change: false,
-              tab_switches: tabSwitchCount,
-              copy_attempts: copyAttempts,
-              paste_attempts: pasteAttempts,
-              right_click_attempts: rightClickAttempts,
-              violations: violationCount,
-              external_urls_visited: externalUrlVisits,
-              domain_visits: domainVisits
-            }
-          );
+          return saveAnswer(sessionIdRef.current, qId, String(answer.most), answer.least != null ? String(answer.least) : undefined, {
+            time_spent_seconds: Math.floor((Date.now() - questionStartTime) / 1000),
+            times_changed: changeCount, initial_answer_id: String(initialAns), is_answer_change: false,
+            tab_switches: tabSwitchCount, copy_attempts: copyAttempts, paste_attempts: pasteAttempts,
+            right_click_attempts: rightClickAttempts, violations: violationCount,
+            external_urls_visited: externalUrlVisits, domain_visits: domainVisits
+          });
         }
-
         const answerToStore = Array.isArray(answer) ? answer.join(",") : String(answer);
         const changeCount = answerChangeCount[qId] || 0;
         const initialAns = initialAnswers[qId] || answer;
-
-        return saveAnswer(
-          sessionIdRef.current,
-          qId,
-          answerToStore,
-          undefined,
-          {
-            time_spent_seconds: Math.floor((Date.now() - questionStartTime) / 1000),
-            times_changed: changeCount,
-            initial_answer_id: Array.isArray(initialAns) ? initialAns.join(",") : String(initialAns),
-            is_answer_change: false,
-            tab_switches: tabSwitchCount,
-            copy_attempts: copyAttempts,
-            paste_attempts: pasteAttempts,
-            right_click_attempts: rightClickAttempts,
-            violations: violationCount,
-            external_urls_visited: externalUrlVisits,
-            domain_visits: domainVisits
-          }
-        );
+        return saveAnswer(sessionIdRef.current, qId, answerToStore, undefined, {
+          time_spent_seconds: Math.floor((Date.now() - questionStartTime) / 1000),
+          times_changed: changeCount,
+          initial_answer_id: Array.isArray(initialAns) ? initialAns.join(",") : String(initialAns),
+          is_answer_change: false, tab_switches: tabSwitchCount,
+          copy_attempts: copyAttempts, paste_attempts: pasteAttempts,
+          right_click_attempts: rightClickAttempts, violations: violationCount,
+          external_urls_visited: externalUrlVisits, domain_visits: domainVisits
+        });
       });
-
       await Promise.all(answerPromises.filter(p => p !== null));
 
       const proctoringData = {
         summary: {
           tabSwitches: tabSwitchCount,
           copyPasteAttempts: copyAttempts + pasteAttempts,
-          rightClickAttempts: rightClickAttempts,
+          rightClickAttempts,
           totalViolations: violationCount,
           externalUrlsVisited: externalUrlVisits.length,
           duration: elapsedSeconds,
           riskLevel: violationCount >= 3 ? 'high' : violationCount >= 1 ? 'medium' : 'low',
           riskScore: Math.min(violationCount * 25 + externalUrlVisits.length * 10, 100)
         },
-        violations: [],
-        tabSwitches: tabSwitchDetails,
-        externalUrls: externalUrlVisits,
-        domainVisits: domainVisits,
-        sessionId: sessionIdRef.current
+        violations: [], tabSwitches: tabSwitchDetails, externalUrls: externalUrlVisits,
+        domainVisits, sessionId: sessionIdRef.current
       };
 
-      await submitAssessment(
-        sessionIdRef.current,
-        true,
+      await submitAssessment(sessionIdRef.current, true,
         reason || 'Auto-submitted because the assessment timer expired.',
-        true,
-        proctoringData,
-        assessmentId
-      );
+        true, proctoringData, assessmentId);
 
       setAlreadySubmitted(true);
       setShowSuccessModal(true);
-
-      setTimeout(() => {
-        router.push('/candidate/assessment-complete');
-      }, 2000);
-
+      setTimeout(() => router.push('/candidate/assessment-complete'), 2000);
     } catch (err) {
       console.error('[AutoSubmit] Failed:', err);
       alert('Auto-submit failed. Please contact support with this error: ' + (err.message || 'Unknown error'));
-      setTimeout(() => {
-        router.push('/candidate/dashboard');
-      }, 3000);
+      setTimeout(() => router.push('/candidate/dashboard'), 3000);
     } finally {
       submittingRef.current = false;
       setIsSubmitting(false);
@@ -531,74 +366,44 @@ function AssessmentContent() {
   async function persistAnswer(questionId, answerValue, leastValue, isChange) {
     const currentChangeCount = safeNumber(answerChangeCount[questionId], 0);
     const nextChangeCount = isChange ? currentChangeCount + 1 : currentChangeCount;
-
-    if (isChange) {
-      setAnswerChangeCount((previous) => ({ ...previous, [questionId]: nextChangeCount }));
-    }
-
-    setSaveStatus((previous) => ({ ...previous, [questionId]: "saving" }));
-
+    if (isChange) setAnswerChangeCount(prev => ({ ...prev, [questionId]: nextChangeCount }));
+    setSaveStatus(prev => ({ ...prev, [questionId]: "saving" }));
     const timeSpentSeconds = Math.floor((Date.now() - questionStartTime) / 1000);
     const timeOnQuestion = Math.floor((Date.now() - (questionStartTimes[questionId] || questionStartTime)) / 1000);
-
     try {
-      await saveAnswer(
-        sessionIdRef.current,
-        questionId,
-        answerValue,
-        leastValue,
-        {
-          time_spent_seconds: timeSpentSeconds,
-          time_on_question: timeOnQuestion,
-          times_changed: nextChangeCount,
-          initial_answer_id: initialAnswers[questionId] != null ? String(initialAnswers[questionId]) : String(answerValue),
-          is_answer_change: isChange,
-          tab_switches: tabSwitchCount,
-          copy_attempts: copyAttempts,
-          paste_attempts: pasteAttempts,
-          right_click_attempts: rightClickAttempts,
-          violations: violationCount,
-          previous_question: currentIndex,
-          external_urls_visited: externalUrlVisits,
-          domain_visits: domainVisits
-        }
-      );
-
-      setSaveStatus((previous) => ({ ...previous, [questionId]: "saved" }));
+      await saveAnswer(sessionIdRef.current, questionId, answerValue, leastValue, {
+        time_spent_seconds: timeSpentSeconds, time_on_question: timeOnQuestion,
+        times_changed: nextChangeCount,
+        initial_answer_id: initialAnswers[questionId] != null ? String(initialAnswers[questionId]) : String(answerValue),
+        is_answer_change: isChange, tab_switches: tabSwitchCount,
+        copy_attempts: copyAttempts, paste_attempts: pasteAttempts,
+        right_click_attempts: rightClickAttempts, violations: violationCount,
+        previous_question: currentIndex,
+        external_urls_visited: externalUrlVisits, domain_visits: domainVisits
+      });
+      setSaveStatus(prev => ({ ...prev, [questionId]: "saved" }));
     } catch (err) {
       console.error("Answer save error:", err);
-      setSaveStatus((previous) => ({ ...previous, [questionId]: "error" }));
+      setSaveStatus(prev => ({ ...prev, [questionId]: "error" }));
     }
-
     setTimeout(() => {
-      setSaveStatus((previous) => {
-        const next = { ...previous };
-        delete next[questionId];
-        return next;
-      });
+      setSaveStatus(prev => { const n = { ...prev }; delete n[questionId]; return n; });
     }, 900);
     setQuestionStartTime(Date.now());
   }
 
   async function handleAnswerSelect(questionId, answerId, multipleCorrect) {
     if (isTimeExpired || elapsedSeconds >= timeLimitSeconds) {
-      alert("Time has expired! The assessment is being submitted automatically.");
-      return;
+      alert("Time has expired! The assessment is being submitted automatically."); return;
     }
-
     if (alreadySubmitted || !session || !user || !questionId || !answerId || accessDenied || isAutoSubmitting) return;
-
     const isNationalServiceType = assessmentTypeCode === 'national_service';
     const actualMultipleCorrect = multipleCorrect && !isNationalServiceType && !isForcedChoice;
-
-    let newSelectedAnswer;
-    let isAnswerChange = false;
-    let isFirstAnswer = false;
-
+    let newSelectedAnswer, isAnswerChange = false, isFirstAnswer = false;
     if (actualMultipleCorrect) {
       const currentSelected = getSelectedAnswersForQuestion(questionId);
       if (currentSelected.map(String).includes(String(answerId))) {
-        newSelectedAnswer = currentSelected.filter((id) => String(id) !== String(answerId));
+        newSelectedAnswer = currentSelected.filter(id => String(id) !== String(answerId));
       } else {
         newSelectedAnswer = currentSelected.concat([answerId]);
       }
@@ -610,45 +415,25 @@ function AssessmentContent() {
       isFirstAnswer = previousAnswer === undefined || previousAnswer === null || previousAnswer === "";
       isAnswerChange = !isFirstAnswer && String(previousAnswer) !== String(answerId);
     }
-
     if (isFirstAnswer) {
-      setInitialAnswers((previous) => ({
-        ...previous,
-        [questionId]: actualMultipleCorrect ? newSelectedAnswer : answerId
-      }));
+      setInitialAnswers(prev => ({ ...prev, [questionId]: actualMultipleCorrect ? newSelectedAnswer : answerId }));
     }
-
-    const nextAnswers = { ...answers, [questionId]: newSelectedAnswer };
-    setAnswers(nextAnswers);
-
+    setAnswers(prev => ({ ...prev, [questionId]: newSelectedAnswer }));
     await persistAnswer(questionId, actualMultipleCorrect ? newSelectedAnswer.join(",") : newSelectedAnswer, undefined, isAnswerChange);
   }
 
-  // ------------------------------------------------------------
-  // Forced-choice selection handler
-  //
-  // FIX: isChange now only increments when the candidate actually
-  // REVISES a pick on the same side (most → different most, or
-  // least → different least). Setting the second side for the first
-  // time is NOT a change — it's completing the question.
-  // ------------------------------------------------------------
   async function handleForcedChoiceSelect(questionId, answerId, side) {
     if (isTimeExpired || elapsedSeconds >= timeLimitSeconds) {
-      alert("Time has expired! The assessment is being submitted automatically.");
-      return;
+      alert("Time has expired! The assessment is being submitted automatically."); return;
     }
     if (alreadySubmitted || !session || !user || !questionId || !answerId || accessDenied || isAutoSubmitting) return;
-
     const current = getForcedChoicePicks(questionId);
     const next = { ...current };
-
     const hadPreviousMost = current.most !== null && current.most !== undefined;
     const hadPreviousLeast = current.least !== null && current.least !== undefined;
-
     if (side === "most") {
-      if (String(next.most) === String(answerId)) {
-        next.most = null;
-      } else {
+      if (String(next.most) === String(answerId)) { next.most = null; }
+      else {
         next.most = answerId;
         if (next.least != null && String(next.least) === String(answerId)) {
           next.least = null;
@@ -657,9 +442,8 @@ function AssessmentContent() {
         }
       }
     } else {
-      if (String(next.least) === String(answerId)) {
-        next.least = null;
-      } else {
+      if (String(next.least) === String(answerId)) { next.least = null; }
+      else {
         next.least = answerId;
         if (next.most != null && String(next.most) === String(answerId)) {
           next.most = null;
@@ -668,28 +452,13 @@ function AssessmentContent() {
         }
       }
     }
-
-    const isMostChange =
-      side === "most" &&
-      hadPreviousMost &&
-      String(current.most) !== String(answerId);
-
-    const isLeastChange =
-      side === "least" &&
-      hadPreviousLeast &&
-      String(current.least) !== String(answerId);
-
+    const isMostChange = side === "most" && hadPreviousMost && String(current.most) !== String(answerId);
+    const isLeastChange = side === "least" && hadPreviousLeast && String(current.least) !== String(answerId);
     const isChange = isMostChange || isLeastChange;
-
     if (!hadPreviousMost && !hadPreviousLeast) {
-      setInitialAnswers((previous) => ({
-        ...previous,
-        [questionId]: next.most != null ? next.most : (next.least != null ? next.least : null)
-      }));
+      setInitialAnswers(prev => ({ ...prev, [questionId]: next.most != null ? next.most : (next.least != null ? next.least : null) }));
     }
-
-    setAnswers((previous) => ({ ...previous, [questionId]: next }));
-
+    setAnswers(prev => ({ ...prev, [questionId]: next }));
     if (next.most != null) {
       await persistAnswer(questionId, String(next.most), next.least != null ? String(next.least) : undefined, isChange);
     }
@@ -697,20 +466,12 @@ function AssessmentContent() {
 
   useEffect(() => {
     if (loading || alreadySubmitted || accessDenied || !session || isTimeExpired) return;
-
     const handleVisibilityChange = () => {
       if (document.hidden) {
         const newCount = tabSwitchCount + 1;
         setTabSwitchCount(newCount);
-
         const currentUrl = window.location.href;
-        let switchDetail = {
-          timestamp: new Date().toISOString(),
-          url: currentUrl,
-          type: 'tab_switch',
-          description: `Tab switch #${newCount}`
-        };
-
+        let switchDetail = { timestamp: new Date().toISOString(), url: currentUrl, type: 'tab_switch', description: `Tab switch #${newCount}` };
         if (isExternalUrl(currentUrl)) {
           const domain = extractDomain(currentUrl);
           const category = getUrlCategory(currentUrl);
@@ -721,23 +482,14 @@ function AssessmentContent() {
         } else {
           logViolation("Tab switch");
         }
-
         setTabSwitchDetails(prev => [...prev, switchDetail]);
       }
     };
-
     const handlePageHide = () => {
       const newCount = tabSwitchCount + 1;
       setTabSwitchCount(newCount);
-
       const currentUrl = window.location.href;
-      let switchDetail = {
-        timestamp: new Date().toISOString(),
-        url: currentUrl,
-        type: 'page_hide',
-        description: `Page hide #${newCount}`
-      };
-
+      let switchDetail = { timestamp: new Date().toISOString(), url: currentUrl, type: 'page_hide', description: `Page hide #${newCount}` };
       if (isExternalUrl(currentUrl)) {
         const domain = extractDomain(currentUrl);
         const category = getUrlCategory(currentUrl);
@@ -746,13 +498,10 @@ function AssessmentContent() {
         switchDetail.category = category;
         logViolation(`Page hide to external site: ${domain} (${category})`);
       }
-
       setTabSwitchDetails(prev => [...prev, switchDetail]);
     };
-
     document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('pagehide', handlePageHide);
-
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('pagehide', handlePageHide);
@@ -761,79 +510,50 @@ function AssessmentContent() {
 
   useEffect(() => {
     if (loading || alreadySubmitted || accessDenied || !session || isTimeExpired) return;
-
     const handleContextMenu = (event) => {
       event.preventDefault();
       setRightClickAttempts(prev => prev + 1);
       logViolation("Right-click attempt");
       return false;
     };
-
     document.addEventListener("contextmenu", handleContextMenu);
-
-    return () => {
-      document.removeEventListener("contextmenu", handleContextMenu);
-    };
+    return () => document.removeEventListener("contextmenu", handleContextMenu);
   }, [loading, alreadySubmitted, accessDenied, session, isTimeExpired]);
 
   useEffect(() => {
     if (currentQuestion.id && !questionStartTimes[currentQuestion.id]) {
-      setQuestionStartTimes(prev => ({
-        ...prev,
-        [currentQuestion.id]: Date.now()
-      }));
+      setQuestionStartTimes(prev => ({ ...prev, [currentQuestion.id]: Date.now() }));
     }
   }, [currentQuestion.id]);
 
   useEffect(() => {
     if (loading || alreadySubmitted || accessDenied || !session || isTimeExpired) return;
-
     setPreviousUrl(window.location.href);
     setUrlVisitStartTime(Date.now());
-
-    const handleUrlChange = () => {
-      trackUrlChange();
-    };
-
+    const handleUrlChange = () => { trackUrlChange(); };
     window.addEventListener('popstate', handleUrlChange);
     window.addEventListener('hashchange', handleUrlChange);
-
     urlCheckIntervalRef.current = setInterval(() => {
-      const currentUrl = window.location.href;
-      if (previousUrl !== currentUrl) {
-        trackUrlChange();
-      }
+      if (previousUrl !== window.location.href) trackUrlChange();
     }, 1000);
-
     const handleLinkClick = (e) => {
       const target = e.target.closest('a');
-      if (target && target.href) {
-        if (isExternalUrl(target.href)) {
-          const domain = extractDomain(target.href);
-          const category = getUrlCategory(target.href);
-          logViolation(`External link click: ${domain} (${category})`);
-
-          setExternalUrlVisits(prev => [...prev, {
-            url: target.href,
-            domain: domain,
-            category: category,
-            timestamp: new Date().toISOString(),
-            fromUrl: window.location.href,
-            via: 'link_click'
-          }]);
-        }
+      if (target && target.href && isExternalUrl(target.href)) {
+        const domain = extractDomain(target.href);
+        const category = getUrlCategory(target.href);
+        logViolation(`External link click: ${domain} (${category})`);
+        setExternalUrlVisits(prev => [...prev, {
+          url: target.href, domain, category,
+          timestamp: new Date().toISOString(),
+          fromUrl: window.location.href, via: 'link_click'
+        }]);
       }
     };
-
     document.addEventListener('click', handleLinkClick, true);
-
     return () => {
       window.removeEventListener('popstate', handleUrlChange);
       window.removeEventListener('hashchange', handleUrlChange);
-      if (urlCheckIntervalRef.current) {
-        clearInterval(urlCheckIntervalRef.current);
-        urlCheckIntervalRef.current = null;
-      }
+      if (urlCheckIntervalRef.current) { clearInterval(urlCheckIntervalRef.current); urlCheckIntervalRef.current = null; }
       document.removeEventListener('click', handleLinkClick, true);
     };
   }, [loading, alreadySubmitted, accessDenied, session, isTimeExpired]);
@@ -841,63 +561,28 @@ function AssessmentContent() {
   useEffect(() => {
     const init = async () => {
       try {
-        setLoading(true);
-        setPageError("");
-        setAccessDenied(false);
-        setAlreadySubmitted(false);
-        setQuestions([]);
-        setAnswers({});
-        setInitialAnswers({});
-        setAnswerChangeCount({});
-        setSaveStatus({});
-        setElapsedSeconds(0);
-        setViolationCount(0);
-        setTabSwitchCount(0);
-        setCopyAttempts(0);
-        setPasteAttempts(0);
-        setRightClickAttempts(0);
-        setExternalUrlVisits([]);
-        setDomainVisits({});
-        setTabSwitchDetails([]);
+        setLoading(true); setPageError(""); setAccessDenied(false); setAlreadySubmitted(false);
+        setQuestions([]); setAnswers({}); setInitialAnswers({}); setAnswerChangeCount({}); setSaveStatus({});
+        setElapsedSeconds(0); setViolationCount(0); setTabSwitchCount(0);
+        setCopyAttempts(0); setPasteAttempts(0); setRightClickAttempts(0);
+        setExternalUrlVisits([]); setDomainVisits({}); setTabSwitchDetails([]);
         setIsTimeExpired(false);
-        sessionIdRef.current = null;
-        submittingRef.current = false;
-        autoSubmitRef.current = false;
+        sessionIdRef.current = null; submittingRef.current = false; autoSubmitRef.current = false;
 
         const authResponse = await supabase.auth.getSession();
         const authSession = authResponse && authResponse.data ? authResponse.data.session : null;
-        if (!authSession) {
-          router.push("/login");
-          return;
-        }
+        if (!authSession) { router.push("/login"); return; }
         if (!assessmentId) return;
-
         const currentUser = authSession.user;
         setUser(currentUser);
 
         const assessmentData = await fetchAssessmentDetails(assessmentId);
-        if (!assessmentData.success) {
-          throw new Error(assessmentData.error || 'Failed to load assessment');
-        }
-
+        if (!assessmentData.success) throw new Error(assessmentData.error || 'Failed to load assessment');
         const assessmentInfo = assessmentData.assessment || assessmentData;
+        if (!assessmentInfo?.id) throw new Error('Assessment details were returned in an invalid format');
 
-        if (!assessmentInfo?.id) {
-          console.error('[Assessment] Invalid assessment data format:', assessmentData);
-          throw new Error('Assessment details were returned in an invalid format');
-        }
-
-        const resolvedTypeCode =
-          assessmentInfo.assessment_type?.code ||
-          assessmentInfo.assessmentType?.code ||
-          assessmentInfo.type_code ||
-          null;
-
-        const resolvedScoringMode =
-          assessmentInfo.assessment_type?.scoring_mode ||
-          assessmentInfo.assessmentType?.scoring_mode ||
-          "single_select";
-
+        const resolvedTypeCode = assessmentInfo.assessment_type?.code || assessmentInfo.assessmentType?.code || assessmentInfo.type_code || null;
+        const resolvedScoringMode = assessmentInfo.assessment_type?.scoring_mode || assessmentInfo.assessmentType?.scoring_mode || "single_select";
         console.log(`[Assessment] Type: ${resolvedTypeCode || 'unknown'}, Scoring: ${resolvedScoringMode}`);
 
         setAssessment(assessmentInfo);
@@ -906,106 +591,52 @@ function AssessmentContent() {
         setScoringMode(resolvedScoringMode);
 
         const accessData = await fetchAccess(assessmentId);
+        if (accessData && (accessData.status === 'completed' || accessData.result_id)) { setAlreadySubmitted(true); setLoading(false); return; }
+        if (accessData && accessData.status === 'blocked') { setAccessDenied(true); setLoading(false); return; }
 
-        if (accessData && (accessData.status === 'completed' || accessData.result_id)) {
-          setAlreadySubmitted(true);
-          setLoading(false);
-          return;
-        }
-
-        if (accessData && accessData.status === 'blocked') {
-          setAccessDenied(true);
-          setLoading(false);
-          return;
-        }
-
-        const assessmentTypeId = assessmentInfo.assessment_type_id ||
-                                 assessmentInfo.assessment_type?.id ||
-                                 assessmentInfo.assessmentType?.id;
-
-        if (!assessmentTypeId) {
-          console.error('[Assessment] Missing assessment_type_id:', assessmentInfo);
-          throw new Error('Assessment type could not be determined');
-        }
+        const assessmentTypeId = assessmentInfo.assessment_type_id || assessmentInfo.assessment_type?.id || assessmentInfo.assessmentType?.id;
+        if (!assessmentTypeId) throw new Error('Assessment type could not be determined');
 
         const sessionData = await createOrGetSession(assessmentId, assessmentTypeId);
-
-        if (sessionData) {
-          setSession(sessionData);
-          sessionIdRef.current = sessionData.id;
-        }
+        if (sessionData) { setSession(sessionData); sessionIdRef.current = sessionData.id; }
 
         const durationSeconds = deriveDurationSeconds(sessionData);
-        if (durationSeconds <= 0) {
-          console.error('[Assessment] Could not derive session duration from:', sessionData);
-          throw new Error('Unable to determine session duration');
-        }
+        if (durationSeconds <= 0) throw new Error('Unable to determine session duration');
         setTimeLimitSeconds(durationSeconds);
+        console.log(`[Assessment] Duration: ${Math.round(durationSeconds / 60)} minutes (${durationSeconds} seconds)`);
 
-        const durationMinutes = Math.round(durationSeconds / 60);
-        console.log(`[Assessment] Duration: ${durationMinutes} minutes (${durationSeconds} seconds)`);
-
-        const questionData = await fetchQuestions(
-          assessmentTypeId,
-          resolvedTypeCode,
-          sessionData?.id
-        );
+        const questionData = await fetchQuestions(assessmentTypeId, resolvedTypeCode, sessionData?.id);
         setQuestions(questionData || []);
 
         if (sessionData && sessionData.id) {
           const savedTimer = localStorage.getItem(`timer_${sessionData.id}`);
           if (savedTimer) {
             const elapsed = parseInt(savedTimer, 10);
-            if (elapsed > 0 && elapsed < durationSeconds) {
-              setElapsedSeconds(elapsed);
-              console.log(`[Timer] Restored: ${elapsed}s from localStorage`);
-            }
+            if (elapsed > 0 && elapsed < durationSeconds) { setElapsedSeconds(elapsed); console.log(`[Timer] Restored: ${elapsed}s`); }
           }
-
           const savedIndex = localStorage.getItem(`current_index_${sessionData.id}`);
           if (savedIndex !== null && questionData && questionData.length > 0) {
             const idx = parseInt(savedIndex, 10);
-            if (Number.isFinite(idx) && idx > 0 && idx < questionData.length) {
-              setCurrentIndex(idx);
-              console.log(`[Assessment] Restored question index: ${idx}`);
-            }
+            if (Number.isFinite(idx) && idx > 0 && idx < questionData.length) { setCurrentIndex(idx); console.log(`[Assessment] Restored index: ${idx}`); }
           }
         }
 
         if (sessionData && sessionData.id) {
           const responses = await getSessionResponses(sessionData.id);
-          const restoredAnswers = {};
-          const restoredInitialAnswers = {};
-          const restoredChangeCount = {};
-
+          const restoredAnswers = {}, restoredInitialAnswers = {}, restoredChangeCount = {};
           if (responses && responses.answerMap) {
             Object.entries(responses.answerMap).forEach(([qId, answer]) => {
               if (answer && typeof answer === "object" && !Array.isArray(answer) && ("most" in answer || "least" in answer)) {
-                restoredAnswers[qId] = {
-                  most: answer.most != null ? parseInt(answer.most, 10) : null,
-                  least: answer.least != null ? parseInt(answer.least, 10) : null
-                };
+                restoredAnswers[qId] = { most: answer.most != null ? parseInt(answer.most, 10) : null, least: answer.least != null ? parseInt(answer.least, 10) : null };
               } else if (typeof answer === "string" && answer.includes(",")) {
-                const answerList = answer.split(",").map((id) => parseInt(id, 10)).filter((id) => !Number.isNaN(id));
-                restoredAnswers[qId] = answerList;
+                restoredAnswers[qId] = answer.split(",").map(id => parseInt(id, 10)).filter(id => !Number.isNaN(id));
               } else if (answer !== null && answer !== undefined && answer !== "") {
                 restoredAnswers[qId] = parseInt(answer, 10);
               }
             });
           }
-
-          if (responses && responses.initialAnswerMap) {
-            Object.entries(responses.initialAnswerMap).forEach(([qId, answer]) => {
-              restoredInitialAnswers[qId] = answer;
-            });
-          }
-
-          if (responses && responses.changeCountMap) {
-            Object.entries(responses.changeCountMap).forEach(([qId, count]) => {
-              restoredChangeCount[qId] = safeNumber(count, 0);
-            });
-          }
-
+          if (responses && responses.initialAnswerMap) Object.entries(responses.initialAnswerMap).forEach(([qId, answer]) => { restoredInitialAnswers[qId] = answer; });
+          if (responses && responses.changeCountMap) Object.entries(responses.changeCountMap).forEach(([qId, count]) => { restoredChangeCount[qId] = safeNumber(count, 0); });
           setAnswers(restoredAnswers);
           setInitialAnswers(restoredInitialAnswers);
           setAnswerChangeCount(restoredChangeCount);
@@ -1019,21 +650,15 @@ function AssessmentContent() {
         setLoading(false);
       }
     };
-
     if (assessmentId) init();
   }, [assessmentId, router]);
 
   useEffect(() => {
     if (loading || alreadySubmitted || accessDenied || !session || isAutoSubmitting || questions.length === 0 || isTimeExpired) return;
-
     const timer = setInterval(() => {
-      setElapsedSeconds((previous) => {
+      setElapsedSeconds(previous => {
         const next = previous + 1;
-
-        if (sessionIdRef.current) {
-          localStorage.setItem(`timer_${sessionIdRef.current}`, String(next));
-        }
-
+        if (sessionIdRef.current) localStorage.setItem(`timer_${sessionIdRef.current}`, String(next));
         if (timeLimitSeconds > 0 && next >= timeLimitSeconds) {
           setIsTimeExpired(true);
           if (!autoSubmitRef.current && !submittingRef.current) {
@@ -1044,36 +669,28 @@ function AssessmentContent() {
         return next;
       });
     }, 1000);
-
     return () => clearInterval(timer);
   }, [loading, alreadySubmitted, accessDenied, session, isAutoSubmitting, timeLimitSeconds, isTimeExpired]);
 
   useEffect(() => {
-    if ((alreadySubmitted || isTimeExpired) && sessionIdRef.current) {
-      localStorage.removeItem(`timer_${sessionIdRef.current}`);
-    }
+    if ((alreadySubmitted || isTimeExpired) && sessionIdRef.current) localStorage.removeItem(`timer_${sessionIdRef.current}`);
   }, [alreadySubmitted, isTimeExpired]);
 
   useEffect(() => {
-    if (!sessionIdRef.current) return;
-    if (loading || questions.length === 0) return;
+    if (!sessionIdRef.current || loading || questions.length === 0) return;
     localStorage.setItem(`current_index_${sessionIdRef.current}`, String(currentIndex));
   }, [currentIndex, loading, questions.length]);
 
   useEffect(() => {
-    if ((alreadySubmitted || isTimeExpired) && sessionIdRef.current) {
-      localStorage.removeItem(`current_index_${sessionIdRef.current}`);
-    }
+    if ((alreadySubmitted || isTimeExpired) && sessionIdRef.current) localStorage.removeItem(`current_index_${sessionIdRef.current}`);
   }, [alreadySubmitted, isTimeExpired]);
 
   useEffect(() => {
     if (loading || alreadySubmitted || accessDenied || !session || isTimeExpired) return;
-
     const handleCopy = (event) => { event.preventDefault(); setCopyAttempts(prev => prev + 1); logViolation("Copy attempt"); return false; };
     const handlePaste = (event) => { event.preventDefault(); setPasteAttempts(prev => prev + 1); logViolation("Paste attempt"); return false; };
     const handleCut = (event) => { event.preventDefault(); logViolation("Cut attempt"); return false; };
-    const handleContextMenu = (event) => { event.preventDefault(); setRightClickAttempts(prev => prev + 1); logViolation("Right-click attempt"); return false; };
-
+    const handleContextMenu2 = (event) => { event.preventDefault(); setRightClickAttempts(prev => prev + 1); logViolation("Right-click attempt"); return false; };
     const handleKeyDown = (event) => {
       const key = String(event.key || "").toLowerCase();
       if (event.key === "PrintScreen") { event.preventDefault(); logViolation("Screenshot attempt"); return false; }
@@ -1082,107 +699,75 @@ function AssessmentContent() {
       if (event.ctrlKey && key === "u") { event.preventDefault(); logViolation("View source attempt"); return false; }
       return true;
     };
-
     document.addEventListener("copy", handleCopy);
     document.addEventListener("paste", handlePaste);
     document.addEventListener("cut", handleCut);
-    document.addEventListener("contextmenu", handleContextMenu);
+    document.addEventListener("contextmenu", handleContextMenu2);
     document.addEventListener("keydown", handleKeyDown);
-
     return () => {
       document.removeEventListener("copy", handleCopy);
       document.removeEventListener("paste", handlePaste);
       document.removeEventListener("cut", handleCut);
-      document.removeEventListener("contextmenu", handleContextMenu);
+      document.removeEventListener("contextmenu", handleContextMenu2);
       document.removeEventListener("keydown", handleKeyDown);
     };
   }, [loading, alreadySubmitted, accessDenied, session, violationCount, isAutoSubmitting, isTimeExpired]);
 
   async function moveToQuestion(nextIndex) {
     if (isTimeExpired || elapsedSeconds >= timeLimitSeconds) {
-      alert("Time has expired! The assessment is being submitted automatically.");
-      return;
+      alert("Time has expired! The assessment is being submitted automatically."); return;
     }
     if (isAutoSubmitting || nextIndex < 0 || nextIndex >= questions.length) return;
     setCurrentIndex(nextIndex);
     setQuestionStartTime(Date.now());
+    setShowMobileNavigator(false);
     if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   async function handleSubmit() {
-    if (!session || !session.id) {
-      alert('Unable to submit: No active session found. Please refresh the page and try again.');
-      return;
-    }
+    if (!session || !session.id) { alert('Unable to submit: No active session found. Please refresh the page and try again.'); return; }
     if (alreadySubmitted) { alert('This assessment has already been submitted.'); return; }
     if (accessDenied) { alert('Access denied for this assessment.'); return; }
     if (isAutoSubmitting || submittingRef.current) return;
     if (isTimeExpired) { alert('Time has expired! The assessment is being submitted automatically.'); return; }
-
     const unansweredCount = questions.length - countAnswered(answers, questions.length, isForcedChoice);
     if (unansweredCount > 0) {
-      if (isForcedChoice) {
-        alert("Please set BOTH a most-likely and a least-likely answer for every question. " + unansweredCount + " question(s) incomplete.");
-      } else {
-        alert("Please answer all questions before submitting. " + unansweredCount + " question(s) remaining.");
-      }
+      if (isForcedChoice) alert("Please set BOTH a most-likely and a least-likely answer for every question. " + unansweredCount + " question(s) incomplete.");
+      else alert("Please answer all questions before submitting. " + unansweredCount + " question(s) remaining.");
       return;
     }
-
     try {
       submittingRef.current = true;
       setIsSubmitting(true);
       setShowSubmitModal(false);
-
       const proctoringData = {
         summary: {
           tabSwitches: tabSwitchCount,
           copyPasteAttempts: copyAttempts + pasteAttempts,
-          rightClickAttempts: rightClickAttempts,
-          totalViolations: violationCount,
+          rightClickAttempts, totalViolations: violationCount,
           externalUrlsVisited: externalUrlVisits.length,
           duration: elapsedSeconds,
           riskLevel: violationCount >= 3 ? 'high' : violationCount >= 1 ? 'medium' : 'low',
           riskScore: Math.min(violationCount * 25 + externalUrlVisits.length * 10, 100)
         },
-        violations: [],
-        tabSwitches: tabSwitchDetails,
-        externalUrls: externalUrlVisits,
-        domainVisits: domainVisits,
-        sessionId: sessionIdRef.current
+        violations: [], tabSwitches: tabSwitchDetails, externalUrls: externalUrlVisits,
+        domainVisits, sessionId: sessionIdRef.current
       };
-
-      const result = await submitAssessment(
-        sessionIdRef.current,
-        false,
-        null,
-        false,
-        proctoringData,
-        assessmentId
-      );
-
+      const result = await submitAssessment(sessionIdRef.current, false, null, false, proctoringData, assessmentId);
       console.log('[Assessment] Submit result:', result);
-
       setAlreadySubmitted(true);
       setShowSuccessModal(true);
-
-      setTimeout(() => {
-        router.push('/candidate/assessment-complete');
-      }, 2000);
-
+      setTimeout(() => router.push('/candidate/assessment-complete'), 2000);
     } catch (err) {
       console.error("Submission error:", err);
-      const errorMessage = err && err.message ? err.message : "Unknown error";
-      alert("Failed to submit assessment: " + errorMessage + "\n\nPlease try again or contact support.");
+      alert("Failed to submit assessment: " + (err?.message || 'Unknown error') + "\n\nPlease try again or contact support.");
     } finally {
       submittingRef.current = false;
       setIsSubmitting(false);
     }
   }
 
-  async function handleBackClick() {
-    router.push("/candidate/dashboard");
-  }
+  async function handleBackClick() { router.push("/candidate/dashboard"); }
 
   const isDisabled = alreadySubmitted || isAutoSubmitting || isTimeExpired;
 
@@ -1217,19 +802,9 @@ function AssessmentContent() {
           <span>🔴</span>
           <span>
             <strong>External site detected:</strong> {currentExternalUrl}
-            <span style={{ fontSize: '11px', opacity: 0.8, marginLeft: '8px' }}>
-              ({getUrlCategory(currentExternalUrl)})
-            </span>
+            <span style={{ fontSize: '11px', opacity: 0.8, marginLeft: '8px' }}>({getUrlCategory(currentExternalUrl)})</span>
           </span>
-          <button
-            onClick={() => {
-              window.history.back();
-              setShowUrlWarning(false);
-            }}
-            style={styles.urlWarningButton}
-          >
-            Return to Assessment
-          </button>
+          <button onClick={() => { window.history.back(); setShowUrlWarning(false); }} style={styles.urlWarningButton}>Return to Assessment</button>
         </div>
       )}
 
@@ -1249,7 +824,6 @@ function AssessmentContent() {
             <div style={styles.autoSubmitSpinner} />
             <h3>⏰ Time Expired!</h3>
             <p>Your assessment is being submitted automatically.</p>
-            <p style={{ fontSize: '13px', color: '#64748b', marginTop: '8px' }}>Please wait...</p>
           </div>
         </div>
       )}
@@ -1264,12 +838,7 @@ function AssessmentContent() {
               <div style={styles.modalStat}><span>Completion Rate</span><strong>{Math.round((totalAnswered / questions.length) * 100)}%</strong></div>
               <div style={styles.modalStat}><span>Answer Changes</span><strong>{totalChanges}</strong></div>
               {violationCount > 0 && <div style={styles.modalStat}><span>Behavioral Flags</span><strong style={{ color: warningColor }}>{violationCount}</strong></div>}
-              {externalUrlVisits.length > 0 && (
-                <div style={styles.modalStat}>
-                  <span>External Sites Visited</span>
-                  <strong style={{ color: dangerColor }}>{externalUrlVisits.length}</strong>
-                </div>
-              )}
+              {externalUrlVisits.length > 0 && <div style={styles.modalStat}><span>External Sites Visited</span><strong style={{ color: dangerColor }}>{externalUrlVisits.length}</strong></div>}
             </div>
             {externalUrlVisits.length > 0 && (
               <div style={styles.modalUrlWarning}>
@@ -1277,9 +846,7 @@ function AssessmentContent() {
                 <div>
                   <strong>External sites detected:</strong>
                   <ul style={{ margin: '4px 0 0 0', paddingLeft: '16px', fontSize: '12px' }}>
-                    {externalUrlVisits.slice(0, 3).map((visit, i) => (
-                      <li key={i}>{visit.domain} ({visit.category})</li>
-                    ))}
+                    {externalUrlVisits.slice(0, 3).map((visit, i) => <li key={i}>{visit.domain} ({visit.category})</li>)}
                     {externalUrlVisits.length > 3 && <li>+{externalUrlVisits.length - 3} more</li>}
                   </ul>
                 </div>
@@ -1308,6 +875,44 @@ function AssessmentContent() {
         </div>
       )}
 
+      {/* Mobile navigator drawer */}
+      {showMobileNavigator && (
+        <div style={styles.mobileNavOverlay} onClick={() => setShowMobileNavigator(false)}>
+          <div style={styles.mobileNavDrawer} onClick={(e) => e.stopPropagation()}>
+            <div style={styles.mobileNavHeader}>
+              <span style={styles.mobileNavTitle}>Question Navigator</span>
+              <button onClick={() => setShowMobileNavigator(false)} style={styles.mobileNavClose}>✕</button>
+            </div>
+            <div style={styles.mobileNavGrid}>
+              {questions.map((question, index) => {
+                const answered = isAnsweredForQuestion(question.id);
+                const current = index === currentIndex;
+                const changed = answerChangeCount[question.id] > 0;
+                let bgColor = "white", textColor = "#1e293b", borderColor = "#e2e8f0";
+                if (current) { bgColor = accentColor; textColor = primaryColor; borderColor = accentColor; }
+                else if (answered && changed) { bgColor = warningColor; textColor = "white"; borderColor = warningColor; }
+                else if (answered) { bgColor = successColor; textColor = "white"; borderColor = successColor; }
+                return (
+                  <button
+                    key={question.id}
+                    className="navigator-item"
+                    onClick={() => moveToQuestion(index)}
+                    style={{ ...styles.gridItem, background: bgColor, color: textColor, borderColor, fontWeight: current ? 700 : 500 }}
+                  >
+                    {index + 1}
+                  </button>
+                );
+              })}
+            </div>
+            <div style={styles.mobileNavLegend}>
+              <span style={{ ...styles.legendDot, background: successColor }} /> Answered
+              <span style={{ ...styles.legendDot, background: warningColor, marginLeft: '12px' }} /> Changed
+              <span style={{ ...styles.legendDot, background: accentColor, marginLeft: '12px' }} /> Current
+            </div>
+          </div>
+        </div>
+      )}
+
       <div style={styles.container}>
         <div style={styles.header}>
           <div style={styles.headerContent}>
@@ -1329,6 +934,13 @@ function AssessmentContent() {
               </div>
             </div>
             <div style={styles.headerRight}>
+              <button
+                onClick={() => setShowMobileNavigator(true)}
+                style={styles.mobileNavToggle}
+                aria-label="Open question navigator"
+              >
+                ☰ {currentIndex + 1}/{questions.length}
+              </button>
               <div style={styles.timer}>
                 <div style={styles.timerLabel}>TIME REMAINING</div>
                 <div style={{ ...styles.timerValue, color: isTimeCritical ? dangerColor : accentColor }}>
@@ -1344,28 +956,20 @@ function AssessmentContent() {
             {isForcedChoice && (
               <>
                 <span style={styles.headerMetaDivider}>•</span>
-                <span style={{ ...styles.headerMetaItem, color: accentColor, fontWeight: 600 }}>Pick most AND least likely</span>
+                <span style={{ ...styles.headerMetaItem, color: accentColor, fontWeight: 600 }}>Most AND least</span>
               </>
             )}
             {!isForcedChoice && isMultipleCorrect && !isNationalService && (
               <>
                 <span style={styles.headerMetaDivider}>•</span>
-                <span style={{ ...styles.headerMetaItem, color: accentColor, fontWeight: 600 }}>Select all that apply</span>
-              </>
-            )}
-            {externalUrlVisits.length > 0 && (
-              <>
-                <span style={styles.headerMetaDivider}>•</span>
-                <span style={{ ...styles.headerMetaItem, color: dangerColor, fontWeight: 600 }}>
-                  🔴 {externalUrlVisits.length} external site{externalUrlVisits.length > 1 ? 's' : ''}
-                </span>
+                <span style={{ ...styles.headerMetaItem, color: accentColor, fontWeight: 600 }}>Select all</span>
               </>
             )}
           </div>
         </div>
 
-        <div style={styles.mainContent}>
-          <div style={styles.leftSidebar}>
+        <div className="assessment-main" style={styles.mainContent}>
+          <div className="assessment-left-sidebar" style={styles.leftSidebar}>
             <div style={styles.statusCard}>
               <div style={styles.statusNumber}>Question {currentIndex + 1}</div>
               <div style={styles.statusBadge}>
@@ -1387,7 +991,7 @@ function AssessmentContent() {
             {externalUrlVisits.length > 0 && (
               <div style={{ ...styles.metaCard, background: '#fff5f5', borderColor: '#fecaca' }}>
                 <div style={{ fontSize: '12px', fontWeight: 600, color: '#dc2626', marginBottom: '6px' }}>
-                  🔴 External Sites Visited ({externalUrlVisits.length})
+                  🔴 External Sites ({externalUrlVisits.length})
                 </div>
                 <div style={{ fontSize: '11px', color: '#475569', maxHeight: '100px', overflowY: 'auto' }}>
                   {externalUrlVisits.map((visit, i) => (
@@ -1406,16 +1010,14 @@ function AssessmentContent() {
             </div>
           </div>
 
-          <div style={styles.middleColumn}>
-            <div style={styles.questionCard}>
+          <div className="assessment-middle" style={styles.middleColumn}>
+            <div className="assessment-question-card" style={styles.questionCard}>
               <div style={styles.questionText}>
                 {currentQuestion.question_text}
               </div>
 
               {!isForcedChoice && isMultipleCorrect && !isNationalService && (
-                <div style={styles.multipleHint}>
-                  💡 Select one or more answers
-                </div>
+                <div style={styles.multipleHint}>💡 Select one or more answers</div>
               )}
 
               {isForcedChoice && (
@@ -1424,7 +1026,7 @@ function AssessmentContent() {
                     <strong>Most likely:</strong> which action would you <em>most</em> likely take? &nbsp;
                     <strong>Least likely:</strong> which would you <em>least</em> likely take?
                   </div>
-                  <div style={styles.forcedChoiceHeaderRow}>
+                  <div className="forced-choice-header" style={styles.forcedChoiceHeaderRow}>
                     <div style={styles.forcedChoiceHeaderSpacer} />
                     <div style={styles.forcedChoiceHeaderCol}>Most</div>
                     <div style={styles.forcedChoiceHeaderCol}>Least</div>
@@ -1432,7 +1034,7 @@ function AssessmentContent() {
                 </>
               )}
 
-              <div style={styles.answersContainer}>
+              <div className="answers-container" style={styles.answersContainer}>
                 {safeArray(currentQuestion.answers).map((answer, index) => {
                   const optionLetter = String.fromCharCode(65 + index);
 
@@ -1447,13 +1049,10 @@ function AssessmentContent() {
                     return (
                       <div
                         key={answer.id}
-                        className="answer-option"
-                        style={{
-                          ...styles.forcedChoiceRow,
-                          opacity: isDisabled ? 0.6 : 1
-                        }}
+                        className="answer-option forced-choice-row"
+                        style={{ ...styles.forcedChoiceRow, opacity: isDisabled ? 0.6 : 1 }}
                       >
-                        <div style={styles.forcedChoiceTextWrap}>
+                        <div className="forced-choice-text" style={styles.forcedChoiceTextWrap}>
                           <span style={{
                             color: (isMost || isLeast) ? primaryColor : "#1e293b",
                             fontSize: "15px",
@@ -1462,37 +1061,41 @@ function AssessmentContent() {
                             {optionLetter}. {answer.answer_text}
                           </span>
                         </div>
-                        <div style={styles.forcedChoiceChoiceCol}>
-                          <button
-                            type="button"
-                            onClick={() => handleForcedChoiceSelect(currentQuestion.id, answer.id, "most")}
-                            disabled={isDisabled}
-                            aria-label="Most likely"
-                            style={{
-                              ...styles.choiceButton,
-                              background: isMost ? successColor : (isFlashingMost ? "#fff3e0" : "white"),
-                              borderColor: isMost ? successColor : "#cbd5e1",
-                              color: isMost ? "white" : "#0b2a4e"
-                            }}
-                          >
-                            {isMost ? "✓" : ""}
-                          </button>
-                        </div>
-                        <div style={styles.forcedChoiceChoiceCol}>
-                          <button
-                            type="button"
-                            onClick={() => handleForcedChoiceSelect(currentQuestion.id, answer.id, "least")}
-                            disabled={isDisabled}
-                            aria-label="Least likely"
-                            style={{
-                              ...styles.choiceButton,
-                              background: isLeast ? dangerColor : (isFlashingLeast ? "#fff3e0" : "white"),
-                              borderColor: isLeast ? dangerColor : "#cbd5e1",
-                              color: isLeast ? "white" : "#0b2a4e"
-                            }}
-                          >
-                            {isLeast ? "✕" : ""}
-                          </button>
+                        <div className="forced-choice-buttons" style={styles.forcedChoiceChoicesWrap}>
+                          <div style={styles.forcedChoiceChoiceCol}>
+                            <button
+                              type="button"
+                              onClick={() => handleForcedChoiceSelect(currentQuestion.id, answer.id, "most")}
+                              disabled={isDisabled}
+                              aria-label="Most likely"
+                              className="choice-button"
+                              style={{
+                                ...styles.choiceButton,
+                                background: isMost ? successColor : (isFlashingMost ? "#fff3e0" : "white"),
+                                borderColor: isMost ? successColor : "#cbd5e1",
+                                color: isMost ? "white" : "#0b2a4e"
+                              }}
+                            >
+                              {isMost ? "✓" : "Most"}
+                            </button>
+                          </div>
+                          <div style={styles.forcedChoiceChoiceCol}>
+                            <button
+                              type="button"
+                              onClick={() => handleForcedChoiceSelect(currentQuestion.id, answer.id, "least")}
+                              disabled={isDisabled}
+                              aria-label="Least likely"
+                              className="choice-button"
+                              style={{
+                                ...styles.choiceButton,
+                                background: isLeast ? dangerColor : (isFlashingLeast ? "#fff3e0" : "white"),
+                                borderColor: isLeast ? dangerColor : "#cbd5e1",
+                                color: isLeast ? "white" : "#0b2a4e"
+                              }}
+                            >
+                              {isLeast ? "✕" : "Least"}
+                            </button>
+                          </div>
                         </div>
                       </div>
                     );
@@ -1520,12 +1123,7 @@ function AssessmentContent() {
                       }}>
                         {selected && <span style={{ color: "white", fontSize: "14px" }}>✓</span>}
                       </div>
-                      <span style={{
-                        flex: 1,
-                        color: selected ? primaryColor : "#1e293b",
-                        fontSize: "15px",
-                        fontWeight: selected ? 600 : 400
-                      }}>
+                      <span style={{ flex: 1, color: selected ? primaryColor : "#1e293b", fontSize: "15px", fontWeight: selected ? 600 : 400 }}>
                         {optionLetter}. {answer.answer_text}
                       </span>
                     </button>
@@ -1534,63 +1132,36 @@ function AssessmentContent() {
               </div>
             </div>
 
-            <div style={styles.navButtons}>
+            <div className="assessment-nav-buttons" style={styles.navButtons}>
               <button
                 onClick={() => moveToQuestion(currentIndex - 1)}
                 disabled={currentIndex === 0 || isDisabled}
                 style={{ ...styles.navButton, opacity: (currentIndex === 0 || isDisabled) ? 0.5 : 1 }}
               >
-                ← Previous page
+                ← Previous
               </button>
               {isLastQuestion ? (
-                <button
-                  onClick={() => setShowSubmitModal(true)}
-                  disabled={isDisabled}
-                  style={styles.submitButton}
-                >
-                  Submit
-                </button>
+                <button onClick={() => setShowSubmitModal(true)} disabled={isDisabled} style={styles.submitButton}>Submit</button>
               ) : (
-                <button
-                  onClick={() => moveToQuestion(currentIndex + 1)}
-                  disabled={isDisabled}
-                  style={styles.nextButton}
-                >
-                  Next page →
-                </button>
+                <button onClick={() => moveToQuestion(currentIndex + 1)} disabled={isDisabled} style={styles.nextButton}>Next →</button>
               )}
             </div>
           </div>
 
-          <div style={styles.rightColumn}>
+          <div className="assessment-right-sidebar" style={styles.rightColumn}>
             <div style={styles.navigatorCard}>
               <div style={styles.navigatorHeader}>
                 <span style={styles.navigatorTitle}>Quiz navigation</span>
               </div>
-              <div style={styles.questionGrid}>
+              <div className="question-grid" style={styles.questionGrid}>
                 {questions.map((question, index) => {
                   const answered = isAnsweredForQuestion(question.id);
                   const current = index === currentIndex;
                   const changed = answerChangeCount[question.id] > 0;
-
-                  let bgColor = "white";
-                  let textColor = "#1e293b";
-                  let borderColor = "#e2e8f0";
-
-                  if (current) {
-                    bgColor = accentColor;
-                    textColor = primaryColor;
-                    borderColor = accentColor;
-                  } else if (answered && changed) {
-                    bgColor = warningColor;
-                    textColor = "white";
-                    borderColor = warningColor;
-                  } else if (answered) {
-                    bgColor = successColor;
-                    textColor = "white";
-                    borderColor = successColor;
-                  }
-
+                  let bgColor = "white", textColor = "#1e293b", borderColor = "#e2e8f0";
+                  if (current) { bgColor = accentColor; textColor = primaryColor; borderColor = accentColor; }
+                  else if (answered && changed) { bgColor = warningColor; textColor = "white"; borderColor = warningColor; }
+                  else if (answered) { bgColor = successColor; textColor = "white"; borderColor = successColor; }
                   return (
                     <button
                       key={question.id}
@@ -1598,14 +1169,9 @@ function AssessmentContent() {
                       onClick={() => moveToQuestion(index)}
                       disabled={isDisabled}
                       style={{
-                        ...styles.gridItem,
-                        background: bgColor,
-                        color: textColor,
-                        borderColor: borderColor,
-                        opacity: isDisabled ? 0.6 : 1,
-                        cursor: isDisabled ? "not-allowed" : "pointer",
-                        fontWeight: current ? 700 : 500,
-                        boxShadow: current ? `0 0 0 2px ${accentColor}40` : 'none'
+                        ...styles.gridItem, background: bgColor, color: textColor, borderColor,
+                        opacity: isDisabled ? 0.6 : 1, cursor: isDisabled ? "not-allowed" : "pointer",
+                        fontWeight: current ? 700 : 500, boxShadow: current ? `0 0 0 2px ${accentColor}40` : 'none'
                       }}
                     >
                       {index + 1}
@@ -1613,14 +1179,12 @@ function AssessmentContent() {
                   );
                 })}
               </div>
-
               <div style={styles.legend}>
                 <div style={styles.legendItem}><div style={{ ...styles.legendDot, background: successColor }} /><span>Answered</span></div>
                 <div style={styles.legendItem}><div style={{ ...styles.legendDot, background: warningColor }} /><span>Changed</span></div>
                 <div style={styles.legendItem}><div style={{ ...styles.legendDot, background: accentColor }} /><span>Current</span></div>
                 <div style={styles.legendItem}><div style={{ ...styles.legendDot, background: "white", border: "2px solid #e2e8f0" }} /><span>Pending</span></div>
               </div>
-
               <div style={styles.navigatorTimer}>
                 <span style={styles.navigatorTimerLabel}>⏱</span>
                 <span style={styles.navigatorTimerValue}>{timeRemainingFormatted}</span>
@@ -1653,6 +1217,110 @@ function AssessmentContent() {
           0% { transform: rotate(0deg); }
           100% { transform: rotate(360deg); }
         }
+
+        /* ============================================ */
+        /* RESPONSIVE — Phase 6.5                        */
+        /* ============================================ */
+
+        /* TABLET: 768px – 1023px */
+        @media (max-width: 1023px) {
+          .assessment-main {
+            grid-template-columns: 1fr 200px !important;
+            height: auto !important;
+            max-height: none !important;
+            overflow: visible !important;
+            padding: 12px 16px !important;
+          }
+          .assessment-left-sidebar {
+            display: none !important;
+          }
+          .assessment-question-card {
+            min-height: 60vh !important;
+          }
+        }
+
+        /* MOBILE: up to 767px */
+        @media (max-width: 767px) {
+          .assessment-main {
+            grid-template-columns: 1fr !important;
+            height: auto !important;
+            max-height: none !important;
+            overflow: visible !important;
+            padding: 8px 10px 80px 10px !important;
+            gap: 10px !important;
+          }
+          .assessment-left-sidebar,
+          .assessment-right-sidebar {
+            display: none !important;
+          }
+          .assessment-question-card {
+            min-height: auto !important;
+            padding: 14px 14px 16px 14px !important;
+          }
+          .forced-choice-header {
+            display: none !important;
+          }
+          .forced-choice-row {
+            display: block !important;
+            padding: 12px 12px !important;
+          }
+          .forced-choice-text {
+            margin-bottom: 10px;
+          }
+          .forced-choice-buttons {
+            display: grid !important;
+            grid-template-columns: 1fr 1fr !important;
+            gap: 8px !important;
+          }
+          .choice-button {
+            width: 100% !important;
+            height: 40px !important;
+            border-radius: 8px !important;
+            font-size: 13px !important;
+          }
+          .answer-option {
+            padding: 12px 14px !important;
+            min-height: 48px !important;
+          }
+          .answer-option span {
+            font-size: 16px !important;
+          }
+
+          /* Sticky footer nav on mobile */
+          .assessment-nav-buttons {
+            position: fixed !important;
+            bottom: 0 !important;
+            left: 0 !important;
+            right: 0 !important;
+            background: white !important;
+            padding: 10px 12px !important;
+            border-top: 2px solid #e2e8f0 !important;
+            box-shadow: 0 -4px 12px rgba(0,0,0,0.08) !important;
+            z-index: 900 !important;
+            gap: 8px !important;
+          }
+          .assessment-nav-buttons button {
+            padding: 12px 16px !important;
+            font-size: 15px !important;
+            min-height: 46px !important;
+          }
+          .question-grid {
+            grid-template-columns: repeat(5, 1fr) !important;
+          }
+        }
+
+        /* VERY SMALL PHONES: up to 400px */
+        @media (max-width: 400px) {
+          .assessment-main {
+            padding: 6px 8px 80px 8px !important;
+          }
+          .assessment-question-card {
+            padding: 12px 10px !important;
+          }
+          .answer-option span {
+            font-size: 15px !important;
+          }
+        }
       `}</style>
     </>
   );
@@ -1667,7 +1335,7 @@ const styles = {
   successIcon: { fontSize: "64px", marginBottom: "20px" },
   successIconLarge: { width: "80px", height: "80px", background: "#2e7d32", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 20px", fontSize: "40px", color: "white" },
   primaryButton: { padding: "12px 30px", background: "#0b2a4e", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "14px" },
-  violationBanner: { position: "fixed", top: "20px", left: "50%", transform: "translateX(-50%)", background: "#c62828", color: "white", padding: "12px 24px", borderRadius: "8px", fontWeight: "bold", zIndex: 10001, fontSize: "14px", boxShadow: "0 4px 12px rgba(0,0,0,0.2)", display: "flex", alignItems: "center", gap: "10px" },
+  violationBanner: { position: "fixed", top: "20px", left: "50%", transform: "translateX(-50%)", background: "#c62828", color: "white", padding: "12px 24px", borderRadius: "8px", fontWeight: "bold", zIndex: 10001, fontSize: "14px", boxShadow: "0 4px 12px rgba(0,0,0,0.2)", display: "flex", alignItems: "center", gap: "10px", maxWidth: "90vw" },
   urlWarningBanner: { position: "fixed", top: "70px", left: "50%", transform: "translateX(-50%)", background: "#dc2626", color: "white", padding: "12px 20px", borderRadius: "8px", zIndex: 10000, fontSize: "13px", boxShadow: "0 4px 20px rgba(220, 38, 38, 0.3)", display: "flex", alignItems: "center", gap: "12px", maxWidth: "90%", flexWrap: "wrap", justifyContent: "center" },
   urlWarningButton: { padding: "6px 16px", background: "white", color: "#dc2626", border: "none", borderRadius: "6px", fontSize: "12px", fontWeight: 600, cursor: "pointer" },
   autoSubmitOverlay: { position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 10002 },
@@ -1675,15 +1343,15 @@ const styles = {
   autoSubmitSpinner: { width: "40px", height: "40px", border: "4px solid #e2e8f0", borderTop: "4px solid #c62828", borderRadius: "50%", animation: "spin 1s linear infinite", margin: "0 auto 20px" },
   container: { minHeight: "100vh", background: "#f4f7fc", display: "flex", flexDirection: "column" },
   header: { position: "sticky", top: 0, zIndex: 100, background: "linear-gradient(135deg, #0b2a4e 0%, #1b4a7a 100%)", borderBottom: "3px solid #f9b83a", boxShadow: "0 4px 12px rgba(0,0,0,0.1)", flexShrink: 0 },
-  headerContent: { maxWidth: "1400px", margin: "0 auto", padding: "10px 24px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" },
-  headerMetaBar: { maxWidth: "1400px", margin: "0 auto", padding: "4px 24px 8px 24px", display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap", borderTop: "1px solid rgba(255,255,255,0.08)" },
-  headerLeft: { display: "flex", alignItems: "center", gap: "12px" },
-  headerRight: { display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" },
+  headerContent: { maxWidth: "1400px", margin: "0 auto", padding: "10px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" },
+  headerMetaBar: { maxWidth: "1400px", margin: "0 auto", padding: "4px 16px 8px 16px", display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap", borderTop: "1px solid rgba(255,255,255,0.08)" },
+  headerLeft: { display: "flex", alignItems: "center", gap: "10px" },
+  headerRight: { display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" },
   backButton: { width: "36px", height: "36px", background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: "8px", color: "white", fontSize: "16px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" },
   brandSection: { display: "flex", alignItems: "center", gap: "16px", flexWrap: "wrap" },
   logoContainer: { display: "flex", alignItems: "center" },
   logoText: { display: "flex", flexDirection: "column", lineHeight: 1.1 },
-  logoMain: { fontSize: "18px", fontWeight: 700, color: "white", letterSpacing: "1px" },
+  logoMain: { fontSize: "16px", fontWeight: 700, color: "white", letterSpacing: "1px" },
   logoSub: { fontSize: "9px", fontWeight: 300, color: "rgba(255,255,255,0.7)", letterSpacing: "2px", textTransform: "uppercase" },
   nationalBadge: { display: "flex", alignItems: "center", gap: "6px", background: "rgba(255,255,255,0.12)", padding: "4px 14px 4px 10px", borderRadius: "40px", border: "1px solid rgba(255,255,255,0.15)" },
   nationalBadgeIcon: { fontSize: "16px" },
@@ -1692,7 +1360,8 @@ const styles = {
   headerMetaDivider: { color: "rgba(255,255,255,0.3)", fontSize: "12px" },
   timer: { textAlign: "right" },
   timerLabel: { fontSize: "9px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px", color: "rgba(255,255,255,0.6)" },
-  timerValue: { fontSize: "20px", fontWeight: 700, fontFamily: "monospace", color: "#f9b83a" },
+  timerValue: { fontSize: "18px", fontWeight: 700, fontFamily: "monospace", color: "#f9b83a" },
+  mobileNavToggle: { display: "none", background: "rgba(255,255,255,0.12)", color: "white", border: "1px solid rgba(255,255,255,0.2)", borderRadius: "8px", padding: "6px 12px", fontSize: "13px", fontWeight: 600, cursor: "pointer" },
   mainContent: { maxWidth: "1400px", margin: "0 auto", padding: "20px 24px", display: "grid", gridTemplateColumns: "180px 1fr 220px", gap: "20px", flex: 1, minHeight: 0, height: "calc(100vh - 100px)", maxHeight: "calc(100vh - 100px)", overflow: "hidden", boxSizing: "border-box" },
   leftSidebar: { display: "flex", flexDirection: "column", gap: "12px", height: "100%", overflow: "hidden", flexShrink: 0 },
   statusCard: { background: "white", borderRadius: "12px", padding: "14px 16px", border: "1px solid #e2e8f0", flexShrink: 0 },
@@ -1717,6 +1386,7 @@ const styles = {
   forcedChoiceHeaderCol: { textAlign: "center", fontSize: "11px", fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em" },
   forcedChoiceRow: { display: "grid", gridTemplateColumns: "1fr 60px 60px", gap: "8px", padding: "12px 14px", border: "2px solid #e2e8f0", borderRadius: "8px", alignItems: "center", background: "white", flexShrink: 0, minHeight: "60px" },
   forcedChoiceTextWrap: { textAlign: "left" },
+  forcedChoiceChoicesWrap: { display: "contents" },
   forcedChoiceChoiceCol: { display: "flex", justifyContent: "center" },
   choiceButton: { width: "32px", height: "32px", borderRadius: "50%", border: "2px solid", fontSize: "14px", fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.15s ease" },
   answersContainer: { display: "flex", flexDirection: "column", gap: "8px", flex: "1", overflowY: "auto", paddingRight: "4px" },
@@ -1734,21 +1404,43 @@ const styles = {
   gridItem: { aspectRatio: "1", border: "2px solid", borderRadius: "6px", fontSize: "11px", fontWeight: 500, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", minWidth: "0", minHeight: "0" },
   legend: { display: "flex", justifyContent: "space-between", padding: "8px 0 0", borderTop: "1px solid #e2e8f0", flexWrap: "wrap", gap: "4px", flexShrink: 0, marginTop: "8px" },
   legendItem: { display: "flex", alignItems: "center", gap: "4px", fontSize: "9px", color: "#64748b" },
-  legendDot: { width: "10px", height: "10px", borderRadius: "4px" },
+  legendDot: { width: "10px", height: "10px", borderRadius: "4px", display: "inline-block" },
   navigatorTimer: { display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", padding: "8px 0 0", borderTop: "1px solid #e2e8f0", marginTop: "8px", flexShrink: 0 },
   navigatorTimerLabel: { fontSize: "14px" },
   navigatorTimerValue: { fontSize: "16px", fontWeight: 700, color: "#0b2a4e", fontFamily: "monospace" },
-  modalOverlay: { position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 },
-  modalContent: { background: "white", padding: "32px", borderRadius: "20px", maxWidth: "440px", width: "90%", boxShadow: "0 20px 60px rgba(0,0,0,0.2)" },
+  modalOverlay: { position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: "12px" },
+  modalContent: { background: "white", padding: "24px", borderRadius: "20px", maxWidth: "440px", width: "100%", boxShadow: "0 20px 60px rgba(0,0,0,0.2)", maxHeight: "90vh", overflowY: "auto" },
   modalIcon: { fontSize: "48px", textAlign: "center", marginBottom: "16px" },
   modalTitle: { fontSize: "22px", fontWeight: 700, textAlign: "center", marginBottom: "20px", color: "#0f172a" },
   modalStats: { background: "#f8fafc", padding: "16px", borderRadius: "12px", marginBottom: "20px" },
   modalStat: { display: "flex", justifyContent: "space-between", marginBottom: "8px", fontSize: "14px" },
   modalUrlWarning: { display: "flex", gap: "10px", padding: "12px", background: "#fee2e2", borderRadius: "10px", fontSize: "13px", marginBottom: "12px", borderLeft: "3px solid #dc2626" },
   modalWarning: { display: "flex", gap: "10px", padding: "12px", background: "#fff8e1", borderRadius: "10px", fontSize: "13px", marginBottom: "20px", borderLeft: "3px solid #f9b83a" },
-  modalActions: { display: "flex", gap: "12px" },
-  modalSecondaryButton: { flex: 1, padding: "12px", background: "#f1f5f9", border: "none", borderRadius: "10px", cursor: "pointer", fontWeight: 500 },
-  modalPrimaryButton: { flex: 1, padding: "12px", background: "#2e7d32", color: "white", border: "none", borderRadius: "10px", cursor: "pointer", fontWeight: 500 }
+  modalActions: { display: "flex", gap: "12px", flexWrap: "wrap" },
+  modalSecondaryButton: { flex: 1, minWidth: "120px", padding: "12px", background: "#f1f5f9", border: "none", borderRadius: "10px", cursor: "pointer", fontWeight: 500 },
+  modalPrimaryButton: { flex: 1, minWidth: "120px", padding: "12px", background: "#2e7d32", color: "white", border: "none", borderRadius: "10px", cursor: "pointer", fontWeight: 500 },
+
+  // Mobile navigator drawer
+  mobileNavOverlay: { position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.5)", zIndex: 10003, display: "flex", alignItems: "flex-end" },
+  mobileNavDrawer: { background: "white", width: "100%", maxHeight: "80vh", borderTopLeftRadius: "16px", borderTopRightRadius: "16px", padding: "16px", overflowY: "auto" },
+  mobileNavHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px" },
+  mobileNavTitle: { fontSize: "16px", fontWeight: 700, color: "#0f172a" },
+  mobileNavClose: { background: "transparent", border: "none", fontSize: "22px", cursor: "pointer", color: "#64748b", padding: "4px 8px" },
+  mobileNavGrid: { display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: "6px", padding: "2px 0" },
+  mobileNavLegend: { marginTop: "16px", paddingTop: "12px", borderTop: "1px solid #e2e8f0", fontSize: "12px", color: "#64748b", display: "flex", alignItems: "center" },
 };
+
+if (typeof window !== "undefined") {
+  const style = document.createElement('style');
+  style.textContent = `
+    @media (max-width: 767px) {
+      button[aria-label="Open question navigator"] {
+        display: inline-flex !important;
+        align-items: center;
+      }
+    }
+  `;
+  document.head.appendChild(style);
+}
 
 export default AssessmentPage;
