@@ -1,4 +1,6 @@
 // components/admin/AssessmentExpiration.js
+// Phase 7A: current-expiration read now goes through
+// /api/admin/current-expiration instead of a client-side read of `assessments`.
 
 import { useState, useEffect } from 'react';
 import { supabase } from '../../supabase/client';
@@ -15,17 +17,32 @@ export default function AssessmentExpiration() {
 
   async function fetchCurrentExpiration() {
     try {
-      const { data, error } = await supabase
-        .from('assessments')
-        .select('expires_at')
-        .eq('title', 'National Service Recruitment Assessment')
-        .single();
+      const { data: session } = await supabase.auth.getSession();
+      const token = session?.session?.access_token;
 
-      if (error) throw error;
-      
-      if (data?.expires_at) {
-        setCurrentExpiration(new Date(data.expires_at).toLocaleDateString());
-        setExpiresAt(data.expires_at.split('T')[0]);
+      if (!token) {
+        console.error('Not authenticated');
+        return;
+      }
+
+      const response = await fetch('/api/admin/current-expiration', {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        console.error('Error fetching expiration:', result.error);
+        return;
+      }
+
+      if (result.expires_at) {
+        setCurrentExpiration(new Date(result.expires_at).toLocaleDateString());
+        setExpiresAt(result.expires_at.split('T')[0]);
       }
     } catch (error) {
       console.error('Error fetching expiration:', error);
