@@ -1,4 +1,7 @@
 // pages/admin/add-supervisor.js
+// Phase 7A: removed two client-side supervisor_profiles reads. Role check
+// uses user_metadata only; the /api/admin/add-supervisor endpoint enforces
+// the admin check and does the duplicate-email check server-side.
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
@@ -65,30 +68,12 @@ export default function AddSupervisor() {
         return;
       }
 
-      const userId = activeSession.user.id;
+      // Role from user_metadata only. The add-supervisor endpoint enforces admin.
       const metadataRole = activeSession.user.user_metadata?.role || null;
 
-      const { data: adminProfile, error: profileError } = await supabase
-        .from("supervisor_profiles")
-        .select("id, email, full_name, role, is_active")
-        .eq("id", userId)
-        .maybeSingle();
-
-      if (profileError && profileError.code !== "PGRST116") throw profileError;
-
-      const resolvedRole = adminProfile?.role || metadataRole;
-
-      if (resolvedRole !== "admin") {
+      if (metadataRole !== "admin") {
         setMessage({ type: "error", text: "Admin access is required." });
         router.push("/supervisor");
-        return;
-      }
-
-      if (adminProfile?.is_active === false) {
-        setMessage({ type: "error", text: "This admin account is inactive." });
-        await supabase.auth.signOut();
-        if (typeof window !== "undefined") localStorage.removeItem("userSession");
-        router.push("/login");
         return;
       }
 
@@ -99,22 +84,6 @@ export default function AddSupervisor() {
       router.push("/login");
     } finally {
       setCheckingAuth(false);
-    }
-  }
-
-  async function checkSupervisorEmailExists(emailAddress) {
-    try {
-      const { data, error } = await supabase
-        .from("supervisor_profiles")
-        .select("id, email")
-        .eq("email", emailAddress)
-        .maybeSingle();
-
-      if (error && error.code !== "PGRST116") throw error;
-      return Boolean(data);
-    } catch (error) {
-      console.error("Supervisor email check warning:", error);
-      return false;
     }
   }
 
@@ -147,12 +116,6 @@ export default function AddSupervisor() {
 
     try {
       setLoading(true);
-
-      const exists = await checkSupervisorEmailExists(emailAddress);
-      if (exists) {
-        setMessage({ type: "error", text: "A supervisor profile already exists with this email address." });
-        return;
-      }
 
       const { data: sessionData } = await supabase.auth.getSession();
       const accessToken = sessionData?.session?.access_token || null;
