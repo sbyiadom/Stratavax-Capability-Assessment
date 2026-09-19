@@ -1,21 +1,21 @@
 // utils/scoring.js
-
-/**
- * CENTRAL SCORING ENGINE
- *
- * Supports THREE scoring models:
- *   1) Baseline exact-match (multi-select, exact set match = 1, else 0)
- *   2) Single-select weighted (one answer, answer-weighted, real max per question)
- *   3) Forced-choice most/least (TWO picks per question: most-likely and
- *      least-likely; both contribute, and rejecting the best answer is a
- *      strong negative signal)
- *
- * Phase 5 addition:
- *   - scoreForcedChoiceResponse(response, question) handles model (3)
- *   - scoreQuestionResponse(response, isBaseline, mode) dispatches.
- *     Existing callers pass no mode and get legacy behavior, so nothing
- *     downstream breaks.
- */
+// Phase 6.5: forced-choice scoring rescaled so random responses yield 0.
+//
+// CENTRAL SCORING ENGINE
+//
+// Supports THREE scoring models:
+//   1) Baseline exact-match (multi-select, exact set match = 1, else 0)
+//   2) Single-select weighted (one answer, answer-weighted, real max per question)
+//   3) Forced-choice most/least (TWO picks per question: most-likely and
+//      least-likely; both contribute, and rejecting the best answer is a
+//      strong negative signal)
+//
+// Phase 6.5 addition:
+//   scoreForcedChoiceResponse now rescales its output so a response with
+//   no signal (random picking, expected raw score 0.5) returns 0 rather
+//   than 0.5. This eliminates the ~50% floor that made random selection
+//   score the same as thoughtful mid-tier selection. New results should
+//   be tagged scoring_version = 2.
 
 // ======================================================
 // BASIC HELPERS
@@ -262,11 +262,50 @@ export const arraysMatchExactly = function (left, right) {
 };
 
 // ======================================================
-// FORCED-CHOICE SCORING (Phase 5)
+// FORCED-CHOICE SCORING
+// ------------------------------------------------------
+// Candidate picks TWO answers per question:
+//   answer_id       = most likely  (what they'd do)
+//   least_answer_id = least likely (what they'd never do)
+//
+// Raw scoring (per question, out of a max of 1.0):
+//   Let maxAns = max score across all answers (usually 5)
+//   Let minAns = min score across all answers (usually 1)
+//   Let range  = maxAns - minAns
+//
+//   mostScore  = (selected.score - minAns) / range    // 0..1
+//   leastScore = (maxAns - rejected.score) / range    // 0..1
+//
+//   rawCombined = (mostScore * 0.7) + (leastScore * 0.3)   // 0..1
+//
+// IMPORTANT: with 4 answers scored 5/4/2/1, a random pick produces
+// an expected rawCombined of 0.5 (both mostScore and leastScore average
+// 0.5). A thoughtful candidate produces higher; a discriminating one
+// higher still. But the floor of 0.5 means a random picker scores the
+// same as a candidate who picks thoughtfully but not expertly.
+//
+// RESCALE: we shift the raw scale so that 0.5 (random expectation)
+// maps to 0, and 1.0 stays 1.0:
+//
+//   score = max(0, (rawCombined - 0.5) / (1 - 0.5))
+//         = max(0, (rawCombined - 0.5) * 2)
+//
+// Effect:
+//   random picking        → 0.0     (High Risk)
+//   thoughtful, mid-tier  → 0.4–0.6
+//   discriminating        → 0.8–1.0 (Exceptional)
+//
+// This produces the calibration the platform needs to credibly claim
+// that assessments discriminate between candidates.
 // ======================================================
 
 export const FORCED_CHOICE_WEIGHT_MOST = 0.7;
 export const FORCED_CHOICE_WEIGHT_LEAST = 0.3;
+
+// Expected raw score from a random response. Given 4 answers with
+// values 5/4/2/1, both the mostScore and leastScore average to 0.5,
+// so the weighted combined averages to 0.5.
+export const FORCED_CHOICE_RANDOM_BASELINE = 0.5;
 
 export const scoreForcedChoiceResponse = function (response) {
   const question = getQuestionFromResponse(response);
@@ -314,22 +353,38 @@ export const scoreForcedChoiceResponse = function (response) {
     const s = getAnswerScoreValue(leastAnswer);
     leastScore = (maxAns - s) / range;
   } else {
+    // No least pick submitted. We can only use the most pick, and we
+    // apply the same rescale so that "no info" still lands near 0.
+    const partialCombined = mostScore;
+    const partialRescaled = Math.max(
+      0,
+      (partialCombined - FORCED_CHOICE_RANDOM_BASELINE) /
+        (1 - FORCED_CHOICE_RANDOM_BASELINE)
+    );
     return {
-      score: mostScore,
+      score: partialRescaled,
       maxScore: 1,
       mode: "forced_choice",
-      partial: true
+      partial: true,
+      rawCombined: partialCombined
     };
   }
 
-  const combined =
+  const rawCombined =
     (mostScore * FORCED_CHOICE_WEIGHT_MOST) +
     (leastScore * FORCED_CHOICE_WEIGHT_LEAST);
 
+  // Rescale so random (0.5) → 0 and perfect (1.0) → 1.0.
+  const denom = 1 - FORCED_CHOICE_RANDOM_BASELINE;
+  const rescaled = denom > 0
+    ? Math.max(0, (rawCombined - FORCED_CHOICE_RANDOM_BASELINE) / denom)
+    : rawCombined;
+
   return {
-    score: combined,
+    score: rescaled,
     maxScore: 1,
     mode: "forced_choice",
+    rawCombined,
     mostScore,
     leastScore,
     mostAnswerId: mostId,
@@ -861,6 +916,7 @@ export default {
   GRADE_SCALE: GRADE_SCALE,
   FORCED_CHOICE_WEIGHT_MOST: FORCED_CHOICE_WEIGHT_MOST,
   FORCED_CHOICE_WEIGHT_LEAST: FORCED_CHOICE_WEIGHT_LEAST,
+  FORCED_CHOICE_RANDOM_BASELINE: FORCED_CHOICE_RANDOM_BASELINE,
 
   toNumber: toNumber,
   clampPercentage: clampPercentage,
