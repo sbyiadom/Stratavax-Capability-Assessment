@@ -1,4 +1,6 @@
 // utils/stratavaxReportGenerator.js
+// Phase 6.5: accepts optional competency scores and attaches a
+// competency narrative to the report output.
 
 /**
  * STRATAVAX PROFESSIONAL REPORT GENERATOR
@@ -10,6 +12,13 @@
  *   2) Weighted single-select scoring
  * - Removes all fixed `5` max-score assumptions
  * - Keeps existing exports used elsewhere
+ *
+ * Phase 6.5 addition:
+ * - generateStratavaxReport accepts an optional 6th argument
+ *   `competencyScores` (array of { name, percentage, classification }).
+ *   When provided, a top-level narrative is generated and attached
+ *   as `competencyAnalysis` on both the top-level return and inside
+ *   `stratavaxReport`.
  */
 
 import {
@@ -28,6 +37,11 @@ import {
   isBaselineAssessmentType,
   calculateMaxScore
 } from "./scoring";
+
+import {
+  generateCompetencyNarrative,
+  generateSupervisorImplication as generateCompetencySupervisorImplication,
+} from "./competencyNarrative";
 
 // ======================================================
 // BASIC HELPERS
@@ -548,7 +562,8 @@ export const generateStratavaxReport = function (
   assessmentType,
   responses,
   candidateName,
-  dateTaken
+  dateTaken,
+  competencyScores
 ) {
   const safeResponses = Array.isArray(responses) ? responses : [];
   const safeAssessmentType = normalizeAssessmentType(assessmentType);
@@ -720,11 +735,41 @@ export const generateStratavaxReport = function (
     new Date().toISOString()
   );
 
+  // ======================================================
+  // PHASE 6.5 — COMPETENCY NARRATIVE
+  // ------------------------------------------------------
+  // Optional. If the caller passes competency scores (from
+  // candidate_competency_scores), generate a top-level narrative
+  // that names the strongest and weakest competency and gives the
+  // supervisor an actionable next step.
+  // ======================================================
+  let competencyAnalysis = null;
+
+  if (Array.isArray(competencyScores) && competencyScores.length > 0) {
+    const narrative = generateCompetencyNarrative({
+      competencyScores,
+      candidateName,
+      assessmentTitle: template.name,
+    });
+
+    const supervisorImplication = generateCompetencySupervisorImplication({
+      topCompetency: narrative.topCompetency,
+      bottomCompetency: narrative.bottomCompetency,
+      signal: narrative.signal,
+    });
+
+    competencyAnalysis = {
+      ...narrative,
+      supervisorImplication,
+    };
+  }
+
   return {
     userId: userId,
     assessmentType: safeAssessmentType,
     assessmentName: template.name,
     candidateName: candidateName,
+    competencyAnalysis: competencyAnalysis,
 
     totalScore: totalScore,
     maxScore: maxScore,
@@ -772,6 +817,8 @@ export const generateStratavaxReport = function (
         classificationDescription: classification.description,
         scoringModel: baseline ? "baseline_exact_match" : "weighted_single_select"
       },
+
+      competencyAnalysis: competencyAnalysis,
 
       scoreBreakdown: scoreBreakdown,
 
