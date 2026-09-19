@@ -1,36 +1,11 @@
 // utils/competencyNarrative.js
 // Phase 6.5 — Top-level competency narrative generator.
 //
-// Turns an array of competency scores into a short, human-readable
-// paragraph that names the candidate's strongest and weakest areas,
-// interprets the spread, and gives the supervisor a concrete next step.
+// Turns an array of competency scores into a human-readable paragraph
+// that names the candidate's strongest and weakest areas, interprets
+// the spread, and gives the supervisor a concrete next step.
 //
-// PURE FUNCTION. No database access. No side effects. Safe to call
-// from anywhere.
-//
-// Input shape (matches what /api/assessment/submit writes to
-// candidate_competency_scores, mapped into a plain array):
-//
-//   [
-//     { name: "Strategic Thinking",    percentage: 54.61, classification: "At Risk" },
-//     { name: "People Management",     percentage: 52.33, classification: "At Risk" },
-//     { name: "Accountability",        percentage: 51.00, classification: "At Risk" },
-//     { name: "Emotional Intelligence",percentage: 39.83, classification: "High Risk" },
-//   ]
-//
-// Output:
-//   {
-//     headline: "...",
-//     spreadSummary: "...",
-//     topCompetency: { name, percentage, classification },
-//     bottomCompetency: { name, percentage, classification },
-//     signal: "wide" | "narrow" | "uniform",
-//     paragraph: "<headline> <spreadSummary>"  // ready to render
-//   }
-
-// ============================================================
-// HELPERS
-// ============================================================
+// PURE FUNCTION. No database access. No side effects.
 
 function safeNumber(value, fallback = 0) {
   const n = Number(value);
@@ -47,21 +22,16 @@ function round1(value) {
 }
 
 // ============================================================
-// THRESHOLDS — hybrid model
-// ------------------------------------------------------------
-// Absolute bands first, then relative fallback if the distribution
-// is too flat to name a top or bottom by absolute rules alone.
+// THRESHOLDS
 // ============================================================
-
-const STRENGTH_ABSOLUTE = 75;      // >= 75 → strength
-const DEVELOPMENT_ABSOLUTE = 55;    // <= 55 → development area
-const SPREAD_WIDE = 20;            // max - min >= 20 → uneven profile
-const SPREAD_NARROW = 8;           // max - min <= 8  → uniform profile
+const STRENGTH_ABSOLUTE = 75;
+const DEVELOPMENT_ABSOLUTE = 55;
+const SPREAD_WIDE = 20;
+const SPREAD_NARROW = 8;
 
 // ============================================================
-// CLASSIFY EACH COMPETENCY
+// CLASSIFICATION
 // ============================================================
-
 export function classifyCompetencySignal(percentage) {
   const p = safeNumber(percentage, 0);
   if (p >= STRENGTH_ABSOLUTE) return "strength";
@@ -69,9 +39,12 @@ export function classifyCompetencySignal(percentage) {
   return "neutral";
 }
 
-// ============================================================
-// TOP / BOTTOM SELECTION
-// ============================================================
+export function classifySpread(spread) {
+  const s = safeNumber(spread, 0);
+  if (s >= SPREAD_WIDE) return "wide";
+  if (s <= SPREAD_NARROW) return "narrow";
+  return "moderate";
+}
 
 export function getTopAndBottom(competencyScores) {
   const rows = Array.isArray(competencyScores) ? competencyScores : [];
@@ -95,26 +68,9 @@ export function getTopAndBottom(competencyScores) {
 }
 
 // ============================================================
-// SPREAD SIGNAL
-// ============================================================
-
-export function classifySpread(spread) {
-  const s = safeNumber(spread, 0);
-  if (s >= SPREAD_WIDE) return "wide";
-  if (s <= SPREAD_NARROW) return "narrow";
-  return "moderate";
-}
-
-// ============================================================
 // PHRASE SELECTION
-// ------------------------------------------------------------
-// We deliberately keep this short and rule-based rather than
-// drawing from phraseLibrary.js. This way the module ships
-// independently and can be moved into the phrase library later
-// without behavioural change.
 // ============================================================
-
-function pickHeadline(topSignal, bottomSignal, classification) {
+function pickHeadline(topSignal, bottomSignal) {
   if (topSignal === "strength" && bottomSignal === "development") {
     return "This candidate shows a mixed competency profile with a clear standout strength and a clear development area.";
   }
@@ -143,9 +99,8 @@ function pickSpreadSummary(signal, spread, top, bottom) {
 }
 
 // ============================================================
-// MAIN FUNCTION
+// MAIN FUNCTIONS
 // ============================================================
-
 export function generateCompetencyNarrative({
   competencyScores,
   candidateName,
@@ -171,7 +126,7 @@ export function generateCompetencyNarrative({
   const topSignal = classifyCompetencySignal(top?.percentage);
   const bottomSignal = classifyCompetencySignal(bottom?.percentage);
 
-  const headline = pickHeadline(topSignal, bottomSignal, null);
+  const headline = pickHeadline(topSignal, bottomSignal);
   const spreadSummary = pickSpreadSummary(spreadSignal, spread, top, bottom);
 
   return {
@@ -188,12 +143,6 @@ export function generateCompetencyNarrative({
   };
 }
 
-// ============================================================
-// SUPERVISOR IMPLICATION
-// ------------------------------------------------------------
-// One short, actionable line for the supervisor.
-// ============================================================
-
 export function generateSupervisorImplication({ topCompetency, bottomCompetency, signal } = {}) {
   const topName = safeText(topCompetency?.name, "the strongest competency");
   const bottomName = safeText(bottomCompetency?.name, "the weakest competency");
@@ -209,8 +158,8 @@ export function generateSupervisorImplication({ topCompetency, bottomCompetency,
 
 export default {
   classifyCompetencySignal,
-  getTopAndBottom,
   classifySpread,
+  getTopAndBottom,
   generateCompetencyNarrative,
   generateSupervisorImplication,
 };
