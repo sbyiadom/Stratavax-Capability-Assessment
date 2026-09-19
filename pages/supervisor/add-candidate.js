@@ -1,4 +1,7 @@
 // pages/supervisor/add-candidate.js
+// Phase 7A: existence check now calls a server-side endpoint instead of
+// reading Supabase directly. Prepares for RLS.
+
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
@@ -53,8 +56,8 @@ export default function AddCandidate() {
   }, []);
 
   const canSubmit = useMemo(() => {
-    return cleanText(form.full_name).trim() && 
-           isValidEmail(cleanText(form.email).trim()) && 
+    return cleanText(form.full_name).trim() &&
+           isValidEmail(cleanText(form.email).trim()) &&
            cleanText(form.university).trim() &&
            cleanText(form.program).trim() &&
            (form.send_invite || cleanText(form.password).length >= 8);
@@ -173,29 +176,47 @@ export default function AddCandidate() {
       const { data: sessionData } = await supabase.auth.getSession();
       const accessToken = sessionData?.session?.access_token || null;
 
-      // Check if candidate already exists
-      const { data: existing, error: checkError } = await supabase
-        .from('candidate_profiles')
-        .select('id')
-        .eq('email', cleanText(form.email).trim().toLowerCase())
-        .maybeSingle();
+      if (!accessToken) {
+        throw new Error("Not authenticated.");
+      }
 
-      if (checkError) throw checkError;
+      const normalizedEmail = cleanText(form.email).trim().toLowerCase();
 
-      if (existing) {
+      // Existence check via server-side endpoint (RLS-safe)
+      const checkResponse = await fetch("/api/supervisor/check-candidate-exists", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer " + accessToken
+        },
+        body: JSON.stringify({ email: normalizedEmail })
+      });
+
+      let checkPayload;
+      try {
+        checkPayload = await checkResponse.json();
+      } catch {
+        throw new Error(`The server returned an invalid response (HTTP ${checkResponse.status}).`);
+      }
+
+      if (!checkResponse.ok || !checkPayload.success) {
+        throw new Error(checkPayload.error || `Failed to verify candidate (HTTP ${checkResponse.status}).`);
+      }
+
+      if (checkPayload.exists) {
         throw new Error("A candidate with this email already exists.");
       }
 
-      // Create the candidate using the admin API endpoint (or use a supervisor-specific one)
+      // Create the candidate (unchanged)
       const response = await fetch("/api/admin/add-candidate", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ...(accessToken ? { Authorization: "Bearer " + accessToken } : {})
+          Authorization: "Bearer " + accessToken
         },
         body: JSON.stringify({
           full_name: cleanText(form.full_name).trim(),
-          email: cleanText(form.email).trim().toLowerCase(),
+          email: normalizedEmail,
           phone: cleanText(form.phone).trim(),
           university: cleanText(form.university).trim(),
           program: cleanText(form.program).trim(),
@@ -213,12 +234,11 @@ export default function AddCandidate() {
 
       setCreatedCandidate(result.candidate || null);
       setTemporaryPassword(result.temporary_password || "");
-      setMessage({ 
-        type: "success", 
-        text: result.message || "Candidate created successfully." 
+      setMessage({
+        type: "success",
+        text: result.message || "Candidate created successfully."
       });
 
-      // Reset form but keep success message
       setForm((previous) => ({
         ...previous,
         full_name: "",
@@ -230,7 +250,6 @@ export default function AddCandidate() {
         send_invite: false
       }));
 
-      // Auto-redirect after 5 seconds
       setTimeout(() => {
         router.push('/supervisor/manage-candidate');
       }, 5000);
@@ -432,10 +451,10 @@ export default function AddCandidate() {
               <button
                 type="submit"
                 disabled={loading || !canSubmit}
-                style={{ 
-                  ...styles.submitButton, 
-                  opacity: loading || !canSubmit ? 0.6 : 1, 
-                  cursor: loading || !canSubmit ? "not-allowed" : "pointer" 
+                style={{
+                  ...styles.submitButton,
+                  opacity: loading || !canSubmit ? 0.6 : 1,
+                  cursor: loading || !canSubmit ? "not-allowed" : "pointer"
                 }}
               >
                 {loading ? "Creating..." : "Add Candidate"}
@@ -494,365 +513,48 @@ export default function AddCandidate() {
 }
 
 const styles = {
-  checkingContainer: { 
-    minHeight: "100vh", 
-    display: "flex", 
-    flexDirection: "column", 
-    alignItems: "center", 
-    justifyContent: "center", 
-    background: "linear-gradient(135deg, #0a1929 0%, #1a2a3a 100%)", 
-    color: "white", 
-    padding: "20px", 
-    textAlign: "center" 
-  },
-  checkingText: { 
-    margin: 0, 
-    color: "rgba(255,255,255,0.9)", 
-    fontSize: "14px" 
-  },
-  spinner: { 
-    width: "40px", 
-    height: "40px", 
-    border: "4px solid rgba(255,255,255,0.3)", 
-    borderTop: "4px solid white", 
-    borderRadius: "50%", 
-    animation: "spin 1s linear infinite", 
-    marginBottom: "20px" 
-  },
-  container: { 
-    width: "90vw", 
-    maxWidth: "1200px", 
-    margin: "0 auto", 
-    padding: "30px 20px" 
-  },
-  header: { 
-    display: "flex", 
-    alignItems: "center", 
-    gap: "20px", 
-    marginBottom: "24px", 
-    background: "white", 
-    padding: "22px 30px", 
-    borderRadius: "16px", 
-    boxShadow: "0 4px 12px rgba(0,0,0,0.08)", 
-    flexWrap: "wrap" 
-  },
-  backButton: { 
-    color: "#0a1929", 
-    textDecoration: "none", 
-    fontSize: "14px", 
-    fontWeight: 700, 
-    padding: "8px 16px", 
-    borderRadius: "8px", 
-    border: "1px solid #0a1929", 
-    background: "transparent", 
-    cursor: "pointer",
-    transition: "all 0.2s ease",
-    ':hover': {
-      background: "#0a1929",
-      color: "white"
-    }
-  },
-  title: { 
-    margin: 0, 
-    color: "#0a1929", 
-    fontSize: "24px", 
-    fontWeight: 800 
-  },
-  subtitle: { 
-    margin: "5px 0 0", 
-    color: "#667085", 
-    fontSize: "14px" 
-  },
-  headerRight: {
-    display: 'flex',
-    alignItems: 'center',
-    marginLeft: 'auto'
-  },
-  supervisorBadge: {
-    padding: '8px 16px',
-    background: '#E3F2FD',
-    color: '#1565C0',
-    borderRadius: '20px',
-    fontSize: '14px',
-    fontWeight: 600
-  },
-  redirectingText: {
-    marginTop: '8px',
-    fontSize: '13px',
-    fontWeight: 500,
-    opacity: 0.8
-  },
-  message: { 
-    padding: "13px 18px", 
-    borderRadius: "10px", 
-    marginBottom: "20px", 
-    fontSize: "14px", 
-    lineHeight: 1.5 
-  },
-  layoutGrid: { 
-    display: "grid", 
-    gridTemplateColumns: "minmax(0, 1.3fr) minmax(300px, 0.7fr)", 
-    gap: "22px", 
-    alignItems: "start" 
-  },
-  formCard: { 
-    background: "white", 
-    borderRadius: "16px", 
-    padding: "24px", 
-    boxShadow: "0 4px 12px rgba(0,0,0,0.08)", 
-    border: "1px solid #eef2f7" 
-  },
-  sideCard: { 
-    background: "white", 
-    borderRadius: "16px", 
-    padding: "24px", 
-    boxShadow: "0 4px 12px rgba(0,0,0,0.08)", 
-    border: "1px solid #eef2f7" 
-  },
-  sectionTitle: { 
-    margin: "0 0 20px", 
-    color: "#0a1929", 
-    fontSize: "18px", 
-    fontWeight: 800 
-  },
-  fieldGroup: { 
-    marginBottom: "18px" 
-  },
-  label: { 
-    display: "block", 
-    marginBottom: "8px", 
-    fontSize: "14px", 
-    fontWeight: 800, 
-    color: "#2d3748" 
-  },
-  input: { 
-    width: "100%", 
-    padding: "11px 12px", 
-    border: "2px solid #e2e8f0", 
-    borderRadius: "8px", 
-    fontSize: "14px", 
-    outline: "none", 
-    boxSizing: "border-box", 
-    background: "white",
-    transition: "border-color 0.2s ease",
-    ':focus': {
-      borderColor: "#0a1929"
-    }
-  },
-  passwordRow: { 
-    display: "flex", 
-    gap: "10px" 
-  },
-  generateButton: { 
-    padding: "10px 16px", 
-    background: "#1565c0", 
-    color: "white", 
-    border: "none", 
-    borderRadius: "8px", 
-    fontSize: "13px", 
-    fontWeight: 800, 
-    cursor: "pointer",
-    whiteSpace: "nowrap"
-  },
-  hint: { 
-    margin: "7px 0 0", 
-    color: "#667085", 
-    fontSize: "12px", 
-    lineHeight: 1.5 
-  },
-  optionBox: { 
-    background: "#f8fafc", 
-    border: "1px solid #e2e8f0", 
-    borderRadius: "10px", 
-    padding: "12px", 
-    marginBottom: "18px" 
-  },
-  checkboxLabel: { 
-    display: "flex", 
-    gap: "10px", 
-    alignItems: "flex-start", 
-    color: "#334155", 
-    fontSize: "13px", 
-    lineHeight: 1.5, 
-    cursor: "pointer" 
-  },
-  infoBox: {
-    background: '#F8FAFC',
-    padding: '16px',
-    borderRadius: '8px',
-    margin: '10px 0 20px 0'
-  },
-  infoTitle: {
-    margin: '0 0 10px 0',
-    fontSize: '14px',
-    fontWeight: 600,
-    color: '#0A1929'
-  },
-  infoList: {
-    margin: 0,
-    paddingLeft: '20px',
-    color: '#4A5568',
-    fontSize: '13px',
-    lineHeight: '1.8'
-  },
-  code: {
-    background: '#e2e8f0',
-    padding: '2px 6px',
-    borderRadius: '4px',
-    fontSize: '12px'
-  },
-  actionRow: { 
-    display: "flex", 
-    justifyContent: "flex-end", 
-    gap: "12px", 
-    marginTop: "24px", 
-    flexWrap: "wrap" 
-  },
-  submitButton: { 
-    padding: "12px 26px", 
-    background: "#0a1929", 
-    color: "white", 
-    border: "none", 
-    borderRadius: "8px", 
-    fontSize: "14px", 
-    fontWeight: 800,
-    transition: "all 0.2s ease",
-    ':hover': {
-      background: "#1a2a3a",
-      transform: "translateY(-1px)",
-      boxShadow: "0 4px 12px rgba(10,25,41,0.3)"
-    }
-  },
-  secondaryButton: { 
-    padding: "12px 22px", 
-    background: "#f1f5f9", 
-    color: "#0a1929", 
-    border: "1px solid #cbd5e1", 
-    borderRadius: "8px", 
-    fontSize: "14px", 
-    fontWeight: 800, 
-    cursor: "pointer",
-    transition: "all 0.2s ease",
-    ':hover': {
-      background: "#e2e8f0"
-    }
-  },
-  infoBoxSide: { 
-    background: "#f8fafc", 
-    border: "1px solid #e2e8f0", 
-    borderRadius: "10px", 
-    padding: "14px", 
-    color: "#334155", 
-    fontSize: "13px", 
-    lineHeight: 1.6 
-  },
-  list: { 
-    margin: "10px 0 0", 
-    paddingLeft: "20px" 
-  },
-  successPanel: { 
-    marginTop: "20px", 
-    background: "#e8f5e9", 
-    border: "1px solid #a5d6a7", 
-    borderRadius: "12px", 
-    padding: "16px", 
-    color: "#2e7d32" 
-  },
-  successTitle: { 
-    margin: "0 0 12px", 
-    color: "#2e7d32", 
-    fontSize: "16px", 
-    fontWeight: 800 
-  },
-  detailText: { 
-    margin: "6px 0", 
-    fontSize: "13px", 
-    lineHeight: 1.5 
-  },
-  passwordPanel: { 
-    marginTop: "12px", 
-    padding: "12px", 
-    background: "white", 
-    borderRadius: "10px" 
-  },
-  passwordCode: { 
-    display: "block", 
-    padding: "10px", 
-    background: "#0a1929", 
-    color: "white", 
-    borderRadius: "8px", 
-    marginBottom: "10px", 
-    fontSize: "13px", 
-    wordBreak: "break-all" 
-  },
-  copyButton: { 
-    padding: "8px 12px", 
-    background: "#1565c0", 
-    color: "white", 
-    border: "none", 
-    borderRadius: "8px", 
-    fontSize: "12px", 
-    fontWeight: 800, 
-    cursor: "pointer",
-    transition: "all 0.2s ease",
-    ':hover': {
-      background: "#0d47a1"
-    }
-  },
-  linkRow: { 
-    display: "flex", 
-    gap: "10px", 
-    flexWrap: "wrap", 
-    marginTop: "14px" 
-  },
-  primaryLink: { 
-    padding: "9px 12px", 
-    background: "#0a1929", 
-    color: "white", 
-    borderRadius: "8px", 
-    border: "none",
-    textDecoration: "none", 
-    fontSize: "12px", 
-    fontWeight: 800, 
-    cursor: "pointer",
-    transition: "all 0.2s ease",
-    ':hover': {
-      background: "#1a2a3a"
-    }
-  },
-  secondaryLink: { 
-    padding: "9px 12px", 
-    background: "white", 
-    color: "#0a1929", 
-    border: "1px solid #cbd5e1", 
-    borderRadius: "8px", 
-    textDecoration: "none", 
-    fontSize: "12px", 
-    fontWeight: 800,
-    cursor: "pointer",
-    transition: "all 0.2s ease",
-    ':hover': {
-      background: "#f8fafc"
-    }
-  },
-  unauthorized: { 
-    textAlign: "center", 
-    padding: "60px", 
-    color: "#667085", 
-    background: "white", 
-    borderRadius: "16px", 
-    maxWidth: "400px", 
-    margin: "100px auto" 
-  },
-  button: { 
-    padding: "10px 20px", 
-    background: "#0a1929", 
-    color: "white", 
-    border: "none", 
-    borderRadius: "8px", 
-    cursor: "pointer", 
-    fontSize: "14px", 
-    fontWeight: 700, 
-    marginTop: "20px" 
-  }
+  checkingContainer: { minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "linear-gradient(135deg, #0a1929 0%, #1a2a3a 100%)", color: "white", padding: "20px", textAlign: "center" },
+  checkingText: { margin: 0, color: "rgba(255,255,255,0.9)", fontSize: "14px" },
+  spinner: { width: "40px", height: "40px", border: "4px solid rgba(255,255,255,0.3)", borderTop: "4px solid white", borderRadius: "50%", animation: "spin 1s linear infinite", marginBottom: "20px" },
+  container: { width: "90vw", maxWidth: "1200px", margin: "0 auto", padding: "30px 20px" },
+  header: { display: "flex", alignItems: "center", gap: "20px", marginBottom: "24px", background: "white", padding: "22px 30px", borderRadius: "16px", boxShadow: "0 4px 12px rgba(0,0,0,0.08)", flexWrap: "wrap" },
+  backButton: { color: "#0a1929", textDecoration: "none", fontSize: "14px", fontWeight: 700, padding: "8px 16px", borderRadius: "8px", border: "1px solid #0a1929", background: "transparent", cursor: "pointer", transition: "all 0.2s ease" },
+  title: { margin: 0, color: "#0a1929", fontSize: "24px", fontWeight: 800 },
+  subtitle: { margin: "5px 0 0", color: "#667085", fontSize: "14px" },
+  headerRight: { display: 'flex', alignItems: 'center', marginLeft: 'auto' },
+  supervisorBadge: { padding: '8px 16px', background: '#E3F2FD', color: '#1565C0', borderRadius: '20px', fontSize: '14px', fontWeight: 600 },
+  redirectingText: { marginTop: '8px', fontSize: '13px', fontWeight: 500, opacity: 0.8 },
+  message: { padding: "13px 18px", borderRadius: "10px", marginBottom: "20px", fontSize: "14px", lineHeight: 1.5 },
+  layoutGrid: { display: "grid", gridTemplateColumns: "minmax(0, 1.3fr) minmax(300px, 0.7fr)", gap: "22px", alignItems: "start" },
+  formCard: { background: "white", borderRadius: "16px", padding: "24px", boxShadow: "0 4px 12px rgba(0,0,0,0.08)", border: "1px solid #eef2f7" },
+  sideCard: { background: "white", borderRadius: "16px", padding: "24px", boxShadow: "0 4px 12px rgba(0,0,0,0.08)", border: "1px solid #eef2f7" },
+  sectionTitle: { margin: "0 0 20px", color: "#0a1929", fontSize: "18px", fontWeight: 800 },
+  fieldGroup: { marginBottom: "18px" },
+  label: { display: "block", marginBottom: "8px", fontSize: "14px", fontWeight: 800, color: "#2d3748" },
+  input: { width: "100%", padding: "11px 12px", border: "2px solid #e2e8f0", borderRadius: "8px", fontSize: "14px", outline: "none", boxSizing: "border-box", background: "white" },
+  passwordRow: { display: "flex", gap: "10px" },
+  generateButton: { padding: "10px 16px", background: "#1565c0", color: "white", border: "none", borderRadius: "8px", fontSize: "13px", fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap" },
+  hint: { margin: "7px 0 0", color: "#667085", fontSize: "12px", lineHeight: 1.5 },
+  optionBox: { background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "10px", padding: "12px", marginBottom: "18px" },
+  checkboxLabel: { display: "flex", gap: "10px", alignItems: "flex-start", color: "#334155", fontSize: "13px", lineHeight: 1.5, cursor: "pointer" },
+  infoBox: { background: '#F8FAFC', padding: '16px', borderRadius: '8px', margin: '10px 0 20px 0' },
+  infoTitle: { margin: '0 0 10px 0', fontSize: '14px', fontWeight: 600, color: '#0A1929' },
+  infoList: { margin: 0, paddingLeft: '20px', color: '#4A5568', fontSize: '13px', lineHeight: '1.8' },
+  code: { background: '#e2e8f0', padding: '2px 6px', borderRadius: '4px', fontSize: '12px' },
+  actionRow: { display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "24px", flexWrap: "wrap" },
+  submitButton: { padding: "12px 26px", background: "#0a1929", color: "white", border: "none", borderRadius: "8px", fontSize: "14px", fontWeight: 800, transition: "all 0.2s ease" },
+  secondaryButton: { padding: "12px 22px", background: "#f1f5f9", color: "#0a1929", border: "1px solid #cbd5e1", borderRadius: "8px", fontSize: "14px", fontWeight: 800, cursor: "pointer", transition: "all 0.2s ease" },
+  infoBoxSide: { background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "10px", padding: "14px", color: "#334155", fontSize: "13px", lineHeight: 1.6 },
+  list: { margin: "10px 0 0", paddingLeft: "20px" },
+  successPanel: { marginTop: "20px", background: "#e8f5e9", border: "1px solid #a5d6a7", borderRadius: "12px", padding: "16px", color: "#2e7d32" },
+  successTitle: { margin: "0 0 12px", color: "#2e7d32", fontSize: "16px", fontWeight: 800 },
+  detailText: { margin: "6px 0", fontSize: "13px", lineHeight: 1.5 },
+  passwordPanel: { marginTop: "12px", padding: "12px", background: "white", borderRadius: "10px" },
+  passwordCode: { display: "block", padding: "10px", background: "#0a1929", color: "white", borderRadius: "8px", marginBottom: "10px", fontSize: "13px", wordBreak: "break-all" },
+  copyButton: { padding: "8px 12px", background: "#1565c0", color: "white", border: "none", borderRadius: "8px", fontSize: "12px", fontWeight: 800, cursor: "pointer" },
+  linkRow: { display: "flex", gap: "10px", flexWrap: "wrap", marginTop: "14px" },
+  primaryLink: { padding: "9px 12px", background: "#0a1929", color: "white", borderRadius: "8px", border: "none", textDecoration: "none", fontSize: "12px", fontWeight: 800, cursor: "pointer" },
+  secondaryLink: { padding: "9px 12px", background: "white", color: "#0a1929", border: "1px solid #cbd5e1", borderRadius: "8px", textDecoration: "none", fontSize: "12px", fontWeight: 800, cursor: "pointer" },
+  unauthorized: { textAlign: "center", padding: "60px", color: "#667085", background: "white", borderRadius: "16px", maxWidth: "400px", margin: "100px auto" },
+  button: { padding: "10px 20px", background: "#0a1929", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "14px", fontWeight: 700, marginTop: "20px" }
 };
