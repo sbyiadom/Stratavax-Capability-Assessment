@@ -1,4 +1,6 @@
 // pages/admin/system-settings.js
+// Phase 7A: system_settings read/write + table-status checks moved to
+// /api/admin/system-settings. Removed client-side supervisor_profiles read.
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
@@ -54,7 +56,6 @@ export default function SystemSettings() {
   });
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [message, setMessage] = useState({ type: "", text: "" });
-  const [currentAdminId, setCurrentAdminId] = useState(null);
 
   useEffect(() => {
     checkAdminAuth();
@@ -63,6 +64,11 @@ export default function SystemSettings() {
   const hasUnsavedDefaults = useMemo(() => {
     return !settingsTableAvailable;
   }, [settingsTableAvailable]);
+
+  async function getToken() {
+    const { data } = await supabase.auth.getSession();
+    return data?.session?.access_token || null;
+  }
 
   async function checkAdminAuth() {
     try {
@@ -80,32 +86,15 @@ export default function SystemSettings() {
         return;
       }
 
+      // Role from user_metadata only. Endpoint enforces admin server-side.
       const metadataRole = activeSession.user.user_metadata?.role || null;
 
-      const { data: profile, error: profileError } = await supabase
-        .from("supervisor_profiles")
-        .select("id, email, full_name, role, is_active")
-        .eq("id", activeSession.user.id)
-        .maybeSingle();
-
-      if (profileError && profileError.code !== "PGRST116") throw profileError;
-
-      const resolvedRole = profile?.role || metadataRole;
-
-      if (resolvedRole !== "admin") {
+      if (metadataRole !== "admin") {
         setMessage({ type: "error", text: "Admin access is required." });
         router.push("/supervisor");
         return;
       }
 
-      if (profile?.is_active === false) {
-        await supabase.auth.signOut();
-        if (typeof window !== "undefined") localStorage.removeItem("userSession");
-        router.push("/login");
-        return;
-      }
-
-      setCurrentAdminId(activeSession.user.id);
       setIsAdmin(true);
       await Promise.all([loadSettings(), checkDatabaseStatus()]);
     } catch (error) {
@@ -122,21 +111,39 @@ export default function SystemSettings() {
       setLoading(true);
       setSettingsTableAvailable(true);
 
-      const { data, error } = await supabase
-        .from("system_settings")
-        .select("*")
-        .eq("id", 1)
-        .maybeSingle();
-
-      if (error && error.code !== "PGRST116") {
-        throw error;
-      }
-
-      if (data) {
-        setSettings({ ...DEFAULT_SETTINGS, ...data });
-      } else {
+      const token = await getToken();
+      if (!token) {
+        setSettingsTableAvailable(false);
         setSettings(DEFAULT_SETTINGS);
+        return;
       }
+
+      const response = await fetch("/api/admin/system-settings?action=load", {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json"
+        }
+      });
+
+      let payload;
+      try {
+        payload = await response.json();
+      } catch {
+        throw new Error(`The server returned an invalid response (HTTP ${response.status}).`);
+      }
+
+      if (!response.ok || !payload.success) {
+        setSettingsTableAvailable(false);
+        setSettings(DEFAULT_SETTINGS);
+        setMessage({
+          type: "error",
+          text: payload.error || "System settings table is not available or not accessible. Showing default values."
+        });
+        return;
+      }
+
+      setSettings({ ...DEFAULT_SETTINGS, ...(payload.settings || {}) });
     } catch (error) {
       console.error("Error loading system settings:", error);
       setSettingsTableAvailable(false);
@@ -150,28 +157,31 @@ export default function SystemSettings() {
     }
   }
 
-  async function checkTableStatus(tableName) {
-    try {
-      const { error } = await supabase
-        .from(tableName)
-        .select("*", { count: "exact", head: true });
-
-      if (error) return "Unavailable";
-      return "Active";
-    } catch (error) {
-      return "Unavailable";
-    }
-  }
-
   async function checkDatabaseStatus() {
-    const [supervisors, candidates, assessments, systemSettings] = await Promise.all([
-      checkTableStatus("supervisor_profiles"),
-      checkTableStatus("candidate_profiles"),
-      checkTableStatus("assessments"),
-      checkTableStatus("system_settings")
-    ]);
+    try {
+      const token = await getToken();
+      if (!token) return;
 
-    setDatabaseStatus({ supervisors, candidates, assessments, systemSettings });
+      const response = await fetch("/api/admin/system-settings?action=status", {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json"
+        }
+      });
+
+      const payload = await response.json();
+      if (!response.ok || !payload.success) return;
+
+      setDatabaseStatus(payload.status || {
+        supervisors: "Unavailable",
+        candidates: "Unavailable",
+        assessments: "Unavailable",
+        systemSettings: "Unavailable"
+      });
+    } catch (error) {
+      console.error("Error checking database status:", error);
+    }
   }
 
   function sanitizeSettings(rawSettings) {
@@ -195,18 +205,34 @@ export default function SystemSettings() {
 
       const sanitized = sanitizeSettings(settings);
 
-      const { error } = await supabase
-        .from("system_settings")
-        .upsert({
-          id: 1,
-          ...sanitized,
-          updated_at: new Date().toISOString(),
-          updated_by: currentAdminId
-        }, { onConflict: "id" });
+      const token = await getToken();
+      if (!token) {
+        setMessage({ type: "error", text: "Your session has expired. Please sign in again." });
+        setSaving(false);
+        return;
+      }
 
-      if (error) throw error;
+      const response = await fetch("/api/admin/system-settings?action=save", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(sanitized)
+      });
 
-      setSettings(sanitized);
+      let payload;
+      try {
+        payload = await response.json();
+      } catch {
+        throw new Error(`The server returned an invalid response (HTTP ${response.status}).`);
+      }
+
+      if (!response.ok || !payload.success) {
+        throw new Error(payload.error || "Failed to save settings");
+      }
+
+      setSettings({ ...DEFAULT_SETTINGS, ...(payload.settings || sanitized) });
       setSettingsTableAvailable(true);
       setMessage({ type: "success", text: "Settings saved successfully." });
       await checkDatabaseStatus();
