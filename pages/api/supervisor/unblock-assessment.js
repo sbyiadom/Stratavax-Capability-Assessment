@@ -1,20 +1,20 @@
 // pages/api/supervisor/unblock-assessment.js
+//
+// SUPERVISOR UNBLOCK ASSESSMENT API
+//
+// Purpose:
+// - Unblock an assessment without deleting candidate responses.
+// - Preserve existing progress and in-progress sessions.
+// - Extend time or reset time where requested.
+// - Create a safe in-progress session only when needed.
+// - Record audit information where the audit table exists.
+//
+// Phase 7A: added auth + role check. Previously had no token verification —
+// performedBy was taken from the request body, which is client-controlled.
+// Now: token → verified user → supervisor/admin role check → performedBy
+// derived from the verified user id.
 
 import { createClient } from "@supabase/supabase-js";
-
-/*
-  SUPERVISOR UNBLOCK ASSESSMENT API
-
-  Replace this file:
-  pages/api/supervisor/unblock-assessment.js
-
-  Purpose:
-  - Unblock an assessment without deleting candidate responses.
-  - Preserve existing progress and in-progress sessions.
-  - Extend time or reset time where requested.
-  - Create a safe in-progress session only when needed.
-  - Record audit information where the audit table exists.
-*/
 
 // ======================================================
 // BASIC HELPERS
@@ -48,13 +48,64 @@ function addMinutesToDate(dateValue, minutes) {
 
 function getSupabaseClient() {
   var supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
-  var supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  var supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
 
   if (!supabaseUrl || !supabaseKey) {
     throw new Error("Supabase environment variables are missing.");
   }
 
-  return createClient(supabaseUrl, supabaseKey);
+  return createClient(supabaseUrl, supabaseKey, {
+    auth: { persistSession: false, autoRefreshToken: false }
+  });
+}
+
+function getSupabaseAnonClient() {
+  var supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
+  var supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseKey) {
+    throw new Error("Supabase anon environment variables are missing.");
+  }
+
+  return createClient(supabaseUrl, supabaseKey, {
+    auth: { persistSession: false, autoRefreshToken: false }
+  });
+}
+
+async function resolveCaller(serviceClient, anonClient, token) {
+  if (!token) {
+    return { error: "Unauthorized: No token provided", status: 401 };
+  }
+
+  const { data: userData, error: authError } = await anonClient.auth.getUser(token);
+
+  if (authError || !userData?.user) {
+    return { error: "Unauthorized: Invalid token", status: 401 };
+  }
+
+  const { data: profile, error: profileError } = await serviceClient
+    .from("supervisor_profiles")
+    .select("id, role, is_active")
+    .eq("id", userData.user.id)
+    .maybeSingle();
+
+  if (profileError) {
+    console.error("[unblock-assessment] profile lookup failed:", profileError.message);
+    return { error: "Unable to verify caller identity", status: 500 };
+  }
+
+  const metadataRole = userData.user.user_metadata?.role || null;
+  const resolvedRole = profile?.role || metadataRole;
+
+  if (profile?.is_active === false) {
+    return { error: "Account is inactive", status: 403 };
+  }
+
+  if (resolvedRole !== "admin" && resolvedRole !== "supervisor") {
+    return { error: "Supervisor or admin access required", status: 403 };
+  }
+
+  return { userId: userData.user.id, role: resolvedRole };
 }
 
 async function safeSelectSingle(supabase, tableName, configureQuery, selectText) {
@@ -367,6 +418,9 @@ export default async function handler(req, res) {
   var resetTime;
   var performedBy;
   var supabase;
+  var anonClient;
+  var token;
+  var caller;
   var latestSessionResult;
   var existingSession;
   var progressInfo;
@@ -382,12 +436,29 @@ export default async function handler(req, res) {
   }
 
   try {
+    // ======================================================
+    // AUTH — verify token and role before doing anything else
+    // ======================================================
+    token = (req.headers.authorization || "").replace("Bearer ", "").trim();
+    if (!token) {
+      return res.status(401).json({ success: false, error: "Unauthorized: No token provided" });
+    }
+
+    supabase = getSupabaseClient();
+    anonClient = getSupabaseAnonClient();
+
+    caller = await resolveCaller(supabase, anonClient, token);
+    if (caller.error) {
+      return res.status(caller.status || 401).json({ success: false, error: caller.error });
+    }
+
     body = req.body || {};
     userId = cleanText(body.userId || body.user_id, "");
     assessmentId = cleanText(body.assessmentId || body.assessment_id, "");
     extendMinutes = toNumber(body.extendMinutes || body.extend_minutes, 0);
     resetTime = body.resetTime === true || body.reset_time === true;
-    performedBy = cleanText(body.performed_by || body.performedBy || req.headers["x-user-id"], "system");
+    // performedBy is derived from the VERIFIED caller, not from the request body.
+    performedBy = caller.userId;
 
     if (!userId || !assessmentId) {
       return res.status(400).json({ success: false, error: "Missing required fields: userId and assessmentId are required." });
@@ -395,8 +466,6 @@ export default async function handler(req, res) {
 
     if (extendMinutes < 0) extendMinutes = 0;
     if (extendMinutes > 480) extendMinutes = 480;
-
-    supabase = getSupabaseClient();
 
     latestSessionResult = await getLatestSession(supabase, userId, assessmentId);
     existingSession = latestSessionResult.data;
