@@ -1,4 +1,6 @@
-// pages/register.js - COMPLETE WORKING VERSION WITH DUPLICATE CHECKS
+// pages/register.js - COMPLETE WORKING VERSION
+// Phase 7A: availability checks now call a server-side endpoint instead of
+// reading Supabase directly. Prepares for RLS.
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -43,8 +45,7 @@ export default function Register() {
       ...formData,
       [name]: value
     });
-    
-    // Clear availability status when user types
+
     if (name === 'fullName') {
       setNameAvailable(null);
     }
@@ -53,7 +54,6 @@ export default function Register() {
     }
   };
 
-  // Check if name is available (debounced)
   useEffect(() => {
     const timer = setTimeout(async () => {
       if (formData.fullName.trim().length >= 3) {
@@ -66,7 +66,6 @@ export default function Register() {
     return () => clearTimeout(timer);
   }, [formData.fullName]);
 
-  // Check if email is available (debounced)
   useEffect(() => {
     const timer = setTimeout(async () => {
       if (formData.email.trim().length >= 5 && formData.email.includes('@')) {
@@ -81,25 +80,29 @@ export default function Register() {
 
   const checkNameAvailability = async (name) => {
     if (!name || name.length < 3) return;
-    
+
     setCheckingName(true);
     try {
-      const { data, error } = await supabase
-        .from('candidate_profiles')
-        .select('id, full_name')
-        .ilike('full_name', name);
+      const response = await fetch('/api/register/check-availability', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fullName: name })
+      });
 
-      if (error) {
-        console.error('Name check error:', error);
+      let payload;
+      try {
+        payload = await response.json();
+      } catch {
+        console.error('Name check: invalid response');
         return;
       }
 
-      // Check for exact match (case insensitive)
-      const exactMatch = data?.some(
-        item => item.full_name.toLowerCase() === name.toLowerCase()
-      );
-      
-      setNameAvailable(!exactMatch);
+      if (!response.ok || !payload.success) {
+        console.error('Name check failed:', payload?.error);
+        return;
+      }
+
+      setNameAvailable(payload.fullNameAvailable === true);
     } catch (err) {
       console.error('Name check failed:', err);
     } finally {
@@ -109,20 +112,29 @@ export default function Register() {
 
   const checkEmailAvailability = async (email) => {
     if (!email || !email.includes('@')) return;
-    
+
     setCheckingEmail(true);
     try {
-      const { data, error } = await supabase
-        .from('candidate_profiles')
-        .select('id, email')
-        .eq('email', email);
+      const response = await fetch('/api/register/check-availability', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email })
+      });
 
-      if (error) {
-        console.error('Email check error:', error);
+      let payload;
+      try {
+        payload = await response.json();
+      } catch {
+        console.error('Email check: invalid response');
         return;
       }
 
-      setEmailAvailable(data?.length === 0);
+      if (!response.ok || !payload.success) {
+        console.error('Email check failed:', payload?.error);
+        return;
+      }
+
+      setEmailAvailable(payload.emailAvailable === true);
     } catch (err) {
       console.error('Email check failed:', err);
     } finally {
@@ -136,7 +148,6 @@ export default function Register() {
     setError(null);
     setSuccess(false);
 
-    // Validation
     if (!formData.fullName.trim()) {
       setError('Full name is required');
       setLoading(false);
@@ -149,14 +160,12 @@ export default function Register() {
       return;
     }
 
-    // Check if name is already taken
     if (nameAvailable === false) {
       setError('This name is already registered. Please use a different name.');
       setLoading(false);
       return;
     }
 
-    // Check if email is already taken
     if (emailAvailable === false) {
       setError('This email is already registered. Please login instead.');
       setLoading(false);
@@ -195,7 +204,7 @@ export default function Register() {
 
       if (authError) {
         console.error('Auth error:', authError);
-        
+
         if (authError.message.includes('User already registered')) {
           setError('This email is already registered. Please login instead.');
         } else if (authError.message.includes('Password should be at least')) {
@@ -218,10 +227,8 @@ export default function Register() {
       const userId = authData.user.id;
       console.log('User created successfully:', userId);
 
-      // STEP 2: Wait a moment for the trigger to potentially work
       await new Promise(resolve => setTimeout(resolve, 1000));
 
-      // STEP 3: Try to create profile using the database function
       console.log('Creating profile using database function...');
       const { data: functionResult, error: functionError } = await supabase.rpc('create_candidate_profile', {
         p_user_id: userId,
@@ -236,8 +243,7 @@ export default function Register() {
 
       if (functionError) {
         console.error('Function error:', functionError);
-        
-        // Fallback: Try direct insert
+
         console.log('Trying direct insert fallback...');
         const { error: insertError } = await supabase
           .from('candidate_profiles')
@@ -263,7 +269,6 @@ export default function Register() {
         console.log('Profile created via function:', functionResult);
       }
 
-      // STEP 4: Assign National Service assessment
       try {
         console.log('Assigning National Service assessment...');
         const { data: assessmentData, error: assessmentError } = await supabase
@@ -296,7 +301,6 @@ export default function Register() {
         console.error('Assessment assignment failed:', assignErr);
       }
 
-      // STEP 5: Success!
       setSuccess(true);
       setLoading(false);
 
@@ -315,13 +319,13 @@ export default function Register() {
     <div style={styles.container}>
       <div style={styles.backgroundImage} />
       <div style={styles.overlay} />
-      
+
       <div style={styles.card}>
         <div style={styles.logoContainer}>
-          <Image 
-            src="/images/stratavax-logo.png" 
-            alt="Stratavax" 
-            width={56} 
+          <Image
+            src="/images/stratavax-logo.png"
+            alt="Stratavax"
+            width={56}
             height={56}
             priority
           />
@@ -355,7 +359,7 @@ export default function Register() {
                   onChange={handleChange}
                   style={{
                     ...styles.input,
-                    borderColor: nameAvailable === false ? '#dc2626' : 
+                    borderColor: nameAvailable === false ? '#dc2626' :
                                 nameAvailable === true ? '#16a34a' : '#e2e8f0'
                   }}
                   placeholder="Enter your full name"
@@ -385,7 +389,7 @@ export default function Register() {
                   onChange={handleChange}
                   style={{
                     ...styles.input,
-                    borderColor: emailAvailable === false ? '#dc2626' : 
+                    borderColor: emailAvailable === false ? '#dc2626' :
                                 emailAvailable === true ? '#16a34a' : '#e2e8f0'
                   }}
                   placeholder="Enter your email"
@@ -528,213 +532,36 @@ export default function Register() {
 }
 
 const styles = {
-  container: {
-    minHeight: '100vh',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: '20px',
-    position: 'relative',
-    overflow: 'hidden'
-  },
-  backgroundImage: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundImage: 'url("/images/login-bg.jpg")',
-    backgroundSize: 'cover',
-    backgroundPosition: 'center',
-    backgroundRepeat: 'no-repeat',
-    zIndex: 0,
-    transform: 'scale(1.05)'
-  },
-  overlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    background: 'linear-gradient(135deg, rgba(10, 22, 40, 0.85) 0%, rgba(26, 35, 126, 0.75) 50%, rgba(13, 71, 161, 0.85) 100%)',
-    zIndex: 1
-  },
-  card: {
-    position: 'relative',
-    zIndex: 2,
-    background: 'rgba(255, 255, 255, 0.95)',
-    backdropFilter: 'blur(12px)',
-    borderRadius: '24px',
-    padding: '36px 32px',
-    width: '100%',
-    maxWidth: '440px',
-    boxShadow: '0 30px 80px rgba(0,0,0,0.5)',
-    border: '1px solid rgba(255,255,255,0.15)',
-    maxHeight: '90vh',
-    overflowY: 'auto'
-  },
-  logoContainer: {
-    textAlign: 'center',
-    marginBottom: '24px'
-  },
-  title: {
-    fontSize: '26px',
-    fontWeight: '700',
-    color: '#1a237e',
-    margin: '10px 0 4px 0',
-    letterSpacing: '-0.5px'
-  },
-  subtitle: {
-    fontSize: '14px',
-    color: '#64748b',
-    margin: 0,
-    fontWeight: '400'
-  },
-  errorBox: {
-    background: '#fee2e2',
-    border: '1px solid #fecaca',
-    borderRadius: '10px',
-    padding: '12px 16px',
-    marginBottom: '16px',
-    color: '#991b1b',
-    fontSize: '14px',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px'
-  },
-  errorIcon: {
-    fontSize: '16px'
-  },
-  successBox: {
-    background: '#dcfce7',
-    border: '1px solid #bbf7d0',
-    borderRadius: '10px',
-    padding: '24px',
-    textAlign: 'center',
-    marginBottom: '16px'
-  },
-  successIcon: {
-    fontSize: '48px',
-    color: '#16a34a',
-    marginBottom: '8px'
-  },
-  successTitle: {
-    fontSize: '18px',
-    fontWeight: '600',
-    color: '#166534',
-    margin: '0 0 8px 0'
-  },
-  successText: {
-    fontSize: '14px',
-    color: '#15803d',
-    margin: '0 0 4px 0'
-  },
-  successSubtext: {
-    fontSize: '13px',
-    color: '#64748b',
-    margin: '8px 0 0 0'
-  },
-  form: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '14px'
-  },
-  field: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '4px'
-  },
-  label: {
-    fontSize: '13px',
-    fontWeight: '500',
-    color: '#475569'
-  },
-  inputWrapper: {
-    position: 'relative',
-    display: 'flex',
-    alignItems: 'center'
-  },
-  input: {
-    padding: '10px 14px',
-    borderRadius: '10px',
-    border: '1px solid #e2e8f0',
-    fontSize: '14px',
-    transition: 'all 0.2s',
-    outline: 'none',
-    fontFamily: 'inherit',
-    background: '#f8fafc',
-    width: '100%',
-    paddingRight: '80px'
-  },
-  checkingIndicator: {
-    position: 'absolute',
-    right: '10px',
-    fontSize: '16px'
-  },
-  availableIndicator: {
-    position: 'absolute',
-    right: '10px',
-    fontSize: '13px',
-    color: '#16a34a',
-    fontWeight: '600'
-  },
-  takenIndicator: {
-    position: 'absolute',
-    right: '10px',
-    fontSize: '13px',
-    color: '#dc2626',
-    fontWeight: '600'
-  },
-  errorHint: {
-    fontSize: '12px',
-    color: '#dc2626',
-    marginTop: '2px'
-  },
-  hint: {
-    fontSize: '11px',
-    color: '#94a3b8',
-    marginTop: '2px'
-  },
-  registerButton: {
-    padding: '14px',
-    background: '#1a237e',
-    color: 'white',
-    border: 'none',
-    borderRadius: '10px',
-    fontSize: '16px',
-    fontWeight: '600',
-    cursor: 'pointer',
-    transition: 'all 0.2s',
-    marginTop: '8px',
-    fontFamily: 'inherit',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: '50px'
-  },
-  loadingSpinner: {
-    width: '24px',
-    height: '24px',
-    border: '3px solid rgba(255,255,255,0.3)',
-    borderTop: '3px solid white',
-    borderRadius: '50%',
-    animation: 'spin 0.8s linear infinite'
-  },
-  footer: {
-    marginTop: '20px',
-    textAlign: 'center',
-    fontSize: '14px',
-    color: '#64748b'
-  },
-  link: {
-    color: '#1a237e',
-    fontWeight: '600',
-    textDecoration: 'none',
-    marginLeft: '6px'
-  }
+  container: { minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px', position: 'relative', overflow: 'hidden' },
+  backgroundImage: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundImage: 'url("/images/login-bg.jpg")', backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat', zIndex: 0, transform: 'scale(1.05)' },
+  overlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'linear-gradient(135deg, rgba(10, 22, 40, 0.85) 0%, rgba(26, 35, 126, 0.75) 50%, rgba(13, 71, 161, 0.85) 100%)', zIndex: 1 },
+  card: { position: 'relative', zIndex: 2, background: 'rgba(255, 255, 255, 0.95)', backdropFilter: 'blur(12px)', borderRadius: '24px', padding: '36px 32px', width: '100%', maxWidth: '440px', boxShadow: '0 30px 80px rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.15)', maxHeight: '90vh', overflowY: 'auto' },
+  logoContainer: { textAlign: 'center', marginBottom: '24px' },
+  title: { fontSize: '26px', fontWeight: '700', color: '#1a237e', margin: '10px 0 4px 0', letterSpacing: '-0.5px' },
+  subtitle: { fontSize: '14px', color: '#64748b', margin: 0, fontWeight: '400' },
+  errorBox: { background: '#fee2e2', border: '1px solid #fecaca', borderRadius: '10px', padding: '12px 16px', marginBottom: '16px', color: '#991b1b', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px' },
+  errorIcon: { fontSize: '16px' },
+  successBox: { background: '#dcfce7', border: '1px solid #bbf7d0', borderRadius: '10px', padding: '24px', textAlign: 'center', marginBottom: '16px' },
+  successIcon: { fontSize: '48px', color: '#16a34a', marginBottom: '8px' },
+  successTitle: { fontSize: '18px', fontWeight: '600', color: '#166534', margin: '0 0 8px 0' },
+  successText: { fontSize: '14px', color: '#15803d', margin: '0 0 4px 0' },
+  successSubtext: { fontSize: '13px', color: '#64748b', margin: '8px 0 0 0' },
+  form: { display: 'flex', flexDirection: 'column', gap: '14px' },
+  field: { display: 'flex', flexDirection: 'column', gap: '4px' },
+  label: { fontSize: '13px', fontWeight: '500', color: '#475569' },
+  inputWrapper: { position: 'relative', display: 'flex', alignItems: 'center' },
+  input: { padding: '10px 14px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '14px', transition: 'all 0.2s', outline: 'none', fontFamily: 'inherit', background: '#f8fafc', width: '100%', paddingRight: '80px' },
+  checkingIndicator: { position: 'absolute', right: '10px', fontSize: '16px' },
+  availableIndicator: { position: 'absolute', right: '10px', fontSize: '13px', color: '#16a34a', fontWeight: '600' },
+  takenIndicator: { position: 'absolute', right: '10px', fontSize: '13px', color: '#dc2626', fontWeight: '600' },
+  errorHint: { fontSize: '12px', color: '#dc2626', marginTop: '2px' },
+  hint: { fontSize: '11px', color: '#94a3b8', marginTop: '2px' },
+  registerButton: { padding: '14px', background: '#1a237e', color: 'white', border: 'none', borderRadius: '10px', fontSize: '16px', fontWeight: '600', cursor: 'pointer', transition: 'all 0.2s', marginTop: '8px', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '50px' },
+  loadingSpinner: { width: '24px', height: '24px', border: '3px solid rgba(255,255,255,0.3)', borderTop: '3px solid white', borderRadius: '50%', animation: 'spin 0.8s linear infinite' },
+  footer: { marginTop: '20px', textAlign: 'center', fontSize: '14px', color: '#64748b' },
+  link: { color: '#1a237e', fontWeight: '600', textDecoration: 'none', marginLeft: '6px' }
 };
 
-// Add CSS animation for spinner
 if (typeof document !== 'undefined') {
   const style = document.createElement('style');
   style.textContent = `
