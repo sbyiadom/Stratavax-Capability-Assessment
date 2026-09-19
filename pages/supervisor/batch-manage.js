@@ -1,4 +1,7 @@
 // pages/supervisor/batch-manage.js
+// Phase 7A: fetches candidate list from a server-side endpoint instead of
+// reading Supabase directly. Prepares for RLS.
+
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
@@ -47,7 +50,6 @@ function BulkImportModal({ onClose, onImport, supervisorId }) {
         return;
       }
 
-      // Parse header
       const header = lines[0].split(',').map(h => h.trim().toLowerCase());
       const nameIndex = header.findIndex(h => h.includes('name') || h.includes('full_name'));
       const emailIndex = header.findIndex(h => h.includes('email'));
@@ -248,9 +250,7 @@ function BulkImportModal({ onClose, onImport, supervisorId }) {
         )}
 
         <div style={modalStyles.actions}>
-          <button onClick={onClose} style={modalStyles.cancelButton}>
-            Cancel
-          </button>
+          <button onClick={onClose} style={modalStyles.cancelButton}>Cancel</button>
           <button
             onClick={handleImport}
             disabled={importing || preview.length === 0 || !university || !program}
@@ -269,165 +269,27 @@ function BulkImportModal({ onClose, onImport, supervisorId }) {
 }
 
 const modalStyles = {
-  overlay: {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    background: 'rgba(0,0,0,0.5)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 1000,
-    backdropFilter: 'blur(4px)'
-  },
-  modal: {
-    background: 'white',
-    borderRadius: '16px',
-    padding: '24px',
-    maxWidth: '700px',
-    width: '100%',
-    maxHeight: '90vh',
-    overflow: 'auto',
-    boxShadow: '0 20px 60px rgba(0,0,0,0.3)'
-  },
-  modalHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '16px',
-    paddingBottom: '12px',
-    borderBottom: '1px solid #e2e8f0'
-  },
-  modalTitle: {
-    fontSize: '20px',
-    fontWeight: '700',
-    color: '#0a1929',
-    margin: 0
-  },
-  closeButton: {
-    background: 'none',
-    border: 'none',
-    fontSize: '24px',
-    cursor: 'pointer',
-    color: '#94a3b8',
-    padding: '0 8px'
-  },
-  section: {
-    marginBottom: '20px'
-  },
-  sectionTitle: {
-    fontSize: '14px',
-    fontWeight: '600',
-    color: '#475569',
-    margin: '0 0 8px 0'
-  },
-  helpText: {
-    fontSize: '14px',
-    color: '#64748b',
-    margin: '0 0 8px 0'
-  },
-  hintText: {
-    fontSize: '13px',
-    color: '#94a3b8',
-    margin: '12px 0 8px 0'
-  },
-  fileInput: {
-    width: '100%',
-    padding: '10px',
-    border: '2px dashed #e2e8f0',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    background: '#fafbfc'
-  },
-  textarea: {
-    width: '100%',
-    padding: '10px 12px',
-    border: '2px solid #e2e8f0',
-    borderRadius: '8px',
-    fontSize: '13px',
-    fontFamily: 'monospace',
-    resize: 'vertical',
-    boxSizing: 'border-box'
-  },
-  fieldGroup: {
-    marginBottom: '12px'
-  },
-  label: {
-    display: 'block',
-    marginBottom: '6px',
-    fontSize: '13px',
-    fontWeight: '600',
-    color: '#2d3748'
-  },
-  input: {
-    width: '100%',
-    padding: '10px 12px',
-    border: '2px solid #e2e8f0',
-    borderRadius: '8px',
-    fontSize: '14px',
-    outline: 'none',
-    boxSizing: 'border-box',
-    background: 'white'
-  },
-  select: {
-    width: '100%',
-    padding: '10px 12px',
-    border: '2px solid #e2e8f0',
-    borderRadius: '8px',
-    fontSize: '14px',
-    outline: 'none',
-    boxSizing: 'border-box',
-    background: 'white'
-  },
-  previewContainer: {
-    maxHeight: '200px',
-    overflow: 'auto',
-    border: '1px solid #e2e8f0',
-    borderRadius: '8px'
-  },
-  previewTable: {
-    width: '100%',
-    borderCollapse: 'collapse',
-    fontSize: '13px'
-  },
-  errorBox: {
-    background: '#fee2e2',
-    border: '1px solid #fecaca',
-    color: '#991b1b',
-    borderRadius: '8px',
-    padding: '10px 14px',
-    marginBottom: '16px',
-    fontSize: '14px'
-  },
-  actions: {
-    display: 'flex',
-    justifyContent: 'flex-end',
-    gap: '12px',
-    marginTop: '20px',
-    paddingTop: '16px',
-    borderTop: '1px solid #e2e8f0'
-  },
-  cancelButton: {
-    padding: '8px 20px',
-    background: 'transparent',
-    border: '1px solid #e2e8f0',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    fontSize: '14px',
-    color: '#475569'
-  },
-  importButton: {
-    padding: '8px 24px',
-    background: '#0a1929',
-    color: 'white',
-    border: 'none',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    fontSize: '14px',
-    fontWeight: '600'
-  }
+  overlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)' },
+  modal: { background: 'white', borderRadius: '16px', padding: '24px', maxWidth: '700px', width: '100%', maxHeight: '90vh', overflow: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' },
+  modalHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', paddingBottom: '12px', borderBottom: '1px solid #e2e8f0' },
+  modalTitle: { fontSize: '20px', fontWeight: '700', color: '#0a1929', margin: 0 },
+  closeButton: { background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: '#94a3b8', padding: '0 8px' },
+  section: { marginBottom: '20px' },
+  sectionTitle: { fontSize: '14px', fontWeight: '600', color: '#475569', margin: '0 0 8px 0' },
+  helpText: { fontSize: '14px', color: '#64748b', margin: '0 0 8px 0' },
+  hintText: { fontSize: '13px', color: '#94a3b8', margin: '12px 0 8px 0' },
+  fileInput: { width: '100%', padding: '10px', border: '2px dashed #e2e8f0', borderRadius: '8px', cursor: 'pointer', background: '#fafbfc' },
+  textarea: { width: '100%', padding: '10px 12px', border: '2px solid #e2e8f0', borderRadius: '8px', fontSize: '13px', fontFamily: 'monospace', resize: 'vertical', boxSizing: 'border-box' },
+  fieldGroup: { marginBottom: '12px' },
+  label: { display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: '600', color: '#2d3748' },
+  input: { width: '100%', padding: '10px 12px', border: '2px solid #e2e8f0', borderRadius: '8px', fontSize: '14px', outline: 'none', boxSizing: 'border-box', background: 'white' },
+  select: { width: '100%', padding: '10px 12px', border: '2px solid #e2e8f0', borderRadius: '8px', fontSize: '14px', outline: 'none', boxSizing: 'border-box', background: 'white' },
+  previewContainer: { maxHeight: '200px', overflow: 'auto', border: '1px solid #e2e8f0', borderRadius: '8px' },
+  previewTable: { width: '100%', borderCollapse: 'collapse', fontSize: '13px' },
+  errorBox: { background: '#fee2e2', border: '1px solid #fecaca', color: '#991b1b', borderRadius: '8px', padding: '10px 14px', marginBottom: '16px', fontSize: '14px' },
+  actions: { display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '20px', paddingTop: '16px', borderTop: '1px solid #e2e8f0' },
+  cancelButton: { padding: '8px 20px', background: 'transparent', border: '1px solid #e2e8f0', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', color: '#475569' },
+  importButton: { padding: '8px 24px', background: '#0a1929', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', fontWeight: '600' }
 };
 
 // ============================================================
@@ -441,7 +303,6 @@ export default function SupervisorBatchManage() {
   const [candidates, setCandidates] = useState([]);
   const [currentSupervisor, setCurrentSupervisor] = useState(null);
   const [showImportModal, setShowImportModal] = useState(false);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(null);
 
   useEffect(() => {
     checkSupervisorAuth();
@@ -495,46 +356,54 @@ export default function SupervisorBatchManage() {
         role: resolvedRole
       });
 
-      await loadCandidates(activeSession.user.id);
-
+      await loadCandidates(activeSession.access_token);
     } catch (error) {
       console.error("Batch manage auth error:", error);
       setMessage({ type: "error", text: getReadableError(error) });
       router.replace("/login");
     } finally {
       setCheckingAuth(false);
-      setLoading(false);
     }
   }
 
-  const loadCandidates = async (supervisorId) => {
+  const loadCandidates = async (explicitToken) => {
     try {
       setLoading(true);
-      const { data, error } = await supabase
-        .from('candidate_profiles')
-        .select(`
-          id,
-          full_name,
-          email,
-          phone,
-          university,
-          programme,
-          supervisor_id,
-          created_at
-        `)
-        .eq('supervisor_id', supervisorId)
-        .order('created_at', { ascending: false });
 
-      if (!error && data) {
-        setCandidates(data);
-        console.log('[Supervisor] Candidates loaded:', data.length);
-      } else if (error) {
-        console.error('[Supervisor] Error loading candidates:', error);
-        setCandidates([]);
+      let token = explicitToken;
+      if (!token) {
+        const { data } = await supabase.auth.getSession();
+        token = data?.session?.access_token;
       }
+
+      if (!token) {
+        throw new Error('Not authenticated');
+      }
+
+      const response = await fetch('/api/supervisor/batch-manage/list', {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      let payload;
+      try {
+        payload = await response.json();
+      } catch {
+        throw new Error(`The server returned an invalid response (HTTP ${response.status}).`);
+      }
+
+      if (!response.ok || !payload.success) {
+        throw new Error(payload.error || `Failed to load candidates (HTTP ${response.status}).`);
+      }
+
+      setCandidates(Array.isArray(payload.candidates) ? payload.candidates : []);
     } catch (error) {
-      console.error('Error loading candidates:', error);
+      console.error('[Supervisor] Error loading candidates:', error);
       setCandidates([]);
+      setMessage({ type: 'error', text: getReadableError(error) });
     } finally {
       setLoading(false);
     }
@@ -554,20 +423,19 @@ export default function SupervisorBatchManage() {
 
       if (error) throw error;
 
-      setMessage({ 
-        type: "success", 
-        text: "Candidate deleted successfully." 
+      setMessage({
+        type: "success",
+        text: "Candidate deleted successfully."
       });
-      await loadCandidates(currentSupervisor.id);
+      await loadCandidates();
     } catch (error) {
       console.error('Error deleting candidate:', error);
-      setMessage({ 
-        type: "error", 
-        text: getReadableError(error) 
+      setMessage({
+        type: "error",
+        text: getReadableError(error)
       });
     } finally {
       setLoading(false);
-      setShowDeleteConfirm(null);
     }
   };
 
@@ -591,16 +459,16 @@ export default function SupervisorBatchManage() {
 
       if (error) throw error;
 
-      setMessage({ 
-        type: "success", 
-        text: `${selectedIds.length} candidate(s) deleted successfully.` 
+      setMessage({
+        type: "success",
+        text: `${selectedIds.length} candidate(s) deleted successfully.`
       });
-      await loadCandidates(currentSupervisor.id);
+      await loadCandidates();
     } catch (error) {
       console.error('Error bulk deleting candidates:', error);
-      setMessage({ 
-        type: "error", 
-        text: getReadableError(error) 
+      setMessage({
+        type: "error",
+        text: getReadableError(error)
       });
     } finally {
       setLoading(false);
@@ -608,10 +476,10 @@ export default function SupervisorBatchManage() {
   };
 
   const handleImportComplete = () => {
-    loadCandidates(currentSupervisor.id);
-    setMessage({ 
-      type: "success", 
-      text: "Candidates imported successfully!" 
+    loadCandidates();
+    setMessage({
+      type: "success",
+      text: "Candidates imported successfully!"
     });
   };
 
@@ -665,7 +533,6 @@ export default function SupervisorBatchManage() {
             </div>
           )}
 
-          {/* Stats Summary */}
           <div style={styles.statsGrid}>
             <div style={styles.statCard}>
               <div style={styles.statNumber}>{candidates.length}</div>
@@ -685,7 +552,6 @@ export default function SupervisorBatchManage() {
             </div>
           </div>
 
-          {/* Bulk Actions */}
           <div style={styles.bulkActions}>
             <button
               onClick={() => {
@@ -705,7 +571,6 @@ export default function SupervisorBatchManage() {
             </button>
           </div>
 
-          {/* Candidates Table */}
           <div style={styles.tableContainer}>
             <div style={styles.tableWrapper}>
               {loading ? (
@@ -778,15 +643,9 @@ export default function SupervisorBatchManage() {
                             {candidate.email || ''}
                           </div>
                         </td>
-                        <td style={styles.td}>
-                          {candidate.university || 'N/A'}
-                        </td>
-                        <td style={styles.td}>
-                          {candidate.programme || 'N/A'}
-                        </td>
-                        <td style={styles.td}>
-                          {candidate.phone || 'N/A'}
-                        </td>
+                        <td style={styles.td}>{candidate.university || 'N/A'}</td>
+                        <td style={styles.td}>{candidate.programme || 'N/A'}</td>
+                        <td style={styles.td}>{candidate.phone || 'N/A'}</td>
                         <td style={styles.td}>
                           <button
                             onClick={() => router.push(`/supervisor/manage-candidate/${candidate.id}`)}
@@ -817,7 +676,6 @@ export default function SupervisorBatchManage() {
         </div>
       </div>
 
-      {/* Import Modal */}
       {showImportModal && (
         <BulkImportModal
           onClose={() => setShowImportModal(false)}
@@ -837,269 +695,44 @@ export default function SupervisorBatchManage() {
 }
 
 const styles = {
-  checkingContainer: {
-    minHeight: "100vh",
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    justifyContent: "center",
-    background: "linear-gradient(135deg, #0a1929 0%, #1a2a3a 100%)",
-    color: "white",
-    padding: "20px",
-    textAlign: "center"
-  },
-  checkingText: {
-    margin: 0,
-    color: "rgba(255,255,255,0.9)",
-    fontSize: "14px"
-  },
-  spinner: {
-    width: "40px",
-    height: "40px",
-    border: "4px solid rgba(255,255,255,0.3)",
-    borderTop: "4px solid white",
-    borderRadius: "50%",
-    animation: "spin 1s linear infinite",
-    marginBottom: "20px"
-  },
-  container: {
-    minHeight: "calc(100vh - 64px)",
-    display: "flex",
-    alignItems: "flex-start",
-    justifyContent: "center",
-    padding: "30px 20px"
-  },
-  card: {
-    width: "100%",
-    maxWidth: "1200px",
-    background: "rgba(255,255,255,0.96)",
-    borderRadius: "18px",
-    padding: "36px",
-    boxShadow: "0 20px 60px rgba(0,0,0,0.22)",
-    border: "1px solid rgba(255,255,255,0.45)"
-  },
-  header: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: '24px',
-    flexWrap: 'wrap',
-    gap: '16px'
-  },
-  headerLeft: {
-    flex: 1
-  },
-  headerActions: {
-    display: 'flex',
-    gap: '12px',
-    flexWrap: 'wrap'
-  },
-  backButton: {
-    padding: '8px 16px',
-    background: 'transparent',
-    border: '1px solid #e2e8f0',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    fontSize: '14px',
-    color: '#475569',
-    marginBottom: '12px'
-  },
-  title: {
-    margin: "0 0 8px",
-    color: "#0a1929",
-    fontSize: "26px",
-    fontWeight: 800
-  },
-  subtitle: {
-    margin: "0 0 4px",
-    color: "#667085",
-    fontSize: "14px",
-    lineHeight: 1.6
-  },
-  importButton: {
-    padding: "10px 20px",
-    background: "#0a1929",
-    color: "white",
-    border: "none",
-    borderRadius: "8px",
-    cursor: "pointer",
-    fontSize: "14px",
-    fontWeight: 600
-  },
-  message: {
-    padding: "13px 16px",
-    borderRadius: "10px",
-    marginBottom: "20px",
-    fontSize: "14px",
-    lineHeight: 1.5
-  },
-  statsGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
-    gap: '12px',
-    marginBottom: '20px'
-  },
-  statCard: {
-    background: '#f8fafc',
-    padding: '16px',
-    borderRadius: '10px',
-    border: '1px solid #e2e8f0',
-    textAlign: 'center'
-  },
-  statNumber: {
-    fontSize: '24px',
-    fontWeight: '700',
-    color: '#0a1929'
-  },
-  statLabel: {
-    fontSize: '12px',
-    color: '#94a3b8',
-    marginTop: '4px'
-  },
-  bulkActions: {
-    display: 'flex',
-    gap: '12px',
-    marginBottom: '16px',
-    flexWrap: 'wrap'
-  },
-  bulkActionButton: {
-    padding: '6px 16px',
-    background: '#f1f5f9',
-    border: '1px solid #e2e8f0',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    fontSize: '13px',
-    color: '#475569'
-  },
-  bulkDeleteButton: {
-    padding: '6px 16px',
-    background: '#fee2e2',
-    border: '1px solid #fecaca',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    fontSize: '13px',
-    color: '#991b1b'
-  },
-  tableContainer: {
-    border: '1px solid #e2e8f0',
-    borderRadius: '12px',
-    overflow: 'hidden'
-  },
-  tableWrapper: {
-    overflowX: 'auto'
-  },
-  table: {
-    width: '100%',
-    borderCollapse: 'collapse',
-    fontSize: '14px'
-  },
-  th: {
-    padding: '12px 16px',
-    textAlign: 'left',
-    background: '#f8fafc',
-    fontWeight: '600',
-    color: '#475569',
-    borderBottom: '1px solid #e2e8f0',
-    whiteSpace: 'nowrap'
-  },
-  td: {
-    padding: '12px 16px',
-    borderBottom: '1px solid #e2e8f0',
-    verticalAlign: 'middle'
-  },
-  tr: {
-    transition: 'background 0.2s'
-  },
-  candidateName: {
-    fontWeight: '500',
-    color: '#1a202c'
-  },
-  candidateEmail: {
-    fontSize: '12px',
-    color: '#94a3b8'
-  },
-  actionButton: {
-    padding: '4px 12px',
-    background: '#4299e1',
-    color: 'white',
-    border: 'none',
-    borderRadius: '4px',
-    cursor: 'pointer',
-    fontSize: '12px',
-    marginRight: '4px'
-  },
-  deleteActionButton: {
-    padding: '4px 12px',
-    background: '#fc8181',
-    color: 'white',
-    border: 'none',
-    borderRadius: '4px',
-    cursor: 'pointer',
-    fontSize: '12px'
-  },
-  loadingState: {
-    padding: '60px 20px',
-    textAlign: 'center',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: '16px'
-  },
-  emptyState: {
-    padding: '60px 20px',
-    textAlign: 'center'
-  },
-  emptyIcon: {
-    fontSize: '48px',
-    display: 'block',
-    marginBottom: '16px'
-  },
-  emptyTitle: {
-    fontSize: '18px',
-    fontWeight: '600',
-    color: '#0a1929',
-    margin: '0 0 8px 0'
-  },
-  emptyText: {
-    fontSize: '14px',
-    color: '#94a3b8',
-    margin: '0 0 20px 0'
-  },
-  emptyActions: {
-    display: 'flex',
-    gap: '12px',
-    justifyContent: 'center',
-    flexWrap: 'wrap'
-  },
-  emptyButtonPrimary: {
-    padding: '10px 24px',
-    background: '#0a1929',
-    color: 'white',
-    border: 'none',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    fontSize: '14px',
-    fontWeight: '600'
-  },
-  emptyButtonSecondary: {
-    padding: '10px 24px',
-    background: '#f1f5f9',
-    color: '#0a1929',
-    border: '1px solid #e2e8f0',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    fontSize: '14px',
-    fontWeight: '600'
-  },
-  footer: {
-    marginTop: '16px',
-    paddingTop: '16px',
-    borderTop: '1px solid #e2e8f0'
-  },
-  footerText: {
-    margin: 0,
-    fontSize: '13px',
-    color: '#94a3b8',
-    textAlign: 'center'
-  }
+  checkingContainer: { minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "linear-gradient(135deg, #0a1929 0%, #1a2a3a 100%)", color: "white", padding: "20px", textAlign: "center" },
+  checkingText: { margin: 0, color: "rgba(255,255,255,0.9)", fontSize: "14px" },
+  spinner: { width: "40px", height: "40px", border: "4px solid rgba(255,255,255,0.3)", borderTop: "4px solid white", borderRadius: "50%", animation: "spin 1s linear infinite", marginBottom: "20px" },
+  container: { minHeight: "calc(100vh - 64px)", display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "30px 20px" },
+  card: { width: "100%", maxWidth: "1200px", background: "rgba(255,255,255,0.96)", borderRadius: "18px", padding: "36px", boxShadow: "0 20px 60px rgba(0,0,0,0.22)", border: "1px solid rgba(255,255,255,0.45)" },
+  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' },
+  headerLeft: { flex: 1 },
+  headerActions: { display: 'flex', gap: '12px', flexWrap: 'wrap' },
+  backButton: { padding: '8px 16px', background: 'transparent', border: '1px solid #e2e8f0', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', color: '#475569', marginBottom: '12px' },
+  title: { margin: "0 0 8px", color: "#0a1929", fontSize: "26px", fontWeight: 800 },
+  subtitle: { margin: "0 0 4px", color: "#667085", fontSize: "14px", lineHeight: 1.6 },
+  importButton: { padding: "10px 20px", background: "#0a1929", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "14px", fontWeight: 600 },
+  message: { padding: "13px 16px", borderRadius: "10px", marginBottom: "20px", fontSize: "14px", lineHeight: 1.5 },
+  statsGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '12px', marginBottom: '20px' },
+  statCard: { background: '#f8fafc', padding: '16px', borderRadius: '10px', border: '1px solid #e2e8f0', textAlign: 'center' },
+  statNumber: { fontSize: '24px', fontWeight: '700', color: '#0a1929' },
+  statLabel: { fontSize: '12px', color: '#94a3b8', marginTop: '4px' },
+  bulkActions: { display: 'flex', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' },
+  bulkActionButton: { padding: '6px 16px', background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', color: '#475569' },
+  bulkDeleteButton: { padding: '6px 16px', background: '#fee2e2', border: '1px solid #fecaca', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', color: '#991b1b' },
+  tableContainer: { border: '1px solid #e2e8f0', borderRadius: '12px', overflow: 'hidden' },
+  tableWrapper: { overflowX: 'auto' },
+  table: { width: '100%', borderCollapse: 'collapse', fontSize: '14px' },
+  th: { padding: '12px 16px', textAlign: 'left', background: '#f8fafc', fontWeight: '600', color: '#475569', borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap' },
+  td: { padding: '12px 16px', borderBottom: '1px solid #e2e8f0', verticalAlign: 'middle' },
+  tr: { transition: 'background 0.2s' },
+  candidateName: { fontWeight: '500', color: '#1a202c' },
+  candidateEmail: { fontSize: '12px', color: '#94a3b8' },
+  actionButton: { padding: '4px 12px', background: '#4299e1', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', marginRight: '4px' },
+  deleteActionButton: { padding: '4px 12px', background: '#fc8181', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' },
+  loadingState: { padding: '60px 20px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' },
+  emptyState: { padding: '60px 20px', textAlign: 'center' },
+  emptyIcon: { fontSize: '48px', display: 'block', marginBottom: '16px' },
+  emptyTitle: { fontSize: '18px', fontWeight: '600', color: '#0a1929', margin: '0 0 8px 0' },
+  emptyText: { fontSize: '14px', color: '#94a3b8', margin: '0 0 20px 0' },
+  emptyActions: { display: 'flex', gap: '12px', justifyContent: 'center', flexWrap: 'wrap' },
+  emptyButtonPrimary: { padding: '10px 24px', background: '#0a1929', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', fontWeight: '600' },
+  emptyButtonSecondary: { padding: '10px 24px', background: '#f1f5f9', color: '#0a1929', border: '1px solid #e2e8f0', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', fontWeight: '600' },
+  footer: { marginTop: '16px', paddingTop: '16px', borderTop: '1px solid #e2e8f0' },
+  footerText: { margin: 0, fontSize: '13px', color: '#94a3b8', textAlign: 'center' }
 };
