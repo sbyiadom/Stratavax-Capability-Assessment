@@ -1,16 +1,16 @@
 // pages/admin/assign-candidates.js
-// COMPLETE FIXED VERSION - Displays ALL assigned supervisors correctly
-// FIXED: Properly saves and displays multiple supervisors
+// Phase 7A: fetches candidates + supervisors + assignments from a single
+// server-side endpoint. Prepares for RLS.
+//
+// Live page had a pre-existing bug: initialShowMulti was referenced before
+// declaration in fetchData(). This file fixes that bug as part of the
+// rewrite so the build is clean.
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import AppLayout from "../../components/AppLayout";
 import { supabase } from "../../supabase/client";
-
-function safeArray(value) {
-  return Array.isArray(value) ? value : [];
-}
 
 function cleanText(value, fallback = "") {
   if (value === null || value === undefined || value === "") return fallback;
@@ -103,7 +103,7 @@ export default function AssignCandidates() {
       }
 
       setIsAdmin(true);
-      await fetchData();
+      await fetchData(activeSession.access_token);
     } catch (error) {
       console.error("Admin auth error:", error);
       setMessage({ type: "error", text: getReadableError(error) });
@@ -113,90 +113,64 @@ export default function AssignCandidates() {
     }
   }
 
-  async function fetchData() {
+  async function fetchData(explicitToken) {
     try {
       setLoading(true);
       setMessage({ type: "", text: "" });
 
-      const [candidatesResponse, supervisorsResponse] = await Promise.all([
-        supabase
-          .from("candidate_profiles")
-          .select("id, full_name, email, phone, created_at, supervisor_id, supervisor:supervisor_profiles(id, full_name, email)")
-          .order("created_at", { ascending: false }),
-        supabase
-          .from("supervisor_profiles")
-          .select("id, full_name, email, role, is_active")
-          .in("role", ["supervisor", "admin"])
-          .eq("is_active", true)
-          .order("full_name", { ascending: true })
-      ]);
-
-      if (candidatesResponse.error) throw candidatesResponse.error;
-      if (supervisorsResponse.error) throw supervisorsResponse.error;
-
-      const candidateRows = candidatesResponse.data || [];
-      const supervisorRows = supervisorsResponse.data || [];
-
-      // Fetch existing multiple assignments via API
-      const candidateIds = candidateRows.map(c => c.id);
-      let multipleAssignments = {};
-
-      if (candidateIds.length > 0) {
-        const { data: session } = await supabase.auth.getSession();
-        const token = session?.session?.access_token;
-
-        if (token) {
-          try {
-            const response = await fetch('/api/admin/supervisor-assignments', {
-              method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify({ candidateIds })
-            });
-
-            if (response.ok) {
-              const data = await response.json();
-              if (data.success && data.assignments) {
-                multipleAssignments = data.assignments;
-                console.log('[Fetch] Loaded assignments for', Object.keys(multipleAssignments).length, 'candidates');
-              }
-            } else {
-              console.log('[Fetch] API returned', response.status);
-            }
-          } catch (err) {
-            console.log('[Fetch] Error loading assignments:', err.message);
-          }
-        }
+      let token = explicitToken;
+      if (!token) {
+        const { data: sessionData } = await supabase.auth.getSession();
+        token = sessionData?.session?.access_token;
       }
+
+      if (!token) {
+        throw new Error('Not authenticated');
+      }
+
+      const response = await fetch('/api/admin/assignments/data', {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      let payload;
+      try {
+        payload = await response.json();
+      } catch {
+        throw new Error(`The server returned an invalid response (HTTP ${response.status}).`);
+      }
+
+      if (!response.ok || !payload.success) {
+        throw new Error(payload.error || `Failed to load data (HTTP ${response.status}).`);
+      }
+
+      const candidateRows = Array.isArray(payload.candidates) ? payload.candidates : [];
+      const supervisorRows = Array.isArray(payload.supervisors) ? payload.supervisors : [];
+      const multipleAssignments = payload.assignments || {};
 
       setCandidates(candidateRows);
       setSupervisors(supervisorRows);
 
-      // 🟢 FIXED: Merge legacy supervisor_id with multi-assignments
+      // Merge legacy supervisor_id with junction assignments
       const initialSelected = {};
       candidateRows.forEach((candidate) => {
         const multi = multipleAssignments[candidate.id] || [];
         const legacySupervisor = candidate.supervisor_id ? [candidate.supervisor_id] : [];
-        // Merge and deduplicate - keep ALL supervisors
         const allSupervisors = [...new Set([...multi, ...legacySupervisor])];
         initialSelected[candidate.id] = allSupervisors;
-        
-        // 🟢 FIXED: If multiple supervisors exist, show multi-select mode by default
-        if (allSupervisors.length > 1) {
-          initialShowMulti[candidate.id] = true;
-        }
       });
       setSelectedSupervisors(initialSelected);
 
+      // Show multi-select mode by default if 2+ supervisors
       const initialShowMulti = {};
       candidateRows.forEach((candidate) => {
         const hasMultiple = (initialSelected[candidate.id] || []).length > 1;
         initialShowMulti[candidate.id] = hasMultiple;
       });
       setShowMultiSelect(initialShowMulti);
-
     } catch (error) {
       console.error("Error fetching assignment data:", error);
       setMessage({ type: "error", text: "Failed to load assignment data: " + getReadableError(error) });
@@ -305,7 +279,6 @@ export default function AssignCandidates() {
 
   async function handleAssign(candidateId) {
     const supervisorIds = selectedSupervisors[candidateId] || [];
-    const candidate = candidates.find((item) => item.id === candidateId);
 
     if (supervisorIds.length === 0) {
       setMessage({ type: "error", text: "Please select at least one supervisor before assigning." });
@@ -350,9 +323,7 @@ export default function AssignCandidates() {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({
-          candidateId
-        })
+        body: JSON.stringify({ candidateId })
       });
 
       const result = await response.json();
@@ -454,45 +425,35 @@ export default function AssignCandidates() {
     }
   }
 
-  // 🟢 FIXED: Toggle between single and multi-select
   const toggleMultiSelect = (candidateId) => {
     setShowMultiSelect(prev => {
       const newState = !prev[candidateId];
-      
-      // If switching TO single select (from multi), keep only the first selected supervisor
+
       if (!newState) {
         const current = selectedSupervisors[candidateId] || [];
         if (current.length > 1) {
-          // Keep only the first one when switching to single mode
           setSelectedSupervisors(prevSelected => ({
             ...prevSelected,
             [candidateId]: current.slice(0, 1)
           }));
         }
       }
-      
-      return {
-        ...prev,
-        [candidateId]: newState
-      };
+
+      return { ...prev, [candidateId]: newState };
     });
   };
 
-  // 🟢 FIXED: Handle supervisor toggle in multi-select mode
   const handleSupervisorToggle = (candidateId, supervisorId) => {
     setSelectedSupervisors(prev => {
       const current = prev[candidateId] || [];
       if (current.includes(supervisorId)) {
-        // Remove supervisor
         return { ...prev, [candidateId]: current.filter(id => id !== supervisorId) };
       } else {
-        // Add supervisor
         return { ...prev, [candidateId]: [...current, supervisorId] };
       }
     });
   };
 
-  // 🟢 FIXED: Handle single select change
   const handleSingleSelectChange = (candidateId, supervisorId) => {
     setSelectedSupervisors(prev => ({
       ...prev,
@@ -548,7 +509,7 @@ export default function AssignCandidates() {
             <h1 style={styles.title}>Assign Candidates to Supervisors</h1>
             <p style={styles.subtitle}>Manage candidate ownership and supervisor visibility. Select multiple supervisors per candidate.</p>
           </div>
-          <button onClick={fetchData} style={styles.refreshButton}>Refresh</button>
+          <button onClick={() => fetchData()} style={styles.refreshButton}>Refresh</button>
         </div>
 
         {message.text && (
@@ -665,7 +626,6 @@ export default function AssignCandidates() {
                         const isAssignDisabled = candidateSelectedSupervisors.length === 0 || isProcessing;
                         const isMultiSelect = showMultiSelect[candidate.id] || false;
 
-                        // 🟢 FIXED: Get ALL supervisor names from selectedSupervisors
                         const supervisorIds = selectedSupervisors[candidate.id] || [];
                         const supervisorNames = supervisorIds
                           .map(id => supervisors.find(s => s.id === id)?.full_name || id)
@@ -694,14 +654,10 @@ export default function AssignCandidates() {
                               {uniqueSupervisorNames.length > 0 ? (
                                 <div style={styles.assignedBadge}>
                                   {uniqueSupervisorNames.map((name, index) => (
-                                    <span key={index} style={styles.assignedName}>
-                                      {name}
-                                    </span>
+                                    <span key={index} style={styles.assignedName}>{name}</span>
                                   ))}
                                   {hasMultipleSupervisors && (
-                                    <span style={styles.multipleBadge}>
-                                      {uniqueSupervisorNames.length} supervisors
-                                    </span>
+                                    <span style={styles.multipleBadge}>{uniqueSupervisorNames.length} supervisors</span>
                                   )}
                                 </div>
                               ) : (
@@ -724,12 +680,7 @@ export default function AssignCandidates() {
                                         </option>
                                       ))}
                                     </select>
-                                    <button
-                                      onClick={() => toggleMultiSelect(candidate.id)}
-                                      style={styles.multiToggleButton}
-                                    >
-                                      Multiple
-                                    </button>
+                                    <button onClick={() => toggleMultiSelect(candidate.id)} style={styles.multiToggleButton}>Multiple</button>
                                   </div>
                                 ) : (
                                   <div style={styles.multiSelectMode}>
@@ -746,12 +697,7 @@ export default function AssignCandidates() {
                                         </label>
                                       ))}
                                     </div>
-                                    <button
-                                      onClick={() => toggleMultiSelect(candidate.id)}
-                                      style={styles.multiToggleButton}
-                                    >
-                                      Single
-                                    </button>
+                                    <button onClick={() => toggleMultiSelect(candidate.id)} style={styles.multiToggleButton}>Single</button>
                                   </div>
                                 )}
                               </div>
@@ -819,430 +765,66 @@ function StatCard({ icon, label, value }) {
 }
 
 const styles = {
-  checkingContainer: {
-    minHeight: "100vh",
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    justifyContent: "center",
-    background: "linear-gradient(135deg, #0a1929 0%, #1a2a3a 100%)",
-    color: "white",
-    padding: "20px",
-    textAlign: "center"
-  },
-  checkingText: {
-    margin: 0,
-    color: "rgba(255,255,255,0.9)",
-    fontSize: "14px"
-  },
-  spinner: {
-    width: "40px",
-    height: "40px",
-    border: "4px solid rgba(255,255,255,0.3)",
-    borderTop: "4px solid white",
-    borderRadius: "50%",
-    animation: "spin 1s linear infinite",
-    marginBottom: "20px"
-  },
-  spinnerDark: {
-    width: "38px",
-    height: "38px",
-    border: "4px solid #e2e8f0",
-    borderTop: "4px solid #0a1929",
-    borderRadius: "50%",
-    animation: "spin 1s linear infinite",
-    margin: "0 auto 16px"
-  },
-  container: {
-    width: "90vw",
-    maxWidth: "1400px",
-    margin: "0 auto",
-    padding: "30px 20px"
-  },
-  header: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: "20px",
-    marginBottom: "24px",
-    background: "white",
-    padding: "22px 30px",
-    borderRadius: "16px",
-    boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
-    flexWrap: "wrap"
-  },
-  headerTitleBlock: {
-    flex: 1,
-    minWidth: "260px"
-  },
-  backButton: {
-    color: "#0a1929",
-    textDecoration: "none",
-    fontSize: "14px",
-    fontWeight: 700,
-    padding: "9px 16px",
-    borderRadius: "8px",
-    border: "1px solid #0a1929",
-    display: "inline-block"
-  },
-  refreshButton: {
-    padding: "10px 18px",
-    background: "#1565c0",
-    color: "white",
-    border: "none",
-    borderRadius: "8px",
-    fontSize: "14px",
-    fontWeight: 700,
-    cursor: "pointer"
-  },
-  title: {
-    margin: 0,
-    color: "#0a1929",
-    fontSize: "24px",
-    fontWeight: 800
-  },
-  subtitle: {
-    margin: "6px 0 0",
-    color: "#667085",
-    fontSize: "14px"
-  },
-  message: {
-    padding: "13px 18px",
-    borderRadius: "10px",
-    marginBottom: "20px",
-    fontSize: "14px",
-    lineHeight: 1.5
-  },
-  statsGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-    gap: "18px",
-    marginBottom: "24px"
-  },
-  statCard: {
-    background: "white",
-    padding: "20px",
-    borderRadius: "12px",
-    display: "flex",
-    alignItems: "center",
-    gap: "15px",
-    boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
-    border: "1px solid #eef2f7"
-  },
-  statIcon: {
-    fontSize: "32px"
-  },
-  statLabel: {
-    fontSize: "13px",
-    color: "#718096",
-    marginBottom: "4px",
-    fontWeight: 700
-  },
-  statValue: {
-    fontSize: "24px",
-    fontWeight: 800,
-    color: "#0a1929"
-  },
-  filterBar: {
-    background: "white",
-    padding: "20px",
-    borderRadius: "12px",
-    boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
-    marginBottom: "20px",
-    display: "flex",
-    gap: "20px",
-    flexWrap: "wrap",
-    alignItems: "center"
-  },
-  searchBox: {
-    flex: 2,
-    minWidth: "250px"
-  },
-  searchInput: {
-    width: "100%",
-    padding: "11px 16px",
-    border: "2px solid #e2e8f0",
-    borderRadius: "8px",
-    fontSize: "14px",
-    outline: "none",
-    boxSizing: "border-box"
-  },
-  filterGroup: {
-    flex: 1,
-    minWidth: "220px"
-  },
-  filterSelect: {
-    width: "100%",
-    padding: "11px 16px",
-    border: "2px solid #e2e8f0",
-    borderRadius: "8px",
-    fontSize: "14px",
-    background: "white",
-    cursor: "pointer",
-    boxSizing: "border-box"
-  },
-  bulkActions: {
-    background: "#f0f9f0",
-    padding: "15px 20px",
-    borderRadius: "10px",
-    marginBottom: "20px",
-    display: "flex",
-    gap: "15px",
-    alignItems: "center",
-    flexWrap: "wrap",
-    border: "1px solid #c6f6d5"
-  },
-  bulkLabel: {
-    fontWeight: 800,
-    color: "#0a5c2e"
-  },
-  bulkMultiSelect: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "4px"
-  },
-  bulkMultiSelectInput: {
-    padding: "8px",
-    border: "2px solid #c6f6d5",
-    borderRadius: "8px",
-    fontSize: "14px",
-    minWidth: "250px",
-    background: "white",
-    height: "80px"
-  },
-  multiSelectHint: {
-    fontSize: "11px",
-    color: "#718096"
-  },
-  bulkButton: {
-    padding: "9px 20px",
-    background: "#0a5c2e",
-    color: "white",
-    border: "none",
-    borderRadius: "8px",
-    fontSize: "14px",
-    fontWeight: 800,
-    cursor: "pointer"
-  },
-  tableContainer: {
-    background: "white",
-    padding: "24px",
-    borderRadius: "16px",
-    boxShadow: "0 4px 12px rgba(0,0,0,0.08)"
-  },
-  loadingState: {
-    textAlign: "center",
-    padding: "60px",
-    color: "#667085"
-  },
-  resultSummary: {
-    marginBottom: "14px",
-    fontSize: "13px",
-    color: "#667085",
-    fontWeight: 700
-  },
-  tableWrapper: {
-    overflowX: "auto"
-  },
-  table: {
-    width: "100%",
-    borderCollapse: "collapse",
-    fontSize: "14px",
-    minWidth: "900px"
-  },
-  tableHeadRow: {
-    borderBottom: "2px solid #0a1929",
-    background: "#f8fafc"
-  },
-  tableHead: {
-    padding: "15px",
-    fontWeight: 800,
-    color: "#0a1929",
-    textAlign: "left"
-  },
-  tableRow: {
-    borderBottom: "1px solid #e2e8f0"
-  },
-  tableCell: {
-    padding: "15px",
-    verticalAlign: "top"
-  },
-  noData: {
-    padding: "40px",
-    textAlign: "center",
-    color: "#718096",
-    fontStyle: "italic"
-  },
-  candidateInfo: {
-    display: "flex",
-    alignItems: "center",
-    gap: "12px"
-  },
-  candidateAvatar: {
-    width: "40px",
-    height: "40px",
-    borderRadius: "20px",
-    background: "#0a1929",
-    color: "white",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontSize: "18px",
-    fontWeight: 800
-  },
-  candidateName: {
-    fontWeight: 800,
-    color: "#0a1929",
-    marginBottom: "4px"
-  },
-  candidateId: {
-    fontSize: "11px",
-    color: "#718096",
-    fontFamily: "monospace"
-  },
-  createdDate: {
-    fontSize: "11px",
-    color: "#94a3b8",
-    marginTop: "3px"
-  },
-  candidateEmail: {
-    fontSize: "14px",
-    color: "#0a1929",
-    marginBottom: "4px"
-  },
-  candidatePhone: {
-    fontSize: "12px",
-    color: "#718096"
-  },
-  assignedBadge: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "2px"
-  },
-  assignedName: {
-    fontWeight: 800,
-    color: "#0a1929",
-    fontSize: "14px",
-    display: "block"
-  },
-  assignedSeparator: {
-    color: "#94a3b8"
-  },
-  multipleBadge: {
-    display: "inline-block",
-    padding: "2px 10px",
-    background: "#e3f2fd",
-    color: "#1565c0",
-    borderRadius: "12px",
-    fontSize: "11px",
-    fontWeight: 700,
-    marginTop: "4px"
-  },
-  unassignedBadge: {
-    display: "inline-block",
-    padding: "4px 12px",
-    background: "#fef2f2",
-    color: "#b91c1c",
-    borderRadius: "20px",
-    fontSize: "12px",
-    fontWeight: 800
-  },
-  assignContainer: {
-    minWidth: "220px"
-  },
-  singleSelectMode: {
-    display: "flex",
-    gap: "6px",
-    alignItems: "center"
-  },
-  multiSelectMode: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "6px"
-  },
-  assignSelect: {
-    flex: 1,
-    padding: "8px 12px",
-    border: "2px solid #e2e8f0",
-    borderRadius: "6px",
-    fontSize: "13px",
-    background: "white",
-    cursor: "pointer",
-    minWidth: "160px"
-  },
-  checkboxGroup: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "4px",
-    maxHeight: "120px",
-    overflowY: "auto",
-    padding: "4px 8px",
-    border: "1px solid #e2e8f0",
-    borderRadius: "6px"
-  },
-  checkboxLabel: {
-    display: "flex",
-    alignItems: "center",
-    gap: "6px",
-    fontSize: "13px",
-    cursor: "pointer"
-  },
-  checkbox: {
-    cursor: "pointer"
-  },
-  multiToggleButton: {
-    padding: "4px 12px",
-    background: "#e2e8f0",
-    border: "none",
-    borderRadius: "4px",
-    fontSize: "12px",
-    fontWeight: 700,
-    cursor: "pointer",
-    color: "#0a1929"
-  },
-  actionGroup: {
-    display: "flex",
-    gap: "8px",
-    flexWrap: "wrap"
-  },
-  assignButton: {
-    padding: "8px 16px",
-    background: "#4caf50",
-    color: "white",
-    border: "none",
-    borderRadius: "6px",
-    fontSize: "13px",
-    fontWeight: 800,
-    cursor: "pointer"
-  },
-  clearAssignmentButton: {
-    padding: "8px 16px",
-    background: "#f44336",
-    color: "white",
-    border: "none",
-    borderRadius: "6px",
-    fontSize: "13px",
-    fontWeight: 800,
-    cursor: "pointer"
-  },
-  unauthorized: {
-    textAlign: "center",
-    padding: "60px",
-    color: "#667085",
-    background: "white",
-    borderRadius: "16px",
-    maxWidth: "400px",
-    margin: "100px auto"
-  },
-  button: {
-    padding: "10px 20px",
-    background: "#0a1929",
-    color: "white",
-    border: "none",
-    borderRadius: "8px",
-    cursor: "pointer",
-    fontSize: "14px",
-    fontWeight: 700,
-    marginTop: "20px"
-  }
+  checkingContainer: { minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "linear-gradient(135deg, #0a1929 0%, #1a2a3a 100%)", color: "white", padding: "20px", textAlign: "center" },
+  checkingText: { margin: 0, color: "rgba(255,255,255,0.9)", fontSize: "14px" },
+  spinner: { width: "40px", height: "40px", border: "4px solid rgba(255,255,255,0.3)", borderTop: "4px solid white", borderRadius: "50%", animation: "spin 1s linear infinite", marginBottom: "20px" },
+  spinnerDark: { width: "38px", height: "38px", border: "4px solid #e2e8f0", borderTop: "4px solid #0a1929", borderRadius: "50%", animation: "spin 1s linear infinite", margin: "0 auto 16px" },
+  container: { width: "90vw", maxWidth: "1400px", margin: "0 auto", padding: "30px 20px" },
+  header: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: "20px", marginBottom: "24px", background: "white", padding: "22px 30px", borderRadius: "16px", boxShadow: "0 4px 12px rgba(0,0,0,0.08)", flexWrap: "wrap" },
+  headerTitleBlock: { flex: 1, minWidth: "260px" },
+  backButton: { color: "#0a1929", textDecoration: "none", fontSize: "14px", fontWeight: 700, padding: "9px 16px", borderRadius: "8px", border: "1px solid #0a1929", display: "inline-block" },
+  refreshButton: { padding: "10px 18px", background: "#1565c0", color: "white", border: "none", borderRadius: "8px", fontSize: "14px", fontWeight: 700, cursor: "pointer" },
+  title: { margin: 0, color: "#0a1929", fontSize: "24px", fontWeight: 800 },
+  subtitle: { margin: "6px 0 0", color: "#667085", fontSize: "14px" },
+  message: { padding: "13px 18px", borderRadius: "10px", marginBottom: "20px", fontSize: "14px", lineHeight: 1.5 },
+  statsGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "18px", marginBottom: "24px" },
+  statCard: { background: "white", padding: "20px", borderRadius: "12px", display: "flex", alignItems: "center", gap: "15px", boxShadow: "0 4px 12px rgba(0,0,0,0.08)", border: "1px solid #eef2f7" },
+  statIcon: { fontSize: "32px" },
+  statLabel: { fontSize: "13px", color: "#718096", marginBottom: "4px", fontWeight: 700 },
+  statValue: { fontSize: "24px", fontWeight: 800, color: "#0a1929" },
+  filterBar: { background: "white", padding: "20px", borderRadius: "12px", boxShadow: "0 4px 12px rgba(0,0,0,0.08)", marginBottom: "20px", display: "flex", gap: "20px", flexWrap: "wrap", alignItems: "center" },
+  searchBox: { flex: 2, minWidth: "250px" },
+  searchInput: { width: "100%", padding: "11px 16px", border: "2px solid #e2e8f0", borderRadius: "8px", fontSize: "14px", outline: "none", boxSizing: "border-box" },
+  filterGroup: { flex: 1, minWidth: "220px" },
+  filterSelect: { width: "100%", padding: "11px 16px", border: "2px solid #e2e8f0", borderRadius: "8px", fontSize: "14px", background: "white", cursor: "pointer", boxSizing: "border-box" },
+  bulkActions: { background: "#f0f9f0", padding: "15px 20px", borderRadius: "10px", marginBottom: "20px", display: "flex", gap: "15px", alignItems: "center", flexWrap: "wrap", border: "1px solid #c6f6d5" },
+  bulkLabel: { fontWeight: 800, color: "#0a5c2e" },
+  bulkMultiSelect: { display: "flex", flexDirection: "column", gap: "4px" },
+  bulkMultiSelectInput: { padding: "8px", border: "2px solid #c6f6d5", borderRadius: "8px", fontSize: "14px", minWidth: "250px", background: "white", height: "80px" },
+  multiSelectHint: { fontSize: "11px", color: "#718096" },
+  bulkButton: { padding: "9px 20px", background: "#0a5c2e", color: "white", border: "none", borderRadius: "8px", fontSize: "14px", fontWeight: 800, cursor: "pointer" },
+  tableContainer: { background: "white", padding: "24px", borderRadius: "16px", boxShadow: "0 4px 12px rgba(0,0,0,0.08)" },
+  loadingState: { textAlign: "center", padding: "60px", color: "#667085" },
+  resultSummary: { marginBottom: "14px", fontSize: "13px", color: "#667085", fontWeight: 700 },
+  tableWrapper: { overflowX: "auto" },
+  table: { width: "100%", borderCollapse: "collapse", fontSize: "14px", minWidth: "900px" },
+  tableHeadRow: { borderBottom: "2px solid #0a1929", background: "#f8fafc" },
+  tableHead: { padding: "15px", fontWeight: 800, color: "#0a1929", textAlign: "left" },
+  tableRow: { borderBottom: "1px solid #e2e8f0" },
+  tableCell: { padding: "15px", verticalAlign: "top" },
+  noData: { padding: "40px", textAlign: "center", color: "#718096", fontStyle: "italic" },
+  candidateInfo: { display: "flex", alignItems: "center", gap: "12px" },
+  candidateAvatar: { width: "40px", height: "40px", borderRadius: "20px", background: "#0a1929", color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "18px", fontWeight: 800 },
+  candidateName: { fontWeight: 800, color: "#0a1929", marginBottom: "4px" },
+  candidateId: { fontSize: "11px", color: "#718096", fontFamily: "monospace" },
+  createdDate: { fontSize: "11px", color: "#94a3b8", marginTop: "3px" },
+  candidateEmail: { fontSize: "14px", color: "#0a1929", marginBottom: "4px" },
+  candidatePhone: { fontSize: "12px", color: "#718096" },
+  assignedBadge: { display: "flex", flexDirection: "column", gap: "2px" },
+  assignedName: { fontWeight: 800, color: "#0a1929", fontSize: "14px", display: "block" },
+  multipleBadge: { display: "inline-block", padding: "2px 10px", background: "#e3f2fd", color: "#1565c0", borderRadius: "12px", fontSize: "11px", fontWeight: 700, marginTop: "4px" },
+  unassignedBadge: { display: "inline-block", padding: "4px 12px", background: "#fef2f2", color: "#b91c1c", borderRadius: "20px", fontSize: "12px", fontWeight: 800 },
+  assignContainer: { minWidth: "220px" },
+  singleSelectMode: { display: "flex", gap: "6px", alignItems: "center" },
+  multiSelectMode: { display: "flex", flexDirection: "column", gap: "6px" },
+  assignSelect: { flex: 1, padding: "8px 12px", border: "2px solid #e2e8f0", borderRadius: "6px", fontSize: "13px", background: "white", cursor: "pointer", minWidth: "160px" },
+  checkboxGroup: { display: "flex", flexDirection: "column", gap: "4px", maxHeight: "120px", overflowY: "auto", padding: "4px 8px", border: "1px solid #e2e8f0", borderRadius: "6px" },
+  checkboxLabel: { display: "flex", alignItems: "center", gap: "6px", fontSize: "13px", cursor: "pointer" },
+  checkbox: { cursor: "pointer" },
+  multiToggleButton: { padding: "4px 12px", background: "#e2e8f0", border: "none", borderRadius: "4px", fontSize: "12px", fontWeight: 700, cursor: "pointer", color: "#0a1929" },
+  actionGroup: { display: "flex", gap: "8px", flexWrap: "wrap" },
+  assignButton: { padding: "8px 16px", background: "#4caf50", color: "white", border: "none", borderRadius: "6px", fontSize: "13px", fontWeight: 800, cursor: "pointer" },
+  clearAssignmentButton: { padding: "8px 16px", background: "#f44336", color: "white", border: "none", borderRadius: "6px", fontSize: "13px", fontWeight: 800, cursor: "pointer" },
+  unauthorized: { textAlign: "center", padding: "60px", color: "#667085", background: "white", borderRadius: "16px", maxWidth: "400px", margin: "100px auto" },
+  button: { padding: "10px 20px", background: "#0a1929", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "14px", fontWeight: 700, marginTop: "20px" }
 };
