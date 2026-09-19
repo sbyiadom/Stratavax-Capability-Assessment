@@ -1,3 +1,6 @@
+// pages/api/login.js
+// Phase 7A: switched to service role key so login works after RLS is enabled.
+
 import { createClient } from '@supabase/supabase-js';
 
 export default async function handler(req, res) {
@@ -22,16 +25,31 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Email and password required' });
     }
 
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-    );
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!supabaseUrl || !serviceRoleKey) {
+      console.error('[Login] Missing Supabase credentials');
+      return res.status(500).json({ error: 'Server configuration error' });
+    }
+
+    // Service-role client bypasses RLS. Required so login works once RLS
+    // is enabled on supervisor_profiles and candidate_profiles.
+    const adminClient = createClient(supabaseUrl, serviceRoleKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+
+    // Use a separate client with the anon key purely for signInWithPassword.
+    // signInWithPassword does not need RLS — it hits Supabase Auth directly.
+    const authClient = createClient(supabaseUrl, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
 
     // Step 1: Authenticate
     console.log('2. Attempting auth...');
-    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+    const { data: authData, error: authError } = await authClient.auth.signInWithPassword({
       email,
-      password
+      password,
     });
 
     if (authError) {
@@ -40,33 +58,22 @@ export default async function handler(req, res) {
     }
 
     console.log('4. Auth successful, user ID:', authData.user.id);
-    console.log('4a. Auth user email:', authData.user.email);
 
-    // Step 2: Check supervisor_profiles - with more details
+    // Step 2: Check supervisor_profiles via service role (RLS-immune)
     console.log('5. Querying supervisor_profiles for ID:', authData.user.id);
-    const { data: supervisor, error: supError, status, statusText } = await supabase
+    const { data: supervisor, error: supError } = await adminClient
       .from('supervisor_profiles')
       .select('*')
       .eq('id', authData.user.id);
 
-    console.log('6. Supervisor query result:', { 
-      found: supervisor?.length > 0, 
-      count: supervisor?.length,
-      data: supervisor,
-      error: supError,
-      status,
-      statusText
-    });
-
     if (supError) {
-      console.error('7. Supervisor query error details:', supError);
-      // Don't return yet, continue to candidate check
+      console.error('6. Supervisor query error:', supError);
+      // Continue to candidate check
     }
 
     if (supervisor && supervisor.length > 0) {
       const user = supervisor[0];
-      console.log('8. User is supervisor with role:', user.role);
-      console.log('8a. Full supervisor record:', user);
+      console.log('7. User is supervisor with role:', user.role);
       return res.status(200).json({
         success: true,
         role: user.role || 'supervisor',
@@ -74,68 +81,51 @@ export default async function handler(req, res) {
           id: authData.user.id,
           email: user.email,
           full_name: user.full_name,
-          role: user.role
+          role: user.role,
         },
-        session: authData.session
+        session: authData.session,
       });
     }
 
-    // Step 3: Check candidate_profiles
-    console.log('9. Checking candidate_profiles for ID:', authData.user.id);
-    const { data: candidate, error: canError } = await supabase
+    // Step 3: Check candidate_profiles via service role
+    console.log('8. Checking candidate_profiles for ID:', authData.user.id);
+    const { data: candidate, error: canError } = await adminClient
       .from('candidate_profiles')
       .select('*')
       .eq('id', authData.user.id);
 
-    console.log('10. Candidate query result:', { 
-      found: candidate?.length > 0, 
-      count: candidate?.length,
-      data: candidate,
-      error: canError?.message 
-    });
+    if (canError) {
+      console.error('9. Candidate query error:', canError);
+    }
 
     if (candidate && candidate.length > 0) {
       const user = candidate[0];
-      console.log('11. User is candidate');
+      console.log('10. User is candidate');
       return res.status(200).json({
         success: true,
         role: 'candidate',
         user: {
           id: authData.user.id,
           email: user.email,
-          full_name: user.full_name || user.email
+          full_name: user.full_name || user.email,
         },
-        session: authData.session
+        session: authData.session,
       });
     }
 
     // Step 4: Not found in either table
-    console.log('12. User not found in any profile table');
-    console.log('12a. User ID from auth:', authData.user.id);
-    console.log('12b. User email from auth:', authData.user.email);
-    
-    // Double-check with email query
-    console.log('12c. Checking supervisor_profiles by email...');
-    const { data: byEmail } = await supabase
-      .from('supervisor_profiles')
-      .select('*')
-      .eq('email', email);
-    
-    console.log('12d. Search by email result:', byEmail);
+    console.log('11. User not found in any profile table');
 
-    await supabase.auth.signOut();
-    return res.status(403).json({ 
+    await authClient.auth.signOut();
+    return res.status(403).json({
       error: 'Account not properly configured',
       debug: {
         userId: authData.user.id,
         email: authData.user.email,
-        searchedById: supervisor,
-        searchedByEmail: byEmail
-      }
+      },
     });
-
   } catch (error) {
-    console.error('13. Unexpected error:', error);
+    console.error('[Login] Unexpected error:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 }
