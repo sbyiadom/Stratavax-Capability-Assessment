@@ -1,14 +1,14 @@
 // pages/api/assessment-report/[resultId].js
 // FINAL PRODUCTION CLEAN VERSION — with Phase 6 competency summary embedded.
-//
-// Phase 6 addition:
-//   - Fetches candidate_competency_scores for (user_id, assessment_id)
-//   - Fetches cohort stats per competency across all candidates on the same assessment
-//   - Returns `competencySummary` in the response envelope, matching the
-//     exact shape produced by /api/reports/competency-summary?resultId=...
-//   - Fails soft: competency errors never break the existing report.
+// Phase 6.5: competency narrative generated and attached to competencySummary.
 
 import { createClient } from '@supabase/supabase-js';
+
+// Phase 6.5 — competency narrative generator
+import {
+  generateCompetencyNarrative,
+  generateSupervisorImplication as generateCompetencySupervisorImplication,
+} from '../../../utils/competencyNarrative';
 
 // ============================================================
 // 🟢 HELPERS: REPORT DATA & CATEGORY NORMALIZATION
@@ -105,9 +105,10 @@ function classifyDiscrimination(sd) {
 /**
  * Build the competencySummary payload for a single candidate's attempt.
  * Matches the shape returned by /api/reports/competency-summary?resultId=...
+ * Phase 6.5: also generates a top-level narrative and supervisor implication.
  * Returns null on any hard failure so the caller can degrade gracefully.
  */
-async function buildCompetencySummary(serviceClient, candidateId, assessmentId) {
+async function buildCompetencySummary(serviceClient, candidateId, assessmentId, candidateName, assessmentTitle) {
   try {
     // 1. Candidate's competency rows for this assessment
     const { data: candidateRows, error: candidateError } = await serviceClient
@@ -134,6 +135,7 @@ async function buildCompetencySummary(serviceClient, candidateId, assessmentId) 
         candidateId,
         assessmentId,
         competencies: [],
+        narrative: null,
         message: 'No competency scores are available for this assessment.',
       };
     }
@@ -221,12 +223,43 @@ async function buildCompetencySummary(serviceClient, candidateId, assessmentId) 
       return a.name.localeCompare(b.name);
     });
 
+    // ============================================================
+    // PHASE 6.5 — Generate the top-level narrative
+    // ============================================================
+    let narrative = null;
+    try {
+      const narrativeBase = generateCompetencyNarrative({
+        competencyScores: competencies.map((c) => ({
+          name: c.name,
+          percentage: c.percentage,
+          classification: c.classification,
+        })),
+        candidateName: candidateName || 'This candidate',
+        assessmentTitle: assessmentTitle || 'this assessment',
+      });
+
+      const supervisorImplication = generateCompetencySupervisorImplication({
+        topCompetency: narrativeBase.topCompetency,
+        bottomCompetency: narrativeBase.bottomCompetency,
+        signal: narrativeBase.signal,
+      });
+
+      narrative = {
+        ...narrativeBase,
+        supervisorImplication,
+      };
+    } catch (narrativeError) {
+      console.error('[Assessment Report] Narrative generation failed (non-fatal):', narrativeError);
+      narrative = null;
+    }
+
     return {
       mode: 'single',
       hasCompetencies: true,
       candidateId,
       assessmentId,
       competencies,
+      narrative,
     };
   } catch (error) {
     console.error('[Assessment Report] buildCompetencySummary threw:', error);
@@ -392,7 +425,6 @@ export default async function handler(req, res) {
     let workplaceSubCategories = [];
     let intellectualSubCategories = [];
 
-    // Split categories if it's a National Service report
     if (isNationalService && Array.isArray(categoryScores)) {
       const workplaceKeywords = ['Safety', 'Technical', 'Communication', 'Teamwork', 'Ownership', 'Integrity', 'Professional', 'Work Ethic', 'Workplace'];
       const intellectualKeywords = ['Learning', 'Problem Solving', 'Troubleshooting', 'Logical', 'Numerical', 'Measurement', 'Engineering', 'Critical', 'Analytical'];
@@ -404,11 +436,10 @@ export default async function handler(req, res) {
 
         if (isWorkplace) workplaceSubCategories.push(cat);
         else if (isIntellectual) intellectualSubCategories.push(cat);
-        else intellectualSubCategories.push(cat); // Default fallback
+        else intellectualSubCategories.push(cat);
       });
     }
 
-    // Calculate Scores
     const workplaceReadiness = Number(
       reportData?.dimensions?.workplaceReadiness ??
       reportData?.scores?.workplace ??
@@ -431,7 +462,6 @@ export default async function handler(req, res) {
       0
     );
 
-    // If overallScore is 0, calculate from categoryScores
     if (overallScore === 0 && categoryScores.length > 0) {
       const validScores = categoryScores
         .map((cat) => Number(cat.percentage || 0))
@@ -444,12 +474,10 @@ export default async function handler(req, res) {
       }
     }
 
-    // If still 0, calculate from Workplace/Intellectual average (for NS)
     if (overallScore === 0 && (workplaceReadiness > 0 || intellectualCapability > 0)) {
       overallScore = Math.round((workplaceReadiness + intellectualCapability) / 2);
     }
 
-    // Candidate Info for the report
     const candidateInfo = {
       fullName: candidateProfile?.full_name || 'Candidate',
       email: candidateProfile?.email || '',
@@ -512,13 +540,16 @@ export default async function handler(req, res) {
 
     // ============================================================
     // 🟢 PHASE 6 — COMPETENCY SUMMARY (fails soft)
+    // Phase 6.5: also builds the narrative from competency scores.
     // ============================================================
     let competencySummary = null;
     if (result.user_id && result.assessment_id && !isNationalService) {
       competencySummary = await buildCompetencySummary(
         serviceClient,
         result.user_id,
-        result.assessment_id
+        result.assessment_id,
+        candidateProfile?.full_name || 'Candidate',
+        assessment?.title || 'Assessment'
       );
     }
 
