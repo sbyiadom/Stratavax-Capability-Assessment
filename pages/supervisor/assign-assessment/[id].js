@@ -1,4 +1,9 @@
 // pages/supervisor/assign-assessment/[id].js
+// Phase 7A: candidate lookup, assessments list, and assignment reads/writes
+// moved to /api/supervisor/candidate-assignments (server-side, service role).
+// Removed localStorage fallback in checkAuth — modern sessions always come
+// from supabase.auth. Writes go through assign_candidate_assessments() RPC
+// so insert + delete run atomically.
 
 import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
@@ -166,42 +171,28 @@ export default function AssignAssessment() {
 
   useEffect(function () {
     async function checkAuth() {
-      var authResult;
-      var supabaseSession;
-      var userRole;
-      var stored;
-      var session;
-
       try {
-        authResult = await supabase.auth.getSession();
-        supabaseSession = authResult && authResult.data ? authResult.data.session : null;
+        const { data } = await supabase.auth.getSession();
+        const session = data?.session;
 
-        if (supabaseSession) {
-          userRole = supabaseSession.user && supabaseSession.user.user_metadata ? supabaseSession.user.user_metadata.role : null;
-          if (userRole === "supervisor" || userRole === "admin") {
-            setCurrentSupervisor({
-              id: supabaseSession.user.id,
-              email: supabaseSession.user.email,
-              name: (supabaseSession.user.user_metadata && supabaseSession.user.user_metadata.full_name) || supabaseSession.user.email,
-              role: userRole
-            });
-            return;
-          }
-        }
-
-        if (typeof window === "undefined") return;
-        stored = localStorage.getItem("userSession");
-        if (!stored) {
+        if (!session?.user) {
           router.push("/login");
           return;
         }
 
-        session = JSON.parse(stored);
-        if (session.loggedIn && (session.role === "supervisor" || session.role === "admin")) {
-          setCurrentSupervisor({ id: session.user_id, email: session.email, name: session.full_name || session.email, role: session.role });
-        } else {
+        const userRole = session.user.user_metadata?.role || null;
+
+        if (userRole !== "supervisor" && userRole !== "admin") {
           router.push("/login");
+          return;
         }
+
+        setCurrentSupervisor({
+          id: session.user.id,
+          email: session.user.email,
+          name: session.user.user_metadata?.full_name || session.user.email,
+          role: userRole
+        });
       } catch (authError) {
         router.push("/login");
       }
@@ -216,47 +207,49 @@ export default function AssignAssessment() {
     var cancelled = false;
 
     async function loadData() {
-      var isAdmin;
-      var candidateQuery;
-      var candidateResponse;
-      var assessmentsResponse;
-      var assignedResponse;
-      var assignedMap = {};
-      var selection = {};
-
       setLoading(true);
       setError("");
       setSuccess("");
 
       try {
-        isAdmin = currentSupervisor.role === "admin";
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData?.session?.access_token;
 
-        candidateQuery = supabase.from("candidate_profiles").select("*").eq("id", candidateId);
-        if (!isAdmin) candidateQuery = candidateQuery.eq("supervisor_id", currentSupervisor.id);
+        if (!token) {
+          if (!cancelled) setError("Your session has expired. Please sign in again.");
+          return;
+        }
 
-        candidateResponse = await candidateQuery.single();
-        if (candidateResponse.error || !candidateResponse.data) throw new Error("Candidate not found or not assigned to you.");
+        const response = await fetch(
+          `/api/supervisor/candidate-assignments?action=load&candidateId=${encodeURIComponent(candidateId)}`,
+          {
+            method: "GET",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json"
+            }
+          }
+        );
 
-        assessmentsResponse = await supabase
-          .from("assessments")
-          .select("*, assessment_type:assessment_types(*)")
-          .eq("is_active", true)
-          .order("title", { ascending: true });
+        let payload;
+        try {
+          payload = await response.json();
+        } catch {
+          throw new Error(`The server returned an invalid response (HTTP ${response.status}).`);
+        }
 
-        if (assessmentsResponse.error) throw assessmentsResponse.error;
+        if (!response.ok || !payload.success) {
+          throw new Error(payload.error || "Failed to load assignment data.");
+        }
 
-        assignedResponse = await supabase
-          .from("candidate_assessments")
-          .select("id, assessment_id, status, result_id, created_at, unblocked_at")
-          .eq("user_id", candidateId);
+        var assignedMap = {};
+        var selection = {};
 
-        if (assignedResponse.error) throw assignedResponse.error;
-
-        safeArray(assignedResponse.data).forEach(function (assignment) {
+        safeArray(payload.assigned).forEach(function (assignment) {
           assignedMap[assignment.assessment_id] = assignment;
         });
 
-        safeArray(assessmentsResponse.data).forEach(function (assessment) {
+        safeArray(payload.assessments).forEach(function (assessment) {
           var assigned = assignedMap[assessment.id] || null;
           selection[assessment.id] = {
             selected: !!assigned,
@@ -268,8 +261,8 @@ export default function AssignAssessment() {
         });
 
         if (!cancelled) {
-          setCandidate(candidateResponse.data);
-          setAssessments(safeArray(assessmentsResponse.data));
+          setCandidate(payload.candidate);
+          setAssessments(safeArray(payload.assessments));
           setSelectedAssessments(selection);
         }
       } catch (loadError) {
@@ -367,55 +360,63 @@ export default function AssignAssessment() {
   }
 
   async function handleSave() {
-    var currentResponse;
-    var currentIds;
-    var selectedIds;
-    var toAdd;
-    var toRemove;
-    var addRows;
-
     setSubmitting(true);
     setError("");
     setSuccess("");
 
     try {
-      currentResponse = await supabase.from("candidate_assessments").select("assessment_id, status").eq("user_id", candidateId);
-      if (currentResponse.error) throw currentResponse.error;
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
 
-      currentIds = safeArray(currentResponse.data).map(function (item) { return String(item.assessment_id); });
-      selectedIds = Object.keys(selectedAssessments).filter(function (id) { return selectedAssessments[id] && selectedAssessments[id].selected; }).map(String);
-
-      toAdd = selectedIds.filter(function (id) { return currentIds.indexOf(id) < 0; });
-      toRemove = currentIds.filter(function (id) {
-        var state = selectedAssessments[id];
-        var currentAssignment = safeArray(currentResponse.data).find(function (item) { return String(item.assessment_id) === String(id); });
-        if (currentAssignment && currentAssignment.status === "completed") return false;
-        return selectedIds.indexOf(id) < 0 && state && state.selected === false;
-      });
-
-      if (toAdd.length > 0) {
-        addRows = toAdd.map(function (assessmentId) {
-          return {
-            user_id: candidateId,
-            assessment_id: assessmentId,
-            status: "blocked",
-            created_at: new Date().toISOString()
-          };
-        });
-
-        var addResponse = await supabase.from("candidate_assessments").insert(addRows);
-        if (addResponse.error) throw addResponse.error;
+      if (!token) {
+        throw new Error("Your session has expired. Please sign in again.");
       }
 
-      if (toRemove.length > 0) {
-        var removeResponse = await supabase.from("candidate_assessments").delete().eq("user_id", candidateId).in("assessment_id", toRemove);
-        if (removeResponse.error) throw removeResponse.error;
+      var currentSelectedIds = Object.keys(selectedAssessments).filter(function (id) {
+        return selectedAssessments[id] && selectedAssessments[id].selected;
+      });
+      var currentOriginalIds = Object.keys(selectedAssessments).filter(function (id) {
+        return selectedAssessments[id] && selectedAssessments[id].originalSelected;
+      });
+
+      var toAdd = currentSelectedIds.filter(function (id) { return currentOriginalIds.indexOf(id) < 0; });
+      var toRemove = currentOriginalIds.filter(function (id) {
+        var state = selectedAssessments[id];
+        if (state && state.status === "completed") return false;
+        return currentSelectedIds.indexOf(id) < 0;
+      });
+
+      const response = await fetch(
+        `/api/supervisor/candidate-assignments?action=save&candidateId=${encodeURIComponent(candidateId)}`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ toAdd: toAdd, toRemove: toRemove })
+        }
+      );
+
+      let payload;
+      try {
+        payload = await response.json();
+      } catch {
+        throw new Error(`The server returned an invalid response (HTTP ${response.status}).`);
+      }
+
+      if (!response.ok || !payload.success) {
+        throw new Error(payload.error || "Failed to save assignments.");
       }
 
       setSelectedAssessments(function (previous) {
         var next = { ...previous };
         Object.keys(next).forEach(function (id) {
-          next[id] = { ...next[id], originalSelected: next[id].selected, status: next[id].selected && !next[id].status ? "blocked" : next[id].status };
+          next[id] = {
+            ...next[id],
+            originalSelected: next[id].selected,
+            status: next[id].selected && !next[id].status ? "blocked" : next[id].status
+          };
         });
         return next;
       });
