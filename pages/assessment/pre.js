@@ -11,9 +11,6 @@ export default function PreAssessment() {
   const [showInstructions, setShowInstructions] = useState(false);
   const [selectedAssessment, setSelectedAssessment] = useState(null);
 
-  // List of assessment types to exclude
-  const excludedTypes = ['manufacturing'];
-
   useEffect(() => {
     checkUser();
   }, []);
@@ -26,75 +23,45 @@ export default function PreAssessment() {
         return;
       }
       setUser(session.user);
-      fetchAssessments(session.user.id);
+      fetchAssessments();
     } catch (error) {
       console.error("Error:", error);
       router.push("/login");
     }
   };
 
-  const fetchAssessments = async (userId) => {
+  const fetchAssessments = async () => {
     try {
       setError(null);
-      
-      // First, get all active assessments with their types
-      const { data: assessmentsData, error: assessmentsError } = await supabase
-        .from('assessments')
-        .select(`
-          *,
-          assessment_type:assessment_types(*)
-        `)
-        .eq('is_active', true)
-        .order('assessment_type_id');
 
-      if (assessmentsError) throw assessmentsError;
-      
-      console.log("Fetched assessments:", assessmentsData);
-      
-      if (!assessmentsData || assessmentsData.length === 0) {
-        setAssessments([]);
-        setLoading(false);
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+
+      if (!token) {
+        router.push("/login");
         return;
       }
 
-      // Filter out excluded assessment types (like manufacturing)
-      const filteredAssessments = assessmentsData.filter(
-        assessment => !excludedTypes.includes(assessment.assessment_type?.code)
-      );
+      const response = await fetch('/api/assessment/available', {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
 
-      // For each assessment, check if the user has completed it
-      const assessmentsWithStatus = await Promise.all(
-        filteredAssessments.map(async (assessment) => {
-          try {
-            // Check in candidate_assessments first
-            const { data: completed, error: completedError } = await supabase
-              .from('candidate_assessments')
-              .select('id, status, score')
-              .eq('user_id', userId)
-              .eq('assessment_id', assessment.id)
-              .maybeSingle();
+      let payload;
+      try {
+        payload = await response.json();
+      } catch {
+        throw new Error(`The server returned an invalid response (HTTP ${response.status}).`);
+      }
 
-            if (completedError && completedError.code !== 'PGRST116') {
-              console.log("Error checking completion:", completedError);
-            }
-            
-            return {
-              ...assessment,
-              completed: !!completed,
-              score: completed?.score || null
-            };
-          } catch (err) {
-            console.log("Error processing assessment:", assessment.id, err);
-            return {
-              ...assessment,
-              completed: false,
-              score: null
-            };
-          }
-        })
-      );
+      if (!response.ok || !payload.success) {
+        throw new Error(payload.error || `Failed to load assessments (HTTP ${response.status}).`);
+      }
 
-      setAssessments(assessmentsWithStatus);
+      setAssessments(payload.assessments || []);
     } catch (error) {
       console.error("Error fetching assessments:", error);
       setError(error.message);
@@ -141,11 +108,11 @@ export default function PreAssessment() {
         <div style={styles.errorCard}>
           <h2>Error Loading Assessments</h2>
           <p>{error}</p>
-          <button 
+          <button
             onClick={() => {
               setLoading(true);
               setError(null);
-              fetchAssessments(user.id);
+              fetchAssessments();
             }}
             style={styles.retryButton}
           >
@@ -158,14 +125,13 @@ export default function PreAssessment() {
 
   return (
     <div style={styles.container}>
-      {/* Back Button */}
       <button onClick={handleBack} style={styles.backButton}>
         ← Back to Dashboard
       </button>
 
       <h1 style={styles.title}>Available Assessments</h1>
       <p style={styles.subtitle}>Welcome, {user?.email}. Select an assessment to begin.</p>
-      
+
       {assessments.length === 0 ? (
         <div style={styles.emptyState}>
           <p>No assessments available at this time.</p>
@@ -175,7 +141,7 @@ export default function PreAssessment() {
           {assessments.map((assessment) => {
             const type = assessment.assessment_type;
             const isCompleted = assessment.completed;
-            
+
             return (
               <div key={assessment.id} style={{
                 ...styles.card,
@@ -190,14 +156,13 @@ export default function PreAssessment() {
                   <h3 style={styles.cardTitle}>{assessment.title}</h3>
                   {isCompleted && <span style={styles.completedBadge}>✓ Completed</span>}
                 </div>
-                
+
                 <div style={styles.cardBody}>
                   <div style={styles.stats}>
                     <div>📝 {type?.question_count || 100} Questions</div>
                     <div>⏱️ 180 Minutes (3 hours)</div>
-                    <div>🎯 Max Score: {type?.max_score || 500}</div>
                   </div>
-                  
+
                   <button
                     onClick={() => handleStartClick(assessment)}
                     disabled={isCompleted}
@@ -216,7 +181,7 @@ export default function PreAssessment() {
         </div>
       )}
 
-      {/* Instructions Modal */}
+      {/* Instructions Modal — unchanged */}
       {showInstructions && selectedAssessment && (
         <div style={styles.modalOverlay}>
           <div style={styles.modalContent}>
@@ -225,9 +190,8 @@ export default function PreAssessment() {
               <h2 style={styles.modalTitle}>Assessment Instructions</h2>
               <button onClick={() => setShowInstructions(false)} style={styles.closeButton}>✕</button>
             </div>
-            
+
             <div style={styles.modalBody}>
-              {/* Time & Attempts */}
               <div style={styles.instructionSection}>
                 <h3 style={styles.sectionTitle}>⏱️ Time & Attempts</h3>
                 <ul style={styles.instructionList}>
@@ -238,7 +202,6 @@ export default function PreAssessment() {
                 </ul>
               </div>
 
-              {/* DO's */}
               <div style={styles.instructionSection}>
                 <h3 style={styles.sectionTitle}>✅ DO's</h3>
                 <ul style={styles.instructionList}>
@@ -254,7 +217,6 @@ export default function PreAssessment() {
                 </ul>
               </div>
 
-              {/* DON'Ts */}
               <div style={styles.instructionSection}>
                 <h3 style={styles.sectionTitle}>❌ DON'Ts</h3>
                 <ul style={styles.instructionList}>
@@ -270,7 +232,6 @@ export default function PreAssessment() {
                 </ul>
               </div>
 
-              {/* Security Monitoring */}
               <div style={styles.instructionSection}>
                 <h3 style={styles.sectionTitle}>🛡️ Security Monitoring</h3>
                 <table style={styles.securityTable}>
@@ -290,7 +251,6 @@ export default function PreAssessment() {
                 </table>
               </div>
 
-              {/* Pro Tips */}
               <div style={styles.instructionSection}>
                 <h3 style={styles.sectionTitle}>💡 Pro Tips</h3>
                 <ul style={styles.instructionList}>
@@ -302,7 +262,6 @@ export default function PreAssessment() {
                 </ul>
               </div>
 
-              {/* Checklist */}
               <div style={styles.instructionSection}>
                 <h3 style={styles.sectionTitle}>📋 Before You Start Checklist</h3>
                 <ul style={styles.checklist}>
@@ -316,7 +275,6 @@ export default function PreAssessment() {
                 </ul>
               </div>
 
-              {/* Need Help */}
               <div style={styles.instructionSection}>
                 <h3 style={styles.sectionTitle}>📞 Need Help?</h3>
                 <ul style={styles.instructionList}>
@@ -326,10 +284,9 @@ export default function PreAssessment() {
                 </ul>
               </div>
 
-              {/* Confirmation */}
               <div style={styles.confirmationSection}>
                 <p style={styles.confirmationText}>
-                  By starting this assessment, you confirm that you have read and understood these instructions, 
+                  By starting this assessment, you confirm that you have read and understood these instructions,
                   will answer honestly, and agree to follow the security guidelines.
                 </p>
               </div>
@@ -347,7 +304,6 @@ export default function PreAssessment() {
         </div>
       )}
 
-      {/* Info Note */}
       <div style={styles.infoNote}>
         <p>⚠️ <strong>Important:</strong> Each assessment has a 3-hour time limit (180 minutes). Your progress is automatically saved.</p>
       </div>
@@ -512,7 +468,6 @@ const styles = {
     fontSize: '14px',
     textAlign: 'center'
   },
-  // Modal Styles
   modalOverlay: {
     position: 'fixed',
     top: 0,
