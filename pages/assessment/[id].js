@@ -1,6 +1,8 @@
 // pages/assessment/[id].js - FORCED-CHOICE SUPPORT
 // Phase 6.5 (responsive): mobile-first layout. Desktop 3-column unchanged.
 // Tablet 2-column. Mobile single column with sticky footer nav.
+// Phase 7A: logViolation now routes through /api/assessment/session PATCH.
+// Removed the client-side supabase.from("assessment_sessions").update() call.
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
@@ -273,13 +275,23 @@ function AssessmentContent() {
   }
 
   // Phase 6.5: violations no longer auto-submit. Recorded + reported only.
+  // Phase 7A: violation count sync goes through /api/assessment/session PATCH
+  // instead of a client-side Supabase write. Ownership is enforced server-side.
   async function logViolation(violationType) {
     if (!sessionIdRef.current || alreadySubmitted || isAutoSubmitting || isTimeExpired) return;
     const newCount = violationCount + 1;
     setViolationCount(newCount);
     try {
-      await supabase.from("assessment_sessions").update({ violation_count: newCount }).eq("id", sessionIdRef.current);
+      await apiCall('/api/assessment/session', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          sessionId: sessionIdRef.current,
+          violationCount: newCount,
+        }),
+      });
     } catch (err) {
+      // Non-fatal: the count is still tracked in local state and included
+      // in the final submit payload. Server-side sync is best-effort.
       console.error("Failed to sync violation count to DB:", err);
     }
     let message = violationType;
