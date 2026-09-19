@@ -15,13 +15,16 @@
 //     same answer on both sides
 //   - Requires both picks before "answered"
 //
-// FIX (this revision):
-//   The change counter (used for behavioral analysis of decision-making)
-//   was flagging the SECOND pick of a forced-choice question as a change.
-//   Picking Most, then picking Least for the first time was counted as a
-//   "change of answer", which inflated the counter to N+1 changes on N
-//   questions. The counter now only increments when a candidate actually
-//   REVISES a pick on the same side.
+// FIX (Phase 5 revision): The change counter was flagging the second
+// pick of a forced-choice question as a change. Now only counts actual
+// revisions on the same side.
+//
+// FIX (Phase 6.5 revision): Behavioral violations no longer trigger
+// auto-submit. Violations are logged, warned, and included in the
+// final report for supervisor review. Only the timer expiry
+// auto-submits the assessment. This prevents accidental termination
+// of genuine attempts from habitual right-clicks, accidental
+// PrintScreen key presses, or slow-JS DevTools false positives.
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
@@ -369,6 +372,18 @@ function AssessmentContent() {
     setUrlVisitStartTime(Date.now());
   }
 
+  // ------------------------------------------------------------
+  // logViolation
+  //
+  // Phase 6.5: behavioral violations are recorded but no longer
+  // auto-submit the assessment. The old behavior (submit at 3
+  // violations) was terminating genuine attempts from habitual
+  // right-clicks, accidental PrintScreen presses, or DevTools
+  // false positives. The final report includes all violations,
+  // and the supervisor decides whether the attempt is valid.
+  //
+  // Auto-submit now only fires on timer expiry.
+  // ------------------------------------------------------------
   async function logViolation(violationType) {
     if (!sessionIdRef.current || alreadySubmitted || isAutoSubmitting || isTimeExpired) return;
     const newCount = violationCount + 1;
@@ -390,12 +405,10 @@ function AssessmentContent() {
       message += ` (${domain} - ${category})`;
     }
 
-    showViolation(message + ". Violation " + newCount + " of 3.");
+    showViolation(message + ". Recorded in your report for review.");
 
-    if (newCount >= 3) {
-      showViolation("Maximum violations reached. Auto-submitting assessment...");
-      setTimeout(() => handleAutoSubmit("Auto-submitted due to rule violations."), 1000);
-    }
+    // Phase 6.5: auto-submit-on-3-violations REMOVED intentionally.
+    // Violations are warnings + report data, not termination triggers.
   }
 
   async function handleAutoSubmit(reason) {
@@ -629,7 +642,6 @@ function AssessmentContent() {
     const current = getForcedChoicePicks(questionId);
     const next = { ...current };
 
-    // Was there a previous value on this specific side?
     const hadPreviousMost = current.most !== null && current.most !== undefined;
     const hadPreviousLeast = current.least !== null && current.least !== undefined;
 
@@ -657,8 +669,6 @@ function AssessmentContent() {
       }
     }
 
-    // isChange = TRUE only if the candidate changed their pick on the SAME side.
-    // Picking Most then picking Least for the first time is NOT a change.
     const isMostChange =
       side === "most" &&
       hadPreviousMost &&
@@ -1253,7 +1263,7 @@ function AssessmentContent() {
               <div style={styles.modalStat}><span>Questions Answered</span><strong style={{ color: successColor }}>{totalAnswered}/{questions.length}</strong></div>
               <div style={styles.modalStat}><span>Completion Rate</span><strong>{Math.round((totalAnswered / questions.length) * 100)}%</strong></div>
               <div style={styles.modalStat}><span>Answer Changes</span><strong>{totalChanges}</strong></div>
-              {violationCount > 0 && <div style={styles.modalStat}><span>Violations</span><strong style={{ color: violationCount >= 3 ? dangerColor : warningColor }}>{violationCount}/3</strong></div>}
+              {violationCount > 0 && <div style={styles.modalStat}><span>Behavioral Flags</span><strong style={{ color: warningColor }}>{violationCount}</strong></div>}
               {externalUrlVisits.length > 0 && (
                 <div style={styles.modalStat}>
                   <span>External Sites Visited</span>
