@@ -1,6 +1,11 @@
-// pages/api/admin/reports.js - COMPLETE CORRECTED VERSION V2
+// pages/api/admin/reports.js — COMPLETE CORRECTED VERSION V3
 // Fixes National Service overall score mismatch between report list and report detail
 // V2 adds safe parsing for report_data when Supabase returns it as a JSON string
+// V3 (Phase 7A) adds auth + admin role check. Endpoint previously had no
+//    caller verification — any unauthenticated request returned all reports.
+//
+// Data reads remain service-role; the auth client is only used to verify the
+// caller's identity and role.
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -24,20 +29,13 @@ function roundScore(value) {
 
 // ============================================================
 // HELPER: SAFE REPORT DATA PARSER
-// Supabase may return report_data as an object or as a JSON string.
-// If it is a string and we do not parse it, the API falls back to percentage_score,
-// which is why the list can continue showing 5% instead of the detailed report score.
 // ============================================================
 function getReportData(result) {
   const rawReportData = result?.report_data;
 
-  if (!rawReportData) {
-    return {};
-  }
+  if (!rawReportData) return {};
 
-  if (typeof rawReportData === 'object') {
-    return rawReportData;
-  }
+  if (typeof rawReportData === 'object') return rawReportData;
 
   if (typeof rawReportData === 'string') {
     try {
@@ -53,31 +51,19 @@ function getReportData(result) {
 }
 
 // ============================================================
-// FIXED: RECOMMENDATION LOGIC
-// Uses the final overall score displayed on the report
+// RECOMMENDATION LOGIC
 // ============================================================
 function getRecommendation(workplaceReadiness, intellectualCapability, overallScore) {
   const overall = safeNumber(overallScore, 0);
 
-  if (overall >= 85) {
-    return 'Highly Recommended';
-  }
-
-  if (overall >= 70) {
-    return 'Recommended';
-  }
-
-  if (overall >= 50) {
-    return 'Reserve Pool';
-  }
-
+  if (overall >= 85) return 'Highly Recommended';
+  if (overall >= 70) return 'Recommended';
+  if (overall >= 50) return 'Reserve Pool';
   return 'Not Recommended';
 }
 
 // ============================================================
-// CRITICAL FIX:
-// Extract the correct overall score for National Service reports.
-// The report list must use the same score used by the report detail.
+// NATIONAL SERVICE OVERALL SCORE
 // ============================================================
 function getNationalServiceOverallScore(result) {
   const reportData = getReportData(result);
@@ -109,7 +95,7 @@ function getNationalServiceOverallScore(result) {
 }
 
 // ============================================================
-// HELPER: Extract Workplace Readiness
+// WORKPLACE READINESS
 // ============================================================
 function getWorkplaceReadiness(result) {
   const reportData = getReportData(result);
@@ -134,7 +120,7 @@ function getWorkplaceReadiness(result) {
 }
 
 // ============================================================
-// HELPER: Extract Intellectual Capability
+// INTELLECTUAL CAPABILITY
 // ============================================================
 function getIntellectualCapability(result) {
   const reportData = getReportData(result);
@@ -159,7 +145,7 @@ function getIntellectualCapability(result) {
 }
 
 // ============================================================
-// HELPER: Extract Category Scores
+// CATEGORY SCORES
 // ============================================================
 function getCategoryScores(result) {
   const reportData = getReportData(result);
@@ -192,32 +178,103 @@ function getCategoryScores(result) {
 }
 
 // ============================================================
+// PHASE 7A — AUTH + ADMIN ROLE CHECK
+// ============================================================
+async function resolveCaller(serviceClient, token, anonKey, supabaseUrl) {
+  const authClient = createClient(supabaseUrl, anonKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+    global: { headers: { Authorization: `Bearer ${token}` } },
+  });
+
+  const { data: userData, error: authError } = await authClient.auth.getUser(token);
+
+  if (authError || !userData?.user) {
+    console.error('[Admin Reports API] auth.getUser failed:', authError?.message);
+    return { error: 'Unauthorized: Invalid token', status: 401 };
+  }
+
+  const userId = userData.user.id;
+  const metadataRole = userData.user.user_metadata?.role || null;
+
+  const { data: profile, error: profileError } = await serviceClient
+    .from('supervisor_profiles')
+    .select('id, role, is_active')
+    .eq('id', userId)
+    .maybeSingle();
+
+  if (profileError) {
+    console.error('[Admin Reports API] supervisor_profiles lookup failed:', profileError.message);
+    return { error: 'Unable to verify caller identity', status: 500 };
+  }
+
+  const resolvedRole = profile?.role || metadataRole;
+
+  if (profile?.is_active === false) {
+    return { error: 'Account is inactive', status: 403 };
+  }
+
+  if (resolvedRole !== 'admin') {
+    return { error: 'Admin access required', status: 403 };
+  }
+
+  return { userId, role: resolvedRole };
+}
+
+// ============================================================
 // API HANDLER
 // ============================================================
 export default async function handler(req, res) {
   if (req.method !== 'GET') {
     return res.status(405).json({
       success: false,
-      error: 'Method not allowed'
+      error: 'Method not allowed',
     });
   }
 
   try {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-    if (!supabaseUrl || !serviceRoleKey) {
+    if (!supabaseUrl || !anonKey || !serviceRoleKey) {
+      console.error('[Admin Reports API] Missing Supabase credentials', {
+        hasUrl: !!supabaseUrl,
+        hasAnonKey: !!anonKey,
+        hasServiceRoleKey: !!serviceRoleKey,
+      });
       return res.status(500).json({
         success: false,
-        error: 'Server configuration error: Missing Supabase credentials'
+        error: 'Server configuration error: Missing Supabase credentials',
+      });
+    }
+
+    // ============================================================
+    // STEP 0: Auth + admin role check (Phase 7A)
+    // ============================================================
+    const authHeader = req.headers.authorization || '';
+    const token = authHeader.startsWith('Bearer ')
+      ? authHeader.replace('Bearer ', '').trim()
+      : null;
+
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        error: 'Unauthorized: No token provided',
       });
     }
 
     const serviceClient = createClient(supabaseUrl, serviceRoleKey, {
-      auth: {
-        persistSession: false
-      }
+      auth: { persistSession: false, autoRefreshToken: false },
     });
+
+    const caller = await resolveCaller(serviceClient, token, anonKey, supabaseUrl);
+
+    if (caller.error) {
+      return res.status(caller.status || 401).json({
+        success: false,
+        error: caller.error,
+      });
+    }
 
     // ============================================================
     // STEP 1: Get all assessment results
@@ -229,10 +286,9 @@ export default async function handler(req, res) {
 
     if (resultsError) {
       console.error('[Admin Reports API] Results error:', resultsError);
-
       return res.status(500).json({
         success: false,
-        error: `Failed to load results: ${resultsError.message}`
+        error: `Failed to load results: ${resultsError.message}`,
       });
     }
 
@@ -240,11 +296,7 @@ export default async function handler(req, res) {
       return res.status(200).json({
         success: true,
         reports: [],
-        stats: {
-          total: 0,
-          nationalService: 0,
-          stratavax: 0
-        }
+        stats: { total: 0, nationalService: 0, stratavax: 0 },
       });
     }
 
@@ -306,7 +358,7 @@ export default async function handler(req, res) {
         Object.values(assessmentMap)
           .map(assessment => assessment.assessment_type_id)
           .filter(Boolean)
-      )
+      ),
     ];
 
     let typeMap = {};
@@ -408,7 +460,6 @@ export default async function handler(req, res) {
         answered_questions: result.answered_questions || 0,
         correct_answers: result.correct_answers || 0,
 
-        // Return parsed object so the frontend receives consistent report data
         report_data: parsedReportData,
 
         candidateInfo: {
@@ -419,8 +470,8 @@ export default async function handler(req, res) {
           preferredDepartment: profile?.preferred_department || '',
           assessmentDate: result.completed_at
             ? new Date(result.completed_at).toLocaleDateString()
-            : 'N/A'
-        }
+            : 'N/A',
+        },
       };
     });
 
@@ -440,15 +491,15 @@ export default async function handler(req, res) {
       stats: {
         total: enrichedReports.length,
         nationalService: nationalServiceCount,
-        stratavax: stratavaxCount
-      }
+        stratavax: stratavaxCount,
+      },
     });
   } catch (error) {
     console.error('[Admin Reports API] API error:', error);
 
     return res.status(500).json({
       success: false,
-      error: error.message || 'Internal server error'
+      error: error.message || 'Internal server error',
     });
   }
 }
