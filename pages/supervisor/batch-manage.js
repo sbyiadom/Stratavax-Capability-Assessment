@@ -1,6 +1,8 @@
 // pages/supervisor/batch-manage.js
-// Phase 7A: fetches candidate list from a server-side endpoint instead of
-// reading Supabase directly. Prepares for RLS.
+// Phase 7A: candidate list, CSV import, and delete operations all run through
+// server endpoints. Removed client-side supervisor_profiles read and
+// client-side DELETE on candidate_profiles. Supervisors may only delete
+// candidates within their scope (enforced server-side).
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
@@ -324,27 +326,11 @@ export default function SupervisorBatchManage() {
         return;
       }
 
+      // Role from user_metadata only. Endpoints enforce server-side.
       const metadataRole = activeSession.user.user_metadata?.role || null;
 
-      const { data: profile, error: profileError } = await supabase
-        .from("supervisor_profiles")
-        .select("id, email, full_name, role, is_active")
-        .eq("id", activeSession.user.id)
-        .maybeSingle();
-
-      if (profileError && profileError.code !== "PGRST116") throw profileError;
-
-      const resolvedRole = profile?.role || metadataRole;
-
-      if (resolvedRole !== "supervisor" && resolvedRole !== "admin") {
+      if (metadataRole !== "supervisor" && metadataRole !== "admin") {
         setMessage({ type: "error", text: "Supervisor access is required." });
-        router.replace("/login");
-        return;
-      }
-
-      if (profile?.is_active === false) {
-        await supabase.auth.signOut();
-        if (typeof window !== "undefined") localStorage.removeItem("userSession");
         router.replace("/login");
         return;
       }
@@ -352,8 +338,8 @@ export default function SupervisorBatchManage() {
       setCurrentSupervisor({
         id: activeSession.user.id,
         email: activeSession.user.email,
-        name: profile?.full_name || activeSession.user.user_metadata?.full_name || activeSession.user.email,
-        role: resolvedRole
+        name: activeSession.user.user_metadata?.full_name || activeSession.user.email,
+        role: metadataRole
       });
 
       await loadCandidates(activeSession.access_token);
@@ -416,12 +402,34 @@ export default function SupervisorBatchManage() {
 
     try {
       setLoading(true);
-      const { error } = await supabase
-        .from('candidate_profiles')
-        .delete()
-        .eq('id', candidateId);
+      setMessage({ type: "", text: "" });
 
-      if (error) throw error;
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
+
+      if (!token) {
+        throw new Error('Your session has expired. Please sign in again.');
+      }
+
+      const response = await fetch('/api/supervisor/batch-delete-candidates', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ candidateIds: [candidateId] }),
+      });
+
+      let payload;
+      try {
+        payload = await response.json();
+      } catch {
+        throw new Error(`The server returned an invalid response (HTTP ${response.status}).`);
+      }
+
+      if (!response.ok || !payload.success) {
+        throw new Error(payload.error || `Failed to delete candidate (HTTP ${response.status}).`);
+      }
 
       setMessage({
         type: "success",
@@ -452,12 +460,34 @@ export default function SupervisorBatchManage() {
 
     try {
       setLoading(true);
-      const { error } = await supabase
-        .from('candidate_profiles')
-        .delete()
-        .in('id', selectedIds);
+      setMessage({ type: "", text: "" });
 
-      if (error) throw error;
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
+
+      if (!token) {
+        throw new Error('Your session has expired. Please sign in again.');
+      }
+
+      const response = await fetch('/api/supervisor/batch-delete-candidates', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ candidateIds: selectedIds }),
+      });
+
+      let payload;
+      try {
+        payload = await response.json();
+      } catch {
+        throw new Error(`The server returned an invalid response (HTTP ${response.status}).`);
+      }
+
+      if (!response.ok || !payload.success) {
+        throw new Error(payload.error || `Failed to delete candidates (HTTP ${response.status}).`);
+      }
 
       setMessage({
         type: "success",
