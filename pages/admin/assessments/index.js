@@ -1,17 +1,14 @@
 // pages/admin/assessments/index.js
 // Phase 3 — Assessment Builder
-// List + create modal (with template picker) + edit modal + role tagging.
+// Phase 7A: all API calls go through fetchWithAuth.
 
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useRouter } from 'next/router';
 import Select from 'react-select';
-import { supabase } from '../../../supabase/client';
 import { useRequireAuth } from '../../../utils/requireAuth';
+import { fetchWithAuth } from '../../../utils/fetchWithAuth';
 import AppLayout from '../../../components/AppLayout';
 
-// ============================================================
-// HELPERS
-// ============================================================
 function formatDateTime(iso) {
   if (!iso) return '—';
   try {
@@ -47,7 +44,6 @@ function isoToLocal(iso) {
   }
 }
 
-// {date} → today's date (YYYY-MM-DD); leaves other content untouched.
 function applyTitlePattern(pattern) {
   if (!pattern) return '';
   const today = new Date();
@@ -58,7 +54,6 @@ function applyTitlePattern(pattern) {
   return pattern.replace(/\{date\}/g, iso);
 }
 
-// now + N days → datetime-local string for the expires input
 function daysFromNowToLocal(days) {
   if (days == null || !Number.isFinite(days) || days <= 0) return '';
   const d = new Date();
@@ -67,9 +62,6 @@ function daysFromNowToLocal(days) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-// ============================================================
-// CREATE MODAL (with template picker)
-// ============================================================
 function CreateModal({ types, templates, onClose, onCreated }) {
   const [title, setTitle] = useState('');
   const [assessmentTypeId, setAssessmentTypeId] = useState(types[0]?.id ?? '');
@@ -84,7 +76,6 @@ function CreateModal({ types, templates, onClose, onCreated }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
-  // ---------- Apply template values to form state ----------
   const applyTemplate = (t) => {
     if (!t) return;
     if (t.title_pattern) setTitle(applyTitlePattern(t.title_pattern));
@@ -99,7 +90,6 @@ function CreateModal({ types, templates, onClose, onCreated }) {
   const handleTemplateChange = (id) => {
     setTemplateId(id);
     if (!id) {
-      // Clearing the template doesn't wipe manual input — user decides what to do
       setTemplateRoles([]);
       return;
     }
@@ -113,7 +103,6 @@ function CreateModal({ types, templates, onClose, onCreated }) {
     if (t) applyTemplate(t);
   };
 
-  // ---------- Save ----------
   const handleSave = async () => {
     try {
       setSaving(true);
@@ -128,20 +117,17 @@ function CreateModal({ types, templates, onClose, onCreated }) {
         expires_at: localToIso(expiresLocal)
       };
 
-      const response = await fetch('/api/admin/assessments/create', {
+      const response = await fetchWithAuth('/api/admin/assessments/create', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
       const data = await response.json();
       if (!response.ok || !data.success) throw new Error(data.error || 'Failed to create');
 
-      // Apply template roles if any
       if (templateRoles.length > 0 && data.assessment_id) {
         try {
-          const rolesRes = await fetch('/api/admin/assessments/set-roles', {
+          const rolesRes = await fetchWithAuth('/api/admin/assessments/set-roles', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               assessment_id: data.assessment_id,
               role_ids: templateRoles.map((r) => r.id)
@@ -150,7 +136,6 @@ function CreateModal({ types, templates, onClose, onCreated }) {
           const rolesData = await rolesRes.json();
           if (!rolesRes.ok || !rolesData.success) {
             console.error('[Assessment Builder UI] template roles failed:', rolesData.error);
-            // Don't block creation — assessment exists, only role tagging failed
           }
         } catch (roleErr) {
           console.error('[Assessment Builder UI] template roles error:', roleErr);
@@ -177,7 +162,6 @@ function CreateModal({ types, templates, onClose, onCreated }) {
         </div>
 
         <div style={styles.modalBody}>
-          {/* ---------- Template picker ---------- */}
           {templates.length > 0 && (
             <>
               <label style={styles.fieldLabel}>Start from template (optional)</label>
@@ -266,9 +250,6 @@ function CreateModal({ types, templates, onClose, onCreated }) {
   );
 }
 
-// ============================================================
-// EDIT MODAL (unchanged, roles multi-select)
-// ============================================================
 function EditModal({ assessment, allRoles, onClose, onSaved }) {
   const [title, setTitle] = useState(assessment.title || '');
   const [description, setDescription] = useState(assessment.description || '');
@@ -308,9 +289,8 @@ function EditModal({ assessment, allRoles, onClose, onSaved }) {
         expires_at: localToIso(expiresLocal)
       };
 
-      const updateResponse = await fetch('/api/admin/assessments/update', {
+      const updateResponse = await fetchWithAuth('/api/admin/assessments/update', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updatePayload)
       });
       const updateData = await updateResponse.json();
@@ -319,9 +299,8 @@ function EditModal({ assessment, allRoles, onClose, onSaved }) {
       }
 
       const roleIds = selectedRoles.map((r) => r.value);
-      const rolesResponse = await fetch('/api/admin/assessments/set-roles', {
+      const rolesResponse = await fetchWithAuth('/api/admin/assessments/set-roles', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ assessment_id: assessment.id, role_ids: roleIds })
       });
       const rolesData = await rolesResponse.json();
@@ -403,9 +382,6 @@ function EditModal({ assessment, allRoles, onClose, onSaved }) {
   );
 }
 
-// ============================================================
-// react-select custom styles
-// ============================================================
 const reactSelectStyles = {
   control: (base, state) => ({
     ...base,
@@ -431,9 +407,6 @@ const reactSelectStyles = {
   })
 };
 
-// ============================================================
-// MAIN PAGE
-// ============================================================
 export default function AssessmentBuilderList() {
   const router = useRouter();
   const { session, loading: authLoading } = useRequireAuth();
@@ -462,7 +435,6 @@ export default function AssessmentBuilderList() {
 
   const debounceRef = useRef(null);
 
-  // ---------- Load reference data ----------
   useEffect(() => {
     if (!session) return;
     let cancelled = false;
@@ -473,9 +445,9 @@ export default function AssessmentBuilderList() {
         setTypesError(null);
 
         const [typesRes, rolesRes, templatesRes] = await Promise.all([
-          fetch('/api/admin/question-bank/types'),
-          fetch('/api/admin/roles/list'),
-          fetch('/api/admin/templates/list')
+          fetchWithAuth('/api/admin/question-bank/types'),
+          fetchWithAuth('/api/admin/roles/list'),
+          fetchWithAuth('/api/admin/templates/list')
         ]);
 
         const typesData = await typesRes.json();
@@ -503,7 +475,6 @@ export default function AssessmentBuilderList() {
     return () => { cancelled = true; };
   }, [session]);
 
-  // ---------- Refetch assessments ----------
   const refetch = async () => {
     try {
       setLoading(true);
@@ -513,7 +484,7 @@ export default function AssessmentBuilderList() {
       if (typeFilter) params.set('assessment_type_id', typeFilter);
       if (roleFilter) params.set('role_id', roleFilter);
 
-      const response = await fetch(`/api/admin/assessments/list?${params.toString()}`);
+      const response = await fetchWithAuth(`/api/admin/assessments/list?${params.toString()}`);
       const data = await response.json();
       if (!response.ok || !data.success) throw new Error(data.error || 'Failed to load assessments');
       setAssessments(data.assessments || []);
@@ -563,9 +534,8 @@ export default function AssessmentBuilderList() {
   const handleToggleActive = async (a) => {
     try {
       setTogglingId(a.id);
-      const response = await fetch('/api/admin/assessments/update', {
+      const response = await fetchWithAuth('/api/admin/assessments/update', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           assessment_id: a.id,
           title: a.title,
@@ -780,9 +750,6 @@ export default function AssessmentBuilderList() {
   );
 }
 
-// ============================================================
-// STYLES
-// ============================================================
 const styles = {
   loadingContainer: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '400px', gap: '16px' },
   loadingSpinner: { width: '40px', height: '40px', border: '4px solid #e2e8f0', borderTop: '4px solid #1a237e', borderRadius: '50%', animation: 'spin 1s linear infinite' },
