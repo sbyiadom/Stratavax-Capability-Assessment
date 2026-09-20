@@ -1,17 +1,16 @@
 // pages/admin/question-bank/index.js
 // Phase 3 — Question Bank Manager
-// List + Edit + Delete + Export + Import (XLSX with client-side preview).
+// Phase 7A: all API calls go through fetchWithAuth.
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/router';
 import * as XLSX from 'xlsx';
-import { supabase } from '../../../supabase/client';
 import { useRequireAuth } from '../../../utils/requireAuth';
+import { fetchWithAuth } from '../../../utils/fetchWithAuth';
 import AppLayout from '../../../components/AppLayout';
 
 // ============================================================
 // CLIENT-SIDE XLSX PREVIEW PARSER
-// Column-position independent + SheetJS cell-object tolerant.
 // ============================================================
 const EXPECTED_HEADERS = [
   'question_id',
@@ -29,9 +28,6 @@ const EXPECTED_HEADERS = [
   'answer_4_score'
 ];
 
-// Robust header normalization.
-// SheetJS occasionally returns cell objects (not raw strings) for
-// formatted cells; unwrap .w / .v before stringifying.
 const normalizeHeader = (v) => {
   let s;
   if (v == null) {
@@ -44,14 +40,13 @@ const normalizeHeader = (v) => {
     s = String(v);
   }
   return s
-    .replace(/\u00A0/g, ' ')                  // non-breaking space → space
-    .replace(/[\u200B-\u200D\uFEFF]/g, '')    // zero-width chars
+    .replace(/\u00A0/g, ' ')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
     .replace(/\s+/g, ' ')
     .trim()
     .toLowerCase();
 };
 
-// Unwrap a cell value that may be a SheetJS cell object.
 const readCellValue = (v) => {
   if (v == null) return '';
   if (typeof v === 'object') {
@@ -89,7 +84,6 @@ function parseWorkbookBuffer(buffer) {
     if (key) foundHeaders.push(key);
   });
 
-  // Diagnostics — visible in browser console.
   console.log('[Question Bank Import] raw header row:', rawHeader);
   console.log('[Question Bank Import] header map:', headerMap);
   console.log('[Question Bank Import] normalized found:', foundHeaders);
@@ -124,7 +118,6 @@ function parseWorkbookBuffer(buffer) {
     const raw = rawRows[i];
     const fileRow = i + 1;
 
-    // Skip entirely blank rows.
     const nonEmpty = raw.some((c) => {
       if (c == null) return false;
       if (typeof c === 'object') return c.v != null || c.w != null;
@@ -212,7 +205,7 @@ function ImportModal({ assessmentType, onClose, onImported }) {
       formData.append('assessment_type_id', String(assessmentType.id));
       formData.append('file', file);
 
-      const response = await fetch('/api/admin/question-bank/import', {
+      const response = await fetchWithAuth('/api/admin/question-bank/import', {
         method: 'POST',
         body: formData
       });
@@ -373,9 +366,8 @@ function EditModal({ question, onClose, onSaved }) {
           display_order: Number(a.display_order)
         }))
       };
-      const response = await fetch('/api/admin/question-bank/update', {
+      const response = await fetchWithAuth('/api/admin/question-bank/update', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
       const data = await response.json();
@@ -470,7 +462,7 @@ export default function QuestionBankList() {
       try {
         setTypesLoading(true);
         setTypesError(null);
-        const response = await fetch('/api/admin/question-bank/types');
+        const response = await fetchWithAuth('/api/admin/question-bank/types');
         const data = await response.json();
         if (!response.ok || !data.success) throw new Error(data.error || 'Failed to load assessment types');
         if (cancelled) return;
@@ -501,7 +493,7 @@ export default function QuestionBankList() {
       params.set('assessment_type_id', String(assessmentTypeId));
       if (section) params.set('section', section);
       if (search) params.set('search', search);
-      const response = await fetch(`/api/admin/question-bank/list?${params.toString()}`);
+      const response = await fetchWithAuth(`/api/admin/question-bank/list?${params.toString()}`);
       const data = await response.json();
       if (!response.ok || !data.success) throw new Error(data.error || 'Failed to load questions');
       setAssessmentType(data.assessment_type || null);
@@ -524,7 +516,7 @@ export default function QuestionBankList() {
         params.set('assessment_type_id', String(assessmentTypeId));
         if (section) params.set('section', section);
         if (search) params.set('search', search);
-        const response = await fetch(`/api/admin/question-bank/list?${params.toString()}`);
+        const response = await fetchWithAuth(`/api/admin/question-bank/list?${params.toString()}`);
         const data = await response.json();
         if (!response.ok || !data.success) throw new Error(data.error || 'Failed to load questions');
         if (cancelled) return;
@@ -568,9 +560,8 @@ export default function QuestionBankList() {
     if (!ok) return;
     try {
       setDeletingId(q.id);
-      const response = await fetch('/api/admin/question-bank/delete', {
+      const response = await fetchWithAuth('/api/admin/question-bank/delete', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ question_id: q.id })
       });
       const data = await response.json();
@@ -588,7 +579,7 @@ export default function QuestionBankList() {
     try {
       setExporting(true);
       const url = `/api/admin/question-bank/export?assessment_type_id=${assessmentTypeId}`;
-      const response = await fetch(url);
+      const response = await fetchWithAuth(url);
       if (!response.ok) {
         let message = 'Export failed';
         try { const data = await response.json(); message = data.error || message; } catch (e) {}
