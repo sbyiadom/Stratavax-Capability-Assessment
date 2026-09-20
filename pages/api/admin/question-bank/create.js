@@ -1,9 +1,9 @@
 // pages/api/admin/question-bank/create.js
 // Phase 3 — Question Bank Manager
 // Inserts one question + exactly 4 answers via create_question_with_answers RPC.
-// Mirrors conventions of pages/api/admin/question-bank/list.js.
+// Phase 7A: admin-gated.
 
-import { createClient } from '@supabase/supabase-js';
+import { authorizeRequest } from '../../../../utils/apiAuth';
 
 // ============================================================
 // HELPER: validate request body
@@ -93,21 +93,15 @@ export default async function handler(req, res) {
   }
 
   try {
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-    if (!supabaseUrl || !serviceRoleKey) {
-      return res.status(500).json({
-        success: false,
-        error: 'Server configuration error: Missing Supabase credentials'
-      });
+    // ============================================================
+    // AUTH — admin only
+    // ============================================================
+    const auth = await authorizeRequest(req, ['admin']);
+    if (auth.error) {
+      return res.status(auth.status).json({ success: false, error: auth.error });
     }
 
-    const serviceClient = createClient(supabaseUrl, serviceRoleKey, {
-      auth: {
-        persistSession: false
-      }
-    });
+    const { serviceClient } = auth;
 
     // ============================================================
     // STEP 1: Validate input
@@ -144,7 +138,6 @@ export default async function handler(req, res) {
     if (error) {
       console.error('[Question Bank Create] rpc error:', error);
 
-      // Map known SQLSTATEs to HTTP status
       const code = error.code;
       if (code === 'P0002') {
         return res.status(404).json({
