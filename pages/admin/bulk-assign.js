@@ -1,22 +1,14 @@
 // pages/admin/bulk-assign.js
 // Phase 3 item 7: bulk candidate <-> assessment assignment.
 // Phase 3 item 8: fires confirmation email after a successful write.
-//
-// Two modes:
-//   byAssessment  — pick many assessments, pick many candidates   (A)
-//   byCandidate   — pick one candidate, pick many assessments     (B)
-//
-// Calls POST /api/admin/assessments/bulk-assign.
-// Then, per candidate × assessment pair that landed in 'scheduled' or
-// 'unblocked', calls utils/emailService to send the candidate a confirmation.
-// Email delivery is gated by NEXT_PUBLIC_EMAIL_DELIVERY_ENABLED — until
-// Phase 8, emails are logged but not delivered.
+// Phase 7A: data loaded via /api/admin/assign-assessments?action=load.
 
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import AppLayout from "../../components/AppLayout";
 import { supabase } from "../../supabase/client";
+import { fetchWithAuth } from "../../utils/fetchWithAuth";
 import {
   sendScheduleNotification,
   sendAssignmentNotification
@@ -79,6 +71,7 @@ export default function BulkAssign() {
 
   useEffect(() => {
     checkAdminAuth();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -113,27 +106,12 @@ export default function BulkAssign() {
         return;
       }
 
+      // Role from user_metadata only. Endpoint enforces admin server-side.
       const metadataRole = activeSession.user.user_metadata?.role || null;
 
-      const { data: profile, error: profileError } = await supabase
-        .from("supervisor_profiles")
-        .select("id, email, full_name, role, is_active")
-        .eq("id", activeSession.user.id)
-        .maybeSingle();
-
-      if (profileError && profileError.code !== "PGRST116") throw profileError;
-
-      const resolvedRole = profile?.role || metadataRole;
-      if (resolvedRole !== "admin") {
+      if (metadataRole !== "admin") {
         setMessage({ type: "error", text: "Admin access is required." });
         router.push("/supervisor");
-        return;
-      }
-
-      if (profile?.is_active === false) {
-        await supabase.auth.signOut();
-        if (typeof window !== "undefined") localStorage.removeItem("userSession");
-        router.push("/login");
         return;
       }
 
@@ -154,30 +132,16 @@ export default function BulkAssign() {
       setLoading(true);
       setMessage({ type: "", text: "" });
 
-      const [candidateResponse, assessmentResponse, supervisorResponse] = await Promise.all([
-        supabase
-          .from("candidate_profiles")
-          .select("id, full_name, email, phone, supervisor_id, supervisor:supervisor_profiles(id, full_name, email)")
-          .order("created_at", { ascending: false }),
-        supabase
-          .from("assessments")
-          .select("id, title, description, is_active, assessment_type:assessment_types(id, code, name, icon)")
-          .eq("is_active", true)
-          .order("title", { ascending: true }),
-        supabase
-          .from("supervisor_profiles")
-          .select("id, full_name, email, role, is_active")
-          .eq("is_active", true)
-          .order("full_name", { ascending: true })
-      ]);
+      const response = await fetchWithAuth('/api/admin/assign-assessments?action=load');
+      const payload = await response.json();
 
-      if (candidateResponse.error) throw candidateResponse.error;
-      if (assessmentResponse.error) throw assessmentResponse.error;
-      if (supervisorResponse.error) throw supervisorResponse.error;
+      if (!response.ok || !payload.success) {
+        throw new Error(payload.error || `Failed to load data (HTTP ${response.status}).`);
+      }
 
-      setCandidates(candidateResponse.data || []);
-      setAssessments(assessmentResponse.data || []);
-      setSupervisors(supervisorResponse.data || []);
+      setCandidates(payload.candidates || []);
+      setAssessments(payload.assessments || []);
+      setSupervisors(payload.supervisors || []);
     } catch (error) {
       console.error("Error fetching bulk-assign data:", error);
       setMessage({ type: "error", text: "Failed to load data: " + getReadableError(error) });
@@ -270,9 +234,6 @@ export default function BulkAssign() {
     return null;
   }
 
-  // Fire confirmation emails for every (candidate × assessment) pair that
-  // successfully landed in 'scheduled' or 'unblocked'. Best-effort: an email
-  // failure never rolls back the DB write.
   async function sendConfirmations({ pairs, action, schedule }) {
     const candidateMap = new Map(candidates.map((c) => [c.id, c]));
     const assessmentMap = new Map(assessments.map((a) => [a.id, a]));
@@ -359,16 +320,8 @@ export default function BulkAssign() {
       setSkipped([]);
       setEmailIssues([]);
 
-      const { data: sessionData } = await supabase.auth.getSession();
-      const token = sessionData?.session?.access_token;
-      if (!token) throw new Error("Not authenticated.");
-
-      const response = await fetch("/api/admin/assessments/bulk-assign", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`
-        },
+      const response = await fetchWithAuth('/api/admin/assessments/bulk-assign', {
+        method: 'POST',
         body: JSON.stringify({
           mode,
           action: selectedAction,
@@ -388,14 +341,11 @@ export default function BulkAssign() {
       const skippedRows = safeArray(data.skipped);
       const failedRows = safeArray(data.failed);
 
-      // Fire confirmation emails only for statuses that mean "candidate has access".
-      // block produces no email; scheduled + unblocked do.
       let emailSummary = null;
       const targetStatus = data.targetStatus;
       const shouldEmail = targetStatus === "scheduled" || targetStatus === "unblocked";
 
       if (shouldEmail && wrote > 0) {
-        // Rebuild the pairs the API actually wrote (skip protected rows).
         const skippedSet = new Set(
           skippedRows.map((s) => `${s.candidateId}::${s.assessmentId}`)
         );
@@ -1028,12 +978,10 @@ const styles = {
   section: { background: "white", borderRadius: "16px", padding: "24px", marginBottom: "24px", boxShadow: "0 2px 8px rgba(0,0,0,0.08)" },
   sectionTitle: { fontSize: "18px", fontWeight: 800, color: "#0a1929", margin: "0 0 20px", display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" },
   assessmentHint: { fontSize: "14px", fontWeight: 500, color: "#667085" },
-
   modeGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "16px" },
   modeButton: { display: "flex", flexDirection: "column", alignItems: "flex-start", gap: "6px", padding: "20px", borderRadius: "12px", cursor: "pointer", fontFamily: "inherit", textAlign: "left" },
   modeTitle: { fontSize: "16px", fontWeight: 800 },
   modeDesc: { fontSize: "12px", lineHeight: 1.5 },
-
   assessmentGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "16px" },
   assessmentCard: { display: "flex", alignItems: "center", gap: "16px", padding: "16px", borderRadius: "12px", cursor: "pointer", position: "relative", textAlign: "left", fontFamily: "inherit" },
   assessmentBadge: { width: "36px", height: "36px", borderRadius: "8px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "12px", fontWeight: 800, flexShrink: 0 },
@@ -1041,11 +989,9 @@ const styles = {
   assessmentTitle: { fontSize: "14px", fontWeight: 800, color: "#0a1929", marginBottom: "4px" },
   assessmentType: { fontSize: "12px", color: "#667085" },
   selectedBadge: { fontSize: "16px", color: "#0a1929", fontWeight: 800 },
-
   actionGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "16px" },
   actionButton: { display: "flex", flexDirection: "column", alignItems: "center", gap: "8px", padding: "20px", borderRadius: "12px", fontSize: "16px", fontWeight: 800, cursor: "pointer", fontFamily: "inherit" },
   actionDesc: { fontSize: "11px", fontWeight: 500, opacity: 0.75 },
-
   scheduleBlock: { marginTop: "20px", padding: "16px 20px", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "12px" },
   scheduleHeader: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "12px", marginBottom: "12px", flexWrap: "wrap" },
   scheduleTitle: { fontSize: "14px", fontWeight: 800, color: "#0a1929" },
@@ -1055,13 +1001,11 @@ const styles = {
   scheduleField: { display: "flex", flexDirection: "column", gap: "6px" },
   scheduleLabel: { fontSize: "12px", fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.05em" },
   scheduleInput: { width: "100%", padding: "10px 12px", border: "1px solid #e2e8f0", borderRadius: "8px", fontSize: "14px", background: "white", boxSizing: "border-box", fontFamily: "inherit" },
-
   filterBar: { display: "flex", gap: "20px", marginBottom: "20px", flexWrap: "wrap" },
   searchBox: { flex: 2, minWidth: "250px" },
   searchInput: { width: "100%", padding: "10px 16px", border: "1px solid #e2e8f0", borderRadius: "8px", fontSize: "14px", outline: "none", boxSizing: "border-box" },
   filterGroup: { flex: 1, minWidth: "220px" },
   filterSelect: { width: "100%", padding: "10px 16px", border: "1px solid #e2e8f0", borderRadius: "8px", fontSize: "14px", background: "white", cursor: "pointer", boxSizing: "border-box" },
-
   tableContainer: { overflowX: "auto", marginBottom: "20px" },
   tableWrapper: { overflowX: "auto" },
   table: { width: "100%", borderCollapse: "collapse", fontSize: "14px", minWidth: "700px" },
@@ -1072,7 +1016,6 @@ const styles = {
   tdCheckbox: { padding: "12px 8px", textAlign: "center", borderBottom: "1px solid #e2e8f0" },
   checkbox: { width: "18px", height: "18px", cursor: "pointer" },
   tableRow: { background: "white" },
-
   candidateInfo: { display: "flex", alignItems: "center", gap: "12px" },
   candidateAvatar: { width: "36px", height: "36px", borderRadius: "18px", background: "linear-gradient(135deg, #0a1929, #1a2a3a)", color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "14px", fontWeight: 800, flexShrink: 0 },
   candidateName: { fontWeight: 800, color: "#0a1929", marginBottom: "2px" },
@@ -1080,26 +1023,21 @@ const styles = {
   candidateEmail: { fontSize: "13px", color: "#667085" },
   supervisorName: { fontSize: "13px", color: "#0a1929", fontWeight: 700 },
   unassignedBadge: { display: "inline-block", padding: "2px 8px", background: "#fef2f2", color: "#b91c1c", borderRadius: "12px", fontSize: "11px", fontWeight: 800 },
-
   candidatePickerList: { display: "flex", flexDirection: "column", gap: "8px", maxHeight: "420px", overflowY: "auto", border: "1px solid #e2e8f0", borderRadius: "12px", padding: "8px" },
   candidatePickerItem: { display: "flex", alignItems: "center", gap: "12px", padding: "10px 12px", borderRadius: "10px", cursor: "pointer", fontFamily: "inherit", background: "white" },
   selectedCandidateBanner: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "10px", padding: "10px 14px", marginBottom: "16px" },
   moreHint: { fontSize: "12px", color: "#667085", padding: "8px 12px", fontStyle: "italic" },
-
   noData: { padding: "40px", textAlign: "center", color: "#718096" },
   loadingState: { padding: "35px", textAlign: "center", color: "#667085" },
-
   summaryBar: { display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: "16px", borderTop: "1px solid #e2e8f0", flexWrap: "wrap", gap: "16px" },
   selectionSummary: { display: "flex", alignItems: "center", gap: "8px", color: "#475569", fontSize: "14px" },
   selectedCount: { fontSize: "20px", fontWeight: 800, color: "#0a1929" },
   submitButton: { padding: "12px 32px", color: "white", border: "none", borderRadius: "8px", fontSize: "16px", fontWeight: 800 },
-
   reportBlock: { marginTop: "16px", border: "1px solid #e2e8f0", background: "#f8fafc", borderRadius: "10px", padding: "12px 16px" },
   reportTitle: { fontSize: "13px", fontWeight: 800, color: "#0a1929", marginBottom: "4px" },
   reportHint: { fontSize: "12px", color: "#667085", marginBottom: "6px" },
   reportList: { margin: "6px 0 0 18px", padding: 0, fontSize: "12px", color: "#475569" },
   reportItem: { marginBottom: "3px" },
-
   unauthorized: { textAlign: "center", padding: "60px", color: "#667085", background: "white", borderRadius: "16px", maxWidth: "400px", margin: "100px auto" },
   button: { padding: "10px 20px", background: "#0a1929", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "14px", fontWeight: 700, marginTop: "20px" }
 };
