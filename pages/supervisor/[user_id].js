@@ -3,6 +3,8 @@
 // FIXED: Proper authentication with Authorization header
 // ADDED: Reset Assessment Button
 // ADDED: Behavioral Matrix with real data from proctoring_data
+// PHASE 7B: UUID guard — non-UUID path segments (e.g. /supervisor/reset-password)
+//           fail fast with a clear message instead of hitting the reports API.
 
 import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
@@ -56,6 +58,13 @@ function round(value, places = 2) {
 
 function formatPercentage(value) {
   return round(value, 0) + "%";
+}
+
+function isValidUUID(value) {
+  return (
+    typeof value === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
+  );
 }
 
 function getTone(score) {
@@ -160,20 +169,19 @@ function extractBehavioralData(report) {
   const proctoring = report?.proctoring_data || {};
   const summary = proctoring?.summary || {};
   const behavioral = report?.report_data?.behavioral || {};
-  
+
   const MAX_REASONABLE_SECONDS = 8 * 60 * 60; // 8 hours
   const isTimeAbnormal = summary.isTimeAbnormal || behavioral.isTimeAbnormal || summary.duration > MAX_REASONABLE_SECONDS || behavioral.totalTime > MAX_REASONABLE_SECONDS;
-  
+
   let totalTime = summary.duration || behavioral.totalTime || 0;
   let totalTimeFormatted = summary.durationFormatted || behavioral.totalTimeFormatted || '00:00:00';
   let avgTimePerQuestion = summary.avgTimePerQuestion || behavioral.avgTimePerQuestion || '0s';
-  
-  // If time is abnormal, show a clear indicator
+
   if (isTimeAbnormal || totalTime > MAX_REASONABLE_SECONDS) {
     totalTimeFormatted = '> 8 hrs (session left open)';
     avgTimePerQuestion = 'N/A';
   }
-  
+
   return {
     totalTime: totalTime,
     totalTimeFormatted: totalTimeFormatted,
@@ -204,7 +212,7 @@ function renderSubCategories(title, subCategories, icon, mainScore) {
   const sorted = [...subCategories].sort((a, b) => (b.percentage || 0) - (a.percentage || 0));
 
   return (
-    <SectionShell 
+    <SectionShell
       title={`${icon} ${title} - Sub-Category Breakdown`}
       eyebrow="Individual categories that make up this score"
       badge={subCategories.length}
@@ -220,7 +228,7 @@ function renderSubCategories(title, subCategories, icon, mainScore) {
           const color = getToneColor(rowPercentage);
           const comment = getToneLabel(rowPercentage);
           const key = `${title}-${index}`;
-          
+
           return (
             <article key={key} style={styles.categoryCard}>
               <div style={styles.categoryButton}>
@@ -274,7 +282,15 @@ export default function SupervisorUserReportPage() {
 
   // Load report when userId is available
   useEffect(() => {
-    if (!router.isReady || !userId) return;
+    if (!router.isReady) return;
+    if (!userId) return;
+
+    if (!isValidUUID(userId)) {
+      setErrorMessage("Invalid report URL. This page expects a candidate UUID in the path.");
+      setLoading(false);
+      return;
+    }
+
     loadReport();
   }, [router.isReady, userId, assessmentId]);
 
@@ -285,6 +301,14 @@ export default function SupervisorUserReportPage() {
     setAssessment(null);
     setReport(null);
     setPdfError("");
+
+    // Fail fast on malformed user_id — prevents this page from trying to render
+    // a report for non-UUID path segments (e.g. /supervisor/reset-password).
+    if (!isValidUUID(userId)) {
+      setErrorMessage("Invalid report URL. This page expects a candidate UUID in the path.");
+      setLoading(false);
+      return;
+    }
 
     try {
       // Step 1: Validate session
@@ -424,7 +448,7 @@ export default function SupervisorUserReportPage() {
 
       const response = await fetch("/api/generate-pdf-report", {
         method: "POST",
-        headers: { 
+        headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
@@ -470,10 +494,10 @@ export default function SupervisorUserReportPage() {
   const developmentAreas = safeArray(cleanReport.developmentAreas || cleanReport.development_areas || cleanReport.weaknesses || []);
   const recommendations = safeArray(cleanReport.recommendations || []);
   const followUpQuestions = safeArray(cleanReport.followUpQuestions || cleanReport.follow_up_questions || []);
-  
+
   const workplaceSubCategories = safeArray(cleanReport.workplaceSubCategories || []);
   const intellectualSubCategories = safeArray(cleanReport.intellectualSubCategories || []);
-  
+
   const candidateName = cleanReport.candidateName || candidate?.full_name || candidate?.email || "Candidate";
   const assessmentName = cleanReport.assessmentName || assessment?.title || "Assessment";
   const overallScore = cleanReport.percentage || cleanReport.overallPercentage || cleanReport.score || 0;
@@ -483,7 +507,7 @@ export default function SupervisorUserReportPage() {
   const roleReadiness = cleanReport.roleReadiness || cleanReport.readinessStatement || "Review the assessment results and provide targeted feedback.";
   const executiveSummary = cleanReport.executiveSummary || cleanReport.summary || cleanReport.overallAssessment || `${candidateName} completed the ${assessmentName} assessment with an overall score of ${overallScore}%.`;
   const supervisorImplication = cleanReport.supervisorImplication || cleanReport.supervisor_implication || "Review the assessment results and provide targeted feedback based on the candidate's performance.";
-  
+
   const scoreColor = getToneColor(overallScore);
   const scoreGradient = getToneGradient(overallScore);
 
@@ -539,10 +563,10 @@ export default function SupervisorUserReportPage() {
   function renderCategories() {
     const workplaceSubCats = safeArray(cleanReport.workplaceSubCategories || []);
     const intellectualSubCats = safeArray(cleanReport.intellectualSubCategories || []);
-    
+
     const workplaceScore = cleanReport.workplace_readiness || cleanReport.workplaceReadiness || overallScore || 0;
     const intellectualScore = cleanReport.intellectual_capability || cleanReport.intellectualCapability || overallScore || 0;
-    
+
     if (workplaceSubCats.length > 0 || intellectualSubCats.length > 0) {
       return (
         <React.Fragment>
@@ -552,14 +576,14 @@ export default function SupervisorUserReportPage() {
             "🛠️",
             workplaceScore
           )}
-          
+
           {intellectualSubCats.length > 0 && renderSubCategories(
             "Intellectual Capability",
             intellectualSubCats,
             "🧠",
             intellectualScore
           )}
-          
+
           {categoryScores.length > 0 && workplaceSubCats.length === 0 && intellectualSubCats.length === 0 && (
             <SectionShell title="Category Scores" eyebrow="Performance breakdown" badge={categoryScores.length}>
               <div style={styles.categoryDeck}>
@@ -649,18 +673,18 @@ export default function SupervisorUserReportPage() {
   function renderInsightCards(items, type) {
     const isStrength = type === "strength";
     if (items.length === 0) {
-      return <EmptyState 
-        title={isStrength ? "No strengths available" : "No priority development areas detected"} 
-        message={isStrength ? "No strengths have been identified for this candidate yet." : "The candidate scored above the development threshold across all measured areas."} 
-        icon={isStrength ? "★" : "✓"} 
+      return <EmptyState
+        title={isStrength ? "No strengths available" : "No priority development areas detected"}
+        message={isStrength ? "No strengths have been identified for this candidate yet." : "The candidate scored above the development threshold across all measured areas."}
+        icon={isStrength ? "★" : "✓"}
       />;
     }
 
     return (
-      <SectionShell 
-        title={isStrength ? "Top Strengths" : "Development Areas"} 
-        eyebrow={isStrength ? "Leverage areas" : "Priority improvement areas"} 
-        badge={items.length} 
+      <SectionShell
+        title={isStrength ? "Top Strengths" : "Development Areas"}
+        eyebrow={isStrength ? "Leverage areas" : "Priority improvement areas"}
+        badge={items.length}
         badgeStyle={isStrength ? styles.badgeGood : styles.badgeWarm}
       >
         <div style={styles.cardGrid}>
@@ -831,8 +855,7 @@ export default function SupervisorUserReportPage() {
                 <span style={getBadgeStyle(riskLevel)}>{riskLevel}</span>
               </div>
               <p style={styles.scorePanelMeta}>Responses: {safeNumber(responseCount, 0)}</p>
-              
-              {/* ✅ RESET ASSESSMENT BUTTON */}
+
               {report && (
                 <div style={{ marginTop: '12px' }}>
                   <ResetAssessmentButton
@@ -845,11 +868,11 @@ export default function SupervisorUserReportPage() {
                   />
                 </div>
               )}
-              
-              <button 
-                type="button" 
-                style={pdfLoading ? styles.buttonDisabled : styles.downloadButton} 
-                onClick={downloadPdfReport} 
+
+              <button
+                type="button"
+                style={pdfLoading ? styles.buttonDisabled : styles.downloadButton}
+                onClick={downloadPdfReport}
                 disabled={pdfLoading || loading}
               >
                 {pdfLoading ? "Generating PDF..." : "Download PDF"}
@@ -880,12 +903,9 @@ export default function SupervisorUserReportPage() {
         </nav>
         <div style={styles.tabContent}>{renderActiveTab()}</div>
 
-        {/* ============================================================
-            BEHAVIORAL MATRIX SECTION - WITH REAL DATA
-            ============================================================ */}
         <div style={styles.behavioralMatrixSection}>
           <h3 style={styles.matrixTitle}>🧠 Behavioral Matrix</h3>
-          
+
           <div style={styles.matrixTableWrapper}>
             <table style={styles.matrixTable}>
               <thead>
@@ -912,12 +932,12 @@ export default function SupervisorUserReportPage() {
               </tbody>
             </table>
           </div>
-          
+
           <div style={styles.matrixFooter}>
             <span style={styles.matrixRisk}>
-              Risk Level: <strong style={{ 
-                color: behavioralMetrics.riskLevel === 'high' ? '#dc2626' : 
-                       behavioralMetrics.riskLevel === 'medium' ? '#f59e0b' : '#16a34a' 
+              Risk Level: <strong style={{
+                color: behavioralMetrics.riskLevel === 'high' ? '#dc2626' :
+                       behavioralMetrics.riskLevel === 'medium' ? '#f59e0b' : '#16a34a'
               }}>
                 {behavioralMetrics.riskLevel.charAt(0).toUpperCase() + behavioralMetrics.riskLevel.slice(1)}
               </strong>
@@ -934,9 +954,8 @@ export default function SupervisorUserReportPage() {
           </div>
         </div>
 
-        {/* ✅ HIDE BEHAVIORAL MATRIX BUTTON */}
         <div style={styles.hideMatrixContainer}>
-          <button 
+          <button
             onClick={() => setActiveTab(activeTab === "overview" ? "hidden" : "overview")}
             style={styles.hideMatrixButton}
           >
@@ -1041,9 +1060,6 @@ const styles = {
   badgeGood: { display: "inline-flex", alignItems: "center", justifyContent: "center", borderRadius: "999px", padding: "7px 11px", background: "#ecfdf3", color: "#027a48", fontWeight: 900, fontSize: "12px" },
   badgeCritical: { display: "inline-flex", alignItems: "center", justifyContent: "center", borderRadius: "999px", padding: "7px 11px", background: "#fef3f2", color: "#b42318", fontWeight: 900, fontSize: "12px" },
 
-  // ============================================================
-  // BEHAVIORAL MATRIX STYLES
-  // ============================================================
   behavioralMatrixSection: {
     background: 'white',
     borderRadius: '12px',
