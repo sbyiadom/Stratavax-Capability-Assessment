@@ -1,17 +1,14 @@
 // pages/admin/templates/index.js
 // Phase 3 Item 5 — Assessment templates
-// List + Create + Edit + Delete.
+// Phase 7A: all API calls go through fetchWithAuth.
 
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useRouter } from 'next/router';
 import Select from 'react-select';
-import { supabase } from '../../../supabase/client';
 import { useRequireAuth } from '../../../utils/requireAuth';
+import { fetchWithAuth } from '../../../utils/fetchWithAuth';
 import AppLayout from '../../../components/AppLayout';
 
-// ============================================================
-// Reusable modal field: Roles multi-select grouped by category
-// ============================================================
 function buildRoleOptions(allRoles) {
   const universities = allRoles.filter((r) => r.category === 'university');
   const programmes = allRoles.filter((r) => r.category === 'programme');
@@ -46,9 +43,6 @@ const reactSelectStyles = {
   })
 };
 
-// ============================================================
-// Shared form — used by both Create and Edit modals
-// ============================================================
 function TemplateForm({
   initial,
   types,
@@ -208,9 +202,6 @@ function TemplateForm({
   );
 }
 
-// ============================================================
-// CREATE MODAL
-// ============================================================
 function CreateModal({ types, allRoles, onClose, onCreated }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
@@ -219,9 +210,8 @@ function CreateModal({ types, allRoles, onClose, onCreated }) {
     try {
       setSaving(true);
       setError(null);
-      const response = await fetch('/api/admin/templates/create', {
+      const response = await fetchWithAuth('/api/admin/templates/create', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
       const data = await response.json();
@@ -257,9 +247,6 @@ function CreateModal({ types, allRoles, onClose, onCreated }) {
   );
 }
 
-// ============================================================
-// EDIT MODAL
-// ============================================================
 function EditModal({ template, types, allRoles, onClose, onSaved }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
@@ -268,9 +255,8 @@ function EditModal({ template, types, allRoles, onClose, onSaved }) {
     try {
       setSaving(true);
       setError(null);
-      const response = await fetch('/api/admin/templates/update', {
+      const response = await fetchWithAuth('/api/admin/templates/update', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...payload, template_id: template.id })
       });
       const data = await response.json();
@@ -306,9 +292,6 @@ function EditModal({ template, types, allRoles, onClose, onSaved }) {
   );
 }
 
-// ============================================================
-// MAIN PAGE
-// ============================================================
 export default function TemplatesList() {
   const router = useRouter();
   const { session, loading: authLoading } = useRequireAuth();
@@ -335,7 +318,6 @@ export default function TemplatesList() {
 
   const debounceRef = useRef(null);
 
-  // ---------- Load reference data ----------
   useEffect(() => {
     if (!session) return;
     let cancelled = false;
@@ -344,8 +326,8 @@ export default function TemplatesList() {
       try {
         setRefDataLoading(true);
         const [typesRes, rolesRes] = await Promise.all([
-          fetch('/api/admin/question-bank/types'),
-          fetch('/api/admin/roles/list')
+          fetchWithAuth('/api/admin/question-bank/types'),
+          fetchWithAuth('/api/admin/roles/list')
         ]);
         const typesData = await typesRes.json();
         const rolesData = await rolesRes.json();
@@ -368,7 +350,6 @@ export default function TemplatesList() {
     return () => { cancelled = true; };
   }, [session]);
 
-  // ---------- Refetch templates ----------
   const refetch = async () => {
     try {
       setLoading(true);
@@ -378,7 +359,7 @@ export default function TemplatesList() {
       if (typeFilter) params.set('assessment_type_id', typeFilter);
       if (showInactive) params.set('include_inactive', 'true');
 
-      const response = await fetch(`/api/admin/templates/list?${params.toString()}`);
+      const response = await fetchWithAuth(`/api/admin/templates/list?${params.toString()}`);
       const data = await response.json();
       if (!response.ok || !data.success) throw new Error(data.error || 'Failed to load templates');
       setTemplates(data.templates || []);
@@ -403,7 +384,6 @@ export default function TemplatesList() {
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [searchInput]);
 
-  // ---------- Handlers ----------
   const handleBack = () => router.push('/admin');
   const handleClearFilters = () => {
     setSearchInput('');
@@ -433,9 +413,8 @@ export default function TemplatesList() {
     if (!ok) return;
     try {
       setDeletingId(t.id);
-      const response = await fetch('/api/admin/templates/delete', {
+      const response = await fetchWithAuth('/api/admin/templates/delete', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ template_id: t.id })
       });
       const data = await response.json();
@@ -640,9 +619,6 @@ export default function TemplatesList() {
   );
 }
 
-// ============================================================
-// STYLES
-// ============================================================
 const styles = {
   loadingContainer: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '400px', gap: '16px' },
   loadingSpinner: { width: '40px', height: '40px', border: '4px solid #e2e8f0', borderTop: '4px solid #1a237e', borderRadius: '50%', animation: 'spin 1s linear infinite' },
@@ -687,8 +663,6 @@ const styles = {
   deleteButton: { padding: '6px 12px', background: '#dc2626', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: '500', fontFamily: 'inherit' },
   emptyState: { textAlign: 'center', padding: '60px 20px', color: '#94a3b8', fontSize: '15px' },
   footerCount: { marginTop: '12px', fontSize: '13px', color: '#64748b' },
-
-  // Modal
   modalOverlay: { position: 'fixed', inset: 0, background: 'rgba(15, 39, 71, 0.55)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: '60px', zIndex: 2000, overflowY: 'auto' },
   modal: { background: 'white', borderRadius: '12px', width: 'min(640px, 92vw)', maxHeight: 'calc(100vh - 120px)', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.25)' },
   modalHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', borderBottom: '1px solid #e2e8f0' },
