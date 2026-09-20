@@ -2,8 +2,9 @@
 // Phase 3 — Question Bank Manager
 // Exports a single assessment type's questions as XLSX.
 // The exported file is also the round-trippable import template.
+// Phase 7A: admin-gated.
 
-import { createClient } from '@supabase/supabase-js';
+import { authorizeRequest } from '../../../../utils/apiAuth';
 import * as XLSX from 'xlsx';
 
 // ============================================================
@@ -61,8 +62,8 @@ async function loadAssessmentType(serviceClient, assessmentTypeId) {
 // ============================================================
 function buildWorkbook(assessmentType, questions) {
   const header = [
-    'question_id',       // read-only on export; ignored on import
-    'display_order',     // optional on import; server assigns if blank
+    'question_id',
+    'display_order',
     'question_text',
     'section',
     'subsection',
@@ -105,7 +106,6 @@ function buildWorkbook(assessmentType, questions) {
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Questions');
 
-  // Metadata sheet for humans
   const metaRows = [
     ['Assessment type', assessmentType.name],
     ['Code', assessmentType.code],
@@ -133,19 +133,15 @@ export default async function handler(req, res) {
   }
 
   try {
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-    if (!supabaseUrl || !serviceRoleKey) {
-      return res.status(500).json({
-        success: false,
-        error: 'Server configuration error: Missing Supabase credentials'
-      });
+    // ============================================================
+    // AUTH — admin only
+    // ============================================================
+    const auth = await authorizeRequest(req, ['admin']);
+    if (auth.error) {
+      return res.status(auth.status).json({ success: false, error: auth.error });
     }
 
-    const serviceClient = createClient(supabaseUrl, serviceRoleKey, {
-      auth: { persistSession: false }
-    });
+    const { serviceClient } = auth;
 
     // ---------- validate query param ----------
     const rawTypeId = req.query.assessment_type_id;
