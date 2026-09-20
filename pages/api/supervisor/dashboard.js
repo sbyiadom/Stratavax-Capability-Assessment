@@ -1,46 +1,52 @@
-// pages/api/supervisor/dashboard.js - COMPLETE FIXED v2
-// Phase 6.5: Scope locked to primary supervisor (candidate_profiles.supervisor_id).
-//            Junction access still applies elsewhere (report viewer) but is
-//            NOT used for the supervisor dashboard's "my candidates" count.
-//            All .in() queries are chunked to avoid URL length limits.
+// pages/api/supervisor/dashboard.js
+// Phase 7B — supervisor dashboard stats, candidates, and reports payload.
+//
+// SCOPE POLICY CHANGE:
+//   Phase 6.5 deliberately scoped this endpoint to primary-only
+//   (candidate_profiles.supervisor_id), so the dashboard's "Total Candidates"
+//   counted only directly-owned candidates. That decision was superseded in
+//   Phase 7B: the dashboard now uses the same union scope (primary + junction)
+//   as every other supervisor endpoint, so the dashboard agrees with
+//   /supervisor/manage-candidate, /supervisor/assign-assessment,
+//   /supervisor/batch-manage, /supervisor/reports, and
+//   /supervisor/export-dashboard.
+//
+//   Scoping is delegated to the Postgres function public.get_scoped_candidate_ids,
+//   which returns the set of candidate_profiles.id values visible to the caller.
+//
+// AUTH:
+//   authorizeRequest from utils/apiAuth.js — service role + role check +
+//   active-account check. Same pattern as every other Phase 7B endpoint.
+//
+// RESPONSE SHAPE (unchanged so pages/supervisor/index.js consumes it as-is):
+//   {
+//     success: true,
+//     stats: { totalCandidates, completedAssessments, pendingReviews, nationalServiceReports },
+//     candidates: [{ ...candidate, completedAssessments: [...], stats: {...} }],
+//     nationalServiceReports: [...],
+//     otherReports: [...],
+//     diagnostics: { supervisorId, supervisorName, candidateCount, resultCount,
+//                    reportCount, orphanResultCount },
+//     scope: { type, role, candidateCount, resultCount }
+//   }
 
-import { createClient } from '@supabase/supabase-js';
+import { authorizeRequest } from '../../../utils/apiAuth';
 
-const IN_CHUNK_SIZE = 150;
+const LOG_TAG = '[Supervisor Dashboard]';
+const CANDIDATE_CHUNK_SIZE = 100;
+const RESULT_CHUNK_SIZE = 150;
+const ASSESSMENT_CHUNK_SIZE = 150;
 
-function extractBearerToken(req) {
-  const authHeader = req.headers.authorization || req.headers.Authorization || '';
-  if (!authHeader || !authHeader.toLowerCase().startsWith('bearer ')) return null;
-  return authHeader.slice(7).trim();
-}
+const NS_ASSESSMENT_ID = 'bdb9d46e-9fac-4d00-8478-1f649e7ac600';
 
-function safeNumber(value, fallback = 0) {
-  if (value === null || value === undefined) return fallback;
-  const num = Number(value);
-  return Number.isFinite(num) ? num : fallback;
-}
-
-function chunkArray(arr, size) {
+function chunk(arr, size) {
   const out = [];
   for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
   return out;
 }
 
-// Run a query that filters by .in() over a possibly-large ID list, chunked.
-async function chunkedIn(ids, queryBuilder) {
-  if (!ids || ids.length === 0) return { data: [], error: null };
-  const chunks = chunkArray(ids, IN_CHUNK_SIZE);
-  const allData = [];
-  for (const chunk of chunks) {
-    const { data, error } = await queryBuilder(chunk);
-    if (error) return { data: allData, error };
-    if (Array.isArray(data)) allData.push(...data);
-  }
-  return { data: allData, error: null };
-}
-
-function logSupabaseError(tag, error, extra = {}) {
-  console.error(`[Supervisor Dashboard] ${tag}`, {
+function logError(stage, error, extra = {}) {
+  console.error(`${LOG_TAG} ${stage} failed`, {
     message: error?.message,
     code: error?.code,
     details: error?.details,
@@ -49,30 +55,43 @@ function logSupabaseError(tag, error, extra = {}) {
   });
 }
 
+function safeNumber(value, fallback = 0) {
+  if (value === null || value === undefined) return fallback;
+  const num = Number(value);
+  return Number.isFinite(num) ? num : fallback;
+}
+
 function getReportData(result) {
   if (!result) return {};
   if (result.report_data && typeof result.report_data === 'object') return result.report_data;
   if (result.report_data && typeof result.report_data === 'string') {
-    try { return JSON.parse(result.report_data) || {}; }
-    catch { return {}; }
+    try {
+      return JSON.parse(result.report_data) || {};
+    } catch {
+      return {};
+    }
   }
   return {};
 }
 
 function normalizeCategoryScores(result) {
   const reportData = getReportData(result);
-  const raw = result?.category_scores || reportData?.categoryScores || reportData?.categoryBreakdown || [];
+  const raw =
+    result?.category_scores ||
+    reportData?.categoryScores ||
+    reportData?.categoryBreakdown ||
+    [];
 
   if (Array.isArray(raw)) {
-    return raw.map(cat => ({
+    return raw.map((cat) => ({
       category: cat.category || cat.name || '',
-      percentage: Math.round(safeNumber(cat.percentage || cat.score || 0))
+      percentage: Math.round(safeNumber(cat.percentage || cat.score || 0)),
     }));
   }
   if (raw && typeof raw === 'object') {
     return Object.entries(raw).map(([cat, data]) => ({
       category: cat,
-      percentage: Math.round(safeNumber(data?.percentage || data?.score || 0))
+      percentage: Math.round(safeNumber(data?.percentage || data?.score || 0)),
     }));
   }
   return [];
@@ -84,7 +103,7 @@ function calculateScore(result) {
   }
 
   const categories = normalizeCategoryScores(result);
-  const valid = categories.filter(c => c.percentage > 0);
+  const valid = categories.filter((c) => c.percentage > 0);
   if (valid.length > 0) {
     const sum = valid.reduce((a, c) => a + c.percentage, 0);
     return Math.round(sum / valid.length);
@@ -103,22 +122,26 @@ function getNationalServiceScores(result) {
 
   let workplace = safeNumber(
     reportData?.workplaceReadiness ||
-    reportData?.dimensions?.workplaceReadiness ||
-    reportData?.workplace_readiness ||
-    result?.workplace_readiness ||
-    0
+      reportData?.dimensions?.workplaceReadiness ||
+      reportData?.workplace_readiness ||
+      result?.workplace_readiness ||
+      0
   );
 
   let intellectual = safeNumber(
     reportData?.intellectualCapability ||
-    reportData?.dimensions?.intellectualCapability ||
-    reportData?.intellectual_capability ||
-    result?.intellectual_capability ||
-    0
+      reportData?.dimensions?.intellectualCapability ||
+      reportData?.intellectual_capability ||
+      result?.intellectual_capability ||
+      0
   );
 
   if (workplace === 0 && intellectual === 0) {
-    const categoryScores = reportData?.categoryScores || reportData?.category_scores || result?.category_scores || [];
+    const categoryScores =
+      reportData?.categoryScores ||
+      reportData?.category_scores ||
+      result?.category_scores ||
+      [];
 
     const workplaceCategories = [
       'Communication & Teamwork',
@@ -126,7 +149,7 @@ function getNationalServiceScores(result) {
       'Safety & Risk Awareness',
       'Technical Fundamentals',
       'Work Ethic',
-      'Professional Conduct'
+      'Professional Conduct',
     ];
 
     const intellectualCategories = [
@@ -136,7 +159,7 @@ function getNationalServiceScores(result) {
       'Measurement & Engineering Units',
       'Learning Agility',
       'Cognitive Ability',
-      'Analytical Thinking'
+      'Analytical Thinking',
     ];
 
     let workplaceTotal = 0;
@@ -145,12 +168,12 @@ function getNationalServiceScores(result) {
     let intellectualCount = 0;
 
     if (Array.isArray(categoryScores) && categoryScores.length > 0) {
-      categoryScores.forEach(cat => {
+      categoryScores.forEach((cat) => {
         const name = (cat.category || cat.name || '').toLowerCase();
         const percentage = safeNumber(cat.percentage || cat.score || 0);
 
-        const isWorkplace = workplaceCategories.some(c => name.includes(c.toLowerCase()));
-        const isIntellectual = intellectualCategories.some(c => name.includes(c.toLowerCase()));
+        const isWorkplace = workplaceCategories.some((c) => name.includes(c.toLowerCase()));
+        const isIntellectual = intellectualCategories.some((c) => name.includes(c.toLowerCase()));
 
         if (isWorkplace && percentage > 0) {
           workplaceTotal += percentage;
@@ -168,10 +191,10 @@ function getNationalServiceScores(result) {
 
   const overall = safeNumber(
     reportData?.percentageScore ||
-    reportData?.overallScore ||
-    reportData?.percentage_score ||
-    result?.percentage_score ||
-    0
+      reportData?.overallScore ||
+      reportData?.percentage_score ||
+      result?.percentage_score ||
+      0
   );
 
   if (workplace === 0 && intellectual === 0 && overall > 0) {
@@ -182,7 +205,7 @@ function getNationalServiceScores(result) {
   return {
     workplaceReadiness: workplace,
     intellectualCapability: intellectual,
-    overallScore: overall
+    overallScore: overall,
   };
 }
 
@@ -202,116 +225,97 @@ function getRecommendation(workplace, intellectual, overall) {
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') {
-    return res.status(405).json({
-      success: false,
-      error: 'Method not allowed. Use GET.'
-    });
+    return res.status(405).json({ success: false, error: 'Method not allowed. Use GET.' });
   }
 
+  // ---- Auth: bearer token + role check + active-account check ----
+  const auth = await authorizeRequest(req, ['admin', 'supervisor']);
+  if (auth.error) {
+    return res.status(auth.status).json({ success: false, error: auth.error });
+  }
+
+  const { caller, serviceClient } = auth;
+
   try {
-    const token = extractBearerToken(req);
-    if (!token) {
-      return res.status(401).json({
-        success: false,
-        error: 'Missing authorization token'
+    // ---- Scoping: DB-side union of primary + junction links ----
+    const { data: scopedRows, error: scopedError } = await serviceClient.rpc(
+      'get_scoped_candidate_ids',
+      { p_caller: caller.userId, p_is_admin: caller.isAdmin }
+    );
+
+    if (scopedError) {
+      logError('rpc get_scoped_candidate_ids', scopedError, {
+        role: caller.role,
+        userId: caller.userId,
       });
-    }
-
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-    if (!supabaseUrl || !supabaseKey) {
-      console.error('[Supervisor Dashboard] Missing environment variables');
-      return res.status(500).json({
-        success: false,
-        error: 'Server configuration error'
-      });
-    }
-
-    const supabase = createClient(supabaseUrl, supabaseKey, {
-      auth: { autoRefreshToken: false, persistSession: false }
-    });
-
-    const { data: userData, error: userError } = await supabase.auth.getUser(token);
-    if (userError || !userData?.user) {
-      logSupabaseError('auth.getUser failed', userError);
-      return res.status(401).json({
-        success: false,
-        error: 'Invalid or expired token'
-      });
-    }
-
-    const authEmail = String(userData.user.email || '').trim().toLowerCase();
-    const authId = userData.user.id;
-
-    // ============================================================
-    // RESOLVE SUPERVISOR PROFILE
-    // ============================================================
-    let supervisor = null;
-
-    const { data: byId, error: byIdError } = await supabase
-      .from('supervisor_profiles')
-      .select('id, full_name, email, role, is_active')
-      .eq('id', authId)
-      .maybeSingle();
-
-    if (byIdError) {
-      logSupabaseError('supervisor lookup by id failed', byIdError, { authId });
-    } else if (byId) {
-      supervisor = byId;
-    }
-
-    if (!supervisor) {
-      const { data: byEmail, error: byEmailError } = await supabase
-        .from('supervisor_profiles')
-        .select('id, full_name, email, role, is_active')
-        .ilike('email', authEmail)
-        .maybeSingle();
-
-      if (byEmailError) {
-        logSupabaseError('supervisor lookup by email failed', byEmailError, { authEmail });
-      } else if (byEmail) {
-        supervisor = byEmail;
-      }
-    }
-
-    if (!supervisor) {
-      console.error('[Supervisor Dashboard] Supervisor not found:', { authId, authEmail });
-      return res.status(404).json({
-        success: false,
-        error: 'Supervisor profile not found. Please contact support.',
-        code: 'SUPERVISOR_PROFILE_NOT_FOUND'
-      });
-    }
-
-    if (supervisor.is_active === false) {
-      return res.status(403).json({
-        success: false,
-        error: 'Supervisor account is inactive. Please contact support.',
-        code: 'SUPERVISOR_INACTIVE'
-      });
-    }
-
-    const supervisorId = supervisor.id;
-
-    // ============================================================
-    // FETCH CANDIDATES — PRIMARY ONLY (locked semantics)
-    // ============================================================
-    const { data: primaryCandidates, error: primaryError } = await supabase
-      .from('candidate_profiles')
-      .select('id, full_name, email, university, programme, supervisor_id, created_at')
-      .eq('supervisor_id', supervisorId);
-
-    if (primaryError) {
-      logSupabaseError('primary candidates lookup failed', primaryError, { supervisorId });
       return res.status(500).json({
         success: false,
         error: 'Unable to retrieve candidate list',
-        code: 'CANDIDATES_FETCH_FAILED'
+        code: 'CANDIDATES_FETCH_FAILED',
       });
     }
 
-    const allCandidates = primaryCandidates || [];
+    const scopedIds = Array.isArray(scopedRows)
+      ? scopedRows
+          .map((row) => (typeof row === 'string' ? row : row?.get_scoped_candidate_ids))
+          .filter(Boolean)
+      : [];
+
+    // ---- Empty scope: return 200 with empty everything ----
+    if (scopedIds.length === 0) {
+      return res.status(200).json({
+        success: true,
+        stats: {
+          totalCandidates: 0,
+          completedAssessments: 0,
+          pendingReviews: 0,
+          nationalServiceReports: 0,
+        },
+        candidates: [],
+        nationalServiceReports: [],
+        otherReports: [],
+        diagnostics: {
+          supervisorId: caller.userId,
+          supervisorName: caller.role === 'admin' ? 'Administrator' : null,
+          message: 'No candidates in scope',
+        },
+        scope: {
+          type: caller.isAdmin ? 'admin' : 'supervisor',
+          role: caller.role,
+          candidateCount: 0,
+          resultCount: 0,
+        },
+      });
+    }
+
+    // ---- Hydrate candidate_profiles, chunked ----
+    const candidatesById = new Map();
+
+    for (const slice of chunk(scopedIds, CANDIDATE_CHUNK_SIZE)) {
+      const { data: rows, error: fetchError } = await serviceClient
+        .from('candidate_profiles')
+        .select('id, full_name, email, university, programme, supervisor_id, created_at')
+        .in('id', slice);
+
+      if (fetchError) {
+        logError('candidate_profiles chunk', fetchError, {
+          chunkSize: slice.length,
+          totalIds: scopedIds.length,
+          role: caller.role,
+        });
+        return res.status(500).json({
+          success: false,
+          error: 'Unable to retrieve candidate list',
+          code: 'CANDIDATES_FETCH_FAILED',
+        });
+      }
+
+      (rows || []).forEach((row) => {
+        if (row?.id) candidatesById.set(row.id, row);
+      });
+    }
+
+    const allCandidates = Array.from(candidatesById.values());
     const totalCandidates = allCandidates.length;
 
     if (totalCandidates === 0) {
@@ -321,81 +325,89 @@ export default async function handler(req, res) {
           totalCandidates: 0,
           completedAssessments: 0,
           pendingReviews: 0,
-          nationalServiceReports: 0
+          nationalServiceReports: 0,
         },
         candidates: [],
         nationalServiceReports: [],
         otherReports: [],
         diagnostics: {
-          supervisorId: supervisor.id,
-          supervisorName: supervisor.full_name,
-          message: 'No candidates assigned to this supervisor'
-        }
+          supervisorId: caller.userId,
+          message: 'No candidates in scope',
+        },
+        scope: {
+          type: caller.isAdmin ? 'admin' : 'supervisor',
+          role: caller.role,
+          candidateCount: 0,
+          resultCount: 0,
+        },
       });
     }
 
-    const candidateIds = allCandidates.map(c => c.id);
+    const candidateIds = allCandidates.map((c) => c.id);
 
-    // ============================================================
-    // FETCH ASSESSMENT RESULTS (chunked)
-    // ============================================================
-    const { data: results, error: resultsError } = await chunkedIn(candidateIds, (chunk) =>
-      supabase
+    // ---- Fetch assessment_results, chunked ----
+    const resultRows = [];
+
+    for (const slice of chunk(candidateIds, RESULT_CHUNK_SIZE)) {
+      const { data: rows, error: resultsError } = await serviceClient
         .from('assessment_results')
-        .select('id, user_id, assessment_id, percentage_score, completed_at, report_data, category_scores, workplace_readiness, intellectual_capability, total_score, max_score')
-        .in('user_id', chunk)
-    );
+        .select(
+          'id, user_id, assessment_id, percentage_score, completed_at, report_data, category_scores, workplace_readiness, intellectual_capability, total_score, max_score'
+        )
+        .in('user_id', slice);
 
-    if (resultsError) {
-      logSupabaseError('assessment results fetch failed', resultsError, {
-        candidateCount: candidateIds.length,
-      });
-      return res.status(500).json({
-        success: false,
-        error: 'Unable to retrieve assessment reports',
-        code: 'ASSESSMENT_RESULTS_FETCH_FAILED'
-      });
+      if (resultsError) {
+        logError('assessment_results chunk', resultsError, {
+          chunkSize: slice.length,
+          totalCandidates: candidateIds.length,
+        });
+        return res.status(500).json({
+          success: false,
+          error: 'Unable to retrieve assessment reports',
+          code: 'ASSESSMENT_RESULTS_FETCH_FAILED',
+        });
+      }
+
+      if (Array.isArray(rows)) resultRows.push(...rows);
     }
 
-    const resultRows = results || [];
-
-    // ============================================================
-    // FETCH ASSESSMENT DETAILS (chunked)
-    // ============================================================
-    const assessmentIds = [...new Set(resultRows.map(r => r.assessment_id).filter(Boolean))];
+    // ---- Fetch assessment details, chunked ----
+    const assessmentIds = [...new Set(resultRows.map((r) => r.assessment_id).filter(Boolean))];
     const assessmentMap = {};
 
     if (assessmentIds.length > 0) {
-      const { data: assessments, error: assessmentError } = await chunkedIn(assessmentIds, (chunk) =>
-        supabase
+      for (const slice of chunk(assessmentIds, ASSESSMENT_CHUNK_SIZE)) {
+        const { data: assessments, error: assessmentError } = await serviceClient
           .from('assessments')
           .select('id, title, assessment_type_id')
-          .in('id', chunk)
-      );
+          .in('id', slice);
 
-      if (assessmentError) {
-        logSupabaseError('assessments lookup failed', assessmentError, {
-          assessmentCount: assessmentIds.length,
+        if (assessmentError) {
+          logError('assessments chunk', assessmentError, {
+            chunkSize: slice.length,
+            totalAssessments: assessmentIds.length,
+          });
+          continue;
+        }
+
+        (assessments || []).forEach((a) => {
+          assessmentMap[a.id] = a;
         });
-      } else {
-        (assessments || []).forEach(a => { assessmentMap[a.id] = a; });
       }
     }
 
-    // ============================================================
-    // PROCESS RESULTS
-    // ============================================================
+    // ---- Process results ----
     const candidateMap = {};
-    allCandidates.forEach(c => { candidateMap[c.id] = c; });
-
-    const NS_ASSESSMENT_ID = 'bdb9d46e-9fac-4d00-8478-1f649e7ac600';
+    allCandidates.forEach((c) => {
+      candidateMap[c.id] = c;
+    });
 
     let totalCompleted = 0;
     let nationalServiceCount = 0;
     let orphanCount = 0;
     const allReports = [];
 
-    resultRows.forEach(r => {
+    resultRows.forEach((r) => {
       const candidate = candidateMap[r.user_id];
       if (!candidate) {
         orphanCount++;
@@ -424,7 +436,8 @@ export default async function handler(req, res) {
       }
 
       const hasCompletionDate = !!r.completed_at;
-      const hasPercentageScore = r.percentage_score !== null && r.percentage_score !== undefined && r.percentage_score !== '';
+      const hasPercentageScore =
+        r.percentage_score !== null && r.percentage_score !== undefined && r.percentage_score !== '';
       const hasScore = score > 0;
 
       if (hasCompletionDate || hasPercentageScore || hasScore) {
@@ -452,60 +465,61 @@ export default async function handler(req, res) {
         is_national_service: isNS,
         completed_at: r.completed_at,
         category_scores: r.category_scores || [],
-        report_data: r.report_data || {}
+        report_data: r.report_data || {},
       });
     });
 
-    const nsReports = allReports.filter(r => r.is_national_service);
-    const otherReports = allReports.filter(r => !r.is_national_service);
+    const nsReports = allReports.filter((r) => r.is_national_service);
+    const otherReports = allReports.filter((r) => !r.is_national_service);
 
-    // ============================================================
-    // BUILD CANDIDATE ROWS
-    // ============================================================
-    const candidateRows = allCandidates.map(c => {
-      const candidateReports = allReports.filter(r => r.candidate_id === c.id);
+    // ---- Build candidate rows with per-candidate stats ----
+    const candidateRows = allCandidates.map((c) => {
+      const candidateReports = allReports.filter((r) => r.candidate_id === c.id);
       return {
         ...c,
         completedAssessments: candidateReports,
         stats: {
-          completed: candidateReports.filter(r => r.completed_at).length,
+          completed: candidateReports.filter((r) => r.completed_at).length,
           inProgress: 0,
           unblocked: 0,
           blocked: 0,
-          notStarted: 0
-        }
+          notStarted: 0,
+        },
       };
     });
 
-    // ============================================================
-    // RETURN
-    // ============================================================
+    // ---- Return ----
     return res.status(200).json({
       success: true,
       stats: {
         totalCandidates: totalCandidates,
         completedAssessments: totalCompleted,
         pendingReviews: 0,
-        nationalServiceReports: nationalServiceCount
+        nationalServiceReports: nationalServiceCount,
       },
       candidates: candidateRows,
       nationalServiceReports: nsReports,
       otherReports: otherReports,
       diagnostics: {
-        supervisorId: supervisor.id,
-        supervisorName: supervisor.full_name,
+        supervisorId: caller.userId,
+        supervisorName: null,
         candidateCount: totalCandidates,
         resultCount: resultRows.length,
         reportCount: allReports.length,
-        orphanResultCount: orphanCount
-      }
+        orphanResultCount: orphanCount,
+      },
+      scope: {
+        type: caller.isAdmin ? 'admin' : 'supervisor',
+        role: caller.role,
+        candidateCount: totalCandidates,
+        resultCount: resultRows.length,
+      },
     });
-
   } catch (error) {
-    console.error('[Supervisor Dashboard] Fatal error:', error);
+    console.error(`${LOG_TAG} Unhandled error:`, error);
     return res.status(500).json({
       success: false,
-      error: error.message || 'Internal server error',
+      error: error?.message || 'Internal server error',
     });
   }
 }
