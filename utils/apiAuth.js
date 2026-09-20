@@ -54,13 +54,6 @@ export function extractBearerToken(req) {
     : null;
 }
 
-// Resolves the caller from a token. Returns either:
-//   { userId, role, isAdmin, isSupervisor }
-// or
-//   { error, status }
-//
-// `allowedRoles` — array like ['admin'] or ['admin', 'supervisor'].
-// Pass an empty array or omit to allow any authenticated user.
 export async function resolveCaller({ serviceClient, authClient, token, allowedRoles }) {
   if (!token) {
     return { error: 'Unauthorized: No token provided', status: 401 };
@@ -101,13 +94,6 @@ export async function resolveCaller({ serviceClient, authClient, token, allowedR
   };
 }
 
-// One-shot helper for the common case: builds service + auth clients,
-// extracts the token, verifies it, checks the role.
-//
-// Returns either:
-//   { caller, serviceClient, authClient }
-// or
-//   { error, status }
 export async function authorizeRequest(req, allowedRoles = ['admin']) {
   let serviceClient;
   let authClient;
