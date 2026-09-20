@@ -1,8 +1,9 @@
 // pages/api/admin/question-bank/update.js
 // Phase 3 — Question Bank Manager
 // Updates one question + its 4 answers via update_question_with_answers RPC.
+// Phase 7A: admin-gated.
 
-import { createClient } from '@supabase/supabase-js';
+import { authorizeRequest } from '../../../../utils/apiAuth';
 
 // ============================================================
 // HELPER: validate request body
@@ -94,19 +95,15 @@ export default async function handler(req, res) {
   }
 
   try {
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-    if (!supabaseUrl || !serviceRoleKey) {
-      return res.status(500).json({
-        success: false,
-        error: 'Server configuration error: Missing Supabase credentials'
-      });
+    // ============================================================
+    // AUTH — admin only
+    // ============================================================
+    const auth = await authorizeRequest(req, ['admin']);
+    if (auth.error) {
+      return res.status(auth.status).json({ success: false, error: auth.error });
     }
 
-    const serviceClient = createClient(supabaseUrl, serviceRoleKey, {
-      auth: { persistSession: false }
-    });
+    const { serviceClient } = auth;
 
     const validation = validateBody(req.body);
     if (!validation.ok) {
