@@ -1,9 +1,9 @@
 // pages/api/admin/templates/list.js
 // Phase 3 Item 5 — Assessment templates (read-only)
 // Returns templates with their nested default roles.
-// Same shape conventions as the other admin list endpoints.
+// Phase 7A: admin-gated.
 
-import { createClient } from '@supabase/supabase-js';
+import { authorizeRequest } from '../../../../utils/apiAuth';
 
 function parsePositiveInt(value, fallback) {
   const num = Number(value);
@@ -17,19 +17,15 @@ export default async function handler(req, res) {
   }
 
   try {
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-    if (!supabaseUrl || !serviceRoleKey) {
-      return res.status(500).json({
-        success: false,
-        error: 'Server configuration error: Missing Supabase credentials'
-      });
+    // ============================================================
+    // AUTH — admin only
+    // ============================================================
+    const auth = await authorizeRequest(req, ['admin']);
+    if (auth.error) {
+      return res.status(auth.status).json({ success: false, error: auth.error });
     }
 
-    const serviceClient = createClient(supabaseUrl, serviceRoleKey, {
-      auth: { persistSession: false }
-    });
+    const { serviceClient } = auth;
 
     // ---------- query params ----------
     const search = typeof req.query.search === 'string' && req.query.search.trim() !== ''
