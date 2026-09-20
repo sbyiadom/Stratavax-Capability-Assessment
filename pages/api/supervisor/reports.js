@@ -1,17 +1,65 @@
 // pages/api/supervisor/reports.js
-// COMPLETE FIXED VERSION
-// Checks BOTH legacy AND junction table for permission
-// Also checks shared_report_access
+// Phase 7B — server-side reports payload for the supervisor reports pages.
+//
+// ROOT CAUSE OF PREVIOUS FAILURE:
+//   This endpoint used the anon client + the caller's bearer token, so all reads
+//   were subject to RLS. Phase 7 enabled RLS on every table with a default-deny
+//   policy set, so SELECTs returned 0 rows silently for every supervisor. The
+//   Vercel logs showed:
+//     [Supervisor Reports] Found candidates by legacy fields: 0
+//     [Supervisor Reports] Total assigned candidates: 0
+//
+// FIX:
+//   Switch to utils/apiAuth.js (service role) and enforce scoping in code via
+//   the get_scoped_candidate_ids RPC, exactly like the other supervisor
+//   endpoints. RLS remains enabled as defense-in-depth on the DB; this
+//   endpoint bypasses it deliberately for the service role.
+//
+// SCOPING MODEL:
+//   • admin      → all candidates
+//   • supervisor → union of primary (candidate_profiles.supervisor_id)
+//                  and junction (candidate_supervisors.supervisor_id) links
+//   • shared_report_access is currently EMPTY (verified 2026-09-20),
+//     so the shared-access path is intentionally omitted. If the feature
+//     becomes active, add a union branch here — do NOT expose it elsewhere.
+//
+// RESPONSE SHAPE (preserved from Phase 7A so pages/supervisor/reports/index.js
+// and pages/supervisor/reports/[resultId].js consume it unchanged):
+//   List mode:
+//     { success, reports[], nationalServiceReports[], otherReports[],
+//       candidates[], stats: { total, completed, inProgress } }
+//   Single-result mode (when ?assessment_id= is passed and 1 result matches):
+//     { success, result, candidate, assessment, generatedReport, reports[],
+//       candidates[], stats }
+//
+// PER-CANDIDATE FIELDS (unchanged):
+//   result_id, candidate_id, candidate_name, candidate_email, university,
+//   programme, assessment_id, assessment_title, assessment_code, score,
+//   percentage_score, workplace_readiness, intellectual_capability,
+//   recommendation, is_national_service, is_completed, is_auto_submitted,
+//   completed_at, category_scores, report_data, _result
 
-import { createClient } from '@supabase/supabase-js';
+import { authorizeRequest } from '../../../utils/apiAuth';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const LOG_TAG = '[Supervisor Reports]';
+const CHUNK_SIZE = 100;
 
-function extractBearerToken(req) {
-  const authHeader = req.headers.authorization || req.headers.Authorization || '';
-  if (!authHeader || !authHeader.toLowerCase().startsWith('bearer ')) return null;
-  return authHeader.slice(7).trim();
+const NATIONAL_SERVICE_ASSESSMENT_ID = 'bdb9d46e-9fac-4d00-8478-1f649e7ac600';
+
+function chunk(arr, size) {
+  const out = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
+function logError(stage, error, extra = {}) {
+  console.error(`${LOG_TAG} ${stage} failed`, {
+    message: error?.message,
+    code: error?.code,
+    details: error?.details,
+    hint: error?.hint,
+    ...extra,
+  });
 }
 
 function safeNumber(value, fallback = 0) {
@@ -28,7 +76,7 @@ function getReportData(result) {
       const parsed = JSON.parse(raw);
       return parsed && typeof parsed === 'object' ? parsed : {};
     } catch (error) {
-      console.error('Failed to parse report_data:', error);
+      console.error(`${LOG_TAG} Failed to parse report_data:`, error);
       return {};
     }
   }
@@ -39,10 +87,10 @@ function getNationalServiceOverallScore(result) {
   const reportData = getReportData(result);
   return safeNumber(
     reportData?.dimensions?.overallScore ??
-    reportData?.scores?.overall ??
-    reportData?.overallScore ??
-    result?.percentage_score ??
-    0
+      reportData?.scores?.overall ??
+      reportData?.overallScore ??
+      result?.percentage_score ??
+      0
   );
 }
 
@@ -50,7 +98,7 @@ function calculateRecommendation(workplaceReadiness, intellectualCapability, ove
   const workplace = safeNumber(workplaceReadiness);
   const intellectual = safeNumber(intellectualCapability);
   const overall = safeNumber(overallScore);
-  
+
   if (overall > 0) {
     if (overall >= 85) return 'Highly Recommended';
     if (overall >= 75) return 'Recommended';
@@ -58,7 +106,7 @@ function calculateRecommendation(workplaceReadiness, intellectualCapability, ove
     if (overall >= 50) return 'Consider for Development';
     return 'Not Recommended';
   }
-  
+
   if (workplace >= 85 && intellectual >= 85) return 'Highly Recommended';
   if (workplace >= 75 && intellectual >= 75) return 'Recommended';
   if (workplace >= 65 && intellectual >= 65) return 'Reserve Pool';
@@ -67,252 +115,170 @@ function calculateRecommendation(workplaceReadiness, intellectualCapability, ove
 }
 
 export default async function handler(req, res) {
-  if (req.method !== "GET") {
-    return res.status(405).json({ success: false, error: "Method not allowed" });
+  if (req.method !== 'GET') {
+    return res.status(405).json({ success: false, error: 'Method not allowed' });
   }
 
+  // ---- Auth: bearer token + role check + active-account check ----
+  const auth = await authorizeRequest(req, ['admin', 'supervisor']);
+  if (auth.error) {
+    return res.status(auth.status).json({ success: false, error: auth.error });
+  }
+
+  const { caller, serviceClient } = auth;
+  const { user_id, assessment_id } = req.query;
+
   try {
-    const token = extractBearerToken(req);
-    if (!token) {
-      return res.status(401).json({ success: false, error: "Missing token" });
-    }
+    // ---- Scoping via RPC (bypasses RLS; enforces primary + junction union) ----
+    const { data: scopedRows, error: scopedError } = await serviceClient.rpc(
+      'get_scoped_candidate_ids',
+      { p_caller: caller.userId, p_is_admin: caller.isAdmin }
+    );
 
-    const supabase = createClient(supabaseUrl, supabaseKey, {
-      global: {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
-      },
-      auth: { persistSession: false }
-    });
-
-    const { data: userData, error: userError } = await supabase.auth.getUser(token);
-    if (userError || !userData?.user) {
-      return res.status(401).json({ success: false, error: "Invalid token" });
-    }
-
-    const supervisorId = userData.user.id;
-    const { user_id, assessment_id } = req.query;
-
-    console.log('[Supervisor Reports] Supervisor ID:', supervisorId);
-
-    // ============================================================
-    // GET ASSIGNED CANDIDATES (BOTH SOURCES)
-    // ============================================================
-    let allCandidates = [];
-    const candidateIdsSet = new Set();
-
-    // Method 1: Legacy fields
-    const { data: candidatesByField, error: candidateError } = await supabase
-      .from('candidate_profiles')
-      .select('id, full_name, email, university, programme, supervisor_id, created_at')
-      .eq('supervisor_id', supervisorId);
-
-    if (!candidateError && candidatesByField) {
-      candidatesByField.forEach(candidate => {
-        if (!candidateIdsSet.has(candidate.id)) {
-          candidateIdsSet.add(candidate.id);
-          allCandidates.push(candidate);
-        }
+    if (scopedError) {
+      logError('rpc get_scoped_candidate_ids', scopedError, {
+        role: caller.role,
+        userId: caller.userId,
       });
-      console.log('[Supervisor Reports] Found candidates by legacy fields:', candidatesByField.length);
+      return res.status(500).json({ success: false, error: 'Failed to load candidates' });
     }
 
-    // Method 2: Junction table
-    const { data: junctionAssignments, error: junctionError } = await supabase
-      .from('candidate_supervisors')
-      .select('candidate_id')
-      .eq('supervisor_id', supervisorId);
+    const scopedIds = Array.isArray(scopedRows)
+      ? scopedRows
+          .map((row) => (typeof row === 'string' ? row : row?.get_scoped_candidate_ids))
+          .filter(Boolean)
+      : [];
 
-    if (!junctionError && junctionAssignments && junctionAssignments.length > 0) {
-      const junctionCandidateIds = junctionAssignments.map(item => item.candidate_id).filter(Boolean);
-      const missingIds = junctionCandidateIds.filter(id => !candidateIdsSet.has(id));
-
-      if (missingIds.length > 0) {
-        const { data: junctionCandidates, error: junctionCandidatesError } = await supabase
-          .from('candidate_profiles')
-          .select('id, full_name, email, university, programme, supervisor_id, created_at')
-          .in('id', missingIds);
-
-        if (!junctionCandidatesError && junctionCandidates) {
-          junctionCandidates.forEach(candidate => {
-            if (!candidateIdsSet.has(candidate.id)) {
-              candidateIdsSet.add(candidate.id);
-              allCandidates.push(candidate);
-            }
-          });
-          console.log('[Supervisor Reports] Found candidates via junction table:', junctionCandidates.length);
-        }
-      }
+    if (scopedIds.length === 0) {
+      return res.status(200).json({
+        success: true,
+        reports: [],
+        nationalServiceReports: [],
+        otherReports: [],
+        candidates: [],
+        stats: { total: 0, completed: 0, inProgress: 0 },
+        scope: { type: caller.isAdmin ? 'admin' : 'supervisor', role: caller.role, candidateCount: 0 },
+        message: 'No candidates assigned to this supervisor',
+      });
     }
 
-    console.log('[Supervisor Reports] Total assigned candidates:', allCandidates.length);
+    // ---- Hydrate candidate_profiles, chunked ----
+    const candidatesById = new Map();
 
-    // ============================================================
-    // FILTER BY SPECIFIC USER WITH PERMISSION CHECK
-    // ============================================================
-    let targetCandidates = allCandidates;
-
-    if (user_id) {
-      // Check if the candidate exists at all
-      const { data: candidateExists, error: existsError } = await supabase
+    for (const slice of chunk(scopedIds, CHUNK_SIZE)) {
+      const { data: rows, error: fetchError } = await serviceClient
         .from('candidate_profiles')
-        .select('id')
-        .eq('id', user_id)
-        .maybeSingle();
+        .select('id, full_name, email, university, programme, supervisor_id, created_at')
+        .in('id', slice);
 
-      if (existsError || !candidateExists) {
-        return res.status(404).json({
-          success: false,
-          error: 'Candidate not found'
+      if (fetchError) {
+        logError('candidate_profiles chunk', fetchError, {
+          chunkSize: slice.length,
+          totalIds: scopedIds.length,
+          role: caller.role,
         });
+        return res.status(500).json({ success: false, error: 'Failed to load candidates' });
       }
 
-      // Check if candidate is assigned via legacy field
-      const assignedCandidate = allCandidates.find(c => c.id === user_id);
-      
-      if (assignedCandidate) {
-        targetCandidates = [assignedCandidate];
-        console.log('[Supervisor Reports] Found candidate via legacy assignment');
-      } else {
-        // Check junction table
-        const { data: junctionCheck, error: junctionCheckError } = await supabase
-          .from('candidate_supervisors')
-          .select('candidate_id')
-          .eq('candidate_id', user_id)
-          .eq('supervisor_id', supervisorId)
-          .maybeSingle();
+      (rows || []).forEach((row) => {
+        if (row?.id) candidatesById.set(row.id, row);
+      });
+    }
 
-        if (!junctionCheckError && junctionCheck) {
-          // Candidate is assigned via junction table, fetch their details
-          const { data: candidateData, error: candidateDataError } = await supabase
-            .from('candidate_profiles')
-            .select('id, full_name, email, university, programme, supervisor_id, created_at')
-            .eq('id', user_id)
-            .maybeSingle();
+    let targetCandidates = Array.from(candidatesById.values());
 
-          if (!candidateDataError && candidateData) {
-            targetCandidates = [candidateData];
-            console.log('[Supervisor Reports] Found candidate via junction table');
-          } else {
-            return res.status(404).json({
-              success: false,
-              error: 'Candidate not found'
-            });
-          }
-        } else {
-          // Check shared access
-          const { data: sharedAccess, error: sharedError } = await supabase
-            .from('shared_report_access')
-            .select('candidate_id, expires_at')
-            .eq('candidate_id', user_id)
-            .eq('granted_to', supervisorId)
-            .maybeSingle();
-
-          if (!sharedError && sharedAccess) {
-            // Check if access has expired
-            if (sharedAccess.expires_at && new Date(sharedAccess.expires_at) < new Date()) {
-              return res.status(403).json({
-                success: false,
-                error: 'Access to this report has expired'
-              });
-            }
-
-            const { data: candidateData, error: candidateDataError } = await supabase
-              .from('candidate_profiles')
-              .select('id, full_name, email, university, programme, supervisor_id, created_at')
-              .eq('id', user_id)
-              .maybeSingle();
-
-            if (!candidateDataError && candidateData) {
-              targetCandidates = [candidateData];
-              console.log('[Supervisor Reports] Found candidate via shared access');
-            } else {
-              return res.status(404).json({
-                success: false,
-                error: 'Candidate not found'
-              });
-            }
-          } else {
-            return res.status(404).json({
-              success: false,
-              error: 'Candidate not found or not assigned to you'
-            });
-          }
-        }
+    // ---- Optional: filter to a single candidate, with an access check ----
+    // The original endpoint returned 404 if user_id was provided but the
+    // candidate was not in the caller's scope. We preserve that, but now
+    // the scope check is enforced against the RPC-derived set — no RLS
+    // lookup needed.
+    if (user_id) {
+      const requested = candidatesById.get(user_id);
+      if (!requested) {
+        return res.status(404).json({ success: false, error: 'Candidate not found' });
       }
+      targetCandidates = [requested];
     }
 
     if (targetCandidates.length === 0) {
       return res.status(200).json({
         success: true,
         reports: [],
+        nationalServiceReports: [],
+        otherReports: [],
         candidates: [],
         stats: { total: 0, completed: 0, inProgress: 0 },
-        message: 'No candidates assigned to this supervisor'
+        scope: { type: caller.isAdmin ? 'admin' : 'supervisor', role: caller.role, candidateCount: 0 },
+        message: 'No candidates assigned to this supervisor',
       });
     }
 
-    const candidateIds = targetCandidates.map(c => c.id);
+    const candidateIds = targetCandidates.map((c) => c.id);
 
-    // ============================================================
-    // GET ASSESSMENT RESULTS
-    // ============================================================
-    let query = supabase
-      .from('assessment_results')
-      .select(`
-        id,
-        user_id,
-        assessment_id,
-        session_id,
-        percentage_score,
-        workplace_readiness,
-        intellectual_capability,
-        total_score,
-        max_score,
-        category_scores,
-        report_data,
-        completed_at,
-        created_at,
-        is_valid,
-        is_auto_submitted,
-        violation_count,
-        assessments:assessment_id (
+    // ---- Fetch assessment_results with embedded join, chunked ----
+    // Note: the embedded join 'assessments:assessment_id' relies on the FK
+    // from assessment_results.assessment_id → assessments.id. That FK exists
+    // (this select worked under RLS before; it will work under service role).
+    const allResults = [];
+
+    for (const slice of chunk(candidateIds, CHUNK_SIZE)) {
+      let query = serviceClient
+        .from('assessment_results')
+        .select(`
           id,
-          title,
-          assessment_type_id,
-          assessment_types:assessment_type_id (
+          user_id,
+          assessment_id,
+          session_id,
+          percentage_score,
+          workplace_readiness,
+          intellectual_capability,
+          total_score,
+          max_score,
+          category_scores,
+          report_data,
+          completed_at,
+          created_at,
+          is_valid,
+          is_auto_submitted,
+          violation_count,
+          assessments:assessment_id (
             id,
-            code,
-            name
+            title,
+            assessment_type_id,
+            assessment_types:assessment_type_id (
+              id,
+              code,
+              name
+            )
           )
-        )
-      `)
-      .in('user_id', candidateIds)
-      .order('completed_at', { ascending: false });
+        `)
+        .in('user_id', slice)
+        .order('completed_at', { ascending: false });
 
-    if (assessment_id) {
-      query = query.eq('assessment_id', assessment_id);
+      if (assessment_id) {
+        query = query.eq('assessment_id', assessment_id);
+      }
+
+      const { data: rows, error: resultsError } = await query;
+
+      if (resultsError) {
+        logError('assessment_results chunk', resultsError, {
+          chunkSize: slice.length,
+          totalCandidates: candidateIds.length,
+          assessmentFilter: assessment_id || null,
+        });
+        // Preserve the original behavior: a results-fetch failure is a 500.
+        return res.status(500).json({ success: false, error: resultsError.message });
+      }
+
+      if (Array.isArray(rows)) allResults.push(...rows);
     }
 
-    const { data: results, error: resultsError } = await query;
+    // ---- Process results into report rows ----
+    const targetCandidatesById = new Map(targetCandidates.map((c) => [c.id, c]));
 
-    if (resultsError) {
-      console.error('[Supervisor Reports] Results error:', resultsError);
-      return res.status(500).json({ 
-        success: false, 
-        error: resultsError.message 
-      });
-    }
-
-    console.log('[Supervisor Reports] Results found:', results?.length || 0);
-
-    // ============================================================
-    // PROCESS REPORTS
-    // ============================================================
-    const reports = (results || []).map(result => {
+    const reports = allResults.map((result) => {
       const assessment = result.assessments || {};
-      
       const typeArray = assessment.assessment_types || assessment.assessment_type || [];
       const type = Array.isArray(typeArray) && typeArray.length > 0 ? typeArray[0] : {};
 
@@ -320,15 +286,15 @@ export default async function handler(req, res) {
       const assessmentCode = String(type?.code || '').toLowerCase().trim();
       const assessmentTypeName = String(type?.name || '').toLowerCase().trim();
 
-      const isNationalService = 
-        assessment?.id === 'bdb9d46e-9fac-4d00-8478-1f649e7ac600' ||
+      const isNationalService =
+        assessment?.id === NATIONAL_SERVICE_ASSESSMENT_ID ||
         assessmentCode.includes('national') ||
         assessmentTypeName.includes('national service') ||
         assessmentTitle.includes('national service') ||
         assessmentTitle.includes('nationalservice') ||
         assessmentTitle.includes('service recruitment');
 
-      const candidate = targetCandidates.find(c => c.id === result.user_id) || {};
+      const candidate = targetCandidatesById.get(result.user_id) || {};
 
       let overallScore = safeNumber(result.percentage_score);
       if (isNationalService) {
@@ -337,8 +303,14 @@ export default async function handler(req, res) {
 
       const workplaceReadiness = safeNumber(result.workplace_readiness || 0);
       const intellectualCapability = safeNumber(result.intellectual_capability || 0);
-      const recommendation = calculateRecommendation(workplaceReadiness, intellectualCapability, overallScore);
-      const isCompleted = !!result.completed_at || (result.percentage_score !== null && result.percentage_score !== undefined);
+      const recommendation = calculateRecommendation(
+        workplaceReadiness,
+        intellectualCapability,
+        overallScore
+      );
+      const isCompleted =
+        !!result.completed_at ||
+        (result.percentage_score !== null && result.percentage_score !== undefined);
 
       return {
         result_id: result.id,
@@ -354,23 +326,21 @@ export default async function handler(req, res) {
         percentage_score: result.percentage_score || 0,
         workplace_readiness: workplaceReadiness,
         intellectual_capability: intellectualCapability,
-        recommendation: recommendation,
+        recommendation,
         is_national_service: isNationalService,
         is_completed: isCompleted,
         is_auto_submitted: result.is_auto_submitted || false,
         completed_at: result.completed_at,
         category_scores: result.category_scores || [],
         report_data: result.report_data || {},
-        _result: result
+        _result: result,
       };
     });
 
-    // ============================================================
-    // RETURN RESPONSE
-    // ============================================================
+    // ---- Single-result mode (preserved from original) ----
     if (assessment_id && reports.length === 1) {
       const report = reports[0];
-      const candidate = targetCandidates.find(c => c.id === report.candidate_id) || {};
+      const candidate = targetCandidatesById.get(report.candidate_id) || {};
       const assessment = report._result?.assessments || {};
 
       return res.status(200).json({
@@ -397,37 +367,49 @@ export default async function handler(req, res) {
           recommendation: report.recommendation,
           completed_at: report.completed_at,
         },
-        reports: reports,
+        reports,
         candidates: targetCandidates,
         stats: {
           total: reports.length,
-          completed: reports.filter(r => r.is_completed).length,
-          inProgress: reports.filter(r => !r.is_completed && r.session_id).length
-        }
+          completed: reports.filter((r) => r.is_completed).length,
+          inProgress: reports.filter((r) => !r.is_completed && r._result?.session_id).length,
+        },
+        scope: {
+          type: caller.isAdmin ? 'admin' : 'supervisor',
+          role: caller.role,
+          candidateCount: targetCandidates.length,
+          resultCount: reports.length,
+        },
       });
     }
 
-    const nationalServiceReports = reports.filter(r => r.is_national_service === true);
-    const otherReports = reports.filter(r => r.is_national_service === false);
+    // ---- List mode (preserved from original) ----
+    const nationalServiceReports = reports.filter((r) => r.is_national_service === true);
+    const otherReports = reports.filter((r) => r.is_national_service === false);
 
     return res.status(200).json({
       success: true,
-      reports: reports,
+      reports,
       nationalServiceReports,
       otherReports,
       candidates: targetCandidates,
       stats: {
         total: reports.length,
-        completed: reports.filter(r => r.is_completed).length,
-        inProgress: reports.filter(r => !r.is_completed && r.session_id).length
-      }
+        completed: reports.filter((r) => r.is_completed).length,
+        inProgress: reports.filter((r) => !r.is_completed && r._result?.session_id).length,
+      },
+      scope: {
+        type: caller.isAdmin ? 'admin' : 'supervisor',
+        role: caller.role,
+        candidateCount: targetCandidates.length,
+        resultCount: reports.length,
+      },
     });
-
   } catch (error) {
-    console.error('[Supervisor Reports] Error:', error);
+    console.error(`${LOG_TAG} Unhandled error:`, error);
     return res.status(500).json({
       success: false,
-      error: error.message || 'Internal server error'
+      error: error?.message || 'Internal server error',
     });
   }
 }
