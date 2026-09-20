@@ -1,11 +1,12 @@
 // pages/admin/manage-candidates.js
 // COMPLETE WITH PROGRAM NORMALIZATION AND FILTERS + RESET BUTTON
 // FIXED: Table now scrolls horizontally, all columns visible
+// Phase 7A: data loaded via /api/admin/manage-candidates?action=load
 
 import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/router";
 import AppLayout from "../../components/AppLayout";
-import { supabase } from "../../supabase/client";
+import { fetchWithAuth } from "../../utils/fetchWithAuth";
 import ResetAssessmentButton from "../../components/ResetAssessmentButton";
 
 function formatDate(value) {
@@ -30,42 +31,22 @@ function getScoreStyle(score) {
   const value = toNumber(score, 0);
 
   if (value >= 85) {
-    return {
-      color: "#0f766e",
-      bg: "#e6fffb",
-      label: "Exceptional"
-    };
+    return { color: "#0f766e", bg: "#e6fffb", label: "Exceptional" };
   }
 
   if (value >= 75) {
-    return {
-      color: "#1565c0",
-      bg: "#e3f2fd",
-      label: "Strong Performer"
-    };
+    return { color: "#1565c0", bg: "#e3f2fd", label: "Strong Performer" };
   }
 
   if (value >= 55) {
-    return {
-      color: "#d97706",
-      bg: "#fff7ed",
-      label: "Developing"
-    };
+    return { color: "#d97706", bg: "#fff7ed", label: "Developing" };
   }
 
   if (value > 0) {
-    return {
-      color: "#c62828",
-      bg: "#ffebee",
-      label: "At Risk"
-    };
+    return { color: "#c62828", bg: "#ffebee", label: "At Risk" };
   }
 
-  return {
-    color: "#667085",
-    bg: "#f2f4f7",
-    label: "No Data"
-  };
+  return { color: "#667085", bg: "#f2f4f7", label: "No Data" };
 }
 
 // ============================================================
@@ -364,20 +345,9 @@ const filterStyles = {
     boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
     border: "1px solid #eef2f7"
   },
-  searchRow: {
-    marginBottom: "16px"
-  },
-  searchWrapper: {
-    position: "relative",
-    display: "flex",
-    alignItems: "center"
-  },
-  searchIcon: {
-    position: "absolute",
-    left: "12px",
-    fontSize: "16px",
-    color: "#94a3b8"
-  },
+  searchRow: { marginBottom: "16px" },
+  searchWrapper: { position: "relative", display: "flex", alignItems: "center" },
+  searchIcon: { position: "absolute", left: "12px", fontSize: "16px", color: "#94a3b8" },
   searchInput: {
     width: "100%",
     padding: "10px 40px 10px 36px",
@@ -463,15 +433,14 @@ export default function ManageCandidates() {
   const [expandedCandidate, setExpandedCandidate] = useState(null);
   const [error, setError] = useState("");
 
-  // Filter state
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedUniversity, setSelectedUniversity] = useState("");
   const [selectedProgram, setSelectedProgram] = useState("");
   const [selectedStatus, setSelectedStatus] = useState("all");
 
-  // Fetch candidates
   useEffect(() => {
     fetchCandidates();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function fetchCandidates() {
@@ -479,68 +448,14 @@ export default function ManageCandidates() {
       setLoading(true);
       setError("");
 
-      const { data: candidateData, error: candidateError } = await supabase
-        .from("candidate_profiles")
-        .select("*")
-        .order("created_at", { ascending: false });
+      const response = await fetchWithAuth('/api/admin/manage-candidates?action=load');
+      const payload = await response.json();
 
-      if (candidateError) throw candidateError;
-
-      const { data: resultsData, error: resultsError } = await supabase
-        .from("assessment_results")
-        .select("*")
-        .order("completed_at", { ascending: false });
-
-      if (resultsError) throw resultsError;
-
-      const assessmentIds = [
-        ...new Set(
-          (resultsData || [])
-            .map((r) => r.assessment_id)
-            .filter(Boolean)
-        )
-      ];
-
-      let assessmentNameMap = {};
-
-      if (assessmentIds.length > 0) {
-        const { data: assessmentsData, error: assessmentsError } = await supabase
-          .from("assessments")
-          .select("id, title")
-          .in("id", assessmentIds);
-
-        if (assessmentsError) throw assessmentsError;
-
-        assessmentNameMap = (assessmentsData || []).reduce((acc, item) => {
-          acc[item.id] = item.title;
-          return acc;
-        }, {});
+      if (!response.ok || !payload.success) {
+        throw new Error(payload.error || `Failed to load candidates (HTTP ${response.status}).`);
       }
 
-      const resultsWithTitles = (resultsData || []).map((result) => ({
-        ...result,
-        assessment_title:
-          assessmentNameMap[result.assessment_id] || "Unnamed Assessment"
-      }));
-
-      const resultMap = {};
-      resultsWithTitles.forEach((result) => {
-        if (!resultMap[result.user_id]) resultMap[result.user_id] = [];
-        resultMap[result.user_id].push(result);
-      });
-
-      const enrichedCandidates = (candidateData || []).map((candidate) => {
-        const results = resultMap[candidate.id] || [];
-        const latest = results.length > 0 ? results[0] : null;
-
-        return {
-          ...candidate,
-          results,
-          latest
-        };
-      });
-
-      setCandidates(enrichedCandidates);
+      setCandidates(payload.candidates || []);
     } catch (err) {
       console.error("Error fetching candidates:", err);
       setError(err.message || "Failed to load candidates");
@@ -549,9 +464,6 @@ export default function ManageCandidates() {
     }
   }
 
-  // ============================================================
-  // UNIQUE VALUES FOR FILTERS
-  // ============================================================
   const universityOptions = useMemo(() => {
     const unis = new Set();
     candidates.forEach((c) => {
@@ -568,9 +480,6 @@ export default function ManageCandidates() {
     return getProgramGroups(allPrograms);
   }, [candidates]);
 
-  // ============================================================
-  // FILTER LOGIC
-  // ============================================================
   const filteredCandidates = useMemo(() => {
     let filtered = candidates;
 
@@ -607,9 +516,6 @@ export default function ManageCandidates() {
     return filtered;
   }, [candidates, searchQuery, selectedUniversity, selectedProgram, selectedStatus, programGroups]);
 
-  // ============================================================
-  // HANDLERS
-  // ============================================================
   function clearFilters() {
     setSearchQuery("");
     setSelectedUniversity("");
@@ -630,9 +536,6 @@ export default function ManageCandidates() {
     router.push(`/supervisor/${candidateId}?assessment=${assessmentId}`);
   }
 
-  // ============================================================
-  // RENDER
-  // ============================================================
   return (
     <AppLayout background="/images/admin-bg.jpg">
       <div style={styles.container}>
@@ -860,7 +763,6 @@ function FragmentRow({
               </button>
             )}
 
-            {/* ✅ RESET BUTTON - Only for completed assessments */}
             {latest && latest.completed_at && (
               <ResetAssessmentButton
                 candidateId={candidate.id}
@@ -942,7 +844,6 @@ function FragmentRow({
                           >
                             Open Report
                           </button>
-                          {/* ✅ RESET BUTTON - For each completed report */}
                           {result.completed_at && (
                             <ResetAssessmentButton
                               candidateId={candidate.id}
@@ -967,329 +868,46 @@ function FragmentRow({
   );
 }
 
-// ============================================================
-// STYLES - FIXED WITH SCROLLING
-// ============================================================
 const styles = {
-  container: {
-    maxWidth: "100%",
-    margin: "0 auto",
-    padding: "40px 20px",
-    overflowX: "hidden",
-  },
-
-  header: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: "30px",
-    background: "white",
-    padding: "20px 30px",
-    borderRadius: "16px",
-    boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
-    flexWrap: "wrap",
-    gap: "12px",
-  },
-
-  title: {
-    fontSize: "24px",
-    fontWeight: 600,
-    color: "#0A1929",
-    margin: "0 0 5px 0",
-  },
-
-  subtitle: {
-    fontSize: "14px",
-    color: "#666",
-    margin: 0,
-  },
-
-  refreshButton: {
-    padding: "12px 24px",
-    background: "#0A1929",
-    color: "white",
-    border: "none",
-    borderRadius: "8px",
-    fontSize: "14px",
-    fontWeight: 600,
-    cursor: "pointer",
-    whiteSpace: "nowrap",
-  },
-
-  tableWrapper: {
-    width: "100%",
-    overflow: "hidden",
-    borderRadius: "16px",
-  },
-
-  tableContainer: {
-    background: "white",
-    borderRadius: "16px",
-    boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
-    overflowX: "auto",
-    overflowY: "visible",
-    width: "100%",
-    maxWidth: "100%",
-    WebkitOverflowScrolling: "touch",
-  },
-
-  table: {
-    width: "100%",
-    minWidth: "1100px",
-    borderCollapse: "collapse",
-    fontSize: "14px",
-    tableLayout: "fixed",
-  },
-
-  th: {
-    textAlign: "left",
-    padding: "12px 14px",
-    background: "#F8FAFC",
-    borderBottom: "2px solid #0A1929",
-    fontWeight: 600,
-    color: "#0A1929",
-    fontSize: "12px",
-    whiteSpace: "nowrap",
-  },
-
-  td: {
-    padding: "12px 14px",
-    borderBottom: "1px solid #E2E8F0",
-    color: "#2D3748",
-    verticalAlign: "top",
-    fontSize: "13px",
-    wordBreak: "break-word",
-  },
-
-  noData: {
-    padding: "40px",
-    textAlign: "center",
-    color: "#718096",
-    fontStyle: "italic",
-  },
-
-  loading: {
-    textAlign: "center",
-    padding: "60px",
-    color: "#666",
-    background: "white",
-    borderRadius: "16px",
-  },
-
-  errorMessage: {
-    padding: "12px",
-    background: "#FFEBEE",
-    color: "#C62828",
-    borderRadius: "8px",
-    marginBottom: "20px",
-    fontSize: "14px",
-  },
-
-  dataRow: {
-    cursor: "pointer",
-    transition: "background 0.15s",
-  },
-
-  candidateInfo: {
-    display: "flex",
-    alignItems: "center",
-    gap: "10px",
-  },
-
-  avatar: {
-    width: "34px",
-    height: "34px",
-    borderRadius: "17px",
-    background: "#0A1929",
-    color: "white",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontSize: "14px",
-    fontWeight: 600,
-    flexShrink: 0,
-  },
-
-  candidateName: {
-    fontWeight: 600,
-  },
-
-  candidateMeta: {
-    fontSize: "11px",
-    color: "#667085",
-    marginTop: "2px",
-    wordBreak: "break-all",
-  },
-
-  countBadge: {
-    display: "inline-block",
-    minWidth: "28px",
-    padding: "4px 10px",
-    borderRadius: "999px",
-    background: "#EEF4FF",
-    color: "#3538CD",
-    textAlign: "center",
-    fontWeight: 600,
-  },
-
-  statusBadge: {
-    padding: "4px 12px",
-    borderRadius: "20px",
-    fontSize: "12px",
-    fontWeight: 600,
-    display: "inline-block",
-  },
-
-  scoreBadge: {
-    padding: "4px 12px",
-    borderRadius: "20px",
-    fontSize: "12px",
-    fontWeight: 600,
-    display: "inline-block",
-  },
-
-  progressTrack: {
-    height: "6px",
-    background: "#E2E8F0",
-    borderRadius: "999px",
-    marginTop: "8px",
-    overflow: "hidden",
-  },
-
-  progressFill: {
-    height: "100%",
-    borderRadius: "999px",
-    transition: "width 0.3s ease",
-  },
-
-  noValue: {
-    color: "#98A2B3",
-  },
-
-  actionGroup: {
-    display: "flex",
-    gap: "6px",
-    flexWrap: "wrap",
-    alignItems: "center",
-  },
-
-  actionButtonPrimary: {
-    padding: "5px 10px",
-    border: "none",
-    borderRadius: "6px",
-    cursor: "pointer",
-    fontSize: "11px",
-    fontWeight: 600,
-    color: "white",
-    background: "#0A1929",
-    whiteSpace: "nowrap",
-  },
-
-  actionButtonMuted: {
-    padding: "5px 10px",
-    border: "none",
-    borderRadius: "6px",
-    fontSize: "11px",
-    fontWeight: 600,
-    color: "#98A2B3",
-    background: "#F2F4F7",
-    cursor: "not-allowed",
-    whiteSpace: "nowrap",
-  },
-
-  expandButton: {
-    padding: "5px 10px",
-    border: "1px solid #CBD5E1",
-    borderRadius: "6px",
-    cursor: "pointer",
-    fontSize: "11px",
-    fontWeight: 600,
-    background: "white",
-    color: "#334155",
-    whiteSpace: "nowrap",
-  },
-
-  expandCell: {
-    padding: "0",
-    background: "#F8FAFC",
-  },
-
-  expandPanel: {
-    padding: "20px",
-  },
-
-  expandHeader: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: "14px",
-    flexWrap: "wrap",
-    gap: "8px",
-  },
-
-  expandTitle: {
-    margin: 0,
-    fontSize: "16px",
-    fontWeight: 600,
-    color: "#0A1929",
-  },
-
-  expandSubtext: {
-    fontSize: "12px",
-    color: "#667085",
-  },
-
-  emptyExpand: {
-    padding: "12px 0",
-    color: "#667085",
-  },
-
-  reportList: {
-    display: "grid",
-    gap: "12px",
-  },
-
-  reportCard: {
-    background: "white",
-    border: "1px solid #E2E8F0",
-    borderRadius: "10px",
-    padding: "14px",
-  },
-
-  reportCardTop: {
-    display: "flex",
-    justifyContent: "space-between",
-    gap: "12px",
-    marginBottom: "8px",
-    flexWrap: "wrap",
-  },
-
-  reportTitle: {
-    fontWeight: 600,
-    color: "#0A1929",
-    marginBottom: "4px",
-    wordBreak: "break-word",
-  },
-
-  reportDate: {
-    fontSize: "12px",
-    color: "#667085",
-  },
-
-  reportMetaRow: {
-    display: "flex",
-    gap: "16px",
-    flexWrap: "wrap",
-    fontSize: "12px",
-    color: "#475467",
-    marginTop: "8px",
-  },
-
-  reportActions: {
-    marginTop: "12px",
-    display: "flex",
-    gap: "8px",
-    flexWrap: "wrap",
-    alignItems: "center",
-  },
+  container: { maxWidth: "100%", margin: "0 auto", padding: "40px 20px", overflowX: "hidden" },
+  header: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "30px", background: "white", padding: "20px 30px", borderRadius: "16px", boxShadow: "0 4px 12px rgba(0,0,0,0.05)", flexWrap: "wrap", gap: "12px" },
+  title: { fontSize: "24px", fontWeight: 600, color: "#0A1929", margin: "0 0 5px 0" },
+  subtitle: { fontSize: "14px", color: "#666", margin: 0 },
+  refreshButton: { padding: "12px 24px", background: "#0A1929", color: "white", border: "none", borderRadius: "8px", fontSize: "14px", fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" },
+  tableWrapper: { width: "100%", overflow: "hidden", borderRadius: "16px" },
+  tableContainer: { background: "white", borderRadius: "16px", boxShadow: "0 4px 12px rgba(0,0,0,0.05)", overflowX: "auto", overflowY: "visible", width: "100%", maxWidth: "100%", WebkitOverflowScrolling: "touch" },
+  table: { width: "100%", minWidth: "1100px", borderCollapse: "collapse", fontSize: "14px", tableLayout: "fixed" },
+  th: { textAlign: "left", padding: "12px 14px", background: "#F8FAFC", borderBottom: "2px solid #0A1929", fontWeight: 600, color: "#0A1929", fontSize: "12px", whiteSpace: "nowrap" },
+  td: { padding: "12px 14px", borderBottom: "1px solid #E2E8F0", color: "#2D3748", verticalAlign: "top", fontSize: "13px", wordBreak: "break-word" },
+  noData: { padding: "40px", textAlign: "center", color: "#718096", fontStyle: "italic" },
+  loading: { textAlign: "center", padding: "60px", color: "#666", background: "white", borderRadius: "16px" },
+  errorMessage: { padding: "12px", background: "#FFEBEE", color: "#C62828", borderRadius: "8px", marginBottom: "20px", fontSize: "14px" },
+  dataRow: { cursor: "pointer", transition: "background 0.15s" },
+  candidateInfo: { display: "flex", alignItems: "center", gap: "10px" },
+  avatar: { width: "34px", height: "34px", borderRadius: "17px", background: "#0A1929", color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "14px", fontWeight: 600, flexShrink: 0 },
+  candidateName: { fontWeight: 600 },
+  candidateMeta: { fontSize: "11px", color: "#667085", marginTop: "2px", wordBreak: "break-all" },
+  countBadge: { display: "inline-block", minWidth: "28px", padding: "4px 10px", borderRadius: "999px", background: "#EEF4FF", color: "#3538CD", textAlign: "center", fontWeight: 600 },
+  statusBadge: { padding: "4px 12px", borderRadius: "20px", fontSize: "12px", fontWeight: 600, display: "inline-block" },
+  scoreBadge: { padding: "4px 12px", borderRadius: "20px", fontSize: "12px", fontWeight: 600, display: "inline-block" },
+  progressTrack: { height: "6px", background: "#E2E8F0", borderRadius: "999px", marginTop: "8px", overflow: "hidden" },
+  progressFill: { height: "100%", borderRadius: "999px", transition: "width 0.3s ease" },
+  noValue: { color: "#98A2B3" },
+  actionGroup: { display: "flex", gap: "6px", flexWrap: "wrap", alignItems: "center" },
+  actionButtonPrimary: { padding: "5px 10px", border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "11px", fontWeight: 600, color: "white", background: "#0A1929", whiteSpace: "nowrap" },
+  actionButtonMuted: { padding: "5px 10px", border: "none", borderRadius: "6px", fontSize: "11px", fontWeight: 600, color: "#98A2B3", background: "#F2F4F7", cursor: "not-allowed", whiteSpace: "nowrap" },
+  expandButton: { padding: "5px 10px", border: "1px solid #CBD5E1", borderRadius: "6px", cursor: "pointer", fontSize: "11px", fontWeight: 600, background: "white", color: "#334155", whiteSpace: "nowrap" },
+  expandCell: { padding: "0", background: "#F8FAFC" },
+  expandPanel: { padding: "20px" },
+  expandHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px", flexWrap: "wrap", gap: "8px" },
+  expandTitle: { margin: 0, fontSize: "16px", fontWeight: 600, color: "#0A1929" },
+  expandSubtext: { fontSize: "12px", color: "#667085" },
+  emptyExpand: { padding: "12px 0", color: "#667085" },
+  reportList: { display: "grid", gap: "12px" },
+  reportCard: { background: "white", border: "1px solid #E2E8F0", borderRadius: "10px", padding: "14px" },
+  reportCardTop: { display: "flex", justifyContent: "space-between", gap: "12px", marginBottom: "8px", flexWrap: "wrap" },
+  reportTitle: { fontWeight: 600, color: "#0A1929", marginBottom: "4px", wordBreak: "break-word" },
+  reportDate: { fontSize: "12px", color: "#667085" },
+  reportMetaRow: { display: "flex", gap: "16px", flexWrap: "wrap", fontSize: "12px", color: "#475467", marginTop: "8px" },
+  reportActions: { marginTop: "12px", display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" },
 };
