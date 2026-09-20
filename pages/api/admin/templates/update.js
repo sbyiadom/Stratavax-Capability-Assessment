@@ -1,8 +1,9 @@
 // pages/api/admin/templates/update.js
 // Phase 3 Item 5 — Assessment templates
 // Updates one template + replaces its role links via update_template RPC.
+// Phase 7A: admin-gated.
 
-import { createClient } from '@supabase/supabase-js';
+import { authorizeRequest } from '../../../../utils/apiAuth';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -75,19 +76,15 @@ export default async function handler(req, res) {
   }
 
   try {
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-    if (!supabaseUrl || !serviceRoleKey) {
-      return res.status(500).json({
-        success: false,
-        error: 'Server configuration error: Missing Supabase credentials'
-      });
+    // ============================================================
+    // AUTH — admin only
+    // ============================================================
+    const auth = await authorizeRequest(req, ['admin']);
+    if (auth.error) {
+      return res.status(auth.status).json({ success: false, error: auth.error });
     }
 
-    const serviceClient = createClient(supabaseUrl, serviceRoleKey, {
-      auth: { persistSession: false }
-    });
+    const { serviceClient } = auth;
 
     const validation = validateBody(req.body);
     if (!validation.ok) {
