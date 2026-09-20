@@ -1,6 +1,9 @@
 // pages/supervisor/add-candidate.js
-// Phase 7A: existence check now calls a server-side endpoint instead of
-// reading Supabase directly. Prepares for RLS.
+// Phase 7B: auth check now reads supervisor profile from a server endpoint
+// instead of the client-side supabase.from('supervisor_profiles') read, which
+// was silently returning null under the RLS deny-all policy.
+//
+// Form submission was already server-side (check-candidate-exists, add-candidate).
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
@@ -79,25 +82,52 @@ export default function AddCandidate() {
         return;
       }
 
-      const metadataRole = activeSession.user.user_metadata?.role || null;
+      const accessToken = activeSession.access_token;
+      if (!accessToken) {
+        router.push("/login");
+        return;
+      }
 
-      const { data: profile, error: profileError } = await supabase
-        .from("supervisor_profiles")
-        .select("id, email, full_name, role, is_active")
-        .eq("id", activeSession.user.id)
-        .maybeSingle();
+      // Server-side profile lookup (RLS-safe)
+      const meResponse = await fetch("/api/supervisor/me", {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer " + accessToken,
+        },
+      });
 
-      if (profileError && profileError.code !== "PGRST116") throw profileError;
+      let mePayload;
+      try {
+        mePayload = await meResponse.json();
+      } catch {
+        throw new Error(`The server returned an invalid response (HTTP ${meResponse.status}).`);
+      }
 
-      const resolvedRole = profile?.role || metadataRole;
+      if (!meResponse.ok || !mePayload.success) {
+        if (meResponse.status === 401 || meResponse.status === 403) {
+          if (typeof window !== "undefined") localStorage.removeItem("userSession");
+          router.push("/login");
+          return;
+        }
+        throw new Error(mePayload.error || `Failed to load profile (HTTP ${meResponse.status}).`);
+      }
 
-      if (resolvedRole !== "supervisor" && resolvedRole !== "admin") {
+      const profile = mePayload.profile;
+
+      if (!profile || !profile.role) {
         setMessage({ type: "error", text: "Supervisor access is required." });
         router.push("/login");
         return;
       }
 
-      if (profile?.is_active === false) {
+      if (profile.role !== "supervisor" && profile.role !== "admin") {
+        setMessage({ type: "error", text: "Supervisor access is required." });
+        router.push("/login");
+        return;
+      }
+
+      if (profile.is_active === false) {
         await supabase.auth.signOut();
         if (typeof window !== "undefined") localStorage.removeItem("userSession");
         router.push("/login");
@@ -106,10 +136,10 @@ export default function AddCandidate() {
 
       setIsSupervisor(true);
       setCurrentSupervisor({
-        id: activeSession.user.id,
-        email: activeSession.user.email,
-        name: profile?.full_name || activeSession.user.user_metadata?.full_name || activeSession.user.email,
-        role: resolvedRole
+        id: profile.id,
+        email: profile.email || activeSession.user.email,
+        name: profile.full_name || activeSession.user.user_metadata?.full_name || activeSession.user.email,
+        role: profile.role,
       });
     } catch (error) {
       console.error("Add candidate auth error:", error);
