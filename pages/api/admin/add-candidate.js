@@ -1,9 +1,20 @@
 // pages/api/admin/add-candidate.js
+// Phase 7B:
+//   • Auth via utils/apiAuth.js (authorizeRequest) — consistent with the rest
+//     of the Phase 7B endpoint surface.
+//   • Accepts role 'admin' OR 'supervisor'. Previously admin-only, which
+//     blocked pages/supervisor/add-candidate.js.
+//   • Supervisor callers are forced to link the created candidate to
+//     themselves (supervisor_id = caller.userId); they cannot pass an
+//     arbitrary supervisor_id. Admin callers may specify any supervisor_id.
+//   • Accepts and stores `university` and `programme` on candidate_profiles
+//     (previously the payload omitted them).
+//
+// Everything else preserved: duplicate check, invite vs password, audit log,
+// National Service auto-assign, rollback on profile insert failure.
 
 import { createClient } from "@supabase/supabase-js";
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
+import { authorizeRequest } from "../../../utils/apiAuth";
 
 function jsonResponse(res, status, payload) {
   return res.status(status).json(payload);
@@ -18,55 +29,10 @@ function isValidEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
-function normalizeUuid(value) {
-  const text = cleanText(value);
-  if (!text) return null;
-  return text;
-}
-
 function generatePassword() {
   const randomPart = Math.random().toString(36).slice(2, 10);
   const timePart = Date.now().toString(36).slice(-4);
   return "Strat@" + randomPart + timePart + "9";
-}
-
-async function getAuthenticatedAdmin(adminClient, req) {
-  const authHeader = req.headers.authorization || "";
-  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
-
-  if (!token) {
-    return { error: "Missing authorization token." };
-  }
-
-  const { data: userData, error: userError } = await adminClient.auth.getUser(token);
-
-  if (userError || !userData?.user) {
-    return { error: "Invalid or expired authorization token." };
-  }
-
-  const authUser = userData.user;
-
-  const { data: profile, error: profileError } = await adminClient
-    .from("supervisor_profiles")
-    .select("id, full_name, email, role, is_active")
-    .eq("id", authUser.id)
-    .maybeSingle();
-
-  if (profileError) {
-    return { error: profileError.message || "Unable to verify admin profile." };
-  }
-
-  const resolvedRole = profile?.role || authUser.user_metadata?.role;
-
-  if (resolvedRole !== "admin") {
-    return { error: "Admin access is required." };
-  }
-
-  if (profile?.is_active === false) {
-    return { error: "Admin account is inactive." };
-  }
-
-  return { adminUser: authUser, adminProfile: profile };
 }
 
 async function writeAuditLog(adminClient, adminUserId, candidateId, payload) {
@@ -80,21 +46,15 @@ async function writeAuditLog(adminClient, adminUserId, candidateId, payload) {
       new_data: payload,
       ip_address: null,
       user_agent: null,
-      created_at: new Date().toISOString()
+      created_at: new Date().toISOString(),
     });
   } catch (error) {
     console.warn("Candidate creation audit log warning:", error?.message || error);
   }
 }
 
-// ============================================================
-// NEW: Auto-assign National Service assessment to candidate
-// ============================================================
 async function autoAssignNationalService(adminClient, candidateId) {
   try {
-    console.log(`[Auto-Assign] Looking for National Service assessment for candidate: ${candidateId}`);
-
-    // Step 1: Get the National Service assessment type
     const { data: nsType, error: nsTypeError } = await adminClient
       .from("assessment_types")
       .select("id, code, name")
@@ -102,19 +62,8 @@ async function autoAssignNationalService(adminClient, candidateId) {
       .eq("is_active", true)
       .maybeSingle();
 
-    if (nsTypeError) {
-      console.warn("[Auto-Assign] Error fetching National Service type:", nsTypeError.message);
-      return false;
-    }
+    if (nsTypeError || !nsType) return false;
 
-    if (!nsType) {
-      console.log("[Auto-Assign] No National Service assessment type found.");
-      return false;
-    }
-
-    console.log(`[Auto-Assign] Found National Service type: ${nsType.name} (${nsType.id})`);
-
-    // Step 2: Get the National Service assessment
     const { data: nsAssessment, error: nsAssessmentError } = await adminClient
       .from("assessments")
       .select("id, title, assessment_type_id")
@@ -122,19 +71,8 @@ async function autoAssignNationalService(adminClient, candidateId) {
       .eq("is_active", true)
       .maybeSingle();
 
-    if (nsAssessmentError) {
-      console.warn("[Auto-Assign] Error fetching National Service assessment:", nsAssessmentError.message);
-      return false;
-    }
+    if (nsAssessmentError || !nsAssessment) return false;
 
-    if (!nsAssessment) {
-      console.log("[Auto-Assign] No National Service assessment found for type:", nsType.id);
-      return false;
-    }
-
-    console.log(`[Auto-Assign] Found National Service assessment: ${nsAssessment.title} (${nsAssessment.id})`);
-
-    // Step 3: Check if candidate already has this assessment assigned
     const { data: existingAssignment, error: checkError } = await adminClient
       .from("candidate_assessments")
       .select("id, status")
@@ -142,58 +80,36 @@ async function autoAssignNationalService(adminClient, candidateId) {
       .eq("assessment_id", nsAssessment.id)
       .maybeSingle();
 
-    if (checkError) {
-      console.warn("[Auto-Assign] Error checking existing assignment:", checkError.message);
-      return false;
-    }
+    if (checkError) return false;
 
     if (existingAssignment) {
-      console.log(`[Auto-Assign] Candidate already has assessment assigned with status: ${existingAssignment.status}`);
-      
-      // If already assigned but blocked, unblock it
       if (existingAssignment.status === "blocked") {
         const { error: updateError } = await adminClient
           .from("candidate_assessments")
           .update({
             status: "unblocked",
             unblocked_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
+            updated_at: new Date().toISOString(),
           })
           .eq("id", existingAssignment.id);
-
-        if (updateError) {
-          console.warn("[Auto-Assign] Error unblocking existing assignment:", updateError.message);
-          return false;
-        }
-        
-        console.log("[Auto-Assign] Existing blocked assessment unblocked");
-        return true;
+        return !updateError;
       }
-      
       return true;
     }
 
-    // Step 4: Create the assignment with status 'unblocked'
     const now = new Date().toISOString();
     const { error: insertError } = await adminClient
       .from("candidate_assessments")
       .insert({
         user_id: candidateId,
         assessment_id: nsAssessment.id,
-        status: "unblocked", // ← Auto-unblocked!
+        status: "unblocked",
         unblocked_at: now,
         created_at: now,
-        updated_at: now
+        updated_at: now,
       });
 
-    if (insertError) {
-      console.warn("[Auto-Assign] Error inserting assessment assignment:", insertError.message);
-      return false;
-    }
-
-    console.log(`[Auto-Assign] ✅ National Service assessment assigned and unblocked for candidate ${candidateId}`);
-    return true;
-
+    return !insertError;
   } catch (error) {
     console.error("[Auto-Assign] Unexpected error:", error);
     return false;
@@ -206,45 +122,51 @@ export default async function handler(req, res) {
     return jsonResponse(res, 405, { success: false, message: "Method not allowed." });
   }
 
-  if (!supabaseUrl || !serviceRoleKey) {
-    return jsonResponse(res, 500, {
-      success: false,
-      message: "Supabase service role configuration is missing. Set SUPABASE_SERVICE_ROLE_KEY in Vercel."
-    });
+  const auth = await authorizeRequest(req, ["admin", "supervisor"]);
+  if (auth.error) {
+    return jsonResponse(res, auth.status, { success: false, message: auth.error });
   }
 
-  const adminClient = createClient(supabaseUrl, serviceRoleKey, {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false
-    }
-  });
+  const { caller, serviceClient: adminClient } = auth;
 
   try {
-    const authCheck = await getAuthenticatedAdmin(adminClient, req);
-
-    if (authCheck.error) {
-      return jsonResponse(res, 403, { success: false, message: authCheck.error });
-    }
-
     const fullName = cleanText(req.body?.full_name || req.body?.fullName);
     const email = cleanText(req.body?.email).toLowerCase();
     const phone = cleanText(req.body?.phone);
-    const supervisorId = normalizeUuid(req.body?.supervisor_id || req.body?.supervisorId);
+    const university = cleanText(req.body?.university);
+    const programme = cleanText(req.body?.programme || req.body?.program);
     const providedPassword = cleanText(req.body?.password);
     const password = providedPassword || generatePassword();
     const sendInvite = Boolean(req.body?.send_invite || req.body?.sendInvite);
 
+    // Supervisor callers are locked to themselves. Admin can pick anyone.
+    let supervisorId = null;
+    if (caller.isAdmin) {
+      supervisorId = cleanText(req.body?.supervisor_id || req.body?.supervisorId) || null;
+    } else {
+      // caller.isSupervisor — ignore whatever the client sent
+      supervisorId = caller.userId;
+    }
+
     if (!fullName) {
-      return jsonResponse(res, 400, { success: false, message: "Candidate full name is required." });
+      return jsonResponse(res, 400, {
+        success: false,
+        message: "Candidate full name is required.",
+      });
     }
 
     if (!email || !isValidEmail(email)) {
-      return jsonResponse(res, 400, { success: false, message: "A valid candidate email is required." });
+      return jsonResponse(res, 400, {
+        success: false,
+        message: "A valid candidate email is required.",
+      });
     }
 
     if (password.length < 8) {
-      return jsonResponse(res, 400, { success: false, message: "Password must be at least 8 characters." });
+      return jsonResponse(res, 400, {
+        success: false,
+        message: "Password must be at least 8 characters.",
+      });
     }
 
     if (supervisorId) {
@@ -257,7 +179,10 @@ export default async function handler(req, res) {
       if (supervisorError) throw supervisorError;
 
       if (!supervisor || supervisor.is_active === false) {
-        return jsonResponse(res, 400, { success: false, message: "Selected supervisor was not found or is inactive." });
+        return jsonResponse(res, 400, {
+          success: false,
+          message: "Selected supervisor was not found or is inactive.",
+        });
       }
     }
 
@@ -270,38 +195,46 @@ export default async function handler(req, res) {
     if (existingProfileError) throw existingProfileError;
 
     if (existingProfile) {
-      return jsonResponse(res, 409, { success: false, message: "A candidate profile already exists with this email." });
+      return jsonResponse(res, 409, {
+        success: false,
+        message: "A candidate profile already exists with this email.",
+      });
     }
 
     let createdUser = null;
 
     if (sendInvite) {
-      const { data: inviteData, error: inviteError } = await adminClient.auth.admin.inviteUserByEmail(email, {
-        data: {
-          role: "candidate",
-          full_name: fullName
-        }
-      });
+      const { data: inviteData, error: inviteError } =
+        await adminClient.auth.admin.inviteUserByEmail(email, {
+          data: {
+            role: "candidate",
+            full_name: fullName,
+          },
+        });
 
       if (inviteError) throw inviteError;
       createdUser = inviteData?.user;
     } else {
-      const { data: createData, error: createError } = await adminClient.auth.admin.createUser({
-        email,
-        password,
-        email_confirm: true,
-        user_metadata: {
-          role: "candidate",
-          full_name: fullName
-        }
-      });
+      const { data: createData, error: createError } =
+        await adminClient.auth.admin.createUser({
+          email,
+          password,
+          email_confirm: true,
+          user_metadata: {
+            role: "candidate",
+            full_name: fullName,
+          },
+        });
 
       if (createError) throw createError;
       createdUser = createData?.user;
     }
 
     if (!createdUser?.id) {
-      return jsonResponse(res, 500, { success: false, message: "Candidate auth user could not be created." });
+      return jsonResponse(res, 500, {
+        success: false,
+        message: "Candidate auth user could not be created.",
+      });
     }
 
     const profilePayload = {
@@ -309,13 +242,15 @@ export default async function handler(req, res) {
       full_name: fullName,
       email,
       phone: phone || null,
-      supervisor_id: supervisorId
+      university: university || null,
+      programme: programme || null,
+      supervisor_id: supervisorId,
     };
 
     const { data: candidateProfile, error: profileInsertError } = await adminClient
       .from("candidate_profiles")
       .insert(profilePayload)
-      .select("id, full_name, email, phone, supervisor_id")
+      .select("id, full_name, email, phone, university, programme, supervisor_id")
       .single();
 
     if (profileInsertError) {
@@ -327,34 +262,30 @@ export default async function handler(req, res) {
       throw profileInsertError;
     }
 
-    await writeAuditLog(adminClient, authCheck.adminUser.id, createdUser.id, candidateProfile || profilePayload);
+    await writeAuditLog(
+      adminClient,
+      caller.userId,
+      createdUser.id,
+      candidateProfile || profilePayload
+    );
 
-    // ============================================================
-    // NEW: Auto-assign National Service assessment
-    // ============================================================
     const nsAssigned = await autoAssignNationalService(adminClient, createdUser.id);
-    
-    if (nsAssigned) {
-      console.log(`[Auto-Assign] ✅ National Service auto-assigned for ${email}`);
-    } else {
-      console.log(`[Auto-Assign] ℹ️ No National Service assessment assigned for ${email}`);
-    }
 
     return jsonResponse(res, 200, {
       success: true,
-      message: sendInvite 
-        ? "Candidate created and invite email sent. National Service assessment auto-assigned." 
+      message: sendInvite
+        ? "Candidate created and invite email sent. National Service assessment auto-assigned."
         : "Candidate created successfully. National Service assessment auto-assigned.",
       candidate: candidateProfile,
       temporary_password: sendInvite ? null : password,
       invite_sent: sendInvite,
-      national_service_auto_assigned: nsAssigned
+      national_service_auto_assigned: nsAssigned,
     });
   } catch (error) {
     console.error("Add candidate API error:", error);
     return jsonResponse(res, 500, {
       success: false,
-      message: error.message || "Failed to create candidate."
+      message: error.message || "Failed to create candidate.",
     });
   }
 }
