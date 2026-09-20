@@ -1,11 +1,12 @@
 // pages/admin/roles/index.js
 // Phase 3 Item 4 — Roles
-// List + Create + Edit + Delete.
+// Phase 7A: all API calls go through fetchWithAuth so they carry the
+// bearer token the endpoints now require.
 
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/router';
-import { supabase } from '../../../supabase/client';
 import { useRequireAuth } from '../../../utils/requireAuth';
+import { fetchWithAuth } from '../../../utils/fetchWithAuth';
 import AppLayout from '../../../components/AppLayout';
 
 // ============================================================
@@ -33,9 +34,8 @@ function CreateModal({ defaultCategory, onClose, onCreated }) {
         display_order: Number(displayOrder) || 0,
         is_active: isActive
       };
-      const response = await fetch('/api/admin/roles/create', {
+      const response = await fetchWithAuth('/api/admin/roles/create', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
       const data = await response.json();
@@ -157,9 +157,8 @@ function EditModal({ role, onClose, onSaved }) {
         display_order: Number(displayOrder) || 0,
         is_active: isActive
       };
-      const response = await fetch('/api/admin/roles/update', {
+      const response = await fetchWithAuth('/api/admin/roles/update', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
       const data = await response.json();
@@ -267,12 +266,11 @@ export default function RolesList() {
   const [deletingId, setDeletingId] = useState(null);
   const [toast, setToast] = useState(null);
 
-  // ---------- Load ----------
   const loadRoles = async () => {
     try {
       setLoading(true);
       setError(null);
-      const response = await fetch('/api/admin/roles/list');
+      const response = await fetchWithAuth('/api/admin/roles/list');
       const data = await response.json();
       if (!response.ok || !data.success) throw new Error(data.error || 'Failed to load roles');
       setRoles(data.roles || []);
@@ -291,7 +289,6 @@ export default function RolesList() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session]);
 
-  // ---------- Derived ----------
   const filteredRoles = useMemo(() => {
     let list = roles;
     if (categoryTab !== 'all') {
@@ -306,7 +303,6 @@ export default function RolesList() {
     return list;
   }, [roles, categoryTab, searchInput]);
 
-  // ---------- Handlers ----------
   const handleBack = () => router.push('/admin');
 
   const handleCreated = async (data) => {
@@ -331,9 +327,8 @@ export default function RolesList() {
 
     try {
       setDeletingId(role.id);
-      const response = await fetch('/api/admin/roles/delete', {
+      const response = await fetchWithAuth('/api/admin/roles/delete', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ role_id: role.id })
       });
       const data = await response.json();
@@ -350,7 +345,6 @@ export default function RolesList() {
   const universityCount = roles.filter((r) => r.category === 'university').length;
   const programmeCount = roles.filter((r) => r.category === 'programme').length;
 
-  // ---------- Loading shell ----------
   if (authLoading || (loading && roles.length === 0)) {
     return (
       <AppLayout background="/images/admin-bg.jpg">
@@ -362,7 +356,6 @@ export default function RolesList() {
     );
   }
 
-  // ---------- Main render ----------
   return (
     <AppLayout background="/images/admin-bg.jpg">
       <div style={styles.container}>
@@ -569,8 +562,6 @@ const styles = {
   deleteButton: { padding: '6px 12px', background: '#dc2626', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: '500', fontFamily: 'inherit' },
   emptyState: { textAlign: 'center', padding: '60px 20px', color: '#94a3b8', fontSize: '15px' },
   footerCount: { marginTop: '12px', fontSize: '13px', color: '#64748b' },
-
-  // Modal
   modalOverlay: { position: 'fixed', inset: 0, background: 'rgba(15, 39, 71, 0.55)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: '60px', zIndex: 2000, overflowY: 'auto' },
   modal: { background: 'white', borderRadius: '12px', width: 'min(600px, 92vw)', maxHeight: 'calc(100vh - 120px)', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.25)' },
   modalHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', borderBottom: '1px solid #e2e8f0' },
