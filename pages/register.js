@@ -1,6 +1,11 @@
-// pages/register.js - COMPLETE WORKING VERSION
-// Phase 7A: availability checks now call a server-side endpoint instead of
-// reading Supabase directly. Prepares for RLS.
+// pages/register.js - Phase 7B
+// University and Programme fields now use <select> dropdowns fed from
+// /api/academic-options (which reads from the roles table). This eliminates
+// the free-text entry that produced 100+ variants of the same institution
+// in candidate_profiles.university.
+//
+// Field names (formData.university, formData.programme) are unchanged so the
+// RPC call to create_candidate_profile and the fallback upsert are unaffected.
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -28,6 +33,50 @@ export default function Register() {
     phone: '',
     preferredDepartment: ''
   });
+
+  const [universities, setUniversities] = useState([]);
+  const [programmes, setProgrammes] = useState([]);
+  const [optionsLoading, setOptionsLoading] = useState(true);
+  const [optionsError, setOptionsError] = useState('');
+
+  // Load canonical university/programme lists once on mount
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadOptions() {
+      try {
+        setOptionsLoading(true);
+        setOptionsError('');
+
+        const response = await fetch('/api/academic-options', { method: 'GET' });
+        let payload;
+        try {
+          payload = await response.json();
+        } catch {
+          throw new Error(`Invalid response (HTTP ${response.status})`);
+        }
+
+        if (!response.ok || !payload.success) {
+          throw new Error(payload?.error || `Failed to load options (HTTP ${response.status})`);
+        }
+
+        if (!cancelled) {
+          setUniversities(Array.isArray(payload.universities) ? payload.universities : []);
+          setProgrammes(Array.isArray(payload.programmes) ? payload.programmes : []);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          console.error('Failed to load academic options:', err);
+          setOptionsError('Could not load university and programme lists. Please refresh the page.');
+        }
+      } finally {
+        if (!cancelled) setOptionsLoading(false);
+      }
+    }
+
+    loadOptions();
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     const checkSession = async () => {
@@ -340,6 +389,13 @@ export default function Register() {
           </div>
         )}
 
+        {optionsError && (
+          <div style={styles.errorBox}>
+            <span style={styles.errorIcon}>⚠️</span>
+            <span>{optionsError}</span>
+          </div>
+        )}
+
         {success ? (
           <div style={styles.successBox}>
             <div style={styles.successIcon}>✓</div>
@@ -454,28 +510,38 @@ export default function Register() {
 
             <div style={styles.field}>
               <label style={styles.label}>University</label>
-              <input
-                type="text"
+              <select
                 name="university"
                 value={formData.university}
                 onChange={handleChange}
-                style={styles.input}
-                placeholder="Enter your university"
-                disabled={loading}
-              />
+                style={styles.select}
+                disabled={loading || optionsLoading}
+              >
+                <option value="">
+                  {optionsLoading ? 'Loading universities…' : 'Select your university'}
+                </option>
+                {universities.map((u) => (
+                  <option key={u.id} value={u.name}>{u.name}</option>
+                ))}
+              </select>
             </div>
 
             <div style={styles.field}>
               <label style={styles.label}>Programme / Course</label>
-              <input
-                type="text"
+              <select
                 name="programme"
                 value={formData.programme}
                 onChange={handleChange}
-                style={styles.input}
-                placeholder="Enter your programme"
-                disabled={loading}
-              />
+                style={styles.select}
+                disabled={loading || optionsLoading}
+              >
+                <option value="">
+                  {optionsLoading ? 'Loading programmes…' : 'Select your programme'}
+                </option>
+                {programmes.map((p) => (
+                  <option key={p.id} value={p.name}>{p.name}</option>
+                ))}
+              </select>
             </div>
 
             <div style={styles.field}>
@@ -506,11 +572,11 @@ export default function Register() {
 
             <button
               type="submit"
-              disabled={loading || nameAvailable === false || emailAvailable === false}
+              disabled={loading || nameAvailable === false || emailAvailable === false || optionsLoading}
               style={{
                 ...styles.registerButton,
-                opacity: (loading || nameAvailable === false || emailAvailable === false) ? 0.7 : 1,
-                cursor: (loading || nameAvailable === false || emailAvailable === false) ? 'not-allowed' : 'pointer'
+                opacity: (loading || nameAvailable === false || emailAvailable === false || optionsLoading) ? 0.7 : 1,
+                cursor: (loading || nameAvailable === false || emailAvailable === false || optionsLoading) ? 'not-allowed' : 'pointer'
               }}
             >
               {loading ? (
@@ -551,6 +617,7 @@ const styles = {
   label: { fontSize: '13px', fontWeight: '500', color: '#475569' },
   inputWrapper: { position: 'relative', display: 'flex', alignItems: 'center' },
   input: { padding: '10px 14px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '14px', transition: 'all 0.2s', outline: 'none', fontFamily: 'inherit', background: '#f8fafc', width: '100%', paddingRight: '80px' },
+  select: { padding: '10px 14px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '14px', transition: 'all 0.2s', outline: 'none', fontFamily: 'inherit', background: '#f8fafc', width: '100%', cursor: 'pointer' },
   checkingIndicator: { position: 'absolute', right: '10px', fontSize: '16px' },
   availableIndicator: { position: 'absolute', right: '10px', fontSize: '13px', color: '#16a34a', fontWeight: '600' },
   takenIndicator: { position: 'absolute', right: '10px', fontSize: '13px', color: '#dc2626', fontWeight: '600' },
