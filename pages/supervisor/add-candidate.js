@@ -1,9 +1,14 @@
 // pages/supervisor/add-candidate.js
-// Phase 7B: auth check now reads supervisor profile from a server endpoint
-// instead of the client-side supabase.from('supervisor_profiles') read, which
-// was silently returning null under the RLS deny-all policy.
+// Phase 7B:
+//   • Auth now calls /api/supervisor/me (RLS-safe) instead of a client-side
+//     supabase.from('supervisor_profiles') read that RLS was denying silently.
+//   • University and Programme fields are now canonical <select> dropdowns
+//     fed from /api/academic-options (which reads the roles table).
+//     Same source as pages/register.js, so values are consistent platform-wide.
 //
-// Form submission was already server-side (check-candidate-exists, add-candidate).
+// Submit flow unchanged:
+//   1. POST /api/supervisor/check-candidate-exists  (duplicate check)
+//   2. POST /api/admin/add-candidate                 (creates auth user + profile)
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
@@ -44,6 +49,11 @@ export default function AddCandidate() {
   const [createdCandidate, setCreatedCandidate] = useState(null);
   const [temporaryPassword, setTemporaryPassword] = useState("");
 
+  const [universities, setUniversities] = useState([]);
+  const [programmes, setProgrammes] = useState([]);
+  const [optionsLoading, setOptionsLoading] = useState(true);
+  const [optionsError, setOptionsError] = useState("");
+
   const [form, setForm] = useState({
     full_name: "",
     email: "",
@@ -51,20 +61,66 @@ export default function AddCandidate() {
     university: "",
     program: "",
     password: generateCandidatePassword(),
-    send_invite: false
+    send_invite: false,
   });
 
   useEffect(() => {
     checkSupervisorAuth();
   }, []);
 
+  // Load canonical university/programme lists once on mount
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadOptions() {
+      try {
+        setOptionsLoading(true);
+        setOptionsError("");
+
+        const response = await fetch("/api/academic-options", { method: "GET" });
+        let payload;
+        try {
+          payload = await response.json();
+        } catch {
+          throw new Error(`Invalid response (HTTP ${response.status})`);
+        }
+
+        if (!response.ok || !payload.success) {
+          throw new Error(payload?.error || `Failed to load options (HTTP ${response.status})`);
+        }
+
+        if (!cancelled) {
+          setUniversities(Array.isArray(payload.universities) ? payload.universities : []);
+          setProgrammes(Array.isArray(payload.programmes) ? payload.programmes : []);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          console.error("Failed to load academic options:", err);
+          setOptionsError(
+            "Could not load university and programme lists. Please refresh the page."
+          );
+        }
+      } finally {
+        if (!cancelled) setOptionsLoading(false);
+      }
+    }
+
+    loadOptions();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const canSubmit = useMemo(() => {
-    return cleanText(form.full_name).trim() &&
-           isValidEmail(cleanText(form.email).trim()) &&
-           cleanText(form.university).trim() &&
-           cleanText(form.program).trim() &&
-           (form.send_invite || cleanText(form.password).length >= 8);
-  }, [form]);
+    return (
+      cleanText(form.full_name).trim() &&
+      isValidEmail(cleanText(form.email).trim()) &&
+      cleanText(form.university).trim() &&
+      cleanText(form.program).trim() &&
+      (form.send_invite || cleanText(form.password).length >= 8) &&
+      !optionsLoading
+    );
+  }, [form, optionsLoading]);
 
   async function checkSupervisorAuth() {
     try {
@@ -138,7 +194,10 @@ export default function AddCandidate() {
       setCurrentSupervisor({
         id: profile.id,
         email: profile.email || activeSession.user.email,
-        name: profile.full_name || activeSession.user.user_metadata?.full_name || activeSession.user.email,
+        name:
+          profile.full_name ||
+          activeSession.user.user_metadata?.full_name ||
+          activeSession.user.email,
         role: profile.role,
       });
     } catch (error) {
@@ -162,7 +221,7 @@ export default function AddCandidate() {
       university: "",
       program: "",
       password: generateCandidatePassword(),
-      send_invite: false
+      send_invite: false,
     });
     setCreatedCandidate(null);
     setTemporaryPassword("");
@@ -217,9 +276,9 @@ export default function AddCandidate() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": "Bearer " + accessToken
+          Authorization: "Bearer " + accessToken,
         },
-        body: JSON.stringify({ email: normalizedEmail })
+        body: JSON.stringify({ email: normalizedEmail }),
       });
 
       let checkPayload;
@@ -230,19 +289,21 @@ export default function AddCandidate() {
       }
 
       if (!checkResponse.ok || !checkPayload.success) {
-        throw new Error(checkPayload.error || `Failed to verify candidate (HTTP ${checkResponse.status}).`);
+        throw new Error(
+          checkPayload.error || `Failed to verify candidate (HTTP ${checkResponse.status}).`
+        );
       }
 
       if (checkPayload.exists) {
         throw new Error("A candidate with this email already exists.");
       }
 
-      // Create the candidate (unchanged)
+      // Create the candidate via admin endpoint (service role, RLS-safe)
       const response = await fetch("/api/admin/add-candidate", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: "Bearer " + accessToken
+          Authorization: "Bearer " + accessToken,
         },
         body: JSON.stringify({
           full_name: cleanText(form.full_name).trim(),
@@ -252,8 +313,8 @@ export default function AddCandidate() {
           program: cleanText(form.program).trim(),
           supervisor_id: currentSupervisor.id,
           password: form.send_invite ? "" : form.password,
-          send_invite: form.send_invite
-        })
+          send_invite: form.send_invite,
+        }),
       });
 
       const result = await response.json();
@@ -266,7 +327,7 @@ export default function AddCandidate() {
       setTemporaryPassword(result.temporary_password || "");
       setMessage({
         type: "success",
-        text: result.message || "Candidate created successfully."
+        text: result.message || "Candidate created successfully.",
       });
 
       setForm((previous) => ({
@@ -277,13 +338,12 @@ export default function AddCandidate() {
         university: "",
         program: "",
         password: generateCandidatePassword(),
-        send_invite: false
+        send_invite: false,
       }));
 
       setTimeout(() => {
-        router.push('/supervisor/manage-candidate');
+        router.push("/supervisor/manage-candidate");
       }, 5000);
-
     } catch (error) {
       console.error("Add candidate submit error:", error);
       setMessage({ type: "error", text: getReadableError(error) });
@@ -323,7 +383,9 @@ export default function AddCandidate() {
         <div style={styles.unauthorized}>
           <h2>Access Denied</h2>
           <p>You do not have permission to view this page.</p>
-          <button onClick={() => router.push("/supervisor")} style={styles.button}>Go to Dashboard</button>
+          <button onClick={() => router.push("/supervisor")} style={styles.button}>
+            Go to Dashboard
+          </button>
         </div>
       </AppLayout>
     );
@@ -334,7 +396,7 @@ export default function AddCandidate() {
       <div style={styles.container}>
         <div style={styles.header}>
           <button
-            onClick={() => router.push('/supervisor/manage-candidate')}
+            onClick={() => router.push("/supervisor/manage-candidate")}
             style={styles.backButton}
           >
             ← Back to Candidates
@@ -345,24 +407,41 @@ export default function AddCandidate() {
           </div>
           <div style={styles.headerRight}>
             <span style={styles.supervisorBadge}>
-              👑 {currentSupervisor?.name || 'Supervisor'}
+              👑 {currentSupervisor?.name || "Supervisor"}
             </span>
           </div>
         </div>
 
         {message.text && (
-          <div style={{
-            ...styles.message,
-            background: message.type === "success" ? "#e8f5e9" : "#ffebee",
-            color: message.type === "success" ? "#2e7d32" : "#c62828",
-            border: "1px solid " + (message.type === "success" ? "#a5d6a7" : "#ffcdd2")
-          }}>
-            {message.type === "success" && <span style={{ marginRight: '8px' }}>✅</span>}
-            {message.type === "error" && <span style={{ marginRight: '8px' }}>⚠️</span>}
+          <div
+            style={{
+              ...styles.message,
+              background: message.type === "success" ? "#e8f5e9" : "#ffebee",
+              color: message.type === "success" ? "#2e7d32" : "#c62828",
+              border: "1px solid " + (message.type === "success" ? "#a5d6a7" : "#ffcdd2"),
+            }}
+          >
+            {message.type === "success" && <span style={{ marginRight: "8px" }}>✅</span>}
+            {message.type === "error" && <span style={{ marginRight: "8px" }}>⚠️</span>}
             {message.text}
             {message.type === "success" && (
-              <p style={styles.redirectingText}>Redirecting to candidate list in 5 seconds...</p>
+              <p style={styles.redirectingText}>
+                Redirecting to candidate list in 5 seconds...
+              </p>
             )}
+          </div>
+        )}
+
+        {optionsError && (
+          <div
+            style={{
+              ...styles.message,
+              background: "#ffebee",
+              color: "#c62828",
+              border: "1px solid #ffcdd2",
+            }}
+          >
+            ⚠️ {optionsError}
           </div>
         )}
 
@@ -400,30 +479,39 @@ export default function AddCandidate() {
               <select
                 value={form.university}
                 onChange={(event) => updateField("university", event.target.value)}
-                style={styles.input}
+                style={styles.select}
                 required
+                disabled={optionsLoading}
               >
-                <option value="">Select University</option>
-                <option value="KNUST">KNUST</option>
-                <option value="University of Mines and Technology">University of Mines and Technology</option>
-                <option value="Kumasi Technical University">Kumasi Technical University</option>
-                <option value="Accra Technical University">Accra Technical University</option>
-                <option value="Koforidua Technical University">Koforidua Technical University</option>
-                <option value="Regional Maritime University">Regional Maritime University</option>
-                <option value="Other">Other</option>
+                <option value="">
+                  {optionsLoading ? "Loading universities…" : "Select University"}
+                </option>
+                {universities.map((u) => (
+                  <option key={u.id} value={u.name}>
+                    {u.name}
+                  </option>
+                ))}
               </select>
             </div>
 
             <div style={styles.fieldGroup}>
               <label style={styles.label}>Program of Study *</label>
-              <input
-                type="text"
+              <select
                 value={form.program}
                 onChange={(event) => updateField("program", event.target.value)}
-                style={styles.input}
-                placeholder="e.g., BSc Mechanical Engineering"
+                style={styles.select}
                 required
-              />
+                disabled={optionsLoading}
+              >
+                <option value="">
+                  {optionsLoading ? "Loading programmes…" : "Select Programme"}
+                </option>
+                {programmes.map((p) => (
+                  <option key={p.id} value={p.name}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <div style={styles.fieldGroup}>
@@ -459,9 +547,18 @@ export default function AddCandidate() {
                     style={styles.input}
                     required
                   />
-                  <button type="button" onClick={() => updateField("password", generateCandidatePassword())} style={styles.generateButton}>Generate</button>
+                  <button
+                    type="button"
+                    onClick={() => updateField("password", generateCandidatePassword())}
+                    style={styles.generateButton}
+                  >
+                    Generate
+                  </button>
                 </div>
-                <p style={styles.hint}>Share this temporary password securely with the candidate. The candidate can change the password later.</p>
+                <p style={styles.hint}>
+                  Share this temporary password securely with the candidate. The candidate can
+                  change the password later.
+                </p>
               </div>
             )}
 
@@ -471,20 +568,25 @@ export default function AddCandidate() {
                 <li>A temporary password will be generated automatically</li>
                 <li>The candidate will be assigned to you as their supervisor</li>
                 <li>Share the credentials with the candidate securely</li>
-                <li>The candidate can login at <code style={styles.code}>/login</code> (Candidate mode)</li>
+                <li>
+                  The candidate can login at <code style={styles.code}>/login</code> (Candidate
+                  mode)
+                </li>
                 <li>You'll be able to view their assessment reports once completed</li>
               </ul>
             </div>
 
             <div style={styles.actionRow}>
-              <button type="button" onClick={resetForm} style={styles.secondaryButton}>Clear</button>
+              <button type="button" onClick={resetForm} style={styles.secondaryButton}>
+                Clear
+              </button>
               <button
                 type="submit"
                 disabled={loading || !canSubmit}
                 style={{
                   ...styles.submitButton,
                   opacity: loading || !canSubmit ? 0.6 : 1,
-                  cursor: loading || !canSubmit ? "not-allowed" : "pointer"
+                  cursor: loading || !canSubmit ? "not-allowed" : "pointer",
                 }}
               >
                 {loading ? "Creating..." : "Add Candidate"}
@@ -507,22 +609,44 @@ export default function AddCandidate() {
             {createdCandidate && (
               <div style={styles.successPanel}>
                 <h3 style={styles.successTitle}>✅ Candidate Created</h3>
-                <p style={styles.detailText}><strong>Name:</strong> {createdCandidate.full_name}</p>
-                <p style={styles.detailText}><strong>Email:</strong> {createdCandidate.email}</p>
-                <p style={styles.detailText}><strong>University:</strong> {createdCandidate.university || 'Not specified'}</p>
-                <p style={styles.detailText}><strong>Program:</strong> {createdCandidate.program || 'Not specified'}</p>
+                <p style={styles.detailText}>
+                  <strong>Name:</strong> {createdCandidate.full_name}
+                </p>
+                <p style={styles.detailText}>
+                  <strong>Email:</strong> {createdCandidate.email}
+                </p>
+                <p style={styles.detailText}>
+                  <strong>University:</strong> {createdCandidate.university || "Not specified"}
+                </p>
+                <p style={styles.detailText}>
+                  <strong>Program:</strong> {createdCandidate.program || "Not specified"}
+                </p>
                 {temporaryPassword && (
                   <div style={styles.passwordPanel}>
-                    <p style={styles.detailText}><strong>Temporary Password:</strong></p>
+                    <p style={styles.detailText}>
+                      <strong>Temporary Password:</strong>
+                    </p>
                     <code style={styles.passwordCode}>{temporaryPassword}</code>
-                    <button type="button" onClick={copyTemporaryPassword} style={styles.copyButton}>Copy Password</button>
+                    <button
+                      type="button"
+                      onClick={copyTemporaryPassword}
+                      style={styles.copyButton}
+                    >
+                      Copy Password
+                    </button>
                   </div>
                 )}
                 <div style={styles.linkRow}>
-                  <button onClick={() => router.push('/supervisor/manage-candidate')} style={styles.primaryLink}>
+                  <button
+                    onClick={() => router.push("/supervisor/manage-candidate")}
+                    style={styles.primaryLink}
+                  >
                     Manage Candidates
                   </button>
-                  <button onClick={() => router.push('/supervisor/assign-assessment')} style={styles.secondaryLink}>
+                  <button
+                    onClick={() => router.push("/supervisor/assign-assessment")}
+                    style={styles.secondaryLink}
+                  >
                     Assign Assessments
                   </button>
                 </div>
@@ -543,48 +667,279 @@ export default function AddCandidate() {
 }
 
 const styles = {
-  checkingContainer: { minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "linear-gradient(135deg, #0a1929 0%, #1a2a3a 100%)", color: "white", padding: "20px", textAlign: "center" },
+  checkingContainer: {
+    minHeight: "100vh",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    background: "linear-gradient(135deg, #0a1929 0%, #1a2a3a 100%)",
+    color: "white",
+    padding: "20px",
+    textAlign: "center",
+  },
   checkingText: { margin: 0, color: "rgba(255,255,255,0.9)", fontSize: "14px" },
-  spinner: { width: "40px", height: "40px", border: "4px solid rgba(255,255,255,0.3)", borderTop: "4px solid white", borderRadius: "50%", animation: "spin 1s linear infinite", marginBottom: "20px" },
+  spinner: {
+    width: "40px",
+    height: "40px",
+    border: "4px solid rgba(255,255,255,0.3)",
+    borderTop: "4px solid white",
+    borderRadius: "50%",
+    animation: "spin 1s linear infinite",
+    marginBottom: "20px",
+  },
   container: { width: "90vw", maxWidth: "1200px", margin: "0 auto", padding: "30px 20px" },
-  header: { display: "flex", alignItems: "center", gap: "20px", marginBottom: "24px", background: "white", padding: "22px 30px", borderRadius: "16px", boxShadow: "0 4px 12px rgba(0,0,0,0.08)", flexWrap: "wrap" },
-  backButton: { color: "#0a1929", textDecoration: "none", fontSize: "14px", fontWeight: 700, padding: "8px 16px", borderRadius: "8px", border: "1px solid #0a1929", background: "transparent", cursor: "pointer", transition: "all 0.2s ease" },
+  header: {
+    display: "flex",
+    alignItems: "center",
+    gap: "20px",
+    marginBottom: "24px",
+    background: "white",
+    padding: "22px 30px",
+    borderRadius: "16px",
+    boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
+    flexWrap: "wrap",
+  },
+  backButton: {
+    color: "#0a1929",
+    textDecoration: "none",
+    fontSize: "14px",
+    fontWeight: 700,
+    padding: "8px 16px",
+    borderRadius: "8px",
+    border: "1px solid #0a1929",
+    background: "transparent",
+    cursor: "pointer",
+    transition: "all 0.2s ease",
+  },
   title: { margin: 0, color: "#0a1929", fontSize: "24px", fontWeight: 800 },
   subtitle: { margin: "5px 0 0", color: "#667085", fontSize: "14px" },
-  headerRight: { display: 'flex', alignItems: 'center', marginLeft: 'auto' },
-  supervisorBadge: { padding: '8px 16px', background: '#E3F2FD', color: '#1565C0', borderRadius: '20px', fontSize: '14px', fontWeight: 600 },
-  redirectingText: { marginTop: '8px', fontSize: '13px', fontWeight: 500, opacity: 0.8 },
-  message: { padding: "13px 18px", borderRadius: "10px", marginBottom: "20px", fontSize: "14px", lineHeight: 1.5 },
-  layoutGrid: { display: "grid", gridTemplateColumns: "minmax(0, 1.3fr) minmax(300px, 0.7fr)", gap: "22px", alignItems: "start" },
-  formCard: { background: "white", borderRadius: "16px", padding: "24px", boxShadow: "0 4px 12px rgba(0,0,0,0.08)", border: "1px solid #eef2f7" },
-  sideCard: { background: "white", borderRadius: "16px", padding: "24px", boxShadow: "0 4px 12px rgba(0,0,0,0.08)", border: "1px solid #eef2f7" },
+  headerRight: { display: "flex", alignItems: "center", marginLeft: "auto" },
+  supervisorBadge: {
+    padding: "8px 16px",
+    background: "#E3F2FD",
+    color: "#1565C0",
+    borderRadius: "20px",
+    fontSize: "14px",
+    fontWeight: 600,
+  },
+  redirectingText: { marginTop: "8px", fontSize: "13px", fontWeight: 500, opacity: 0.8 },
+  message: {
+    padding: "13px 18px",
+    borderRadius: "10px",
+    marginBottom: "20px",
+    fontSize: "14px",
+    lineHeight: 1.5,
+  },
+  layoutGrid: {
+    display: "grid",
+    gridTemplateColumns: "minmax(0, 1.3fr) minmax(300px, 0.7fr)",
+    gap: "22px",
+    alignItems: "start",
+  },
+  formCard: {
+    background: "white",
+    borderRadius: "16px",
+    padding: "24px",
+    boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
+    border: "1px solid #eef2f7",
+  },
+  sideCard: {
+    background: "white",
+    borderRadius: "16px",
+    padding: "24px",
+    boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
+    border: "1px solid #eef2f7",
+  },
   sectionTitle: { margin: "0 0 20px", color: "#0a1929", fontSize: "18px", fontWeight: 800 },
   fieldGroup: { marginBottom: "18px" },
-  label: { display: "block", marginBottom: "8px", fontSize: "14px", fontWeight: 800, color: "#2d3748" },
-  input: { width: "100%", padding: "11px 12px", border: "2px solid #e2e8f0", borderRadius: "8px", fontSize: "14px", outline: "none", boxSizing: "border-box", background: "white" },
+  label: {
+    display: "block",
+    marginBottom: "8px",
+    fontSize: "14px",
+    fontWeight: 800,
+    color: "#2d3748",
+  },
+  input: {
+    width: "100%",
+    padding: "11px 12px",
+    border: "2px solid #e2e8f0",
+    borderRadius: "8px",
+    fontSize: "14px",
+    outline: "none",
+    boxSizing: "border-box",
+    background: "white",
+  },
+  select: {
+    width: "100%",
+    padding: "11px 12px",
+    border: "2px solid #e2e8f0",
+    borderRadius: "8px",
+    fontSize: "14px",
+    outline: "none",
+    boxSizing: "border-box",
+    background: "white",
+    cursor: "pointer",
+  },
   passwordRow: { display: "flex", gap: "10px" },
-  generateButton: { padding: "10px 16px", background: "#1565c0", color: "white", border: "none", borderRadius: "8px", fontSize: "13px", fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap" },
+  generateButton: {
+    padding: "10px 16px",
+    background: "#1565c0",
+    color: "white",
+    border: "none",
+    borderRadius: "8px",
+    fontSize: "13px",
+    fontWeight: 800,
+    cursor: "pointer",
+    whiteSpace: "nowrap",
+  },
   hint: { margin: "7px 0 0", color: "#667085", fontSize: "12px", lineHeight: 1.5 },
-  optionBox: { background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "10px", padding: "12px", marginBottom: "18px" },
-  checkboxLabel: { display: "flex", gap: "10px", alignItems: "flex-start", color: "#334155", fontSize: "13px", lineHeight: 1.5, cursor: "pointer" },
-  infoBox: { background: '#F8FAFC', padding: '16px', borderRadius: '8px', margin: '10px 0 20px 0' },
-  infoTitle: { margin: '0 0 10px 0', fontSize: '14px', fontWeight: 600, color: '#0A1929' },
-  infoList: { margin: 0, paddingLeft: '20px', color: '#4A5568', fontSize: '13px', lineHeight: '1.8' },
-  code: { background: '#e2e8f0', padding: '2px 6px', borderRadius: '4px', fontSize: '12px' },
-  actionRow: { display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "24px", flexWrap: "wrap" },
-  submitButton: { padding: "12px 26px", background: "#0a1929", color: "white", border: "none", borderRadius: "8px", fontSize: "14px", fontWeight: 800, transition: "all 0.2s ease" },
-  secondaryButton: { padding: "12px 22px", background: "#f1f5f9", color: "#0a1929", border: "1px solid #cbd5e1", borderRadius: "8px", fontSize: "14px", fontWeight: 800, cursor: "pointer", transition: "all 0.2s ease" },
-  infoBoxSide: { background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "10px", padding: "14px", color: "#334155", fontSize: "13px", lineHeight: 1.6 },
+  optionBox: {
+    background: "#f8fafc",
+    border: "1px solid #e2e8f0",
+    borderRadius: "10px",
+    padding: "12px",
+    marginBottom: "18px",
+  },
+  checkboxLabel: {
+    display: "flex",
+    gap: "10px",
+    alignItems: "flex-start",
+    color: "#334155",
+    fontSize: "13px",
+    lineHeight: 1.5,
+    cursor: "pointer",
+  },
+  infoBox: {
+    background: "#F8FAFC",
+    padding: "16px",
+    borderRadius: "8px",
+    margin: "10px 0 20px 0",
+  },
+  infoTitle: { margin: "0 0 10px 0", fontSize: "14px", fontWeight: 600, color: "#0A1929" },
+  infoList: {
+    margin: 0,
+    paddingLeft: "20px",
+    color: "#4A5568",
+    fontSize: "13px",
+    lineHeight: "1.8",
+  },
+  code: {
+    background: "#e2e8f0",
+    padding: "2px 6px",
+    borderRadius: "4px",
+    fontSize: "12px",
+  },
+  actionRow: {
+    display: "flex",
+    justifyContent: "flex-end",
+    gap: "12px",
+    marginTop: "24px",
+    flexWrap: "wrap",
+  },
+  submitButton: {
+    padding: "12px 26px",
+    background: "#0a1929",
+    color: "white",
+    border: "none",
+    borderRadius: "8px",
+    fontSize: "14px",
+    fontWeight: 800,
+    transition: "all 0.2s ease",
+  },
+  secondaryButton: {
+    padding: "12px 22px",
+    background: "#f1f5f9",
+    color: "#0a1929",
+    border: "1px solid #cbd5e1",
+    borderRadius: "8px",
+    fontSize: "14px",
+    fontWeight: 800,
+    cursor: "pointer",
+    transition: "all 0.2s ease",
+  },
+  infoBoxSide: {
+    background: "#f8fafc",
+    border: "1px solid #e2e8f0",
+    borderRadius: "10px",
+    padding: "14px",
+    color: "#334155",
+    fontSize: "13px",
+    lineHeight: 1.6,
+  },
   list: { margin: "10px 0 0", paddingLeft: "20px" },
-  successPanel: { marginTop: "20px", background: "#e8f5e9", border: "1px solid #a5d6a7", borderRadius: "12px", padding: "16px", color: "#2e7d32" },
+  successPanel: {
+    marginTop: "20px",
+    background: "#e8f5e9",
+    border: "1px solid #a5d6a7",
+    borderRadius: "12px",
+    padding: "16px",
+    color: "#2e7d32",
+  },
   successTitle: { margin: "0 0 12px", color: "#2e7d32", fontSize: "16px", fontWeight: 800 },
   detailText: { margin: "6px 0", fontSize: "13px", lineHeight: 1.5 },
   passwordPanel: { marginTop: "12px", padding: "12px", background: "white", borderRadius: "10px" },
-  passwordCode: { display: "block", padding: "10px", background: "#0a1929", color: "white", borderRadius: "8px", marginBottom: "10px", fontSize: "13px", wordBreak: "break-all" },
-  copyButton: { padding: "8px 12px", background: "#1565c0", color: "white", border: "none", borderRadius: "8px", fontSize: "12px", fontWeight: 800, cursor: "pointer" },
+  passwordCode: {
+    display: "block",
+    padding: "10px",
+    background: "#0a1929",
+    color: "white",
+    borderRadius: "8px",
+    marginBottom: "10px",
+    fontSize: "13px",
+    wordBreak: "break-all",
+  },
+  copyButton: {
+    padding: "8px 12px",
+    background: "#1565c0",
+    color: "white",
+    border: "none",
+    borderRadius: "8px",
+    fontSize: "12px",
+    fontWeight: 800,
+    cursor: "pointer",
+  },
   linkRow: { display: "flex", gap: "10px", flexWrap: "wrap", marginTop: "14px" },
-  primaryLink: { padding: "9px 12px", background: "#0a1929", color: "white", borderRadius: "8px", border: "none", textDecoration: "none", fontSize: "12px", fontWeight: 800, cursor: "pointer" },
-  secondaryLink: { padding: "9px 12px", background: "white", color: "#0a1929", border: "1px solid #cbd5e1", borderRadius: "8px", textDecoration: "none", fontSize: "12px", fontWeight: 800, cursor: "pointer" },
-  unauthorized: { textAlign: "center", padding: "60px", color: "#667085", background: "white", borderRadius: "16px", maxWidth: "400px", margin: "100px auto" },
-  button: { padding: "10px 20px", background: "#0a1929", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "14px", fontWeight: 700, marginTop: "20px" }
+  primaryLink: {
+    padding: "9px 12px",
+    background: "#0a1929",
+    color: "white",
+    borderRadius: "8px",
+    border: "none",
+    textDecoration: "none",
+    fontSize: "12px",
+    fontWeight: 800,
+    cursor: "pointer",
+  },
+  secondaryLink: {
+    padding: "9px 12px",
+    background: "white",
+    color: "#0a1929",
+    border: "1px solid #cbd5e1",
+    borderRadius: "8px",
+    textDecoration: "none",
+    fontSize: "12px",
+    fontWeight: 800,
+    cursor: "pointer",
+  },
+  unauthorized: {
+    textAlign: "center",
+    padding: "60px",
+    color: "#667085",
+    background: "white",
+    borderRadius: "16px",
+    maxWidth: "400px",
+    margin: "100px auto",
+  },
+  button: {
+    padding: "10px 20px",
+    background: "#0a1929",
+    color: "white",
+    border: "none",
+    borderRadius: "8px",
+    cursor: "pointer",
+    fontSize: "14px",
+    fontWeight: 700,
+    marginTop: "20px",
+  },
 };
