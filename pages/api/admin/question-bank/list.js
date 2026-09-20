@@ -1,9 +1,9 @@
 // pages/api/admin/question-bank/list.js
 // Phase 3 — Question Bank Manager (read-only)
 // Returns questions + their 4 answers for a given assessment_type_id.
-// Mirrors the client/auth/error conventions of pages/api/admin/reports.js (Option A).
+// Phase 7A: admin-gated.
 
-import { createClient } from '@supabase/supabase-js';
+import { authorizeRequest } from '../../../../utils/apiAuth';
 
 const DEFAULT_LIMIT = 200;
 const MAX_LIMIT = 500;
@@ -29,21 +29,15 @@ export default async function handler(req, res) {
   }
 
   try {
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-    if (!supabaseUrl || !serviceRoleKey) {
-      return res.status(500).json({
-        success: false,
-        error: 'Server configuration error: Missing Supabase credentials'
-      });
+    // ============================================================
+    // AUTH — admin only
+    // ============================================================
+    const auth = await authorizeRequest(req, ['admin']);
+    if (auth.error) {
+      return res.status(auth.status).json({ success: false, error: auth.error });
     }
 
-    const serviceClient = createClient(supabaseUrl, serviceRoleKey, {
-      auth: {
-        persistSession: false
-      }
-    });
+    const { serviceClient } = auth;
 
     // ============================================================
     // STEP 1: Parse + validate query params
