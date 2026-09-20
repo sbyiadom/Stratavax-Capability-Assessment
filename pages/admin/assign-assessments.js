@@ -1,6 +1,7 @@
 // pages/admin/assign-assessments.js
 // Phase 3 item 6: adds scheduling-window support to Assign and Unblock actions.
 // Phase 3 item 8: fires confirmation emails after a successful write.
+// Phase 7A: all data operations go through /api/admin/assign-assessments.
 //
 // Single-assessment assignment: pick ONE assessment, apply to MANY candidates.
 // (For multi-assessment × multi-candidate, use /admin/bulk-assign.)
@@ -12,7 +13,7 @@ import React, { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import AppLayout from "../../components/AppLayout";
-import { supabase } from "../../supabase/client";
+import { fetchWithAuth } from "../../utils/fetchWithAuth";
 import {
   sendScheduleNotification,
   sendAssignmentNotification
@@ -118,6 +119,7 @@ export default function AssignAssessments() {
 
   useEffect(() => {
     fetchAssessmentStatus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedAssessment]);
 
   useEffect(() => {
@@ -132,6 +134,8 @@ export default function AssignAssessments() {
       setCheckingAuth(true);
       setMessage({ type: "", text: "" });
 
+      // Get the session via the Supabase client (auth only — not a table read).
+      const { supabase } = await import("../../supabase/client");
       const { data, error } = await supabase.auth.getSession();
       if (error) throw error;
 
@@ -143,28 +147,12 @@ export default function AssignAssessments() {
         return;
       }
 
+      // Role from user_metadata only. The endpoint enforces admin server-side.
       const metadataRole = activeSession.user.user_metadata?.role || null;
 
-      const { data: profile, error: profileError } = await supabase
-        .from("supervisor_profiles")
-        .select("id, email, full_name, role, is_active")
-        .eq("id", activeSession.user.id)
-        .maybeSingle();
-
-      if (profileError && profileError.code !== "PGRST116") throw profileError;
-
-      const resolvedRole = profile?.role || metadataRole;
-
-      if (resolvedRole !== "admin") {
+      if (metadataRole !== "admin") {
         setMessage({ type: "error", text: "Admin access is required." });
         router.push("/supervisor");
-        return;
-      }
-
-      if (profile?.is_active === false) {
-        await supabase.auth.signOut();
-        if (typeof window !== "undefined") localStorage.removeItem("userSession");
-        router.push("/login");
         return;
       }
 
@@ -185,30 +173,16 @@ export default function AssignAssessments() {
       setLoading(true);
       setMessage({ type: "", text: "" });
 
-      const [candidateResponse, assessmentResponse, supervisorResponse] = await Promise.all([
-        supabase
-          .from("candidate_profiles")
-          .select("id, full_name, email, phone, supervisor_id, supervisor:supervisor_profiles(id, full_name, email)")
-          .order("created_at", { ascending: false }),
-        supabase
-          .from("assessments")
-          .select("id, title, description, is_active, assessment_type:assessment_types(id, code, name, icon)")
-          .eq("is_active", true)
-          .order("title", { ascending: true }),
-        supabase
-          .from("supervisor_profiles")
-          .select("id, full_name, email, role, is_active")
-          .eq("is_active", true)
-          .order("full_name", { ascending: true })
-      ]);
+      const response = await fetchWithAuth('/api/admin/assign-assessments?action=load');
+      const payload = await response.json();
 
-      if (candidateResponse.error) throw candidateResponse.error;
-      if (assessmentResponse.error) throw assessmentResponse.error;
-      if (supervisorResponse.error) throw supervisorResponse.error;
+      if (!response.ok || !payload.success) {
+        throw new Error(payload.error || `Failed to load data (HTTP ${response.status}).`);
+      }
 
-      setCandidates(candidateResponse.data || []);
-      setAssessments(assessmentResponse.data || []);
-      setSupervisors(supervisorResponse.data || []);
+      setCandidates(payload.candidates || []);
+      setAssessments(payload.assessments || []);
+      setSupervisors(payload.supervisors || []);
     } catch (error) {
       console.error("Error fetching assignment data:", error);
       setMessage({ type: "error", text: "Failed to load data: " + getReadableError(error) });
@@ -224,23 +198,16 @@ export default function AssignAssessments() {
     }
 
     try {
-      const { data, error } = await supabase
-        .from("candidate_assessments")
-        .select("user_id, status, is_scheduled, scheduled_start, scheduled_end")
-        .eq("assessment_id", selectedAssessment);
+      const response = await fetchWithAuth(
+        `/api/admin/assign-assessments?action=status&assessmentId=${encodeURIComponent(selectedAssessment)}`
+      );
+      const payload = await response.json();
 
-      if (error) throw error;
+      if (!response.ok || !payload.success) {
+        throw new Error(payload.error || `Failed to load status (HTTP ${response.status}).`);
+      }
 
-      const statusMap = {};
-      safeArray(data).forEach((item) => {
-        statusMap[item.user_id] = {
-          status: item.status,
-          is_scheduled: item.is_scheduled,
-          scheduled_start: item.scheduled_start,
-          scheduled_end: item.scheduled_end
-        };
-      });
-      setCandidateAssessmentStatus(statusMap);
+      setCandidateAssessmentStatus(payload.status || {});
     } catch (error) {
       console.error("Error fetching assessment status:", error);
       setMessage({ type: "error", text: "Failed to load assessment status: " + getReadableError(error) });
@@ -294,7 +261,13 @@ export default function AssignAssessments() {
   }
 
   function buildScheduleFields() {
-    if (selectedAction !== "assign" && selectedAction !== "unblock") return {};
+    if (selectedAction !== "assign" && selectedAction !== "unblock") {
+      return {
+        is_scheduled: false,
+        scheduled_start: null,
+        scheduled_end: null,
+      };
+    }
     const hasStart = scheduleStart !== "";
     const hasEnd = scheduleEnd !== "";
     if (!hasStart && !hasEnd) {
@@ -302,8 +275,6 @@ export default function AssignAssessments() {
         is_scheduled: false,
         scheduled_start: null,
         scheduled_end: null,
-        scheduled_by: null,
-        scheduled_at: null
       };
     }
     if (!hasStart || !hasEnd) return null;
@@ -315,55 +286,7 @@ export default function AssignAssessments() {
       is_scheduled: true,
       scheduled_start: startIso,
       scheduled_end: endIso,
-      scheduled_by: currentAdminId,
-      scheduled_at: new Date().toISOString()
     };
-  }
-
-  async function assignOrUpdateCandidateAssessment(candidateId, assessmentId, status, scheduleFields) {
-    const now = new Date().toISOString();
-
-    const { data: existing, error: checkError } = await supabase
-      .from("candidate_assessments")
-      .select("id")
-      .eq("user_id", candidateId)
-      .eq("assessment_id", assessmentId)
-      .maybeSingle();
-
-    if (checkError && checkError.code !== "PGRST116") throw checkError;
-
-    if (existing?.id) {
-      const updatePayload = {
-        status,
-        updated_at: now,
-        unblocked_at: status === "unblocked" ? now : null,
-        ...scheduleFields
-      };
-
-      const { error } = await supabase
-        .from("candidate_assessments")
-        .update(updatePayload)
-        .eq("id", existing.id);
-
-      if (error) throw error;
-      return;
-    }
-
-    const insertPayload = {
-      user_id: candidateId,
-      assessment_id: assessmentId,
-      status,
-      unblocked_at: status === "unblocked" ? now : null,
-      created_at: now,
-      updated_at: now,
-      ...scheduleFields
-    };
-
-    const { error } = await supabase
-      .from("candidate_assessments")
-      .insert(insertPayload);
-
-    if (error) throw error;
   }
 
   // Best-effort confirmation emails for the successful writes.
@@ -448,26 +371,32 @@ export default function AssignAssessments() {
       setMessage({ type: "", text: "" });
       setEmailIssues([]);
 
-      let successCount = 0;
-      let errorCount = 0;
-      const successfulCandidateIds = [];
-
       let targetStatus;
       if (selectedAction === "block") targetStatus = "blocked";
       else if (isScheduled) targetStatus = "scheduled";
       else if (selectedAction === "assign" || selectedAction === "unblock") targetStatus = "unblocked";
       else targetStatus = "unblocked";
 
-      for (const candidateId of selectedCandidates) {
-        try {
-          await assignOrUpdateCandidateAssessment(candidateId, selectedAssessment, targetStatus, scheduleFields);
-          successCount += 1;
-          successfulCandidateIds.push(candidateId);
-        } catch (error) {
-          errorCount += 1;
-          console.error("Error processing candidate " + candidateId + ":", error);
-        }
+      // Single batched write.
+      const response = await fetchWithAuth('/api/admin/assign-assessments?action=assign', {
+        method: 'POST',
+        body: JSON.stringify({
+          candidateIds: selectedCandidates,
+          assessmentId: selectedAssessment,
+          targetStatus,
+          scheduleFields,
+        })
+      });
+
+      const payload = await response.json();
+
+      if (!response.ok || !payload.success) {
+        throw new Error(payload.error || `Failed to process assignments (HTTP ${response.status}).`);
       }
+
+      const successCount = payload.written || 0;
+      const errorCount = selectedCandidates.length - successCount;
+      const successfulCandidateIds = selectedCandidates;
 
       // Fire confirmation emails only for statuses that mean "candidate has access".
       let emailSummary = null;
