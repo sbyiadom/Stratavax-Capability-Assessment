@@ -1,5 +1,6 @@
 // pages/api/admin/assessments/bulk-assign.js
 // Phase 3 item 7: bulk candidate <-> assessment assignment.
+// Phase 7A: admin role enforcement added.
 //
 // Modes:
 //   byAssessment  — one or more assessments -> many candidates  (A)
@@ -32,10 +33,6 @@ function localToIso(value) {
   return d.toISOString();
 }
 
-// Validate + normalize the schedule payload.
-// Returns:
-//   { ok: true, fields: {...} }            -> fields to merge into each row
-//   { ok: false, error: '...' }            -> 400
 function buildScheduleFields(schedule) {
   const empty = {
     is_scheduled: false,
@@ -45,7 +42,6 @@ function buildScheduleFields(schedule) {
     scheduled_at: null
   };
 
-  // No schedule payload at all -> immediate availability
   if (schedule === undefined || schedule === null) {
     return { ok: true, fields: empty };
   }
@@ -54,12 +50,10 @@ function buildScheduleFields(schedule) {
   const hasStart = start !== undefined && start !== null && start !== '';
   const hasEnd = end !== undefined && end !== null && end !== '';
 
-  // Both blank -> immediate availability
   if (!hasStart && !hasEnd) {
     return { ok: true, fields: empty };
   }
 
-  // One blank, one filled -> invalid
   if (!hasStart || !hasEnd) {
     return { ok: false, error: 'Schedule requires both start and end, or neither.' };
   }
@@ -81,7 +75,7 @@ function buildScheduleFields(schedule) {
       is_scheduled: true,
       scheduled_start: startIso,
       scheduled_end: endIso,
-      scheduled_by: null, // filled in by caller (has admin id)
+      scheduled_by: null,
       scheduled_at: new Date().toISOString()
     }
   };
@@ -94,7 +88,7 @@ export default async function handler(req, res) {
 
   try {
     // ------------------------------------------------------------
-    // Auth
+    // AUTH
     // ------------------------------------------------------------
     const token = req.headers.authorization?.replace('Bearer ', '');
     if (!token) {
@@ -120,6 +114,31 @@ export default async function handler(req, res) {
     if (userError || !userData?.user) {
       console.error('[Bulk Assign] Auth error:', userError);
       return res.status(401).json({ success: false, error: 'Invalid or expired token' });
+    }
+
+    // ------------------------------------------------------------
+    // AUTHORIZATION — admin only
+    // ------------------------------------------------------------
+    const { data: profile, error: profileError } = await serviceClient
+      .from('supervisor_profiles')
+      .select('id, role, is_active')
+      .eq('id', userData.user.id)
+      .maybeSingle();
+
+    if (profileError) {
+      console.error('[Bulk Assign] profile lookup failed:', profileError.message);
+      return res.status(500).json({ success: false, error: 'Unable to verify caller role' });
+    }
+
+    const metadataRole = userData.user.user_metadata?.role || null;
+    const resolvedRole = profile?.role || metadataRole;
+
+    if (profile?.is_active === false) {
+      return res.status(403).json({ success: false, error: 'Account is inactive' });
+    }
+
+    if (resolvedRole !== 'admin') {
+      return res.status(403).json({ success: false, error: 'Admin access required' });
     }
 
     const adminId = userData.user.id;
@@ -157,7 +176,6 @@ export default async function handler(req, res) {
       return res.status(400).json({ success: false, error: 'At least one candidate is required.' });
     }
 
-    // byCandidate mode is documented as one candidate; enforce it.
     if (mode === 'byCandidate' && cleanCandidateIds.length !== 1) {
       return res.status(400).json({
         success: false,
@@ -165,8 +183,6 @@ export default async function handler(req, res) {
       });
     }
 
-    // Block + schedule is contradictory: block means "no access".
-    // If a schedule is supplied with action='block', reject it loudly.
     if (action === 'block' && schedule && (schedule.start || schedule.end)) {
       return res.status(400).json({
         success: false,
@@ -189,7 +205,6 @@ export default async function handler(req, res) {
 
     const isScheduled = scheduleFields.is_scheduled === true;
 
-    // Target status
     let targetStatus;
     if (action === 'block') targetStatus = 'blocked';
     else if (isScheduled) targetStatus = 'scheduled';
@@ -290,14 +305,11 @@ export default async function handler(req, res) {
       if (upsertError) {
         console.error('[Bulk Assign] Batch upsert failed:', upsertError);
 
-        // Map SQLSTATE per project convention
         let httpStatus = 500;
         if (upsertError.code === '23505') httpStatus = 409;
         else if (upsertError.code === '23503') httpStatus = 409;
         else if (upsertError.code === '22023') httpStatus = 400;
 
-        // Whole-batch failure: report each pair as failed so the UI can
-        // show exactly which ones didn't land.
         for (const row of batch) {
           failed.push({
             candidateId: row.user_id,
@@ -306,8 +318,6 @@ export default async function handler(req, res) {
           });
         }
 
-        // If it's a schema-level error (400/409), stop — retrying the rest
-        // will just produce the same failure.
         if (httpStatus !== 500) {
           return res.status(httpStatus).json({
             success: false,
