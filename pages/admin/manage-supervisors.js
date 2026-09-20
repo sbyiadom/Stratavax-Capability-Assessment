@@ -1,9 +1,11 @@
 // pages/admin/manage-supervisors.js
+// Phase 7A: data loaded and status toggled via /api/admin/manage-supervisors.
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import AppLayout from "../../components/AppLayout";
 import { supabase } from "../../supabase/client";
+import { fetchWithAuth } from "../../utils/fetchWithAuth";
 
 function cleanEmail(value) {
   return String(value || "").trim().toLowerCase();
@@ -69,6 +71,7 @@ export default function ManageSupervisors() {
 
   useEffect(() => {
     checkAdminAuth();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function checkAdminAuth() {
@@ -87,30 +90,12 @@ export default function ManageSupervisors() {
         return;
       }
 
-      const userId = activeSession.user.id;
+      // Role from user_metadata only. Endpoint enforces admin server-side.
       const metadataRole = activeSession.user.user_metadata?.role || null;
 
-      const { data: profile, error: profileError } = await supabase
-        .from("supervisor_profiles")
-        .select("id, email, full_name, role, is_active")
-        .eq("id", userId)
-        .maybeSingle();
-
-      if (profileError && profileError.code !== "PGRST116") throw profileError;
-
-      const resolvedRole = profile?.role || metadataRole;
-
-      if (resolvedRole !== "admin") {
+      if (metadataRole !== "admin") {
         setMessage({ type: "error", text: "Admin access is required." });
         router.push("/supervisor");
-        return;
-      }
-
-      if (profile?.is_active === false) {
-        setMessage({ type: "error", text: "This admin account is inactive." });
-        await supabase.auth.signOut();
-        if (typeof window !== "undefined") localStorage.removeItem("userSession");
-        router.push("/login");
         return;
       }
 
@@ -129,14 +114,14 @@ export default function ManageSupervisors() {
     try {
       setLoading(true);
 
-      const { data, error } = await supabase
-        .from("supervisor_profiles")
-        .select("id, email, full_name, role, is_active, created_at, updated_at")
-        .order("created_at", { ascending: false });
+      const response = await fetchWithAuth('/api/admin/manage-supervisors?action=load');
+      const payload = await response.json();
 
-      if (error) throw error;
+      if (!response.ok || !payload.success) {
+        throw new Error(payload.error || `Failed to load supervisors (HTTP ${response.status}).`);
+      }
 
-      setSupervisors(data || []);
+      setSupervisors(payload.supervisors || []);
     } catch (error) {
       console.error("Error fetching supervisors:", error);
       setMessage({ type: "error", text: getReadableError(error) });
@@ -183,15 +168,8 @@ export default function ManageSupervisors() {
     try {
       setSaving(true);
 
-      const { data: sessionData } = await supabase.auth.getSession();
-      const accessToken = sessionData?.session?.access_token || null;
-
-      const response = await fetch("/api/admin/add-supervisor", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(accessToken ? { Authorization: "Bearer " + accessToken } : {})
-        },
+      const response = await fetchWithAuth('/api/admin/add-supervisor', {
+        method: 'POST',
         body: JSON.stringify({
           email,
           password,
@@ -228,19 +206,20 @@ export default function ManageSupervisors() {
     try {
       setMessage({ type: "", text: "" });
 
-      const { error } = await supabase
-        .from("supervisor_profiles")
-        .update({
-          is_active: !supervisor.is_active,
-          updated_at: new Date().toISOString()
-        })
-        .eq("id", supervisor.id);
+      const response = await fetchWithAuth('/api/admin/manage-supervisors?action=toggle-status', {
+        method: 'POST',
+        body: JSON.stringify({ supervisorId: supervisor.id })
+      });
 
-      if (error) throw error;
+      const payload = await response.json();
+
+      if (!response.ok || !payload.success) {
+        throw new Error(payload.error || `Failed to update status (HTTP ${response.status}).`);
+      }
 
       setMessage({
         type: "success",
-        text: supervisor.is_active ? "Supervisor deactivated successfully." : "Supervisor activated successfully."
+        text: payload.is_active ? "Supervisor activated successfully." : "Supervisor deactivated successfully."
       });
 
       await fetchSupervisors();
