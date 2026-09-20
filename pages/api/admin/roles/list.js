@@ -1,9 +1,9 @@
 // pages/api/admin/roles/list.js
 // Phase 3 Item 4 — Role-based assessments (read-only)
 // Returns roles, optionally filtered by category ('university' | 'programme').
-// Mirrors the conventions of pages/api/admin/question-bank/types.js.
+// Phase 7A: admin-gated.
 
-import { createClient } from '@supabase/supabase-js';
+import { authorizeRequest } from '../../../../utils/apiAuth';
 
 const VALID_CATEGORIES = ['university', 'programme'];
 
@@ -19,19 +19,15 @@ export default async function handler(req, res) {
   }
 
   try {
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-    if (!supabaseUrl || !serviceRoleKey) {
-      return res.status(500).json({
-        success: false,
-        error: 'Server configuration error: Missing Supabase credentials'
-      });
+    // ============================================================
+    // AUTH — admin only
+    // ============================================================
+    const auth = await authorizeRequest(req, ['admin']);
+    if (auth.error) {
+      return res.status(auth.status).json({ success: false, error: auth.error });
     }
 
-    const serviceClient = createClient(supabaseUrl, serviceRoleKey, {
-      auth: { persistSession: false }
-    });
+    const { serviceClient } = auth;
 
     // ---------- query params ----------
     const rawCategory = req.query.category;
