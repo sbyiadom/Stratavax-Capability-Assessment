@@ -2,15 +2,9 @@
 // Phase 3 — Question Bank Manager
 // Accepts an XLSX file (or raw JSON for programmatic use) and bulk-imports
 // questions + 4 answers each via the import_questions_bulk RPC.
-//
-// Supported request shapes:
-//   1. multipart/form-data  with fields: assessment_type_id, file
-//   2. application/json     with body: { assessment_type_id, questions: [...] }
-//
-// Parsing is column-position-independent and tolerates SheetJS cell objects,
-// non-breaking spaces, and zero-width characters in headers.
+// Phase 7A: admin-gated.
 
-import { createClient } from '@supabase/supabase-js';
+import { authorizeRequest } from '../../../../utils/apiAuth';
 import formidable from 'formidable';
 import * as XLSX from 'xlsx';
 import fs from 'fs';
@@ -41,8 +35,7 @@ const EXPECTED_HEADERS = [
 ];
 
 // ============================================================
-// Robust header normalization — unwrap cell objects, strip
-// non-breaking spaces and zero-width chars, lowercase, trim.
+// Robust header normalization
 // ============================================================
 function normalizeHeader(v) {
   let s;
@@ -75,7 +68,6 @@ function readCellValue(v) {
 
 // ============================================================
 // parseWorkbook — returns { questions, errors, total }
-// Throws with .details on structural failures.
 // ============================================================
 function parseWorkbook(buffer) {
   const wb = XLSX.read(buffer, { type: 'buffer' });
@@ -99,7 +91,6 @@ function parseWorkbook(buffer) {
     });
   }
 
-  // Build normalized header → index map.
   const rawHeader = rows[0] || [];
   const headerMap = {};
   const foundHeaders = [];
@@ -146,7 +137,6 @@ function parseWorkbook(buffer) {
     const raw = rows[i];
     const fileRow = i + 1;
 
-    // Skip entirely blank rows
     const nonEmpty = raw.some((c) => {
       if (c == null) return false;
       if (typeof c === 'object') return c.v != null || c.w != null;
@@ -246,19 +236,15 @@ export default async function handler(req, res) {
   }
 
   try {
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-    if (!supabaseUrl || !serviceRoleKey) {
-      return res.status(500).json({
-        success: false,
-        error: 'Server configuration error: Missing Supabase credentials'
-      });
+    // ============================================================
+    // AUTH — admin only. Runs before body parsing.
+    // ============================================================
+    const auth = await authorizeRequest(req, ['admin']);
+    if (auth.error) {
+      return res.status(auth.status).json({ success: false, error: auth.error });
     }
 
-    const serviceClient = createClient(supabaseUrl, serviceRoleKey, {
-      auth: { persistSession: false }
-    });
+    const { serviceClient } = auth;
 
     const contentType = String(req.headers['content-type'] || '');
     let assessmentTypeId;
