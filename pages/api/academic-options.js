@@ -5,12 +5,20 @@
 // and 'programme').
 //
 // Used by:
-//   • pages/register.js                (candidates, pre-signup — no token)
+//   • pages/register.js                 (candidates, pre-signup — no token)
 //   • pages/supervisor/add-candidate.js (supervisors)
 //   • pages/supervisor/batch-manage.js  (supervisors)
 //
-// Read-only. Service role, so it works regardless of RLS on `roles`.
-// Cached for 5 minutes to avoid hammering the DB on every form mount.
+// Read-only. Uses the service role so it works regardless of RLS on `roles`.
+// Cached for 5 minutes at the CDN edge to avoid hammering the DB on every
+// form mount.
+//
+// Response:
+//   {
+//     success: true,
+//     universities: [{ id, name }, ...42],
+//     programmes:   [{ id, name }, ...78]
+//   }
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -60,8 +68,13 @@ export default async function handler(req, res) {
       else if (row.category === 'programme') programmes.push(entry);
     });
 
-    // Cache for 5 minutes; allow shared CDN caching.
-    res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=300, stale-while-revalidate=600');
+    // Cache for 5 minutes at the CDN edge; serve stale for up to 10 minutes
+    // while revalidating. The lists change rarely (admin edits only), so this
+    // is safe and dramatically reduces DB pressure from form mounts.
+    res.setHeader(
+      'Cache-Control',
+      'public, max-age=0, s-maxage=300, stale-while-revalidate=600'
+    );
 
     return res.status(200).json({
       success: true,
