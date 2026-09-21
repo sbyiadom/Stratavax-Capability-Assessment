@@ -1,48 +1,36 @@
-// pages/api/admin/reset-password.js - FIXED WITH PAGINATED SEARCH
-import { createClient } from '@supabase/supabase-js';
+// pages/api/admin/reset-password.js
+// Fails closed. Admin can reset anyone. Supervisor can reset only candidates in their scope.
+import { authorizeRequest } from '../../../utils/apiAuth';
+import { chunk } from '../../../utils/chunk'; // see note below if this helper doesn't exist yet
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ success: false, error: 'Method not allowed' });
   }
 
+  // Fail-closed auth. No token / bad token / wrong role => 401/403 here.
+  const auth = await authorizeRequest(req, ['admin', 'supervisor']);
+  if (auth.error) {
+    return res.status(auth.status).json({ success: false, error: auth.error });
+  }
+
+  const { caller, serviceClient } = auth;
+  const isAdmin = !!caller.isAdmin;
+
   try {
-    const { email, newPassword } = req.body;
+    const { email, newPassword } = req.body || {};
 
     if (!email || !newPassword) {
       return res.status(400).json({ success: false, error: 'Missing email or newPassword' });
     }
 
-    if (newPassword.length < 6) {
+    if (typeof newPassword !== 'string' || newPassword.length < 6) {
       return res.status(400).json({ success: false, error: 'Password must be at least 6 characters' });
     }
 
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const normalizedEmail = String(email).toLowerCase().trim();
 
-    if (!supabaseUrl || !supabaseKey) {
-      return res.status(500).json({ success: false, error: 'Server configuration error' });
-    }
-
-    const serviceClient = createClient(supabaseUrl, supabaseKey, {
-      auth: { persistSession: false, autoRefreshToken: false }
-    });
-
-    // Verify the requesting user is an admin or supervisor
-    const token = req.headers.authorization?.replace('Bearer ', '');
-    if (token) {
-      const { data: userData } = await serviceClient.auth.getUser(token);
-      if (userData?.user) {
-        const role = userData.user.user_metadata?.role;
-        if (role !== 'admin' && role !== 'supervisor') {
-          return res.status(403).json({ success: false, error: 'Unauthorized: Admin access required' });
-        }
-      }
-    }
-
-    // ============================================================
-    // FIXED: Search ALL users (paginated) instead of only first 50
-    // ============================================================
+    // ---- Paginated user search (kept from the previous fix) ----
     let allUsers = [];
     let page = 1;
     const perPage = 1000;
@@ -50,12 +38,12 @@ export default async function handler(req, res) {
 
     while (hasMore) {
       const { data: usersPage, error: listError } = await serviceClient.auth.admin.listUsers({
-        page: page,
-        perPage: perPage
+        page,
+        perPage
       });
 
       if (listError) {
-        console.error('[Admin] List users error:', listError);
+        console.error('[reset-password] List users error:', listError);
         return res.status(500).json({ success: false, error: 'Failed to search users' });
       }
 
@@ -63,54 +51,66 @@ export default async function handler(req, res) {
         hasMore = false;
       } else {
         allUsers = allUsers.concat(usersPage.users);
-        if (usersPage.users.length < perPage) {
-          hasMore = false;
-        } else {
-          page++;
-        }
+        hasMore = usersPage.users.length === perPage;
+        if (hasMore) page++;
       }
     }
 
-    console.log(`[Admin] Searched ${allUsers.length} total users`);
-
-    // Find user by email (case-insensitive)
-    const normalizedEmail = email.toLowerCase().trim();
-    const user = allUsers.find(u => 
-      u.email?.toLowerCase().trim() === normalizedEmail
+    const targetUser = allUsers.find(
+      u => u.email?.toLowerCase().trim() === normalizedEmail
     );
 
-    if (!user) {
-      console.error('[Admin] User not found:', email);
-      return res.status(404).json({ 
-        success: false, 
-        error: `User not found: ${email}. Please check the email address.` 
+    if (!targetUser) {
+      return res.status(404).json({
+        success: false,
+        error: `User not found: ${email}. Please check the email address.`
       });
     }
 
-    console.log(`[Admin] Found user: ${user.id} - ${user.email}`);
+    // ---- Scope enforcement for supervisors ----
+    // Supervisors may only reset passwords for candidates in their scope.
+    // Admins may reset anyone.
+    if (!isAdmin) {
+      const { data: scopedRows, error: scopeError } = await serviceClient.rpc(
+        'get_scoped_candidate_ids',
+        { p_caller: caller.userId, p_is_admin: false }
+      );
 
-    // Update password using Admin API
-    const { data, error: updateError } = await serviceClient.auth.admin.updateUserById(
-      user.id,
+      if (scopeError) {
+        console.error('[reset-password] Scope RPC error:', scopeError);
+        return res.status(500).json({ success: false, error: 'Failed to resolve scope' });
+      }
+
+      const scopedIds = Array.isArray(scopedRows)
+        ? scopedRows.map(r => (typeof r === 'string' ? r : r?.get_scoped_candidate_ids)).filter(Boolean)
+        : [];
+
+      if (!scopedIds.includes(targetUser.id)) {
+        // Don't leak whether the user exists — 403 for out-of-scope.
+        return res.status(403).json({ success: false, error: 'Forbidden: user out of scope' });
+      }
+    }
+
+    // ---- Perform the password reset ----
+    const { error: updateError } = await serviceClient.auth.admin.updateUserById(
+      targetUser.id,
       { password: newPassword }
     );
 
     if (updateError) {
-      console.error('[Admin] Update password error:', updateError);
+      console.error('[reset-password] Update password error:', updateError);
       return res.status(500).json({ success: false, error: updateError.message });
     }
-
-    console.log('[Admin] Password reset successful for:', email);
 
     return res.status(200).json({
       success: true,
       message: 'Password reset successfully',
-      userId: user.id,
-      email: user.email
+      userId: targetUser.id,
+      email: targetUser.email
     });
 
   } catch (error) {
-    console.error('[Admin] Reset password error:', error);
+    console.error('[reset-password] Unexpected error:', error);
     return res.status(500).json({ success: false, error: error.message });
   }
 }
