@@ -1,17 +1,16 @@
 // pages/supervisor/batch-manage.js
 // Phase 7B:
-//   • Auth now calls /api/supervisor/me (server-side, RLS-safe) instead of
-//     trusting user_metadata.role on the client.
-//   • Removed the broken "Import CSV" button and BulkImportModal component.
-//     The modal POSTed to /api/admin/batch-import, which does not exist —
-//     clicking Import would silently 404. The feature will be rebuilt as a
-//     proper endpoint in a later session.
-//   • Everything else (list, view, delete, bulk delete, stats) is preserved.
+//   • Auth via /api/supervisor/me (server-side, RLS-safe)
+//   • Reads via /api/supervisor/batch-manage/list
+//   • Deletes via /api/supervisor/batch-delete-candidates
+//   • NEW: bulk assign an assessment to many selected candidates at once,
+//     via /api/supervisor/bulk-assign-assessments. Assessment list is
+//     fetched from /api/supervisor/assessments-list.
 //
-// Reads:  GET  /api/supervisor/batch-manage/list
-// Deletes: POST /api/supervisor/batch-delete-candidates
+// Removed in Phase 7B: the broken Import CSV button + BulkImportModal
+// (they POSTed to a non-existent /api/admin/batch-import).
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import AppLayout from "../../components/AppLayout";
@@ -23,6 +22,327 @@ function getReadableError(error) {
 }
 
 // ============================================================
+// BULK ASSIGN MODAL
+// ============================================================
+function BulkAssignModal({ onClose, onAssigned, selectedCandidateIds }) {
+  const [assessments, setAssessments] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [selectedAssessmentId, setSelectedAssessmentId] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      try {
+        setLoading(true);
+        setLoadError("");
+
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData?.session?.access_token;
+
+        if (!token) {
+          throw new Error("Your session has expired. Please sign in again.");
+        }
+
+        const response = await fetch("/api/supervisor/assessments-list", {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        });
+
+        let payload;
+        try {
+          payload = await response.json();
+        } catch {
+          throw new Error(`The server returned an invalid response (HTTP ${response.status}).`);
+        }
+
+        if (!response.ok || !payload.success) {
+          throw new Error(payload.error || `Failed to load assessments (HTTP ${response.status}).`);
+        }
+
+        if (!cancelled) {
+          setAssessments(Array.isArray(payload.assessments) ? payload.assessments : []);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          console.error("Failed to load assessments:", err);
+          setLoadError(err.message || "Failed to load assessments.");
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function handleAssign() {
+    if (!selectedAssessmentId) {
+      setError("Please select an assessment.");
+      return;
+    }
+
+    setSubmitting(true);
+    setError("");
+    setResult(null);
+
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
+
+      if (!token) {
+        throw new Error("Your session has expired. Please sign in again.");
+      }
+
+      const response = await fetch("/api/supervisor/bulk-assign-assessments", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          candidateIds: selectedCandidateIds,
+          assessmentId: selectedAssessmentId,
+        }),
+      });
+
+      let payload;
+      try {
+        payload = await response.json();
+      } catch {
+        throw new Error(`The server returned an invalid response (HTTP ${response.status}).`);
+      }
+
+      if (!response.ok || !payload.success) {
+        throw new Error(payload.error || `Failed to assign assessment (HTTP ${response.status}).`);
+      }
+
+      setResult(payload);
+      if (onAssigned) onAssigned(payload);
+    } catch (err) {
+      console.error("Bulk assign error:", err);
+      setError(err.message || "Failed to assign assessment.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  const selectedCount = selectedCandidateIds.length;
+
+  return (
+    <div style={modalStyles.overlay} onClick={submitting ? undefined : onClose}>
+      <div style={modalStyles.modal} onClick={(e) => e.stopPropagation()}>
+        <div style={modalStyles.header}>
+          <h2 style={modalStyles.title}>Assign Assessment</h2>
+          <button
+            onClick={onClose}
+            disabled={submitting}
+            style={modalStyles.closeButton}
+          >
+            ×
+          </button>
+        </div>
+
+        <div style={modalStyles.body}>
+          <p style={modalStyles.lede}>
+            Assign the same assessment to <strong>{selectedCount}</strong>{" "}
+            selected candidate{selectedCount === 1 ? "" : "s"}. New assignments
+            are created as <strong>Blocked</strong> and can be unblocked per
+            candidate later.
+          </p>
+
+          {loadError && <div style={modalStyles.errorBox}>⚠️ {loadError}</div>}
+          {error && <div style={modalStyles.errorBox}>⚠️ {error}</div>}
+          {result && (
+            <div style={modalStyles.successBox}>
+              ✅ <strong>{result.assessmentTitle}</strong> assigned:
+              <br />
+              Newly assigned: <strong>{result.assigned}</strong>
+              <br />
+              Skipped (already had it): <strong>{result.skipped}</strong>
+              {result.outOfScope > 0 && (
+                <>
+                  <br />
+                  Out of scope (not yours): <strong>{result.outOfScope}</strong>
+                </>
+              )}
+            </div>
+          )}
+
+          <div style={modalStyles.fieldGroup}>
+            <label style={modalStyles.label}>Assessment</label>
+            <select
+              value={selectedAssessmentId}
+              onChange={(e) => setSelectedAssessmentId(e.target.value)}
+              style={modalStyles.select}
+              disabled={loading || submitting || !!result}
+            >
+              <option value="">
+                {loading ? "Loading assessments…" : "Select an assessment"}
+              </option>
+              {assessments.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.title} ({a.type_name})
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div style={modalStyles.footer}>
+          <button
+            onClick={onClose}
+            disabled={submitting}
+            style={modalStyles.cancelButton}
+          >
+            {result ? "Close" : "Cancel"}
+          </button>
+          {!result && (
+            <button
+              onClick={handleAssign}
+              disabled={submitting || !selectedAssessmentId || loading}
+              style={
+                submitting || !selectedAssessmentId || loading
+                  ? modalStyles.submitButtonDisabled
+                  : modalStyles.submitButton
+              }
+            >
+              {submitting
+                ? "Assigning…"
+                : `Assign to ${selectedCount} candidate${selectedCount === 1 ? "" : "s"}`}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const modalStyles = {
+  overlay: {
+    position: "fixed",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    background: "rgba(0,0,0,0.5)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 1000,
+    backdropFilter: "blur(4px)",
+  },
+  modal: {
+    background: "white",
+    borderRadius: "16px",
+    maxWidth: "560px",
+    width: "100%",
+    maxHeight: "90vh",
+    overflow: "auto",
+    boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
+  },
+  header: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: "20px 24px",
+    borderBottom: "1px solid #e2e8f0",
+  },
+  title: { fontSize: "20px", fontWeight: 700, color: "#0a1929", margin: 0 },
+  closeButton: {
+    background: "none",
+    border: "none",
+    fontSize: "26px",
+    cursor: "pointer",
+    color: "#94a3b8",
+    padding: "0 8px",
+    lineHeight: 1,
+  },
+  body: { padding: "20px 24px" },
+  lede: { margin: "0 0 16px", color: "#475569", fontSize: "14px", lineHeight: 1.6 },
+  fieldGroup: { display: "flex", flexDirection: "column", gap: "6px" },
+  label: { fontSize: "13px", fontWeight: 600, color: "#2d3748" },
+  select: {
+    width: "100%",
+    padding: "10px 12px",
+    border: "2px solid #e2e8f0",
+    borderRadius: "8px",
+    fontSize: "14px",
+    background: "white",
+    cursor: "pointer",
+    outline: "none",
+    boxSizing: "border-box",
+  },
+  errorBox: {
+    background: "#fee2e2",
+    border: "1px solid #fecaca",
+    color: "#991b1b",
+    borderRadius: "8px",
+    padding: "12px 14px",
+    marginBottom: "14px",
+    fontSize: "14px",
+    lineHeight: 1.5,
+  },
+  successBox: {
+    background: "#ecfdf3",
+    border: "1px solid #bbf7d0",
+    color: "#027a48",
+    borderRadius: "8px",
+    padding: "12px 14px",
+    marginBottom: "14px",
+    fontSize: "14px",
+    lineHeight: 1.6,
+  },
+  footer: {
+    display: "flex",
+    justifyContent: "flex-end",
+    gap: "12px",
+    padding: "16px 24px",
+    borderTop: "1px solid #e2e8f0",
+  },
+  cancelButton: {
+    padding: "8px 20px",
+    background: "transparent",
+    border: "1px solid #e2e8f0",
+    borderRadius: "8px",
+    cursor: "pointer",
+    fontSize: "14px",
+    color: "#475569",
+    fontWeight: 600,
+  },
+  submitButton: {
+    padding: "10px 20px",
+    background: "#0a1929",
+    color: "white",
+    border: "none",
+    borderRadius: "8px",
+    cursor: "pointer",
+    fontSize: "14px",
+    fontWeight: 600,
+  },
+  submitButtonDisabled: {
+    padding: "10px 20px",
+    background: "#94a3b8",
+    color: "white",
+    border: "none",
+    borderRadius: "8px",
+    cursor: "not-allowed",
+    fontSize: "14px",
+    fontWeight: 600,
+  },
+};
+
+// ============================================================
 // MAIN COMPONENT
 // ============================================================
 export default function SupervisorBatchManage() {
@@ -32,6 +352,7 @@ export default function SupervisorBatchManage() {
   const [message, setMessage] = useState({ type: "", text: "" });
   const [candidates, setCandidates] = useState([]);
   const [currentSupervisor, setCurrentSupervisor] = useState(null);
+  const [showAssignModal, setShowAssignModal] = useState(false);
 
   useEffect(() => {
     checkSupervisorAuth();
@@ -59,7 +380,6 @@ export default function SupervisorBatchManage() {
         return;
       }
 
-      // Server-side profile lookup (RLS-safe, matches supervisor/add-candidate.js)
       const meResponse = await fetch("/api/supervisor/me", {
         method: "GET",
         headers: {
@@ -135,9 +455,7 @@ export default function SupervisorBatchManage() {
         token = data?.session?.access_token;
       }
 
-      if (!token) {
-        throw new Error("Not authenticated");
-      }
+      if (!token) throw new Error("Not authenticated");
 
       const response = await fetch("/api/supervisor/batch-manage/list", {
         method: "GET",
@@ -277,6 +595,32 @@ export default function SupervisorBatchManage() {
     }
   };
 
+  const handleOpenAssignModal = () => {
+    const selectedIds = candidates.filter((c) => c.selected).map((c) => c.id);
+    if (selectedIds.length === 0) {
+      setMessage({
+        type: "error",
+        text: "Select at least one candidate before assigning an assessment.",
+      });
+      return;
+    }
+    setShowAssignModal(true);
+  };
+
+  const handleAssigned = (result) => {
+    setMessage({
+      type: "success",
+      text: `${result.assessmentTitle} assigned to ${result.assigned} candidate(s)${
+        result.skipped > 0 ? ` (${result.skipped} skipped — already had it)` : ""
+      }.`,
+    });
+  };
+
+  const selectedCount = useMemo(
+    () => candidates.filter((c) => c.selected).length,
+    [candidates]
+  );
+
   if (checkingAuth) {
     return (
       <div style={styles.checkingContainer}>
@@ -284,12 +628,8 @@ export default function SupervisorBatchManage() {
         <p style={styles.checkingText}>Checking supervisor access...</p>
         <style jsx>{`
           @keyframes spin {
-            0% {
-              transform: rotate(0deg);
-            }
-            100% {
-              transform: rotate(360deg);
-            }
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
           }
         `}</style>
       </div>
@@ -357,19 +697,29 @@ export default function SupervisorBatchManage() {
           <div style={styles.bulkActions}>
             <button
               onClick={() => {
-                const allSelected = candidates.every((c) => c.selected);
+                const allSelected =
+                  candidates.length > 0 && candidates.every((c) => c.selected);
                 setCandidates(candidates.map((c) => ({ ...c, selected: !allSelected })));
               }}
               style={styles.bulkActionButton}
             >
-              {candidates.every((c) => c.selected) ? "Deselect All" : "Select All"}
+              {candidates.length > 0 && candidates.every((c) => c.selected)
+                ? "Deselect All"
+                : "Select All"}
+            </button>
+            <button
+              onClick={handleOpenAssignModal}
+              style={styles.bulkAssignButton}
+              disabled={selectedCount === 0}
+            >
+              📋 Assign Assessment ({selectedCount})
             </button>
             <button
               onClick={handleBulkDelete}
               style={styles.bulkDeleteButton}
-              disabled={!candidates.some((c) => c.selected)}
+              disabled={selectedCount === 0}
             >
-              🗑️ Delete Selected ({candidates.filter((c) => c.selected).length})
+              🗑️ Delete Selected ({selectedCount})
             </button>
           </div>
 
@@ -404,9 +754,13 @@ export default function SupervisorBatchManage() {
                       <th style={{ ...styles.th, width: "40px" }}>
                         <input
                           type="checkbox"
-                          checked={candidates.every((c) => c.selected)}
+                          checked={
+                            candidates.length > 0 && candidates.every((c) => c.selected)
+                          }
                           onChange={() => {
-                            const allSelected = candidates.every((c) => c.selected);
+                            const allSelected =
+                              candidates.length > 0 &&
+                              candidates.every((c) => c.selected);
                             setCandidates(
                               candidates.map((c) => ({ ...c, selected: !allSelected }))
                             );
@@ -481,14 +835,18 @@ export default function SupervisorBatchManage() {
         </div>
       </div>
 
+      {showAssignModal && (
+        <BulkAssignModal
+          onClose={() => setShowAssignModal(false)}
+          onAssigned={handleAssigned}
+          selectedCandidateIds={candidates.filter((c) => c.selected).map((c) => c.id)}
+        />
+      )}
+
       <style jsx>{`
         @keyframes spin {
-          0% {
-            transform: rotate(0deg);
-          }
-          100% {
-            transform: rotate(360deg);
-          }
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
         }
       `}</style>
     </AppLayout>
@@ -597,6 +955,16 @@ const styles = {
     fontSize: "13px",
     color: "#475569",
   },
+  bulkAssignButton: {
+    padding: "6px 16px",
+    background: "#eff8ff",
+    border: "1px solid #b2ddff",
+    borderRadius: "6px",
+    cursor: "pointer",
+    fontSize: "13px",
+    color: "#175cd3",
+    fontWeight: 600,
+  },
   bulkDeleteButton: {
     padding: "6px 16px",
     background: "#fee2e2",
@@ -672,16 +1040,6 @@ const styles = {
     background: "#0a1929",
     color: "white",
     border: "none",
-    borderRadius: "8px",
-    cursor: "pointer",
-    fontSize: "14px",
-    fontWeight: "600",
-  },
-  emptyButtonSecondary: {
-    padding: "10px 24px",
-    background: "#f1f5f9",
-    color: "#0a1929",
-    border: "1px solid #e2e8f0",
     borderRadius: "8px",
     cursor: "pointer",
     fontSize: "14px",
