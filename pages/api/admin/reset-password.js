@@ -1,7 +1,6 @@
 // pages/api/admin/reset-password.js
 // Fails closed. Admin can reset anyone. Supervisor can reset only candidates in their scope.
 import { authorizeRequest } from '../../../utils/apiAuth';
-import { chunk } from '../../../utils/chunk'; // see note below if this helper doesn't exist yet
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -82,7 +81,9 @@ export default async function handler(req, res) {
       }
 
       const scopedIds = Array.isArray(scopedRows)
-        ? scopedRows.map(r => (typeof r === 'string' ? r : r?.get_scoped_candidate_ids)).filter(Boolean)
+        ? scopedRows
+            .map(r => (typeof r === 'string' ? r : r?.get_scoped_candidate_ids))
+            .filter(Boolean)
         : [];
 
       if (!scopedIds.includes(targetUser.id)) {
