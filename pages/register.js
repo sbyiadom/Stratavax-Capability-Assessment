@@ -1,11 +1,23 @@
-// pages/register.js - Phase 7B
-// University and Programme fields now use <select> dropdowns fed from
-// /api/academic-options (which reads from the roles table). This eliminates
-// the free-text entry that produced 100+ variants of the same institution
-// in candidate_profiles.university.
+// pages/register.js - Phase 7C
+// University, Programme, and Degree Level fields use <select> dropdowns fed
+// from /api/academic-options (which reads from the roles and degree_levels
+// tables). This eliminates the free-text entry that produced 100+ variants of
+// the same institution in candidate_profiles.university.
 //
-// Field names (formData.university, formData.programme) are unchanged so the
-// RPC call to create_candidate_profile and the fallback upsert are unaffected.
+// Degree Level is MANDATORY on this form. The candidate must pick one before
+// the form will submit; there is no inference, no optional path, and no
+// fallback to a default. The chosen degree_level_id is written to
+// candidate_profiles via create_candidate_profile's p_degree_level_id
+// parameter (added 2026-09-29) and, if the RPC fails, via the fallback upsert.
+//
+// To make Degree Level optional later, remove the corresponding guard in
+// handleRegister and the disabled condition on the submit button. Nothing
+// else needs to change.
+//
+// Field names formData.university and formData.programme are unchanged so the
+// RPC call and fallback upsert are unaffected. formData.degreeLevelId holds
+// the degree_levels.id as a string (HTML <select> values are strings); it is
+// parsed to an integer at submit time.
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -29,6 +41,7 @@ export default function Register() {
     confirmPassword: '',
     university: '',
     programme: '',
+    degreeLevelId: '',
     graduationYear: '',
     phone: '',
     preferredDepartment: ''
@@ -36,10 +49,11 @@ export default function Register() {
 
   const [universities, setUniversities] = useState([]);
   const [programmes, setProgrammes] = useState([]);
+  const [degreeLevels, setDegreeLevels] = useState([]);
   const [optionsLoading, setOptionsLoading] = useState(true);
   const [optionsError, setOptionsError] = useState('');
 
-  // Load canonical university/programme lists once on mount
+  // Load canonical university/programme/degree-level lists once on mount
   useEffect(() => {
     let cancelled = false;
 
@@ -63,11 +77,12 @@ export default function Register() {
         if (!cancelled) {
           setUniversities(Array.isArray(payload.universities) ? payload.universities : []);
           setProgrammes(Array.isArray(payload.programmes) ? payload.programmes : []);
+          setDegreeLevels(Array.isArray(payload.degree_levels) ? payload.degree_levels : []);
         }
       } catch (err) {
         if (!cancelled) {
           console.error('Failed to load academic options:', err);
-          setOptionsError('Could not load university and programme lists. Please refresh the page.');
+          setOptionsError('Could not load university, programme, and degree level lists. Please refresh the page.');
         }
       } finally {
         if (!cancelled) setOptionsLoading(false);
@@ -233,6 +248,14 @@ export default function Register() {
       return;
     }
 
+    if (!formData.degreeLevelId) {
+      setError('Degree level is required');
+      setLoading(false);
+      return;
+    }
+
+    const degreeLevelIdInt = parseInt(formData.degreeLevelId, 10);
+
     try {
       // STEP 1: Create the user account
       const { data: authData, error: authError } = await supabase.auth.signUp({
@@ -287,11 +310,20 @@ export default function Register() {
         p_university: formData.university.trim() || null,
         p_programme: formData.programme.trim() || null,
         p_graduation_year: formData.graduationYear.trim() || null,
-        p_preferred_department: formData.preferredDepartment.trim() || null
+        p_preferred_department: formData.preferredDepartment.trim() || null,
+        p_degree_level_id: degreeLevelIdInt
       });
 
-      if (functionError) {
-        console.error('Function error:', functionError);
+      // If the RPC errored OR returned false, fall through to the direct
+      // upsert. create_candidate_profile swallows exceptions internally and
+      // returns false, so a non-true result is a real failure that the
+      // fallback must cover.
+      if (functionError || functionResult !== true) {
+        if (functionError) {
+          console.error('Function error:', functionError);
+        } else {
+          console.warn('Function returned false; trying direct insert fallback');
+        }
 
         console.log('Trying direct insert fallback...');
         const { error: insertError } = await supabase
@@ -303,6 +335,7 @@ export default function Register() {
             phone: formData.phone.trim() || null,
             university: formData.university.trim() || null,
             programme: formData.programme.trim() || null,
+            degree_level_id: degreeLevelIdInt,
             graduation_year: formData.graduationYear.trim() || null,
             preferred_department: formData.preferredDepartment.trim() || null,
             created_at: new Date().toISOString(),
@@ -545,6 +578,25 @@ export default function Register() {
             </div>
 
             <div style={styles.field}>
+              <label style={styles.label}>Degree Level *</label>
+              <select
+                name="degreeLevelId"
+                value={formData.degreeLevelId}
+                onChange={handleChange}
+                style={styles.select}
+                disabled={loading || optionsLoading}
+                required
+              >
+                <option value="">
+                  {optionsLoading ? 'Loading degree levels…' : 'Select your degree level'}
+                </option>
+                {degreeLevels.map((d) => (
+                  <option key={d.id} value={d.id}>{d.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div style={styles.field}>
               <label style={styles.label}>Graduation Year</label>
               <input
                 type="text"
@@ -572,11 +624,11 @@ export default function Register() {
 
             <button
               type="submit"
-              disabled={loading || nameAvailable === false || emailAvailable === false || optionsLoading}
+              disabled={loading || nameAvailable === false || emailAvailable === false || optionsLoading || !formData.degreeLevelId}
               style={{
                 ...styles.registerButton,
-                opacity: (loading || nameAvailable === false || emailAvailable === false || optionsLoading) ? 0.7 : 1,
-                cursor: (loading || nameAvailable === false || emailAvailable === false || optionsLoading) ? 'not-allowed' : 'pointer'
+                opacity: (loading || nameAvailable === false || emailAvailable === false || optionsLoading || !formData.degreeLevelId) ? 0.7 : 1,
+                cursor: (loading || nameAvailable === false || emailAvailable === false || optionsLoading || !formData.degreeLevelId) ? 'not-allowed' : 'pointer'
               }}
             >
               {loading ? (
