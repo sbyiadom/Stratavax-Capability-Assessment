@@ -1,5 +1,14 @@
 // pages/api/admin/add-candidate.js
-// Phase 7B:
+// Phase 7C:
+//   • Accepts `degree_level_id` from the request body, validates it against
+//     degree_levels, and stores it on candidate_profiles alongside
+//     university and programme.
+//   • Removed autoAssignNationalService. The National Service assessment is
+//     retired (deadline passed). Assignment is now a manual, supervisor-driven
+//     action via /supervisor/assign-assessment. This mirrors the removal of
+//     the equivalent block from pages/register.js.
+//
+// Phase 7B (kept):
 //   • Auth via utils/apiAuth.js (authorizeRequest) — consistent with the rest
 //     of the Phase 7B endpoint surface.
 //   • Accepts role 'admin' OR 'supervisor'. Previously admin-only, which
@@ -7,11 +16,10 @@
 //   • Supervisor callers are forced to link the created candidate to
 //     themselves (supervisor_id = caller.userId); they cannot pass an
 //     arbitrary supervisor_id. Admin callers may specify any supervisor_id.
-//   • Accepts and stores `university` and `programme` on candidate_profiles
-//     (previously the payload omitted them).
+//   • Accepts and stores `university` and `programme` on candidate_profiles.
 //
 // Everything else preserved: duplicate check, invite vs password, audit log,
-// National Service auto-assign, rollback on profile insert failure.
+// rollback on profile insert failure.
 
 import { createClient } from "@supabase/supabase-js";
 import { authorizeRequest } from "../../../utils/apiAuth";
@@ -35,6 +43,33 @@ function generatePassword() {
   return "Strat@" + randomPart + timePart + "9";
 }
 
+// Returns { value, error }. value is an integer id or null; error is a string
+// if the raw input was present but invalid. Callers should 400 on error.
+async function resolveDegreeLevelId(adminClient, rawInput) {
+  const raw = rawInput === null || rawInput === undefined ? "" : String(rawInput).trim();
+  if (raw === "") return { value: null, error: null };
+
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed)) {
+    return { value: null, error: "degree_level_id must be an integer." };
+  }
+
+  const { data, error } = await adminClient
+    .from("degree_levels")
+    .select("id")
+    .eq("id", parsed)
+    .maybeSingle();
+
+  if (error) {
+    return { value: null, error: "Could not validate degree level." };
+  }
+  if (!data) {
+    return { value: null, error: "Selected degree level was not found." };
+  }
+
+  return { value: parsed, error: null };
+}
+
 async function writeAuditLog(adminClient, adminUserId, candidateId, payload) {
   try {
     await adminClient.from("audit_logs").insert({
@@ -50,69 +85,6 @@ async function writeAuditLog(adminClient, adminUserId, candidateId, payload) {
     });
   } catch (error) {
     console.warn("Candidate creation audit log warning:", error?.message || error);
-  }
-}
-
-async function autoAssignNationalService(adminClient, candidateId) {
-  try {
-    const { data: nsType, error: nsTypeError } = await adminClient
-      .from("assessment_types")
-      .select("id, code, name")
-      .eq("code", "national_service")
-      .eq("is_active", true)
-      .maybeSingle();
-
-    if (nsTypeError || !nsType) return false;
-
-    const { data: nsAssessment, error: nsAssessmentError } = await adminClient
-      .from("assessments")
-      .select("id, title, assessment_type_id")
-      .eq("assessment_type_id", nsType.id)
-      .eq("is_active", true)
-      .maybeSingle();
-
-    if (nsAssessmentError || !nsAssessment) return false;
-
-    const { data: existingAssignment, error: checkError } = await adminClient
-      .from("candidate_assessments")
-      .select("id, status")
-      .eq("user_id", candidateId)
-      .eq("assessment_id", nsAssessment.id)
-      .maybeSingle();
-
-    if (checkError) return false;
-
-    if (existingAssignment) {
-      if (existingAssignment.status === "blocked") {
-        const { error: updateError } = await adminClient
-          .from("candidate_assessments")
-          .update({
-            status: "unblocked",
-            unblocked_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", existingAssignment.id);
-        return !updateError;
-      }
-      return true;
-    }
-
-    const now = new Date().toISOString();
-    const { error: insertError } = await adminClient
-      .from("candidate_assessments")
-      .insert({
-        user_id: candidateId,
-        assessment_id: nsAssessment.id,
-        status: "unblocked",
-        unblocked_at: now,
-        created_at: now,
-        updated_at: now,
-      });
-
-    return !insertError;
-  } catch (error) {
-    console.error("[Auto-Assign] Unexpected error:", error);
-    return false;
   }
 }
 
@@ -168,6 +140,22 @@ export default async function handler(req, res) {
         message: "Password must be at least 8 characters.",
       });
     }
+
+    // Validate degree level against the degree_levels table before we do
+    // anything expensive (auth user creation). Null is allowed.
+    const degreeLevelResult = await resolveDegreeLevelId(
+      adminClient,
+      req.body?.degree_level_id ?? req.body?.degreeLevelId
+    );
+
+    if (degreeLevelResult.error) {
+      return jsonResponse(res, 400, {
+        success: false,
+        message: degreeLevelResult.error,
+      });
+    }
+
+    const degreeLevelId = degreeLevelResult.value;
 
     if (supervisorId) {
       const { data: supervisor, error: supervisorError } = await adminClient
@@ -244,13 +232,14 @@ export default async function handler(req, res) {
       phone: phone || null,
       university: university || null,
       programme: programme || null,
+      degree_level_id: degreeLevelId,
       supervisor_id: supervisorId,
     };
 
     const { data: candidateProfile, error: profileInsertError } = await adminClient
       .from("candidate_profiles")
       .insert(profilePayload)
-      .select("id, full_name, email, phone, university, programme, supervisor_id")
+      .select("id, full_name, email, phone, university, programme, degree_level_id, supervisor_id")
       .single();
 
     if (profileInsertError) {
@@ -269,17 +258,14 @@ export default async function handler(req, res) {
       candidateProfile || profilePayload
     );
 
-    const nsAssigned = await autoAssignNationalService(adminClient, createdUser.id);
-
     return jsonResponse(res, 200, {
       success: true,
       message: sendInvite
-        ? "Candidate created and invite email sent. National Service assessment auto-assigned."
-        : "Candidate created successfully. National Service assessment auto-assigned.",
+        ? "Candidate created and invite email sent."
+        : "Candidate created successfully.",
       candidate: candidateProfile,
       temporary_password: sendInvite ? null : password,
       invite_sent: sendInvite,
-      national_service_auto_assigned: nsAssigned,
     });
   } catch (error) {
     console.error("Add candidate API error:", error);
