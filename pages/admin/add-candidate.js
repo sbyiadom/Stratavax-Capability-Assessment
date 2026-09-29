@@ -1,4 +1,17 @@
 // pages/admin/add-candidate.js
+// Phase 7C:
+//   • Added University, Programme, and Degree Level <select> dropdowns
+//     populated from /api/academic-options. Previously the admin page sent
+//     only full_name, email, phone, supervisor_id, password, and invite —
+//     so admin-created candidates always landed with university = null,
+//     programme = null, and (after the degree_level rollout) degree_level_id
+//     = null. This brings the admin page to parity with the supervisor flow.
+//   • All three fields are mandatory on submit.
+//   • degree_level_id is sent to /api/admin/add-candidate, which validates it
+//     against degree_levels and stores it on candidate_profiles.
+//
+// Everything else preserved: auth check, supervisor picker, invite vs
+// password, success panel, link row.
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
@@ -39,10 +52,19 @@ export default function AddCandidate() {
   const [createdCandidate, setCreatedCandidate] = useState(null);
   const [temporaryPassword, setTemporaryPassword] = useState("");
 
+  const [universities, setUniversities] = useState([]);
+  const [programmes, setProgrammes] = useState([]);
+  const [degreeLevels, setDegreeLevels] = useState([]);
+  const [optionsLoading, setOptionsLoading] = useState(true);
+  const [optionsError, setOptionsError] = useState("");
+
   const [form, setForm] = useState({
     full_name: "",
     email: "",
     phone: "",
+    university: "",
+    program: "",
+    degree_level_id: "",
     supervisor_id: "",
     password: generateCandidatePassword(),
     send_invite: false
@@ -52,9 +74,68 @@ export default function AddCandidate() {
     checkAdminAuth();
   }, []);
 
+  // Load canonical university/programme/degree-level lists once on mount
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadOptions() {
+      try {
+        setOptionsLoading(true);
+        setOptionsError("");
+
+        const response = await fetch("/api/academic-options", { method: "GET" });
+        let payload;
+        try {
+          payload = await response.json();
+        } catch {
+          throw new Error(`Invalid response (HTTP ${response.status})`);
+        }
+
+        if (!response.ok || !payload.success) {
+          throw new Error(payload?.error || `Failed to load options (HTTP ${response.status})`);
+        }
+
+        if (!cancelled) {
+          setUniversities(Array.isArray(payload.universities) ? payload.universities : []);
+          setProgrammes(Array.isArray(payload.programmes) ? payload.programmes : []);
+          setDegreeLevels(Array.isArray(payload.degree_levels) ? payload.degree_levels : []);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          console.error("Failed to load academic options:", err);
+          setOptionsError(
+            "Could not load university, programme, and degree level lists. Please refresh the page."
+          );
+        }
+      } finally {
+        if (!cancelled) setOptionsLoading(false);
+      }
+    }
+
+    loadOptions();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const canSubmit = useMemo(() => {
-    return cleanText(form.full_name).trim() && isValidEmail(cleanText(form.email).trim()) && (form.send_invite || cleanText(form.password).length >= 8);
-  }, [form]);
+    return (
+      cleanText(form.full_name).trim() &&
+      isValidEmail(cleanText(form.email).trim()) &&
+      cleanText(form.university).trim() &&
+      cleanText(form.program).trim() &&
+      cleanText(form.degree_level_id).trim() &&
+      (form.send_invite || cleanText(form.password).length >= 8) &&
+      !optionsLoading
+    );
+  }, [form, optionsLoading]);
+
+  // Look up the human-readable name for a degree_level_id in the loaded list.
+  function degreeLevelName(id) {
+    if (id === null || id === undefined || id === "") return "";
+    const match = degreeLevels.find((d) => String(d.id) === String(id));
+    return match ? match.name : "";
+  }
 
   async function checkAdminAuth() {
     try {
@@ -134,6 +215,9 @@ export default function AddCandidate() {
       full_name: "",
       email: "",
       phone: "",
+      university: "",
+      program: "",
+      degree_level_id: "",
       supervisor_id: "",
       password: generateCandidatePassword(),
       send_invite: false
@@ -152,6 +236,21 @@ export default function AddCandidate() {
 
     if (!isValidEmail(cleanText(form.email).trim())) {
       setMessage({ type: "error", text: "A valid candidate email is required." });
+      return;
+    }
+
+    if (!cleanText(form.university).trim()) {
+      setMessage({ type: "error", text: "University is required." });
+      return;
+    }
+
+    if (!cleanText(form.program).trim()) {
+      setMessage({ type: "error", text: "Programme is required." });
+      return;
+    }
+
+    if (!cleanText(form.degree_level_id).trim()) {
+      setMessage({ type: "error", text: "Degree level is required." });
       return;
     }
 
@@ -179,6 +278,9 @@ export default function AddCandidate() {
           full_name: cleanText(form.full_name).trim(),
           email: cleanText(form.email).trim().toLowerCase(),
           phone: cleanText(form.phone).trim(),
+          university: cleanText(form.university).trim(),
+          program: cleanText(form.program).trim(),
+          degree_level_id: parseInt(form.degree_level_id, 10),
           supervisor_id: form.supervisor_id || null,
           password: form.send_invite ? "" : form.password,
           send_invite: form.send_invite
@@ -200,6 +302,9 @@ export default function AddCandidate() {
         full_name: "",
         email: "",
         phone: "",
+        university: "",
+        program: "",
+        degree_level_id: "",
         supervisor_id: "",
         password: generateCandidatePassword(),
         send_invite: false
@@ -273,12 +378,23 @@ export default function AddCandidate() {
           </div>
         )}
 
+        {optionsError && (
+          <div style={{
+            ...styles.message,
+            background: "#ffebee",
+            color: "#c62828",
+            border: "1px solid #ffcdd2"
+          }}>
+            ⚠️ {optionsError}
+          </div>
+        )}
+
         <div style={styles.layoutGrid}>
           <form onSubmit={handleSubmit} style={styles.formCard}>
             <h2 style={styles.sectionTitle}>Candidate Details</h2>
 
             <div style={styles.fieldGroup}>
-              <label style={styles.label}>Full Name</label>
+              <label style={styles.label}>Full Name *</label>
               <input
                 type="text"
                 value={form.full_name}
@@ -290,7 +406,7 @@ export default function AddCandidate() {
             </div>
 
             <div style={styles.fieldGroup}>
-              <label style={styles.label}>Email</label>
+              <label style={styles.label}>Email *</label>
               <input
                 type="email"
                 value={form.email}
@@ -299,6 +415,66 @@ export default function AddCandidate() {
                 placeholder="candidate@example.com"
                 required
               />
+            </div>
+
+            <div style={styles.fieldGroup}>
+              <label style={styles.label}>University *</label>
+              <select
+                value={form.university}
+                onChange={(event) => updateField("university", event.target.value)}
+                style={styles.input}
+                required
+                disabled={optionsLoading}
+              >
+                <option value="">
+                  {optionsLoading ? "Loading universities…" : "Select University"}
+                </option>
+                {universities.map((u) => (
+                  <option key={u.id} value={u.name}>
+                    {u.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div style={styles.fieldGroup}>
+              <label style={styles.label}>Programme *</label>
+              <select
+                value={form.program}
+                onChange={(event) => updateField("program", event.target.value)}
+                style={styles.input}
+                required
+                disabled={optionsLoading}
+              >
+                <option value="">
+                  {optionsLoading ? "Loading programmes…" : "Select Programme"}
+                </option>
+                {programmes.map((p) => (
+                  <option key={p.id} value={p.name}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div style={styles.fieldGroup}>
+              <label style={styles.label}>Degree Level *</label>
+              <select
+                value={form.degree_level_id}
+                onChange={(event) => updateField("degree_level_id", event.target.value)}
+                style={styles.input}
+                required
+                disabled={optionsLoading}
+              >
+                <option value="">
+                  {optionsLoading ? "Loading degree levels…" : "Select Degree Level"}
+                </option>
+                {degreeLevels.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <div style={styles.fieldGroup}>
@@ -385,6 +561,9 @@ export default function AddCandidate() {
                 <h3 style={styles.successTitle}>Candidate Created</h3>
                 <p style={styles.detailText}><strong>Name:</strong> {createdCandidate.full_name}</p>
                 <p style={styles.detailText}><strong>Email:</strong> {createdCandidate.email}</p>
+                <p style={styles.detailText}><strong>University:</strong> {createdCandidate.university || "Not specified"}</p>
+                <p style={styles.detailText}><strong>Programme:</strong> {createdCandidate.programme || "Not specified"}</p>
+                <p style={styles.detailText}><strong>Degree Level:</strong> {degreeLevelName(createdCandidate.degree_level_id) || "Not specified"}</p>
                 {temporaryPassword && (
                   <div style={styles.passwordPanel}>
                     <p style={styles.detailText}><strong>Temporary Password:</strong></p>
