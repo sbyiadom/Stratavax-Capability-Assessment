@@ -1,4 +1,4 @@
-// pages/register.js - Phase 7C
+// pages/register.js - Phase 7D
 // University, Programme, and Degree Level fields use <select> dropdowns fed
 // from /api/academic-options (which reads from the roles and degree_levels
 // tables). This eliminates the free-text entry that produced 100+ variants of
@@ -10,9 +10,11 @@
 // candidate_profiles via create_candidate_profile's p_degree_level_id
 // parameter (added 2026-09-29) and, if the RPC fails, via the fallback upsert.
 //
-// To make Degree Level optional later, remove the corresponding guard in
-// handleRegister and the disabled condition on the submit button. Nothing
-// else needs to change.
+// National Service assessment auto-assignment has been RETIRED. It used to run
+// here, but (a) the deadline has passed and (b) the RLS policies on
+// assessments and candidate_assessments silently blocked the browser-side
+// read/write, so the block was a no-op anyway. Candidates are now assigned
+// assessments manually via /supervisor/assign-assessment.
 //
 // Field names formData.university and formData.programme are unchanged so the
 // RPC call and fallback upsert are unaffected. formData.degreeLevelId holds
@@ -351,37 +353,9 @@ export default function Register() {
         console.log('Profile created via function:', functionResult);
       }
 
-      try {
-        console.log('Assigning National Service assessment...');
-        const { data: assessmentData, error: assessmentError } = await supabase
-          .from('assessments')
-          .select('id')
-          .eq('title', 'National Service Recruitment Assessment')
-          .maybeSingle();
-
-        if (assessmentError) {
-          console.error('Assessment fetch error:', assessmentError);
-        } else if (assessmentData) {
-          const { error: assignError } = await supabase
-            .from('candidate_assessments')
-            .upsert({
-              user_id: userId,
-              assessment_id: assessmentData.id,
-              status: 'unblocked',
-              created_at: new Date().toISOString()
-            });
-
-          if (assignError) {
-            console.error('Assessment assignment error:', assignError);
-          } else {
-            console.log('National Service assessment assigned successfully');
-          }
-        } else {
-          console.log('National Service assessment not found');
-        }
-      } catch (assignErr) {
-        console.error('Assessment assignment failed:', assignErr);
-      }
+      // National Service assessment auto-assignment has been retired.
+      // Candidates are assigned assessments manually via
+      // /supervisor/assign-assessment.
 
       setSuccess(true);
       setLoading(false);
