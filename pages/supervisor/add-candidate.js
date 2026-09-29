@@ -1,10 +1,18 @@
 // pages/supervisor/add-candidate.js
-// Phase 7B:
+// Phase 7C:
+//   • Added a mandatory Degree Level <select> populated from
+//     /api/academic-options (which reads the degree_levels table).
+//     Sits between Program of Study and Phone Number.
+//   • degree_level_id is sent to /api/admin/add-candidate, which validates it
+//     against degree_levels and stores it on candidate_profiles.
+//   • The post-creation success panel now shows the chosen degree level by
+//     name (looked up from the loaded degreeLevels array), not by raw id.
+//
+// Phase 7B (kept):
 //   • Auth now calls /api/supervisor/me (RLS-safe) instead of a client-side
 //     supabase.from('supervisor_profiles') read that RLS was denying silently.
-//   • University and Programme fields are now canonical <select> dropdowns
-//     fed from /api/academic-options (which reads the roles table).
-//     Same source as pages/register.js, so values are consistent platform-wide.
+//   • University and Programme fields are canonical <select> dropdowns fed
+//     from /api/academic-options. Same source as pages/register.js.
 //
 // Submit flow unchanged:
 //   1. POST /api/supervisor/check-candidate-exists  (duplicate check)
@@ -51,6 +59,7 @@ export default function AddCandidate() {
 
   const [universities, setUniversities] = useState([]);
   const [programmes, setProgrammes] = useState([]);
+  const [degreeLevels, setDegreeLevels] = useState([]);
   const [optionsLoading, setOptionsLoading] = useState(true);
   const [optionsError, setOptionsError] = useState("");
 
@@ -60,6 +69,7 @@ export default function AddCandidate() {
     phone: "",
     university: "",
     program: "",
+    degree_level_id: "",
     password: generateCandidatePassword(),
     send_invite: false,
   });
@@ -68,7 +78,7 @@ export default function AddCandidate() {
     checkSupervisorAuth();
   }, []);
 
-  // Load canonical university/programme lists once on mount
+  // Load canonical university/programme/degree-level lists once on mount
   useEffect(() => {
     let cancelled = false;
 
@@ -92,12 +102,13 @@ export default function AddCandidate() {
         if (!cancelled) {
           setUniversities(Array.isArray(payload.universities) ? payload.universities : []);
           setProgrammes(Array.isArray(payload.programmes) ? payload.programmes : []);
+          setDegreeLevels(Array.isArray(payload.degree_levels) ? payload.degree_levels : []);
         }
       } catch (err) {
         if (!cancelled) {
           console.error("Failed to load academic options:", err);
           setOptionsError(
-            "Could not load university and programme lists. Please refresh the page."
+            "Could not load university, programme, and degree level lists. Please refresh the page."
           );
         }
       } finally {
@@ -117,10 +128,18 @@ export default function AddCandidate() {
       isValidEmail(cleanText(form.email).trim()) &&
       cleanText(form.university).trim() &&
       cleanText(form.program).trim() &&
+      cleanText(form.degree_level_id).trim() &&
       (form.send_invite || cleanText(form.password).length >= 8) &&
       !optionsLoading
     );
   }, [form, optionsLoading]);
+
+  // Look up the human-readable name for a degree_level_id in the loaded list.
+  function degreeLevelName(id) {
+    if (id === null || id === undefined || id === "") return "";
+    const match = degreeLevels.find((d) => String(d.id) === String(id));
+    return match ? match.name : "";
+  }
 
   async function checkSupervisorAuth() {
     try {
@@ -220,6 +239,7 @@ export default function AddCandidate() {
       phone: "",
       university: "",
       program: "",
+      degree_level_id: "",
       password: generateCandidatePassword(),
       send_invite: false,
     });
@@ -248,6 +268,11 @@ export default function AddCandidate() {
 
     if (!cleanText(form.program).trim()) {
       setMessage({ type: "error", text: "Program of study is required." });
+      return;
+    }
+
+    if (!cleanText(form.degree_level_id).trim()) {
+      setMessage({ type: "error", text: "Degree level is required." });
       return;
     }
 
@@ -311,6 +336,7 @@ export default function AddCandidate() {
           phone: cleanText(form.phone).trim(),
           university: cleanText(form.university).trim(),
           program: cleanText(form.program).trim(),
+          degree_level_id: parseInt(form.degree_level_id, 10),
           supervisor_id: currentSupervisor.id,
           password: form.send_invite ? "" : form.password,
           send_invite: form.send_invite,
@@ -337,6 +363,7 @@ export default function AddCandidate() {
         phone: "",
         university: "",
         program: "",
+        degree_level_id: "",
         password: generateCandidatePassword(),
         send_invite: false,
       }));
@@ -515,6 +542,26 @@ export default function AddCandidate() {
             </div>
 
             <div style={styles.fieldGroup}>
+              <label style={styles.label}>Degree Level *</label>
+              <select
+                value={form.degree_level_id}
+                onChange={(event) => updateField("degree_level_id", event.target.value)}
+                style={styles.select}
+                required
+                disabled={optionsLoading}
+              >
+                <option value="">
+                  {optionsLoading ? "Loading degree levels…" : "Select Degree Level"}
+                </option>
+                {degreeLevels.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div style={styles.fieldGroup}>
               <label style={styles.label}>Phone Number (Optional)</label>
               <input
                 type="tel"
@@ -619,7 +666,11 @@ export default function AddCandidate() {
                   <strong>University:</strong> {createdCandidate.university || "Not specified"}
                 </p>
                 <p style={styles.detailText}>
-                  <strong>Program:</strong> {createdCandidate.program || "Not specified"}
+                  <strong>Program:</strong> {createdCandidate.programme || createdCandidate.program || "Not specified"}
+                </p>
+                <p style={styles.detailText}>
+                  <strong>Degree Level:</strong>{" "}
+                  {degreeLevelName(createdCandidate.degree_level_id) || "Not specified"}
                 </p>
                 {temporaryPassword && (
                   <div style={styles.passwordPanel}>
