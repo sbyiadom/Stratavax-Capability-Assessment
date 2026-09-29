@@ -1,31 +1,53 @@
-// pages/register.js - Phase 7D
-// University, Programme, and Degree Level fields use <select> dropdowns fed
-// from /api/academic-options (which reads from the roles and degree_levels
-// tables). This eliminates the free-text entry that produced 100+ variants of
-// the same institution in candidate_profiles.university.
+// pages/register.js - Phase 7E
+// Phase 7E:
+//   • Phone is now REQUIRED. Validated + normalized to E.164 (+233XXXXXXXXX)
+//     before being sent to create_candidate_profile. The RPC also validates
+//     (see public.normalize_ghana_phone), so invalid phones fail at both
+//     layers.
+//   • Phone field moved to sit immediately after Email — name, email, phone
+//     are the three "how do we reach you" fields; grouping them reads better.
+//   • Labels updated to mark phone as required.
 //
-// Degree Level is MANDATORY on this form. The candidate must pick one before
-// the form will submit; there is no inference, no optional path, and no
-// fallback to a default. The chosen degree_level_id is written to
-// candidate_profiles via create_candidate_profile's p_degree_level_id
-// parameter (added 2026-09-29) and, if the RPC fails, via the fallback upsert.
+// Phase 7D (kept):
+//   • University, Programme, Degree Level dropdowns from /api/academic-options.
+//   • Degree Level is mandatory.
+//   • National Service auto-assignment removed (retired).
 //
-// National Service assessment auto-assignment has been RETIRED. It used to run
-// here, but (a) the deadline has passed and (b) the RLS policies on
-// assessments and candidate_assessments silently blocked the browser-side
-// read/write, so the block was a no-op anyway. Candidates are now assigned
-// assessments manually via /supervisor/assign-assessment.
-//
-// Field names formData.university and formData.programme are unchanged so the
-// RPC call and fallback upsert are unaffected. formData.degreeLevelId holds
-// the degree_levels.id as a string (HTML <select> values are strings); it is
-// parsed to an integer at submit time.
+// Phase 7C/7B (kept): earlier university/programme dropdown work.
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Image from 'next/image';
 import Link from 'next/link';
 import { supabase } from '../supabase/client';
+
+// Must stay in sync with public.normalize_ghana_phone and the copy in
+// pages/api/admin/add-candidate.js.
+const GHANA_MOBILE_PREFIXES = new Set([
+  "020", "023", "024", "025", "026", "027", "028", "029",
+  "050", "053", "054", "055", "056", "057", "058", "059",
+]);
+
+function normalizeGhanaPhone(input) {
+  if (input === null || input === undefined) return null;
+  const clean = String(input).replace(/[\s\-().]/g, "");
+  if (clean === "") return null;
+  if (clean.startsWith("00")) return null;
+
+  let local;
+  if (/^\+233[0-9]{9}$/.test(clean)) {
+    local = "0" + clean.slice(4);
+  } else if (/^233[0-9]{9}$/.test(clean)) {
+    local = "0" + clean.slice(3);
+  } else {
+    local = clean;
+  }
+
+  if (!/^0[0-9]{9}$/.test(local)) return null;
+  if (!GHANA_MOBILE_PREFIXES.has(local.slice(0, 3))) return null;
+
+  return "+233" + local.slice(1);
+}
 
 export default function Register() {
   const router = useRouter();
@@ -41,11 +63,11 @@ export default function Register() {
     email: '',
     password: '',
     confirmPassword: '',
+    phone: '',
     university: '',
     programme: '',
     degreeLevelId: '',
     graduationYear: '',
-    phone: '',
     preferredDepartment: ''
   });
 
@@ -250,6 +272,14 @@ export default function Register() {
       return;
     }
 
+    // Validate + normalize phone. Reject before touching the network.
+    const normalizedPhone = normalizeGhanaPhone(formData.phone);
+    if (!normalizedPhone) {
+      setError('Enter a valid Ghanaian mobile number, e.g. 024 123 4567 or +233 24 123 4567.');
+      setLoading(false);
+      return;
+    }
+
     if (!formData.degreeLevelId) {
       setError('Degree level is required');
       setLoading(false);
@@ -259,7 +289,6 @@ export default function Register() {
     const degreeLevelIdInt = parseInt(formData.degreeLevelId, 10);
 
     try {
-      // STEP 1: Create the user account
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: formData.email.trim(),
         password: formData.password,
@@ -269,7 +298,7 @@ export default function Register() {
             university: formData.university.trim(),
             programme: formData.programme.trim(),
             graduation_year: formData.graduationYear.trim(),
-            phone: formData.phone.trim(),
+            phone: normalizedPhone,
             preferred_department: formData.preferredDepartment.trim(),
             role: 'candidate'
           }
@@ -308,7 +337,7 @@ export default function Register() {
         p_user_id: userId,
         p_full_name: formData.fullName.trim(),
         p_email: formData.email.trim(),
-        p_phone: formData.phone.trim() || null,
+        p_phone: normalizedPhone,
         p_university: formData.university.trim() || null,
         p_programme: formData.programme.trim() || null,
         p_graduation_year: formData.graduationYear.trim() || null,
@@ -316,10 +345,6 @@ export default function Register() {
         p_degree_level_id: degreeLevelIdInt
       });
 
-      // If the RPC errored OR returned false, fall through to the direct
-      // upsert. create_candidate_profile swallows exceptions internally and
-      // returns false, so a non-true result is a real failure that the
-      // fallback must cover.
       if (functionError || functionResult !== true) {
         if (functionError) {
           console.error('Function error:', functionError);
@@ -334,7 +359,7 @@ export default function Register() {
             id: userId,
             full_name: formData.fullName.trim(),
             email: formData.email.trim(),
-            phone: formData.phone.trim() || null,
+            phone: normalizedPhone,
             university: formData.university.trim() || null,
             programme: formData.programme.trim() || null,
             degree_level_id: degreeLevelIdInt,
@@ -352,10 +377,6 @@ export default function Register() {
       } else {
         console.log('Profile created via function:', functionResult);
       }
-
-      // National Service assessment auto-assignment has been retired.
-      // Candidates are assigned assessments manually via
-      // /supervisor/assign-assessment.
 
       setSuccess(true);
       setLoading(false);
@@ -473,6 +494,21 @@ export default function Register() {
             </div>
 
             <div style={styles.field}>
+              <label style={styles.label}>Phone Number *</label>
+              <input
+                type="tel"
+                name="phone"
+                value={formData.phone}
+                onChange={handleChange}
+                style={styles.input}
+                placeholder="e.g. 024 123 4567"
+                required
+                disabled={loading}
+              />
+              <span style={styles.hint}>Ghanaian mobile number (024, 054, 055, 059, etc.)</span>
+            </div>
+
+            <div style={styles.field}>
               <label style={styles.label}>Password *</label>
               <input
                 type="password"
@@ -498,19 +534,6 @@ export default function Register() {
                 style={styles.input}
                 placeholder="Confirm your password"
                 required
-                disabled={loading}
-              />
-            </div>
-
-            <div style={styles.field}>
-              <label style={styles.label}>Phone Number</label>
-              <input
-                type="tel"
-                name="phone"
-                value={formData.phone}
-                onChange={handleChange}
-                style={styles.input}
-                placeholder="Enter your phone number"
                 disabled={loading}
               />
             </div>
