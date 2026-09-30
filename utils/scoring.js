@@ -16,6 +16,15 @@
 //   than 0.5. This eliminates the ~50% floor that made random selection
 //   score the same as thoughtful mid-tier selection. New results should
 //   be tagged scoring_version = 2.
+//
+// Phase 7E (2026-09-30):
+//   isBaselineAssessmentType now matches any assessment_type code ending
+//   in "_baseline" (e.g. "manufacturing_baseline"). Previously it checked
+//   for "manufacturing_baseline_baseline", which never matched the actual
+//   code in the database, so baseline assessments were silently scored as
+//   single_select. That made multi-select "select all that apply" questions
+//   score too generously (one correct pick out of three got credit for one,
+//   when the correct behaviour is 0 unless all correct answers are picked).
 
 // ======================================================
 // BASIC HELPERS
@@ -457,15 +466,21 @@ export const scoreQuestionResponse = function (response, isBaseline, mode) {
   };
 };
 
+// Phase 7E (2026-09-30): suffix match instead of exact string.
+// Matches "manufacturing_baseline", "electrical_baseline", etc.
+// Also matches the numeric id 19 for backwards compatibility with any
+// caller that still passes the raw assessment type id.
 export const isBaselineAssessmentType = function (assessmentTypeOrId) {
-  const normalized = String(assessmentTypeOrId === undefined || assessmentTypeOrId === null ? "" : assessmentTypeOrId)
+  const normalized = String(
+    assessmentTypeOrId === undefined || assessmentTypeOrId === null ? "" : assessmentTypeOrId
+  )
     .trim()
     .toLowerCase();
 
   return (
     normalized === "19" ||
     normalized === "baseline" ||
-    normalized === "manufacturing_baseline_baseline"
+    normalized.endsWith("_baseline")
   );
 };
 
