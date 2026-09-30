@@ -2,6 +2,12 @@
 // FIXED: Derive strengths/weaknesses from category scores
 // Phase 6: Added CompetencyReport section (reads result.competencySummary)
 // Phase 6.5: Replaced top stat cards with supervisor-relevant metrics.
+// Phase 7E (2026-09-30): overallScore now reads result.percentage_score
+//   verbatim instead of averaging category percentages. The averaging
+//   diverged from the stored value whenever categories had unequal weights,
+//   and produced a different number on the list page (which reads the stored
+//   value) vs the detail page (which averaged). Both surfaces now agree.
+//   Historical rows were corrected by the same-day backfill migration.
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../supabase/client';
@@ -380,20 +386,17 @@ export default function StratavaxReport({
   const weaknesses = normalizedCategoryScores.filter(item => item.percentage < 65).sort((a, b) => a.percentage - b.percentage);
   const recommendations = safeArray(result.recommendations || []);
 
-  let overallScore = 0;
-  if (normalizedCategoryScores.length > 0) {
-    const validScores = normalizedCategoryScores.map(cat => cat.percentage).filter(score => score > 0 && score <= 100);
-    if (validScores.length > 0) overallScore = Math.round(validScores.reduce((a, b) => a + b, 0) / validScores.length);
-  }
-  if (overallScore === 0 && result.percentage_score) overallScore = safeNumber(result.percentage_score);
-  if (overallScore === 0 && result.total_score !== undefined && result.max_score !== undefined) {
-    const total = safeNumber(result.total_score);
-    const max = safeNumber(result.max_score);
-    if (max > 0) {
-      const calc = Math.round((total / max) * 100);
-      if (calc >= 0 && calc <= 100) overallScore = calc;
-    }
-  }
+  // Authoritative score: read from the stored column. The detail page must
+  // not recompute — the score is written at submit time by the canonical
+  // scoring engine (public.recompute_session_score in Postgres) and must be
+  // displayed verbatim. Historical rows were corrected by the 2026-09-30
+  // backfill migration.
+  //
+  // Prior to this change, the component averaged category percentages, which
+  // diverged from the stored value whenever categories had unequal weights
+  // and produced two different scores for the same result across the list
+  // and detail views.
+  const overallScore = safeNumber(result.percentage_score, 0);
 
   const classification = safeText(result.classification || 'Standard Profile');
   const riskLevel = safeText(result.riskLevel || result.risk_level || 'Medium');
