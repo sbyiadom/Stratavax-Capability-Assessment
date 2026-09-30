@@ -1,28 +1,32 @@
 // pages/api/admin/add-candidate.js
-// Phase 7C:
-//   • Accepts `degree_level_id` from the request body, validates it against
-//     degree_levels, and stores it on candidate_profiles alongside
-//     university and programme.
-//   • Removed autoAssignNationalService. The National Service assessment is
-//     retired (deadline passed). Assignment is now a manual, supervisor-driven
-//     action via /supervisor/assign-assessment. This mirrors the removal of
-//     the equivalent block from pages/register.js.
+// Phase 7D:
+//   • Phone is now REQUIRED. Validated + normalized to E.164 (+233XXXXXXXXX)
+//     before writing to candidate_profiles. Accepts Ghanaian mobile numbers
+//     in local (0XXXXXXXXX), international with + (+233XXXXXXXXX), and
+//     no-plus (233XXXXXXXXX) forms. Rejects landlines, wrong-country numbers,
+//     and any "00"-prefixed input.
+//   • Validation mirrors public.normalize_ghana_phone in Postgres — same
+//     rules, same whitelist, same output format.
+//
+// Phase 7C (kept):
+//   • Accepts `degree_level_id`, validates against degree_levels, stores it.
+//   • Removed autoAssignNationalService — retired.
 //
 // Phase 7B (kept):
-//   • Auth via utils/apiAuth.js (authorizeRequest) — consistent with the rest
-//     of the Phase 7B endpoint surface.
-//   • Accepts role 'admin' OR 'supervisor'. Previously admin-only, which
-//     blocked pages/supervisor/add-candidate.js.
-//   • Supervisor callers are forced to link the created candidate to
-//     themselves (supervisor_id = caller.userId); they cannot pass an
-//     arbitrary supervisor_id. Admin callers may specify any supervisor_id.
-//   • Accepts and stores `university` and `programme` on candidate_profiles.
-//
-// Everything else preserved: duplicate check, invite vs password, audit log,
-// rollback on profile insert failure.
+//   • Auth via utils/apiAuth.js (authorizeRequest).
+//   • Accepts role 'admin' OR 'supervisor'. Supervisor callers forced to
+//     themselves; admin callers may specify any supervisor_id.
+//   • Accepts and stores university and programme.
 
-import { createClient } from "@supabase/supabase-js";
 import { authorizeRequest } from "../../../utils/apiAuth";
+
+// Ghanaian mobile prefixes (NCA-allocated). Landlines (03x) are rejected.
+// If the NCA issues new mobile prefixes, add them here AND in the
+// normalize_ghana_phone Postgres function so the two stay in sync.
+const GHANA_MOBILE_PREFIXES = new Set([
+  "020", "023", "024", "025", "026", "027", "028", "029",
+  "050", "053", "054", "055", "056", "057", "058", "059",
+]);
 
 function jsonResponse(res, status, payload) {
   return res.status(status).json(payload);
@@ -41,6 +45,36 @@ function generatePassword() {
   const randomPart = Math.random().toString(36).slice(2, 10);
   const timePart = Date.now().toString(36).slice(-4);
   return "Strat@" + randomPart + timePart + "9";
+}
+
+// Mirror of public.normalize_ghana_phone. Returns the E.164 form
+// (+233XXXXXXXXX) if valid, null otherwise.
+function normalizeGhanaPhone(input) {
+  if (input === null || input === undefined) return null;
+
+  const raw = String(input);
+  const clean = raw.replace(/[\s\-().]/g, "");
+
+  if (clean === "") return null;
+
+  // Reject any leading "00" — mistyped international prefix.
+  if (clean.startsWith("00")) return null;
+
+  let local;
+  if (/^\+233[0-9]{9}$/.test(clean)) {
+    local = "0" + clean.slice(4);
+  } else if (/^233[0-9]{9}$/.test(clean)) {
+    local = "0" + clean.slice(3);
+  } else {
+    local = clean;
+  }
+
+  if (!/^0[0-9]{9}$/.test(local)) return null;
+
+  const prefix = local.slice(0, 3);
+  if (!GHANA_MOBILE_PREFIXES.has(prefix)) return null;
+
+  return "+233" + local.slice(1);
 }
 
 // Returns { value, error }. value is an integer id or null; error is a string
@@ -104,7 +138,7 @@ export default async function handler(req, res) {
   try {
     const fullName = cleanText(req.body?.full_name || req.body?.fullName);
     const email = cleanText(req.body?.email).toLowerCase();
-    const phone = cleanText(req.body?.phone);
+    const rawPhone = req.body?.phone ?? "";
     const university = cleanText(req.body?.university);
     const programme = cleanText(req.body?.programme || req.body?.program);
     const providedPassword = cleanText(req.body?.password);
@@ -116,7 +150,6 @@ export default async function handler(req, res) {
     if (caller.isAdmin) {
       supervisorId = cleanText(req.body?.supervisor_id || req.body?.supervisorId) || null;
     } else {
-      // caller.isSupervisor — ignore whatever the client sent
       supervisorId = caller.userId;
     }
 
@@ -131,6 +164,16 @@ export default async function handler(req, res) {
       return jsonResponse(res, 400, {
         success: false,
         message: "A valid candidate email is required.",
+      });
+    }
+
+    // Phone is required and must be a valid Ghanaian mobile number.
+    const normalizedPhone = normalizeGhanaPhone(rawPhone);
+    if (!normalizedPhone) {
+      return jsonResponse(res, 400, {
+        success: false,
+        message:
+          "A valid Ghanaian mobile number is required (e.g. 024 123 4567 or +233 24 123 4567).",
       });
     }
 
@@ -229,7 +272,7 @@ export default async function handler(req, res) {
       id: createdUser.id,
       full_name: fullName,
       email,
-      phone: phone || null,
+      phone: normalizedPhone,
       university: university || null,
       programme: programme || null,
       degree_level_id: degreeLevelId,
