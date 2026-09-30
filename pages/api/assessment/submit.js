@@ -1,22 +1,32 @@
 // pages/api/assessment/submit.js
-// Version: submit-behavioral-v11-competency-write
+// Version: submit-behavioral-v12-frozen-only
 //
-// v10 replaced inline scoring with the unified engine in utils/scoring.js
-// so single_select, baseline, and forced_choice all score uniformly.
+// v12 (Phase 7E):
+//   • Removed the fallback that loaded questions from unique_questions by
+//     assessment_type_id when a session had no frozen question set. Sessions
+//     must now have a frozen set in session_questions to be submitted. If
+//     they don't, submission fails with NO_FROZEN_QUESTIONS. This prevents
+//     the silent unreproducible scoring that produced the 360 legacy
+//     assessment_results rows without session_questions.
+//   • Added a post-submit drift check: after the RPC writes the result, we
+//     call recompute_session_score(session_id) and log a warning if the
+//     stored percentage differs from the recomputed one. Non-fatal — if the
+//     SQL function is missing or errors, the submission still succeeds.
 //
-// v11 adds the competency scoring step at the end of submission. After
-// the transactional RPC succeeds and resultId is available, this file:
-//   1. Fetches question_competencies for the frozen question set
-//   2. Runs calculateCompetencyScores using the SAME scoring engine
-//   3. Upserts rows into candidate_competency_scores on the
-//      (candidate_id, assessment_id, competency_id) unique key
+// v11 (kept):
+//   • Competency scoring step at the end of submission. After the
+//     transactional RPC succeeds and resultId is available, this file:
+//       1. Fetches question_competencies for the frozen question set
+//       2. Runs calculateCompetencyScores using the SAME scoring engine
+//       3. Upserts rows into candidate_competency_scores
+//   • The competency block is wrapped in try/catch and is NON-FATAL.
 //
-// The competency block is wrapped in try/catch and is NON-FATAL. If it
-// fails, the assessment result is still saved, the candidate still sees
-// their score, and only the competency section is missing.
+// v10 (kept):
+//   • Replaced inline scoring with the unified engine in utils/scoring.js
+//     so single_select, baseline, and forced_choice all score uniformly.
 //
 // Behavioural tracking, proctoring, RPC call, and response shape are all
-// unchanged from v10.
+// unchanged from v11.
 
 import { createClient } from "@supabase/supabase-js";
 import {
@@ -25,7 +35,7 @@ import {
 } from "../../../utils/scoring";
 import { calculateCompetencyScores } from "../../../utils/competencyScoring";
 
-const SUBMIT_BUILD = "submit-behavioral-v11-competency-write";
+const SUBMIT_BUILD = "submit-behavioral-v12-frozen-only";
 
 const PRACTICAL_ASSESSMENT_IDS = [
   'c2bc4994-1c4a-4094-a763-8d9d560b759e',
@@ -319,41 +329,23 @@ export default async function handler(req, res) {
     }
 
     if (!frozenUsed) {
-      const { data: questionsData, error: questionsError } = await serviceClient
-        .from("unique_questions")
-        .select(`
-          id,
-          question_text,
-          section,
-          unique_answers (
-            id,
-            answer_text,
-            score
-          )
-        `)
-        .eq("assessment_type_id", assessment.assessment_type_id);
-
-      if (questionsError) {
-        console.error("[Submit] Questions error:", questionsError);
-      }
-
-      questions = (questionsData || []).map((q) => ({
-        id: q.id,
-        question_text: q.question_text,
-        section: q.section,
-        answers: q.unique_answers || []
-      }));
-
-      if (questions.length === 0) {
-        console.error("[Submit] No questions found for assessment_type_id:", assessment.assessment_type_id);
-        return res.status(409).json({
-          success: false,
-          error: "No questions found for this assessment",
-          diagnosticCode: "NO_QUESTIONS_FOUND"
-        });
-      }
-
-      console.log(`[Submit] Questions found: ${questions.length} (source: unique_questions / fallback)`);
+      // Phase 7E: the fallback that used to load questions from
+      // unique_questions by assessment_type_id has been removed. Sessions
+      // must have a frozen question set in session_questions to be
+      // submitted. If they don't, scoring is unreproducible (which is how
+      // the 360 legacy assessment_results rows without session_questions
+      // got their scores).
+      //
+      // This should never fire for new sessions — /api/assessment/session.js
+      // freezes the question set at creation time (STEP 9). If it does fire,
+      // something upstream broke and we want to know about it loudly, not
+      // silently produce an unverifiable score.
+      console.error('[Submit] No frozen question set for session:', sessionId);
+      return res.status(409).json({
+        success: false,
+        error: 'Session has no frozen question set. Cannot submit. Please contact your supervisor.',
+        diagnosticCode: 'NO_FROZEN_QUESTIONS'
+      });
     }
 
     const responseLookup = {};
@@ -406,30 +398,6 @@ export default async function handler(req, res) {
 
     if (frozenUsed) {
       console.log(`[Submit] Frozen denominator locked: ${totalMax} max points`);
-    } else {
-      let expectedTotalQuestions = 0;
-      if (assessmentType?.question_count && assessmentType.question_count > 0) {
-        expectedTotalQuestions = assessmentType.question_count;
-      } else if (questions.length > 0) {
-        expectedTotalQuestions = questions.length;
-      } else {
-        expectedTotalQuestions = getTotalQuestions(assessment.id);
-      }
-      console.log(`[Submit] Expected questions: ${expectedTotalQuestions}, Actual: ${questions.length}`);
-      if (questions.length !== expectedTotalQuestions) {
-        denominatorOverridden = true;
-        expectedDenominator = expectedTotalQuestions;
-        actualDenominator = questions.length;
-        console.error('[Submit] DENOMINATOR OVERRIDE:', {
-          assessmentId: assessment.id,
-          assessmentTypeId: assessment.assessment_type_id,
-          assessmentTypeCode: assessmentType?.code || null,
-          configuredQuestionCount: expectedTotalQuestions,
-          actualQuestionsFound: questions.length,
-          sessionId: sessionId,
-          source: 'legacy_fallback_path'
-        });
-      }
     }
 
     const finalPercentage = totalMax > 0 ? Math.round((totalEarned / totalMax) * 100) : 0;
@@ -650,6 +618,37 @@ export default async function handler(req, res) {
 
     const resultId = rpcResult;
     console.log(`[Submit] Result saved (transactional): ${resultId}`);
+
+    // Phase 7E: post-submit drift check. Compares the percentage we just wrote
+    // against what recompute_session_score (the canonical SQL implementation)
+    // would compute from raw data. If they disagree, log a warning — this
+    // catches any divergence between the JS scoring engine in utils/scoring.js
+    // and the SQL function before it corrupts historical data.
+    //
+    // The check is non-fatal. If it fails (e.g. the function is missing), the
+    // submission still succeeds. The value is in the log signal.
+    try {
+      const { data: recomputed, error: recomputeErr } = await serviceClient
+        .rpc('recompute_session_score', { p_session_id: sessionId });
+
+      if (recomputeErr) {
+        console.warn('[Submit] Drift check: recompute_session_score failed (non-fatal):', recomputeErr.message);
+      } else if (recomputed) {
+        const recomputedPct = Number(recomputed.percentage);
+        if (Number.isFinite(recomputedPct) && recomputedPct !== finalPercentage) {
+          console.warn('[Submit] DRIFT DETECTED between JS engine and SQL function:', {
+            sessionId,
+            assessmentId: assessment.id,
+            scoringMode,
+            storedPct: finalPercentage,
+            recomputedPct,
+            delta: recomputedPct - finalPercentage
+          });
+        }
+      }
+    } catch (driftErr) {
+      console.warn('[Submit] Drift check errored (non-fatal):', driftErr?.message || driftErr);
+    }
 
     // ============================================================
     // STEP 19: COMPETENCY SCORING (NON-FATAL)
