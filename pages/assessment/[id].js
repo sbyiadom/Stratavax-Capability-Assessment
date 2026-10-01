@@ -9,8 +9,11 @@
 //   sizes were bumped up. Grid uses minmax(0, 1fr) to prevent the classic
 //   CSS Grid trap where 1fr won't shrink below content width.
 // Phase 7G (2026-10-01): Navigator compaction. The quiz-navigation grid,
-//   legend, and timer were tightened vertically so a 100-question grid fits
-//   the sidebar height without scrolling on standard desktop screens.
+//   legend, and timer were tightened vertically. Grid changed to 6 columns
+//   so a 100-question set fits without internal scrolling.
+// Phase 7H (2026-10-01): Question card content is now vertically centered
+//   within the card so short questions don't leave a visible void at the
+//   bottom.
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
@@ -1270,6 +1273,7 @@ function AssessmentContent() {
           .assessment-question-card {
             min-height: auto !important;
             padding: 16px 16px 18px 16px !important;
+            justify-content: flex-start !important;
           }
           .forced-choice-header {
             display: none !important;
@@ -1412,6 +1416,7 @@ const styles = {
     border: "1px solid #e2e8f0",
     display: "flex",
     flexDirection: "column",
+    justifyContent: "center",
     flex: "1",
     overflow: "hidden",
     boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
@@ -1429,7 +1434,7 @@ const styles = {
   forcedChoiceChoicesWrap: { display: "contents" },
   forcedChoiceChoiceCol: { display: "flex", justifyContent: "center" },
   choiceButton: { width: "36px", height: "36px", borderRadius: "50%", border: "2px solid", fontSize: "14px", fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.15s ease" },
-  answersContainer: { display: "flex", flexDirection: "column", gap: "10px", flex: "1", overflowY: "auto", paddingRight: "4px" },
+  answersContainer: { display: "flex", flexDirection: "column", gap: "10px", flexShrink: 0, paddingRight: "4px" },
   answerCard: { padding: "16px 22px", border: "2px solid", borderRadius: "8px", cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: "16px", fontSize: "17px", flexShrink: 0, minHeight: "60px", background: "white" },
   answerCheckbox: { width: "24px", height: "24px", borderRadius: "5px", border: "2px solid", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 },
   navButtons: { display: "flex", gap: "10px", flexShrink: 0 },
@@ -1440,7 +1445,7 @@ const styles = {
   navigatorCard: { background: "white", borderRadius: "12px", padding: "12px", border: "1px solid #e2e8f0", display: "flex", flexDirection: "column", flex: 1, overflow: "hidden", boxShadow: "0 2px 8px rgba(0,0,0,0.05)" },
   navigatorHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px", flexShrink: 0 },
   navigatorTitle: { fontSize: "13px", fontWeight: 600, color: "#0f172a" },
-  questionGrid: { display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "4px", flex: 1, overflowY: "auto", padding: "2px", alignContent: "start" },
+  questionGrid: { display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: "4px", flex: 1, overflowY: "auto", padding: "2px", alignContent: "start" },
   gridItem: { aspectRatio: "1", border: "2px solid", borderRadius: "5px", fontSize: "11px", fontWeight: 500, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", minWidth: "0", minHeight: "0" },
   legend: { display: "flex", justifyContent: "space-between", padding: "6px 0 0", borderTop: "1px solid #e2e8f0", flexWrap: "wrap", gap: "4px", flexShrink: 0, marginTop: "6px" },
   legendItem: { display: "flex", alignItems: "center", gap: "3px", fontSize: "9px", color: "#64748b" },
