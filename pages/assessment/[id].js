@@ -8,9 +8,10 @@
 //   question card uses the middle column fully, and question/answer text
 //   sizes were bumped up. Grid uses minmax(0, 1fr) to prevent the classic
 //   CSS Grid trap where 1fr won't shrink below content width.
-// Phase 7G (2026-10-01): Navigator compaction. The quiz-navigation grid,
-//   legend, and timer were tightened vertically. Grid changed to 6 columns
-//   so a 100-question set fits without internal scrolling.
+// Phase 7G (2026-10-01): Navigator compaction. Grid changed to 7 columns
+//   so a 100-question set fits without internal scrolling. The navigator
+//   card no longer stretches to fill the sidebar column — it hugs its
+//   content, matching the Moodle convention.
 // Phase 7H (2026-10-01): Question card content is now vertically centered
 //   within the card so short questions don't leave a visible void at the
 //   bottom.
@@ -1442,11 +1443,11 @@ const styles = {
   nextButton: { flex: 1, padding: "12px 20px", borderRadius: "8px", fontSize: "15px", fontWeight: 500, border: "none", background: "#0b2a4e", color: "white", cursor: "pointer" },
   submitButton: { flex: 1, padding: "12px 20px", borderRadius: "8px", fontSize: "15px", fontWeight: 500, border: "none", background: "#2e7d32", color: "white", cursor: "pointer" },
   rightColumn: { display: "flex", flexDirection: "column", height: "100%", overflow: "hidden", flexShrink: 0 },
-  navigatorCard: { background: "white", borderRadius: "12px", padding: "12px", border: "1px solid #e2e8f0", display: "flex", flexDirection: "column", flex: 1, overflow: "hidden", boxShadow: "0 2px 8px rgba(0,0,0,0.05)" },
+  navigatorCard: { background: "white", borderRadius: "12px", padding: "12px", border: "1px solid #e2e8f0", display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "0 2px 8px rgba(0,0,0,0.05)" },
   navigatorHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px", flexShrink: 0 },
   navigatorTitle: { fontSize: "13px", fontWeight: 600, color: "#0f172a" },
-  questionGrid: { display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: "4px", flex: 1, overflowY: "auto", padding: "2px", alignContent: "start" },
-  gridItem: { aspectRatio: "1", border: "2px solid", borderRadius: "5px", fontSize: "11px", fontWeight: 500, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", minWidth: "0", minHeight: "0" },
+  questionGrid: { display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: "4px", flex: "initial", overflowY: "auto", padding: "2px", alignContent: "start" },
+  gridItem: { aspectRatio: "1", border: "1px solid", borderRadius: "5px", fontSize: "11px", fontWeight: 500, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", minWidth: "0", minHeight: "0" },
   legend: { display: "flex", justifyContent: "space-between", padding: "6px 0 0", borderTop: "1px solid #e2e8f0", flexWrap: "wrap", gap: "4px", flexShrink: 0, marginTop: "6px" },
   legendItem: { display: "flex", alignItems: "center", gap: "3px", fontSize: "9px", color: "#64748b" },
   legendDot: { width: "8px", height: "8px", borderRadius: "3px", display: "inline-block" },
