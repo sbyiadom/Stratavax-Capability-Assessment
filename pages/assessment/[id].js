@@ -8,6 +8,9 @@
 //   question card uses the middle column fully, and question/answer text
 //   sizes were bumped up. Grid uses minmax(0, 1fr) to prevent the classic
 //   CSS Grid trap where 1fr won't shrink below content width.
+// Phase 7G (2026-10-01): Navigator compaction. The quiz-navigation grid,
+//   legend, and timer were tightened vertically so a 100-question grid fits
+//   the sidebar height without scrolling on standard desktop screens.
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
@@ -1216,8 +1219,8 @@ function AssessmentContent() {
         }
         .navigator-item {
           transition: all 0.15s ease;
-          border-radius: 6px;
-          font-size: 13px;
+          border-radius: 5px;
+          font-size: 11px;
         }
         .navigator-item:hover:not(:disabled) {
           transform: scale(1.08);
@@ -1316,6 +1319,7 @@ function AssessmentContent() {
           }
           .question-grid {
             grid-template-columns: repeat(5, 1fr) !important;
+            gap: 4px !important;
           }
         }
 
@@ -1433,17 +1437,17 @@ const styles = {
   nextButton: { flex: 1, padding: "12px 20px", borderRadius: "8px", fontSize: "15px", fontWeight: 500, border: "none", background: "#0b2a4e", color: "white", cursor: "pointer" },
   submitButton: { flex: 1, padding: "12px 20px", borderRadius: "8px", fontSize: "15px", fontWeight: 500, border: "none", background: "#2e7d32", color: "white", cursor: "pointer" },
   rightColumn: { display: "flex", flexDirection: "column", height: "100%", overflow: "hidden", flexShrink: 0 },
-  navigatorCard: { background: "white", borderRadius: "12px", padding: "16px", border: "1px solid #e2e8f0", display: "flex", flexDirection: "column", flex: 1, overflow: "hidden", boxShadow: "0 2px 8px rgba(0,0,0,0.05)" },
-  navigatorHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px", flexShrink: 0 },
-  navigatorTitle: { fontSize: "14px", fontWeight: 600, color: "#0f172a" },
-  questionGrid: { display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "5px", flex: 1, overflowY: "auto", padding: "2px", alignContent: "start" },
-  gridItem: { aspectRatio: "1", border: "2px solid", borderRadius: "6px", fontSize: "12px", fontWeight: 500, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", minWidth: "0", minHeight: "0" },
-  legend: { display: "flex", justifyContent: "space-between", padding: "8px 0 0", borderTop: "1px solid #e2e8f0", flexWrap: "wrap", gap: "4px", flexShrink: 0, marginTop: "8px" },
-  legendItem: { display: "flex", alignItems: "center", gap: "4px", fontSize: "10px", color: "#64748b" },
-  legendDot: { width: "10px", height: "10px", borderRadius: "4px", display: "inline-block" },
-  navigatorTimer: { display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", padding: "8px 0 0", borderTop: "1px solid #e2e8f0", marginTop: "8px", flexShrink: 0 },
-  navigatorTimerLabel: { fontSize: "14px" },
-  navigatorTimerValue: { fontSize: "16px", fontWeight: 700, color: "#0b2a4e", fontFamily: "monospace" },
+  navigatorCard: { background: "white", borderRadius: "12px", padding: "12px", border: "1px solid #e2e8f0", display: "flex", flexDirection: "column", flex: 1, overflow: "hidden", boxShadow: "0 2px 8px rgba(0,0,0,0.05)" },
+  navigatorHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px", flexShrink: 0 },
+  navigatorTitle: { fontSize: "13px", fontWeight: 600, color: "#0f172a" },
+  questionGrid: { display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "4px", flex: 1, overflowY: "auto", padding: "2px", alignContent: "start" },
+  gridItem: { aspectRatio: "1", border: "2px solid", borderRadius: "5px", fontSize: "11px", fontWeight: 500, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", minWidth: "0", minHeight: "0" },
+  legend: { display: "flex", justifyContent: "space-between", padding: "6px 0 0", borderTop: "1px solid #e2e8f0", flexWrap: "wrap", gap: "4px", flexShrink: 0, marginTop: "6px" },
+  legendItem: { display: "flex", alignItems: "center", gap: "3px", fontSize: "9px", color: "#64748b" },
+  legendDot: { width: "8px", height: "8px", borderRadius: "3px", display: "inline-block" },
+  navigatorTimer: { display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", padding: "6px 0 0", borderTop: "1px solid #e2e8f0", marginTop: "6px", flexShrink: 0 },
+  navigatorTimerLabel: { fontSize: "12px" },
+  navigatorTimerValue: { fontSize: "14px", fontWeight: 700, color: "#0b2a4e", fontFamily: "monospace" },
   modalOverlay: { position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: "12px" },
   modalContent: { background: "white", padding: "24px", borderRadius: "20px", maxWidth: "440px", width: "100%", boxShadow: "0 20px 60px rgba(0,0,0,0.2)", maxHeight: "90vh", overflowY: "auto" },
   modalIcon: { fontSize: "48px", textAlign: "center", marginBottom: "16px" },
@@ -1460,7 +1464,7 @@ const styles = {
   mobileNavHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px" },
   mobileNavTitle: { fontSize: "16px", fontWeight: 700, color: "#0f172a" },
   mobileNavClose: { background: "transparent", border: "none", fontSize: "22px", cursor: "pointer", color: "#64748b", padding: "4px 8px" },
-  mobileNavGrid: { display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: "6px", padding: "2px 0" },
+  mobileNavGrid: { display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: "5px", padding: "2px 0" },
   mobileNavLegend: { marginTop: "16px", paddingTop: "12px", borderTop: "1px solid #e2e8f0", fontSize: "12px", color: "#64748b", display: "flex", alignItems: "center" },
 };
 
