@@ -1,23 +1,53 @@
 // pages/admin/add-candidate.js
-// Phase 7C:
-//   • Added University, Programme, and Degree Level <select> dropdowns
-//     populated from /api/academic-options. Previously the admin page sent
-//     only full_name, email, phone, supervisor_id, password, and invite —
-//     so admin-created candidates always landed with university = null,
-//     programme = null, and (after the degree_level rollout) degree_level_id
-//     = null. This brings the admin page to parity with the supervisor flow.
-//   • All three fields are mandatory on submit.
-//   • degree_level_id is sent to /api/admin/add-candidate, which validates it
-//     against degree_levels and stores it on candidate_profiles.
+// Phase 7E (2026-10-01):
+//   • Phone is now REQUIRED. Validated + normalized to E.164 (+233XXXXXXXXX)
+//     before sending to /api/admin/add-candidate. The endpoint also validates
+//     server-side; this client-side check gives the admin a faster, clearer
+//     error instead of a 400 round-trip.
+//   • Label updated to remove "(Optional)".
+//   • Validation mirrors public.normalize_ghana_phone and the copies in
+//     pages/api/admin/add-candidate.js and pages/supervisor/add-candidate.js.
 //
-// Everything else preserved: auth check, supervisor picker, invite vs
-// password, success panel, link row.
+// Phase 7C (kept):
+//   • Added University, Programme, and Degree Level <select> dropdowns
+//     populated from /api/academic-options. Brought the admin page to parity
+//     with the supervisor flow.
+//   • All three fields are mandatory on submit.
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import AppLayout from "../../components/AppLayout";
 import { supabase } from "../../supabase/client";
+
+// Must stay in sync with public.normalize_ghana_phone and the copies in
+// pages/api/admin/add-candidate.js, pages/supervisor/add-candidate.js, and
+// pages/register.js.
+const GHANA_MOBILE_PREFIXES = new Set([
+  "020", "023", "024", "025", "026", "027", "028", "029",
+  "050", "053", "054", "055", "056", "057", "058", "059",
+]);
+
+function normalizeGhanaPhone(input) {
+  if (input === null || input === undefined) return null;
+  const clean = String(input).replace(/[\s\-().]/g, "");
+  if (clean === "") return null;
+  if (clean.startsWith("00")) return null;
+
+  let local;
+  if (/^\+233[0-9]{9}$/.test(clean)) {
+    local = "0" + clean.slice(4);
+  } else if (/^233[0-9]{9}$/.test(clean)) {
+    local = "0" + clean.slice(3);
+  } else {
+    local = clean;
+  }
+
+  if (!/^0[0-9]{9}$/.test(local)) return null;
+  if (!GHANA_MOBILE_PREFIXES.has(local.slice(0, 3))) return null;
+
+  return "+233" + local.slice(1);
+}
 
 function cleanText(value, fallback = "") {
   if (value === null || value === undefined || value === "") return fallback;
@@ -122,6 +152,7 @@ export default function AddCandidate() {
     return (
       cleanText(form.full_name).trim() &&
       isValidEmail(cleanText(form.email).trim()) &&
+      normalizeGhanaPhone(form.phone) !== null &&
       cleanText(form.university).trim() &&
       cleanText(form.program).trim() &&
       cleanText(form.degree_level_id).trim() &&
@@ -239,6 +270,15 @@ export default function AddCandidate() {
       return;
     }
 
+    const normalizedPhone = normalizeGhanaPhone(form.phone);
+    if (!normalizedPhone) {
+      setMessage({
+        type: "error",
+        text: "A valid Ghanaian mobile number is required (e.g. 024 123 4567 or +233 24 123 4567).",
+      });
+      return;
+    }
+
     if (!cleanText(form.university).trim()) {
       setMessage({ type: "error", text: "University is required." });
       return;
@@ -277,7 +317,7 @@ export default function AddCandidate() {
         body: JSON.stringify({
           full_name: cleanText(form.full_name).trim(),
           email: cleanText(form.email).trim().toLowerCase(),
-          phone: cleanText(form.phone).trim(),
+          phone: normalizedPhone,
           university: cleanText(form.university).trim(),
           program: cleanText(form.program).trim(),
           degree_level_id: parseInt(form.degree_level_id, 10),
@@ -418,6 +458,19 @@ export default function AddCandidate() {
             </div>
 
             <div style={styles.fieldGroup}>
+              <label style={styles.label}>Phone Number *</label>
+              <input
+                type="tel"
+                value={form.phone}
+                onChange={(event) => updateField("phone", event.target.value)}
+                style={styles.input}
+                placeholder="e.g. 024 123 4567"
+                required
+              />
+              <p style={styles.hint}>Ghanaian mobile number (024, 054, 055, 059, etc.)</p>
+            </div>
+
+            <div style={styles.fieldGroup}>
               <label style={styles.label}>University *</label>
               <select
                 value={form.university}
@@ -475,17 +528,6 @@ export default function AddCandidate() {
                   </option>
                 ))}
               </select>
-            </div>
-
-            <div style={styles.fieldGroup}>
-              <label style={styles.label}>Phone</label>
-              <input
-                type="text"
-                value={form.phone}
-                onChange={(event) => updateField("phone", event.target.value)}
-                style={styles.input}
-                placeholder="Optional phone number"
-              />
             </div>
 
             <div style={styles.fieldGroup}>
@@ -561,6 +603,7 @@ export default function AddCandidate() {
                 <h3 style={styles.successTitle}>Candidate Created</h3>
                 <p style={styles.detailText}><strong>Name:</strong> {createdCandidate.full_name}</p>
                 <p style={styles.detailText}><strong>Email:</strong> {createdCandidate.email}</p>
+                <p style={styles.detailText}><strong>Phone:</strong> {createdCandidate.phone || "Not specified"}</p>
                 <p style={styles.detailText}><strong>University:</strong> {createdCandidate.university || "Not specified"}</p>
                 <p style={styles.detailText}><strong>Programme:</strong> {createdCandidate.programme || "Not specified"}</p>
                 <p style={styles.detailText}><strong>Degree Level:</strong> {degreeLevelName(createdCandidate.degree_level_id) || "Not specified"}</p>
