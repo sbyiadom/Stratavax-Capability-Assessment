@@ -1,28 +1,56 @@
 // pages/supervisor/add-candidate.js
-// Phase 7C:
+// Phase 7E (2026-10-01):
+//   • Phone is now REQUIRED. Validated + normalized to E.164 (+233XXXXXXXXX)
+//     before sending to /api/admin/add-candidate. The endpoint also validates
+//     server-side; this client-side check gives the supervisor a faster,
+//     clearer error instead of a 400 round-trip.
+//   • Label updated to remove "(Optional)".
+//   • Validation mirrors public.normalize_ghana_phone and the copy in
+//     pages/api/admin/add-candidate.js. Same whitelist, same output format.
+//
+// Phase 7C (kept):
 //   • Added a mandatory Degree Level <select> populated from
-//     /api/academic-options (which reads the degree_levels table).
-//     Sits between Program of Study and Phone Number.
-//   • degree_level_id is sent to /api/admin/add-candidate, which validates it
-//     against degree_levels and stores it on candidate_profiles.
-//   • The post-creation success panel now shows the chosen degree level by
-//     name (looked up from the loaded degreeLevels array), not by raw id.
+//     /api/academic-options.
+//   • degree_level_id sent to /api/admin/add-candidate.
+//   • Success panel shows the chosen degree level by name.
 //
 // Phase 7B (kept):
-//   • Auth now calls /api/supervisor/me (RLS-safe) instead of a client-side
-//     supabase.from('supervisor_profiles') read that RLS was denying silently.
-//   • University and Programme fields are canonical <select> dropdowns fed
-//     from /api/academic-options. Same source as pages/register.js.
-//
-// Submit flow unchanged:
-//   1. POST /api/supervisor/check-candidate-exists  (duplicate check)
-//   2. POST /api/admin/add-candidate                 (creates auth user + profile)
+//   • Auth via /api/supervisor/me.
+//   • University and Programme fields are canonical <select> dropdowns.
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import AppLayout from "../../components/AppLayout";
 import { supabase } from "../../supabase/client";
+
+// Must stay in sync with public.normalize_ghana_phone and the copies in
+// pages/api/admin/add-candidate.js and pages/register.js.
+const GHANA_MOBILE_PREFIXES = new Set([
+  "020", "023", "024", "025", "026", "027", "028", "029",
+  "050", "053", "054", "055", "056", "057", "058", "059",
+]);
+
+function normalizeGhanaPhone(input) {
+  if (input === null || input === undefined) return null;
+  const clean = String(input).replace(/[\s\-().]/g, "");
+  if (clean === "") return null;
+  if (clean.startsWith("00")) return null;
+
+  let local;
+  if (/^\+233[0-9]{9}$/.test(clean)) {
+    local = "0" + clean.slice(4);
+  } else if (/^233[0-9]{9}$/.test(clean)) {
+    local = "0" + clean.slice(3);
+  } else {
+    local = clean;
+  }
+
+  if (!/^0[0-9]{9}$/.test(local)) return null;
+  if (!GHANA_MOBILE_PREFIXES.has(local.slice(0, 3))) return null;
+
+  return "+233" + local.slice(1);
+}
 
 function cleanText(value, fallback = "") {
   if (value === null || value === undefined || value === "") return fallback;
@@ -126,6 +154,7 @@ export default function AddCandidate() {
     return (
       cleanText(form.full_name).trim() &&
       isValidEmail(cleanText(form.email).trim()) &&
+      normalizeGhanaPhone(form.phone) !== null &&
       cleanText(form.university).trim() &&
       cleanText(form.program).trim() &&
       cleanText(form.degree_level_id).trim() &&
@@ -261,6 +290,15 @@ export default function AddCandidate() {
       return;
     }
 
+    const normalizedPhone = normalizeGhanaPhone(form.phone);
+    if (!normalizedPhone) {
+      setMessage({
+        type: "error",
+        text: "A valid Ghanaian mobile number is required (e.g. 024 123 4567 or +233 24 123 4567).",
+      });
+      return;
+    }
+
     if (!cleanText(form.university).trim()) {
       setMessage({ type: "error", text: "University is required." });
       return;
@@ -333,7 +371,7 @@ export default function AddCandidate() {
         body: JSON.stringify({
           full_name: cleanText(form.full_name).trim(),
           email: normalizedEmail,
-          phone: cleanText(form.phone).trim(),
+          phone: normalizedPhone,
           university: cleanText(form.university).trim(),
           program: cleanText(form.program).trim(),
           degree_level_id: parseInt(form.degree_level_id, 10),
@@ -502,6 +540,19 @@ export default function AddCandidate() {
             </div>
 
             <div style={styles.fieldGroup}>
+              <label style={styles.label}>Phone Number *</label>
+              <input
+                type="tel"
+                value={form.phone}
+                onChange={(event) => updateField("phone", event.target.value)}
+                style={styles.input}
+                placeholder="e.g. 024 123 4567"
+                required
+              />
+              <p style={styles.hint}>Ghanaian mobile number (024, 054, 055, 059, etc.)</p>
+            </div>
+
+            <div style={styles.fieldGroup}>
               <label style={styles.label}>University *</label>
               <select
                 value={form.university}
@@ -559,17 +610,6 @@ export default function AddCandidate() {
                   </option>
                 ))}
               </select>
-            </div>
-
-            <div style={styles.fieldGroup}>
-              <label style={styles.label}>Phone Number (Optional)</label>
-              <input
-                type="tel"
-                value={form.phone}
-                onChange={(event) => updateField("phone", event.target.value)}
-                style={styles.input}
-                placeholder="+233 XX XXX XXXX"
-              />
             </div>
 
             <div style={styles.optionBox}>
@@ -661,6 +701,9 @@ export default function AddCandidate() {
                 </p>
                 <p style={styles.detailText}>
                   <strong>Email:</strong> {createdCandidate.email}
+                </p>
+                <p style={styles.detailText}>
+                  <strong>Phone:</strong> {createdCandidate.phone || "Not specified"}
                 </p>
                 <p style={styles.detailText}>
                   <strong>University:</strong> {createdCandidate.university || "Not specified"}
