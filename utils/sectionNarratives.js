@@ -471,8 +471,87 @@ export const sectionImplications = {
       'This is a critical constraint. Numerical work should be reassigned or heavily supervised.',
     ],
   },
-};
 
+  // ---------- Cognitive: Abstract Reasoning ----------
+  'Abstract Reasoning': {
+    exceptional: [
+      'The candidate can be trusted with problems that require seeing structure in unfamiliar material. Consider using this strength in roles involving analysis, design, or novel problem solving.',
+      'Reliable for any task requiring abstract pattern recognition or rule inference. Very few candidates will perform at this level.',
+      'Assign to work involving unfamiliar systems, novel data, or symbolic content with confidence. No structured support needed.',
+      'This is a genuine differentiator. Consider pairing the candidate with weaker performers on pattern-heavy work for peer development.',
+    ],
+    strong: [
+      'Suitable for most tasks requiring pattern recognition and rule inference. No specific intervention required.',
+      'Reliable for roles involving abstraction or unfamiliar content. Occasional complexity may warrant review, but the overall pattern is sound.',
+      'Assign to work requiring structure-finding with standard oversight. Quality should be consistent.',
+      'This capability can be counted on. Consider using it where reasoning about novel material is part of the job.',
+    ],
+    capable: [
+      'Suitable for routine pattern-based tasks. On complex or unfamiliar work in this area, consider a review pass or additional support.',
+      'Acceptable for most abstraction tasks. Where the stakes are high, verify conclusions before acting on them.',
+      'Provide worked examples, reference patterns, or peer support on layered or symbolic problems.',
+      'If the role demands excellence in abstract reasoning, targeted practice with feedback is recommended.',
+    ],
+    developing: [
+      'Pair the candidate with a stronger performer for tasks requiring rule inference or pattern recognition in unfamiliar content.',
+      'Provide structured support — worked examples, reference material, and review checkpoints. Avoid assigning standalone responsibility for abstract problem solving until capability improves.',
+      'Assign abstraction tasks in stages and verify conclusions before relying on them.',
+      'Set specific learning goals for this area and review progress quarterly.',
+    ],
+    at_risk: [
+      'Significant support is required. Do not assign standalone responsibility for abstract reasoning tasks.',
+      'Where pattern inference is central to the role, reconsider fit or provide close supervision and scaffolding.',
+      'Structured development plan needed. Track progress formally and provide external aids where possible.',
+      "This is a priority development area. Expect to invest time and support in scaffolding the candidate's abstract work.",
+    ],
+    high_risk: [
+      'Do not rely on this capability for decisions or critical work.',
+      'Roles requiring abstract reasoning should be reconsidered for this candidate. If unavoidable, pair with a stronger performer for any pattern-inference tasking.',
+      'Substantial, ongoing support would be needed. Consider whether this is the right fit for the role\u2019s demands.',
+      'This is a critical constraint. Abstract reasoning tasks should be reassigned or heavily supervised.',
+    ],
+  },
+
+  // ---------- Cognitive: Logical Reasoning ----------
+  'Logical Reasoning': {
+    exceptional: [
+      'The candidate can be trusted with problems requiring careful inference. Consider using this strength in roles involving analysis, policy, or structured decision-making.',
+      'Reliable for any task requiring valid reasoning from premises. Very few candidates will perform at this level.',
+      'Assign to work involving contracts, rules, procedure, or diagnostic reasoning with confidence. No structured support needed.',
+      'This is a genuine differentiator. Consider pairing the candidate with weaker performers on logic-heavy work for peer development.',
+    ],
+    strong: [
+      'Suitable for most tasks requiring valid inference. No specific intervention required.',
+      'Reliable for roles involving rule interpretation or deductive reasoning. Occasional complexity may warrant review, but the overall pattern is sound.',
+      'Assign to work requiring logical analysis with standard oversight. Quality should be consistent.',
+      'This capability can be counted on. Consider using it where reasoning about premises or conditions is part of the job.',
+    ],
+    capable: [
+      'Suitable for routine logical tasks. On complex or layered reasoning in this area, consider a review pass or additional support.',
+      'Acceptable for most deductive work. Where the stakes are high, verify conclusions before acting on them.',
+      'Provide reference material, worked examples, or peer support on multi-premise problems.',
+      'If the role demands excellence in logical reasoning, targeted practice with feedback is recommended.',
+    ],
+    developing: [
+      'Pair the candidate with a stronger reasoner for tasks requiring conditionals or categorical logic.',
+      'Provide structured support — worked examples, reference material, and review checkpoints. Avoid assigning standalone responsibility for complex deduction until capability improves.',
+      'Assign logical tasks in stages and verify conclusions before relying on them.',
+      'Set specific learning goals for this area and review progress quarterly.',
+    ],
+    at_risk: [
+      'Significant support is required. Do not assign standalone responsibility for logical reasoning tasks.',
+      'Where valid inference is central to the role, reconsider fit or provide close supervision and scaffolding.',
+      'Structured development plan needed. Track progress formally and provide external aids where possible.',
+      "This is a priority development area. Expect to invest time and support in scaffolding the candidate's deductive work.",
+    ],
+    high_risk: [
+      'Do not rely on this capability for decisions or critical work.',
+      'Roles requiring logical reasoning should be reconsidered for this candidate. If unavoidable, pair with a stronger performer for any inference-based tasking.',
+      'Substantial, ongoing support would be needed. Consider whether this is the right fit for the role\u2019s demands.',
+      'This is a critical constraint. Logical reasoning tasks should be reassigned or heavily supervised.',
+    ],
+  },
+};
 // ============================================================
 // 4. HELPERS
 // ============================================================
