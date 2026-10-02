@@ -1,10 +1,15 @@
-// pages/api/assessment/questions.js - FULLY CORRECTED WITH 40-QUESTION LIMIT
+// pages/api/assessment/questions.js - PER-QUESTION SCORING MODE SUPPORT
 // UPDATED: Added Bearer token authentication (Phase 1)
 // UPDATED: Removed answer scores from response; server computes isMultipleCorrect (Phase 1)
 // UPDATED (Phase Two / Item 2.4): If a sessionId is provided and that session
 // has a frozen set in session_questions, return that exact set (in the exact
 // order it was frozen) instead of re-randomizing. This guarantees page refresh
 // returns the same questions the candidate started with.
+// UPDATED (Phase 7I, 2026-10-02): Each question now carries scoring_mode.
+// This enables mixed-format assessments (e.g. Performance Assessment) where
+// some questions are forced-choice and others are single-select. The frontend
+// reads currentQuestion.scoring_mode and falls back to the assessment-level
+// default when null.
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -123,10 +128,10 @@ async function loadFrozenQuestions(serviceClient, sessionId, assessmentTypeCode)
 
   const questionIds = frozen.map((row) => row.question_id);
 
-  // 2. Fetch the questions themselves.
+  // 2. Fetch the questions themselves (now including scoring_mode).
   const { data: questions, error: qErr } = await serviceClient
     .from('unique_questions')
-    .select('id, question_text, section, subsection, display_order')
+    .select('id, question_text, section, subsection, display_order, scoring_mode')
     .in('id', questionIds);
 
   if (qErr || !questions) {
@@ -204,6 +209,7 @@ async function loadFrozenQuestions(serviceClient, sessionId, assessmentTypeCode)
       section: q.section || 'General',
       subsection: q.subsection || '',
       display_order: row.display_order,
+      scoring_mode: q.scoring_mode || null,
       answers: orderedAnswers,
     });
   }
@@ -288,9 +294,10 @@ export default async function handler(req, res) {
     const requiredCount = getRequiredQuestionCount(assessmentId, assessmentTypeCode);
     console.log(`[API] Required question count: ${requiredCount}`);
 
+    // NOW selecting scoring_mode explicitly (instead of select('*')).
     const { data: questionsData, error: questionsError } = await serviceClient
       .from('unique_questions')
-      .select('*')
+      .select('id, question_text, section, subsection, display_order, scoring_mode')
       .eq('assessment_type_id', parseInt(assessmentTypeId, 10))
       .order('display_order', { ascending: true });
 
@@ -346,6 +353,7 @@ export default async function handler(req, res) {
         section: question.section || "General",
         subsection: question.subsection || "",
         display_order: question.display_order || 1,
+        scoring_mode: question.scoring_mode || null,
         answers: answers
       };
     });
