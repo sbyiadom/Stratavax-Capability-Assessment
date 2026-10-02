@@ -38,6 +38,11 @@
 //   percentage_score, workplace_readiness, intellectual_capability,
 //   recommendation, is_national_service, is_completed, is_auto_submitted,
 //   completed_at, category_scores, report_data, _result
+//
+// 2026-10-02: SELECT now includes risk_level, risk_score, proctoring_data,
+//   total_questions, and answered_questions. Previously omitted from the query,
+//   so downstream components had no way to read them and fell back to
+//   misleading defaults ('Medium') or 'Not available'.
 
 import { authorizeRequest } from '../../../utils/apiAuth';
 
@@ -187,11 +192,6 @@ export default async function handler(req, res) {
 
     let targetCandidates = Array.from(candidatesById.values());
 
-    // ---- Optional: filter to a single candidate, with an access check ----
-    // The original endpoint returned 404 if user_id was provided but the
-    // candidate was not in the caller's scope. We preserve that, but now
-    // the scope check is enforced against the RPC-derived set — no RLS
-    // lookup needed.
     if (user_id) {
       const requested = candidatesById.get(user_id);
       if (!requested) {
@@ -216,9 +216,8 @@ export default async function handler(req, res) {
     const candidateIds = targetCandidates.map((c) => c.id);
 
     // ---- Fetch assessment_results with embedded join, chunked ----
-    // Note: the embedded join 'assessments:assessment_id' relies on the FK
-    // from assessment_results.assessment_id → assessments.id. That FK exists
-    // (this select worked under RLS before; it will work under service role).
+    // 2026-10-02: select now includes risk_level, risk_score, proctoring_data,
+    // total_questions, answered_questions — these were previously missing.
     const allResults = [];
 
     for (const slice of chunk(candidateIds, CHUNK_SIZE)) {
@@ -236,11 +235,16 @@ export default async function handler(req, res) {
           max_score,
           category_scores,
           report_data,
+          risk_level,
+          risk_score,
+          proctoring_data,
+          violation_count,
+          total_questions,
+          answered_questions,
           completed_at,
           created_at,
           is_valid,
           is_auto_submitted,
-          violation_count,
           assessments:assessment_id (
             id,
             title,
@@ -267,7 +271,6 @@ export default async function handler(req, res) {
           totalCandidates: candidateIds.length,
           assessmentFilter: assessment_id || null,
         });
-        // Preserve the original behavior: a results-fetch failure is a 500.
         return res.status(500).json({ success: false, error: resultsError.message });
       }
 
@@ -333,11 +336,17 @@ export default async function handler(req, res) {
         completed_at: result.completed_at,
         category_scores: result.category_scores || [],
         report_data: result.report_data || {},
+        // 2026-10-02 additions — passed through to the report component
+        risk_level: result.risk_level || null,
+        risk_score: result.risk_score ?? null,
+        proctoring_data: result.proctoring_data || {},
+        total_questions: result.total_questions ?? null,
+        answered_questions: result.answered_questions ?? null,
         _result: result,
       };
     });
 
-    // ---- Single-result mode (preserved from original) ----
+    // ---- Single-result mode ----
     if (assessment_id && reports.length === 1) {
       const report = reports[0];
       const candidate = targetCandidatesById.get(report.candidate_id) || {};
@@ -366,6 +375,12 @@ export default async function handler(req, res) {
           category_scores: report.category_scores || [],
           recommendation: report.recommendation,
           completed_at: report.completed_at,
+          // 2026-10-02: ensure risk + proctoring survive the shape spread
+          risk_level: report.risk_level,
+          risk_score: report.risk_score,
+          proctoring_data: report.proctoring_data,
+          total_questions: report.total_questions,
+          answered_questions: report.answered_questions,
         },
         reports,
         candidates: targetCandidates,
@@ -383,7 +398,7 @@ export default async function handler(req, res) {
       });
     }
 
-    // ---- List mode (preserved from original) ----
+    // ---- List mode ----
     const nationalServiceReports = reports.filter((r) => r.is_national_service === true);
     const otherReports = reports.filter((r) => r.is_national_service === false);
 
