@@ -310,8 +310,87 @@ export const sectionSummaries = {
       'Performance on this section indicates a serious difficulty with quantitative material. Tasking that depends on numerical reasoning should be reconsidered or reassigned.',
     ],
   },
-};
 
+  // ---------- Cognitive: Abstract Reasoning ----------
+  'Abstract Reasoning': {
+    exceptional: [
+      'Abstract reasoning is a clear strength. The candidate identifies patterns and underlying rules in unfamiliar material quickly and with confidence.',
+      'The candidate reasons fluently with symbolic or novel content. Structure is recognised without needing examples or prior exposure.',
+      'Abstract reasoning is well above the expected range. The candidate spots relationships and rules that are not immediately obvious.',
+      'Performance on abstract items indicates strong fluid reasoning. The candidate moves easily from specific cases to general patterns.',
+    ],
+    strong: [
+      'Abstract reasoning is solid and reliable. The candidate handles most pattern-based problems correctly and rarely misses the underlying rule.',
+      'The candidate recognises structure in unfamiliar content with confidence. Occasional complexity may slow the pace but not the outcome.',
+      'Abstract reasoning is above average. Patterns and symbolic relationships are handled well most of the time.',
+      'The candidate reasons effectively about novel material. Rules are identified correctly even where examples are limited.',
+    ],
+    capable: [
+      'Abstract reasoning is functional. Straightforward patterns and rules are handled correctly, but more complex or unfamiliar content may be effortful.',
+      'The candidate recognises structure on typical tasks. Where patterns are layered or abstract, accuracy may be inconsistent.',
+      'Abstract reasoning is at the expected baseline. The candidate reaches the right conclusions on most items but may slow down on the more demanding ones.',
+      'The candidate demonstrates reasonable fluid reasoning. Some pattern types are handled easily; others require more effort.',
+    ],
+    developing: [
+      'Abstract reasoning is below the expected range. Basic patterns are recognised, but the candidate struggles to infer rules from unfamiliar material.',
+      'The candidate finds abstract content effortful. Straightforward sequences or analogies may be handled; layered or symbolic problems are more likely to be missed.',
+      'Performance on abstract items suggests the candidate benefits from concrete examples. Without them, rule inference is inconsistent.',
+      'The candidate recognises structure when it is explicit. Where patterns must be inferred, the reasoning breaks down more often.',
+    ],
+    at_risk: [
+      'Abstract reasoning is a significant constraint. The candidate handles simple pattern recognition but struggles with unfamiliar or symbolic material.',
+      'Fluid reasoning presents notable difficulty. The candidate is likely to miss rules or relationships that are not immediately visible.',
+      'Performance in this area is well below the expected range. Even standard abstract tasks may be effortful.',
+      "The candidate's ability to reason with novel material is limited. Roles requiring pattern inference or abstract problem solving will be affected.",
+    ],
+    high_risk: [
+      'Abstract reasoning is severely limited. Most pattern-based or symbolic tasks will present substantial difficulty.',
+      "The candidate's performance on abstract items is in the lowest range observed. Novel problem solving should not be relied upon without significant support.",
+      'Fluid reasoning is a critical constraint. Even simple pattern recognition may require scaffolding.',
+      'Performance on this section indicates a serious difficulty with abstract material. Tasking that depends on inferring rules from unfamiliar content should be reconsidered.',
+    ],
+  },
+
+  // ---------- Cognitive: Logical Reasoning ----------
+  'Logical Reasoning': {
+    exceptional: [
+      'Logical reasoning is a clear strength. The candidate draws valid inferences from premises with confidence and reliably distinguishes necessary from possible conclusions.',
+      'The candidate reasons correctly about conditionals and categorical relationships. Invalid inferences are recognised immediately.',
+      'Logical reasoning is well above the expected range. The candidate handles complex chains of deduction without losing precision.',
+      'Performance on logical items indicates strong analytical reasoning. The candidate identifies what must follow from premises, and what cannot.',
+    ],
+    strong: [
+      'Logical reasoning is solid and dependable. The candidate draws correct inferences in most cases and rarely confuses valid reasoning with plausible reasoning.',
+      'The candidate handles conditional and categorical logic reliably. Very complex or layered problems may occasionally slow the pace, but the outcome is generally correct.',
+      'Logical reasoning is above average. Most deductions are handled confidently.',
+      'The candidate distinguishes valid from invalid inferences in most scenarios. Where multiple premises interact, accuracy remains high.',
+    ],
+    capable: [
+      'Logical reasoning is functional. Straightforward deductions are handled correctly, but complex or multi-step logical problems may be more effortful.',
+      'The candidate reasons about premises adequately. Where conditionals or categorical statements interact, occasional errors may occur.',
+      'Logical reasoning is at the expected baseline. The candidate reaches correct conclusions on most items but is slower or less certain on harder ones.',
+      'The candidate demonstrates reliable deduction on typical tasks. Where premises are layered or ambiguous, accuracy may vary.',
+    ],
+    developing: [
+      'Logical reasoning is below the expected range. Basic inferences are handled, but the candidate struggles with conditionals, contrapositives, or multi-premise chains.',
+      'The candidate finds logical deduction effortful. Direct inferences may be reached; layered or categorical reasoning is more likely to be missed.',
+      'Performance on logical items suggests the candidate benefits from concrete examples. Without them, rule application is inconsistent.',
+      'The candidate reasons correctly on simpler premises but is more likely to accept plausible-looking but invalid conclusions.',
+    ],
+    at_risk: [
+      'Logical reasoning is a significant constraint. The candidate handles simple statements but struggles with conditionals, categorical logic, or multi-premise reasoning.',
+      'Deductive reasoning presents notable difficulty. The candidate may accept invalid conclusions when they are plausible.',
+      'Performance in this area is well below the expected range. Even standard logical tasks may be effortful.',
+      "The candidate's ability to draw valid inferences is limited. Roles requiring careful reasoning about conditionals or categorisation will be affected.",
+    ],
+    high_risk: [
+      'Logical reasoning is severely limited. Most deductive tasks will present substantial difficulty.',
+      "The candidate's performance on logical items is in the lowest range observed. Valid inference should not be relied on without significant support.",
+      'Analytical reasoning is a critical constraint. Even simple conditionals may require scaffolding.',
+      'Performance on this section indicates a serious difficulty with logical structure. Tasking that depends on drawing valid inferences should be reconsidered.',
+    ],
+  },
+};
 export const sectionImplications = {
   // ---------- Cognitive: Verbal Reasoning ----------
   'Verbal Reasoning': {
