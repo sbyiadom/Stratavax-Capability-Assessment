@@ -31,7 +31,8 @@
 // Authoring progress:
 //   Framework + generic fallback banks + Cognitive (Verbal, Numerical,
 //   Abstract, Logical) + Behavioral & Soft Skills (Decision Making,
-//   Communication, Adaptability). Subsequent sessions add further batches.
+//   Communication, Adaptability, Accountability). Subsequent sessions add
+//   further batches.
 
 // ============================================================
 // 1. SECTION DEFINITIONS
@@ -511,6 +512,46 @@ export const sectionSummaries = {
       'Significant scaffolding is required. The candidate is unlikely to adjust effectively to change without structured support and time.',
     ],
   },
+
+  // ---------- Behavioral & Soft Skills: Accountability ----------
+  'Accountability': {
+    exceptional: [
+      'Accountability is a clear strength. The candidate owns outcomes — good and bad — without deflecting to circumstance, colleagues, or system. Responsibility is taken quickly and cleanly.',
+      'The candidate reports problems early rather than after they compound. Failures are acknowledged and used as input, not hidden or reframed.',
+      'Accountability is well above the expected range. Commitments are tracked and followed through, and the candidate holds themselves to a higher standard than required.',
+      'The candidate distinguishes between factors within their control and those outside it, and takes responsibility only for the former — without overclaiming or underclaiming.',
+    ],
+    strong: [
+      'Accountability is solid and dependable. The candidate accepts responsibility for outcomes and rarely deflects or excuses.',
+      'The candidate owns mistakes promptly and follows through on corrective action. Minor lapses at the top end, but the pattern is reliable.',
+      'Accountability is above average. Commitments are honoured and failures acknowledged without defensiveness.',
+      'The candidate takes responsibility for their work in typical situations. Escalation and disclosure happen as expected.',
+    ],
+    capable: [
+      'Accountability is functional. The candidate accepts responsibility in routine situations but may be slower to own failure when stakes are high or visibility is broad.',
+      'The candidate follows through on most commitments. Where things go wrong, ownership may be partial or delayed.',
+      'Accountability is at the expected baseline. The candidate is generally reliable but may attribute poor outcomes to external factors more readily than is warranted.',
+      'The candidate manages day-to-day ownership adequately. Public or high-stakes failure may need support to acknowledge cleanly.',
+    ],
+    developing: [
+      'Accountability is below the expected range. The candidate may deflect, excuse, or delay taking responsibility when things go wrong.',
+      'The candidate is more comfortable owning success than failure. Errors may be reframed, minimised, or attributed to others or circumstance.',
+      'Performance on accountability items suggests the candidate benefits from clear ownership structures and explicit expectations.',
+      'The candidate may avoid raising problems early, preferring to solve or conceal them without escalation.',
+    ],
+    at_risk: [
+      'Accountability is a significant constraint. The candidate may deflect blame, delay disclosure, or fail to follow through on commitments without external pressure.',
+      'Ownership of outcomes is inconsistent. Failures may be reframed as external, hidden, or attributed to factors the candidate did not control.',
+      'Performance in this area is well below the expected range. Reliability and trust are likely to be affected.',
+      'The candidate struggles to acknowledge error or accept responsibility in ways that affect team confidence and learning.',
+    ],
+    high_risk: [
+      'Accountability is severely limited. Even routine ownership may be avoided, deflected, or reversed when consequences appear.',
+      'The candidate shows marked difficulty taking responsibility. Failures are unlikely to be owned or used constructively.',
+      'Accountability is in the lowest range observed on this assessment. Roles requiring reliability and ownership should be reconsidered.',
+      'Significant scaffolding is required. The candidate is unlikely to accept responsibility without explicit structure, monitoring, and consequence.',
+    ],
+  },
 };
 
 export const sectionImplications = {
@@ -791,6 +832,46 @@ export const sectionImplications = {
       'Roles requiring flexibility should be reconsidered for this candidate. If unavoidable, minimise change and provide extensive framing.',
       'Substantial, ongoing support would be needed. Consider whether this is the right fit for the role\u2019s stability demands.',
       'This is a critical constraint. Change should be introduced slowly, framed carefully, and supported throughout.',
+    ],
+  },
+
+  // ---------- Behavioral & Soft Skills: Accountability ----------
+  'Accountability': {
+    exceptional: [
+      'The candidate can be trusted with work where ownership and reliability are critical. Consider using this strength in roles with high autonomy or low oversight.',
+      'Reliable for taking responsibility, raising problems early, and following through on commitments. Very few candidates own outcomes this cleanly.',
+      'Assign to work where failures are consequential and disclosure matters — high-trust, minimal-supervision environments.',
+      'This is a genuine differentiator. Consider using the candidate as a model for ownership culture or to mentor others on accountability practice.',
+    ],
+    strong: [
+      'Suitable for most roles with normal oversight. The candidate accepts responsibility and follows through reliably.',
+      'Ownership and follow-through are dependable. No specific intervention required.',
+      'Assign work with standard supervision. The candidate is likely to disclose problems and own outcomes appropriately.',
+      'This capability can be counted on. Consider stretching the candidate with higher-autonomy work over time.',
+    ],
+    capable: [
+      'Suitable for standard work. Where failure is public or high-stakes, provide framing and support to ensure clean ownership.',
+      'Acceptable for most purposes. Follow-through is generally reliable; disclosure may lag where stakes are high.',
+      'Provide clear ownership expectations and check-ins on commitments. The candidate performs better with visible structure.',
+      'If the role demands consistent ownership under pressure, targeted coaching on responsibility practice is recommended.',
+    ],
+    developing: [
+      'Pair the candidate with a stronger owner for high-visibility or high-stakes work until capability is reinforced.',
+      'Provide structured support — explicit ownership, commitment tracking, and regular check-ins — and reinforce early disclosure.',
+      'Avoid assigning the candidate roles where independent ownership of failure is central until capability improves.',
+      'Set specific development goals around ownership and disclosure, and review progress quarterly.',
+    ],
+    at_risk: [
+      'Significant support is required. Do not assign the candidate standalone ownership of high-stakes outcomes.',
+      'Where accountability is central to the role, reconsider fit or provide close supervision and formal commitment tracking.',
+      'Structured development plan needed. Track follow-through and disclosure formally.',
+      'This is a priority development area. Expect to invest time in building ownership and reliability through explicit structure and feedback.',
+    ],
+    high_risk: [
+      'Do not rely on this capability for work requiring ownership or follow-through.',
+      'Roles requiring accountability should be reconsidered for this candidate. If unavoidable, provide close supervision and explicit consequence.',
+      'Substantial, ongoing support would be needed. Consider whether this is the right fit for the role\u2019s reliability demands.',
+      'This is a critical constraint. Ownership should be assigned only with monitoring, structure, and clear consequences.',
     ],
   },
 };
