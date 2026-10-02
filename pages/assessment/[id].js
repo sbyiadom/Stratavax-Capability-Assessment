@@ -1,4 +1,4 @@
-// pages/assessment/[id].js - FORCED-CHOICE SUPPORT
+// pages/assessment/[id].js - FORCED-CHOICE + PER-QUESTION SCORING MODE SUPPORT
 // Phase 6.5 (responsive): mobile-first layout. Desktop 3-column unchanged.
 // Tablet 2-column. Mobile single column with sticky footer nav.
 // Phase 7A: logViolation now routes through /api/assessment/session PATCH.
@@ -15,6 +15,11 @@
 // Phase 7H (2026-10-01): Question card content is now vertically centered
 //   within the card so short questions don't leave a visible void at the
 //   bottom.
+// Phase 7I (2026-10-02): Per-question scoring mode. Each question now carries
+//   its own scoring_mode (falling back to the assessment-level mode). This
+//   enables mixed-format assessments like Performance Assessment, which has
+//   both forced-choice (Performance Orientation) and single-select (Business
+//   Acumen) questions.
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
@@ -58,16 +63,6 @@ function getAnswerArray(value) {
   if (Array.isArray(value)) return value;
   if (value === null || value === undefined || value === "") return [];
   return [value];
-}
-
-function countAnswered(answerMap, questionCount, isForcedChoiceMap) {
-  return Object.values(answerMap || {}).filter((answer, idx) => {
-    if (isForcedChoiceMap && isForcedChoiceMap[idx]) {
-      return answer && answer.most != null && answer.least != null;
-    }
-    if (Array.isArray(answer)) return answer.length > 0;
-    return answer !== null && answer !== undefined && answer !== "";
-  }).length;
 }
 
 function extractDomain(url) {
@@ -160,7 +155,7 @@ function AssessmentContent() {
   const [assessment, setAssessment] = useState(null);
   const [assessmentType, setAssessmentType] = useState(null);
   const [assessmentTypeCode, setAssessmentTypeCode] = useState(null);
-  const [scoringMode, setScoringMode] = useState("single_select");
+  const [defaultScoringMode, setDefaultScoringMode] = useState("single_select");
   const [questions, setQuestions] = useState([]);
   const [session, setSession] = useState(null);
   const [user, setUser] = useState(null);
@@ -217,8 +212,17 @@ function AssessmentContent() {
   const currentQuestion = questions[currentIndex] || {};
   const isNationalService = assessmentTypeCode === 'national_service' ||
     (assessment && assessment.title && assessment.title.toLowerCase().includes('national service'));
+
+  // ============================================================
+  // Phase 7I: Per-question scoring mode resolution.
+  // Question-level scoring_mode overrides the assessment-level default.
+  // This enables mixed-format assessments (e.g. Performance Assessment,
+  // which mixes Performance Orientation forced-choice questions with
+  // Business Acumen single-select questions).
+  // ============================================================
+  const currentScoringMode = currentQuestion?.scoring_mode || defaultScoringMode;
+  const isForcedChoice = currentScoringMode === "forced_choice";
   const isMultipleCorrect = isNationalService ? false : Boolean(currentQuestion.isMultipleCorrect);
-  const isForcedChoice = scoringMode === "forced_choice";
 
   function getForcedChoicePicks(questionId) {
     const entry = answers[questionId];
@@ -226,8 +230,15 @@ function AssessmentContent() {
     return { most: entry.most !== undefined ? entry.most : null, least: entry.least !== undefined ? entry.least : null };
   }
 
-  function isAnsweredForQuestion(questionId) {
-    if (isForcedChoice) {
+  // Per-question helper: determines if a question uses forced choice
+  function questionUsesForcedChoice(question) {
+    const mode = question?.scoring_mode || defaultScoringMode;
+    return mode === "forced_choice";
+  }
+
+  function isAnsweredForQuestion(questionId, question) {
+    const q = question || questions.find(x => x.id === questionId) || currentQuestion;
+    if (questionUsesForcedChoice(q)) {
       const { most, least } = getForcedChoicePicks(questionId);
       return most !== null && least !== null;
     }
@@ -235,7 +246,8 @@ function AssessmentContent() {
            (answers[questionId] !== undefined && answers[questionId] !== null && answers[questionId] !== "");
   }
 
-  const answeredCount = questions.filter((q) => isAnsweredForQuestion(q.id)).length;
+  // Count total answered across mixed modes
+  const answeredCount = questions.filter((q) => isAnsweredForQuestion(q.id, q)).length;
   const totalAnswered = answeredCount;
   const totalChanges = Object.values(answerChangeCount).reduce((a, b) => a + safeNumber(b, 0), 0);
   const isLastQuestion = currentIndex === questions.length - 1;
@@ -322,7 +334,9 @@ function AssessmentContent() {
 
       const answerPromises = Object.entries(answers).map(([qId, answer]) => {
         if (answer === null || answer === undefined || answer === "") return null;
-        if (isForcedChoice && typeof answer === "object" && !Array.isArray(answer)) {
+        const questionObj = questions.find(q => String(q.id) === String(qId));
+        const qForcedChoice = questionUsesForcedChoice(questionObj);
+        if (qForcedChoice && typeof answer === "object" && !Array.isArray(answer)) {
           if (answer.most == null) return null;
           const changeCount = answerChangeCount[qId] || 0;
           const initialAns = initialAnswers[qId] || answer.most;
@@ -602,12 +616,12 @@ function AssessmentContent() {
 
         const resolvedTypeCode = assessmentInfo.assessment_type?.code || assessmentInfo.assessmentType?.code || assessmentInfo.type_code || null;
         const resolvedScoringMode = assessmentInfo.assessment_type?.scoring_mode || assessmentInfo.assessmentType?.scoring_mode || "single_select";
-        console.log(`[Assessment] Type: ${resolvedTypeCode || 'unknown'}, Scoring: ${resolvedScoringMode}`);
+        console.log(`[Assessment] Type: ${resolvedTypeCode || 'unknown'}, Default Scoring: ${resolvedScoringMode}`);
 
         setAssessment(assessmentInfo);
         setAssessmentType(assessmentInfo.assessment_type || assessmentInfo.assessmentType || null);
         setAssessmentTypeCode(resolvedTypeCode);
-        setScoringMode(resolvedScoringMode);
+        setDefaultScoringMode(resolvedScoringMode);
 
         const accessData = await fetchAccess(assessmentId);
         if (accessData && (accessData.status === 'completed' || accessData.result_id)) { setAlreadySubmitted(true); setLoading(false); return; }
@@ -626,6 +640,10 @@ function AssessmentContent() {
 
         const questionData = await fetchQuestions(assessmentTypeId, resolvedTypeCode, sessionData?.id);
         setQuestions(questionData || []);
+        if (questionData && questionData.length > 0) {
+          const distinctModes = [...new Set(questionData.map(q => q.scoring_mode || resolvedScoringMode))];
+          console.log(`[Assessment] Question scoring modes present: ${distinctModes.join(', ')}`);
+        }
 
         if (sessionData && sessionData.id) {
           const savedTimer = localStorage.getItem(`timer_${sessionData.id}`);
@@ -749,10 +767,9 @@ function AssessmentContent() {
     if (accessDenied) { alert('Access denied for this assessment.'); return; }
     if (isAutoSubmitting || submittingRef.current) return;
     if (isTimeExpired) { alert('Time has expired! The assessment is being submitted automatically.'); return; }
-    const unansweredCount = questions.length - countAnswered(answers, questions.length, isForcedChoice);
+    const unansweredCount = questions.filter(q => !isAnsweredForQuestion(q.id, q)).length;
     if (unansweredCount > 0) {
-      if (isForcedChoice) alert("Please set BOTH a most-likely and a least-likely answer for every question. " + unansweredCount + " question(s) incomplete.");
-      else alert("Please answer all questions before submitting. " + unansweredCount + " question(s) remaining.");
+      alert("Please complete all questions before submitting. " + unansweredCount + " question(s) remaining. Each forced-choice question needs both a Most and a Least selection.");
       return;
     }
     try {
@@ -903,7 +920,7 @@ function AssessmentContent() {
             </div>
             <div style={styles.mobileNavGrid}>
               {questions.map((question, index) => {
-                const answered = isAnsweredForQuestion(question.id);
+                const answered = isAnsweredForQuestion(question.id, question);
                 const current = index === currentIndex;
                 const changed = answerChangeCount[question.id] > 0;
                 let bgColor = "white", textColor = "#1e293b", borderColor = "#e2e8f0";
@@ -991,7 +1008,7 @@ function AssessmentContent() {
             <div style={styles.statusCard}>
               <div style={styles.statusNumber}>Question {currentIndex + 1}</div>
               <div style={styles.statusBadge}>
-                {isAnsweredForQuestion(currentQuestion.id) ? 'Answered' : 'Not yet answered'}
+                {isAnsweredForQuestion(currentQuestion.id, currentQuestion) ? 'Answered' : 'Not yet answered'}
               </div>
             </div>
 
@@ -1173,7 +1190,7 @@ function AssessmentContent() {
               </div>
               <div className="question-grid" style={styles.questionGrid}>
                 {questions.map((question, index) => {
-                  const answered = isAnsweredForQuestion(question.id);
+                  const answered = isAnsweredForQuestion(question.id, question);
                   const current = index === currentIndex;
                   const changed = answerChangeCount[question.id] > 0;
                   let bgColor = "white", textColor = "#1e293b", borderColor = "#e2e8f0";
