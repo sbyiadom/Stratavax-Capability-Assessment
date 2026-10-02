@@ -28,15 +28,13 @@
 //   at_risk      →  40–54%
 //   high_risk    →  <40%
 //
-// Phase 1 (2026-10-02):
-//   Framework + generic fallback banks + Cognitive Verbal Reasoning.
-//   Subsequent sessions add authored content batch by batch.
+// Authoring progress:
+//   Framework + generic fallback banks + Cognitive Verbal Reasoning +
+//   Cognitive Numerical Reasoning. Subsequent sessions add further batches.
 
 // ============================================================
 // 1. SECTION DEFINITIONS
 // ============================================================
-// Short (1–2 sentence) descriptions of what each section measures.
-// Used to populate the "What this measures" line on each report card.
 
 export const sectionDefinitions = {
   // ---------- Cognitive Ability (type 3) ----------
@@ -144,77 +142,11 @@ export const sectionDefinitions = {
     'Balancing safety requirements with production efficiency.',
   'Water Treatment & Quality':
     'Water treatment processes and quality standards.',
-  'Hydraulics & Pneumatics':
-    'Hydraulic and pneumatic systems — components, faults, and maintenance.',
-  'Mechanical Maintenance':
-    'Mechanical maintenance practices — inspection, repair, and reliability.',
-  'Pumps & Compressors':
-    'Pump and compressor operation, fault-finding, and servicing.',
-  'Welding & Fabrication':
-    'Welding techniques and fabrication practices.',
-  'Mechanical Troubleshooting':
-    'Diagnosing mechanical faults systematically.',
-  'Preventive Maintenance':
-    'Planned maintenance to prevent failure and extend equipment life.',
-  'Piping Systems':
-    'Design, maintenance, and fault-finding in piping systems.',
-  'Rotating Equipment':
-    'Operation and maintenance of rotating machinery.',
-  'PLC Programming':
-    'Programmable logic controller programming and diagnostics.',
-  'Motor Controls':
-    'Motor starters, contactors, and control circuits.',
-  'Sensors & Instrumentation':
-    'Sensor selection, calibration, and instrumentation.',
-  'Electrical Troubleshooting':
-    'Systematic electrical fault diagnosis.',
-  'VFD & Soft Starters':
-    'Variable frequency drives and soft starter configuration and fault-finding.',
-  'Control Circuits':
-    'Design and diagnosis of control circuits.',
-  'Power Distribution':
-    'Power distribution systems and safe working practices.',
-  'Electrical Safety':
-    'Safe working practices around electrical equipment.',
-  'Inventory Management':
-    'Stock control, replenishment, and inventory accuracy.',
-  'Warehousing Operations':
-    'Warehouse layout, picking, and operational efficiency.',
-  'Transportation Logistics':
-    'Transport planning, routing, and cost management.',
-  'Procurement':
-    'Sourcing, supplier management, and purchasing practice.',
-  'Supply Chain Optimization':
-    'Improving end-to-end supply chain performance.',
-  'Material Handling':
-    'Moving and storing materials safely and efficiently.',
-  'Distribution Planning':
-    'Planning distribution to meet service and cost objectives.',
-  'Supply Chain Analytics':
-    'Using data to improve supply chain decisions.',
-  'Quality Control':
-    'Inspection, testing, and conformance to specification.',
-  'Process Capability':
-    'Understanding capability indices and process performance.',
-  'Inspection Techniques':
-    'Methods for inspecting products and processes.',
-  'Statistical Process Control':
-    'Using SPC to monitor and improve process stability.',
-  'Continuous Improvement':
-    'Structured approaches to improving processes and outcomes.',
-  'Root Cause Analysis':
-    'Systematically identifying underlying causes of problems.',
-  'Quality Management Systems':
-    'Understanding QMS frameworks and their application.',
-  'Measurement Systems Analysis':
-    'Evaluating measurement system reliability and validity.',
 };
 
 // ============================================================
-// 2. GENERIC BANKS (fallback when a section has no authored content)
+// 2. GENERIC BANKS (fallback for unauthored sections)
 // ============================================================
-// Used for any section not present in sectionSummaries / sectionImplications.
-// Four variants per band keeps report wording varied across candidates.
 
 export const genericSummaries = {
   exceptional: [
@@ -263,7 +195,7 @@ export const genericImplications = {
     'This is a genuine strength. Consider how it can be applied to wider team benefit.',
   ],
   strong: [
-    'Reliable for most work in this area. Consider pairing with the candidate\'s weaker areas when the stakes are high.',
+    "Reliable for most work in this area. Consider pairing with the candidate's weaker areas when the stakes are high.",
     'Use this strength where it matters. No specific intervention required.',
     'This capability can be relied upon. Monitor for edge cases but no structured development needed.',
     'Assign work in this area with normal supervision. Quality should be dependable.',
@@ -297,8 +229,6 @@ export const genericImplications = {
 // ============================================================
 // 3. AUTHORED SECTION BANKS
 // ============================================================
-// Sections with hand-authored narratives. Any section not present here
-// automatically falls back to the generic banks above.
 
 export const sectionSummaries = {
   // ---------- Cognitive: Verbal Reasoning ----------
@@ -338,6 +268,46 @@ export const sectionSummaries = {
       'The candidate shows marked difficulty with written reasoning. Nearly all tasks involving inference or written meaning are likely to be challenging.',
       'Verbal reasoning is in the lowest range observed on this assessment. Reading-dependent work would present consistent difficulty.',
       'Substantial support with written material would be needed. The candidate is unlikely to reason reliably from written sources without help.',
+    ],
+  },
+
+  // ---------- Cognitive: Numerical Reasoning ----------
+  'Numerical Reasoning': {
+    exceptional: [
+      'Numerical reasoning is a clear strength. The candidate works confidently with quantitative material and reasons fluently about proportions, patterns, and relationships between numbers.',
+      'Quantitative reasoning is well above the expected range. The candidate reads data accurately, chooses the appropriate operation without hesitation, and arrives at defensible conclusions.',
+      'The candidate handles numerical complexity with ease. Calculations are performed quickly and checked reliably, even on multi-step problems.',
+      'Performance on quantitative items indicates strong analytical capability. The candidate is comfortable with data, patterns, and the arithmetic judgments required to reach sound conclusions.',
+    ],
+    strong: [
+      'Numerical reasoning is solid and dependable. The candidate handles most quantitative tasks correctly and rarely makes basic errors.',
+      'The candidate works reliably with numbers, percentages, and ratios. Complex multi-step problems may occasionally slow the pace, but the overall pattern is sound.',
+      'Quantitative reasoning is above average. Most calculations and pattern-based questions are handled confidently.',
+      'The candidate reads numerical data carefully and applies the right approach in most cases. Occasional complexity may cause brief hesitation, but the outcome is generally correct.',
+    ],
+    capable: [
+      'Numerical reasoning is functional. Routine calculations and straightforward data interpretations are handled correctly, but complex or multi-step problems may be more effortful.',
+      'The candidate works adequately with numbers. Standard percentage, ratio, and arithmetic tasks are handled well; problems requiring abstract or layered reasoning may reveal gaps.',
+      'Quantitative reasoning is at the expected baseline. The candidate reaches correct conclusions on most tasks but is slower or less certain on more demanding items.',
+      'The candidate demonstrates reliable numeracy on typical problems. Where patterns are non-obvious or data is dense, accuracy may be inconsistent.',
+    ],
+    developing: [
+      'Numerical reasoning is below the expected range. Basic arithmetic and direct percentage or ratio tasks are handled, but more complex quantitative reasoning presents difficulty.',
+      'The candidate manages standard calculations with care but is likely to make errors on multi-step or abstract numerical problems.',
+      'Performance on quantitative items suggests the candidate finds numerical reasoning effortful. Simple cases are handled; complex cases are more likely to be missed.',
+      'The candidate understands foundational numerical concepts but struggles with the reasoning layer — choosing the right operation, spotting patterns, or interpreting layered data.',
+    ],
+    at_risk: [
+      'Numerical reasoning is a significant constraint. The candidate handles simple arithmetic but is likely to make errors when data requires interpretation, pattern recognition, or multi-step logic.',
+      'Quantitative work presents notable difficulty. The candidate may need external tooling, reference material, or peer support to reach reliable conclusions with numbers.',
+      'Performance in this area is well below the expected range. Even standard quantitative tasks may be effortful and error-prone.',
+      'The candidate struggles with numerical reasoning in a way that will affect roles requiring data work, financial calculations, or quantitative analysis.',
+    ],
+    high_risk: [
+      'Numerical reasoning is severely limited. Most quantitative tasks will present substantial difficulty, even with the candidate applying sustained effort.',
+      "The candidate's performance on quantitative items is in the lowest range observed on this assessment. Numerical work should not be relied on without significant support.",
+      'Numerical reasoning is a critical constraint. Even simple calculations may require scaffolding.',
+      'Performance on this section indicates a serious difficulty with quantitative material. Tasking that depends on numerical reasoning should be reconsidered or reassigned.',
     ],
   },
 };
@@ -380,6 +350,46 @@ export const sectionImplications = {
       'Every written task should be reviewed before it is acted upon.',
       'Avoid roles where careful reading or interpretation of written material is central.',
       'Significant scaffolding is needed. Written reasoning should not be relied on for decision-making in this role.',
+    ],
+  },
+
+  // ---------- Cognitive: Numerical Reasoning ----------
+  'Numerical Reasoning': {
+    exceptional: [
+      'The candidate can be trusted with quantitative work requiring interpretation, judgement, or analysis. Consider using this strength in data-heavy roles or on projects where numerical precision matters.',
+      'Reliable for any role requiring arithmetic fluency, financial reasoning, or data interpretation. Very few candidates will perform at this level.',
+      'Assign to work involving calculations, metrics, or data analysis with confidence. No structured support needed in this area.',
+      'This is a genuine differentiator. Consider pairing the candidate with weaker performers on numerical tasks for peer development.',
+    ],
+    strong: [
+      'Suitable for most quantitative work with normal supervision. Consider a review pass on high-stakes calculations, but routine tasks should be dependable.',
+      'Reliable for roles requiring data interpretation or financial reasoning. No specific intervention required.',
+      'Assign to work involving numbers or data analysis with standard oversight. Quality should be consistent.',
+      'This capability can be counted on. Consider using it in roles where financial or operational metrics are part of the job.',
+    ],
+    capable: [
+      'Suitable for routine quantitative tasks. On complex or high-stakes work in this area, consider a review pass or additional tooling.',
+      'Acceptable for most numerical work. Where accuracy is critical, verify results before finalising decisions.',
+      'Provide calculators, reference sheets, or peer support on multi-step or high-stakes problems. The baseline capability is in place.',
+      'If the role demands excellence in quantitative work, targeted practice with feedback is recommended.',
+    ],
+    developing: [
+      'Pair the candidate with a stronger performer for quantitative tasks requiring pattern recognition or multi-step logic.',
+      'Provide structured practice, worked examples, and review checkpoints. Avoid assigning standalone responsibility for high-stakes numerical work until capability improves.',
+      'Assign numerical tasks in stages and verify before relying on the results.',
+      'Set specific learning goals for this area and review progress quarterly.',
+    ],
+    at_risk: [
+      'Significant support is required. Do not assign standalone responsibility for quantitative work.',
+      'Where numerical reasoning is central to the role, reconsider fit or provide close supervision and tooling.',
+      'Structured development plan needed. Track progress formally and provide external aids where possible.',
+      "This is a priority development area. Expect to invest time and support in scaffolding the candidate's quantitative work.",
+    ],
+    high_risk: [
+      'Do not rely on this capability for decisions or critical work.',
+      'Roles requiring numerical reasoning should be reconsidered for this candidate. If unavoidable, pair with a stronger performer for any quantitative tasking.',
+      "Substantial, ongoing support would be needed. Consider whether this is the right fit for the role's demands.",
+      'This is a critical constraint. Numerical work should be reassigned or heavily supervised.',
     ],
   },
 };
