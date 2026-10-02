@@ -1,5 +1,12 @@
 // pages/api/admin/reset-password.js
-// Fails closed. Admin can reset anyone. Supervisor can reset only candidates in their scope.
+// Fails closed. Admin can reset anyone. Supervisor can reset only candidates
+// in their scope.
+//
+// 2026-10-02: Previously used `if (token) { ... }` which skipped auth entirely
+// when no token was provided. That meant anyone could reset any password by
+// omitting the Authorization header. Now uses authorizeRequest() from
+// utils/apiAuth — same pattern as every other protected endpoint.
+
 import { authorizeRequest } from '../../../utils/apiAuth';
 
 export default async function handler(req, res) {
@@ -29,7 +36,7 @@ export default async function handler(req, res) {
 
     const normalizedEmail = String(email).toLowerCase().trim();
 
-    // ---- Paginated user search (kept from the previous fix) ----
+    // ---- Paginated user search ----
     let allUsers = [];
     let page = 1;
     const perPage = 1000;
