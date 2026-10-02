@@ -1,12 +1,14 @@
 // utils/sectionNarratives.js
 // Universal section narrative library.
 //
+// Keys are section names only — shared across assessments. A single
+// 'Communication' bank renders for every assessment whose section string is
+// 'Communication'. Do not duplicate banks per assessment type.
+//
 // Authoring progress:
-//   Cognitive (4) + Behavioral & Soft Skills (8) + Cultural & Attitudinal Fit
-//   (Values Alignment, Cultural Adaptability, Team Compatibility,
-//   Attitudinal Markers). Remaining Cultural sections: Organisational
-//   Citizenship, Ethical & Cultural Judgment, Motivation & Drive,
-//   Learning Orientation.
+//   Cognitive (4) + Behavioral & Soft Skills (8) + Cultural & Attitudinal Fit (8).
+//   Next: Performance (13), Technical Competence (9), Manufacturing Technical (6),
+//   Practical (5), General (10), Leadership, Workplace Judgment, others.
 
 // ============================================================
 // 1. SECTION DEFINITIONS
@@ -192,11 +194,11 @@ export const genericImplications = {
 };
 
 // ============================================================
-// 3. AUTHORED SECTION BANKS
+// 3. AUTHORED SECTION BANKS — sectionSummaries
 // ============================================================
 
 export const sectionSummaries = {
-  // ---------- Cognitive ----------
+  // ----- COGNITIVE -----
   'Verbal Reasoning': {
     exceptional: [
       'Verbal reasoning is a clear strength. The candidate extracts meaning from complex written material with ease and reasons confidently about implications, not just surface content.',
@@ -353,7 +355,7 @@ export const sectionSummaries = {
     ],
   },
 
-  // ---------- Behavioral ----------
+  // ----- BEHAVIORAL -----
   'Decision Making': {
     exceptional: [
       'Decision making is a clear strength. The candidate weighs options carefully under uncertainty, identifies the relevant trade-offs, and reaches defensible conclusions without unnecessary delay.',
@@ -666,7 +668,7 @@ export const sectionSummaries = {
     ],
   },
 
-  // ---------- Cultural: Values Alignment ----------
+  // ----- CULTURAL -----
   'Values Alignment': {
     exceptional: [
       'Values alignment is a clear strength. The candidate consistently chooses behaviours that reflect the organisation\u2019s stated values, including when doing so carries a personal or professional cost.',
@@ -706,7 +708,6 @@ export const sectionSummaries = {
     ],
   },
 
-  // ---------- Cultural: Cultural Adaptability ----------
   'Cultural Adaptability': {
     exceptional: [
       'Cultural adaptability is a clear strength. The candidate works effectively across differing norms, communication styles, and expectations, and adjusts their own approach without losing effectiveness.',
@@ -746,7 +747,6 @@ export const sectionSummaries = {
     ],
   },
 
-  // ---------- Cultural: Team Compatibility ----------
   'Team Compatibility': {
     exceptional: [
       'Team compatibility is a clear strength. The candidate integrates into established team dynamics quickly while still contributing individually. Trust is built without needing to dominate the space.',
@@ -786,7 +786,6 @@ export const sectionSummaries = {
     ],
   },
 
-  // ---------- Cultural: Attitudinal Markers ----------
   'Attitudinal Markers': {
     exceptional: [
       'Attitudinal markers are a clear strength. The candidate shows sustained motivation, engagement, and work ethic across a range of situations — including ones where effort is unobserved or reward is distant.',
@@ -825,10 +824,166 @@ export const sectionSummaries = {
       'Significant scaffolding is required. The candidate is unlikely to show consistent engagement without close management and frequent reinforcement.',
     ],
   },
+
+  'Organisational Citizenship': {
+    exceptional: [
+      'Organisational citizenship is a clear strength. The candidate contributes beyond formal role — helps colleagues without being asked, improves processes, and strengthens the workplace in ways not required by the job.',
+      'The candidate invests in the organisation\u2019s broader effectiveness, not just their own delivery. Contributions extend to team and organisational outcomes.',
+      'Organisational citizenship is well above the expected range. The candidate notices and addresses things that would otherwise fall between roles.',
+      'The candidate behaves as an owner, not just an occupant. Discretionary contribution is consistent and constructive.',
+    ],
+    strong: [
+      'Organisational citizenship is solid and dependable. The candidate helps colleagues and contributes to shared outcomes beyond their own brief.',
+      'The candidate is a good organisational citizen. Contribution extends beyond role requirements in typical situations.',
+      'Organisational citizenship is above average. The candidate supports colleagues and improves shared processes where possible.',
+      'The candidate contributes to the wider workplace in most situations. Team benefit is a genuine consideration.',
+    ],
+    capable: [
+      'Organisational citizenship is functional. The candidate delivers their own role reliably but may contribute less beyond it than peers.',
+      'The candidate is a reasonable organisational citizen. Discretionary contribution is occasional rather than characteristic.',
+      'Organisational citizenship is at the expected baseline. The candidate focuses primarily on their own responsibilities.',
+      'The candidate handles their own work well. Helping others or improving processes may occur but is not a defining feature.',
+    ],
+    developing: [
+      'Organisational citizenship is below the expected range. The candidate focuses on their own role and contributes little beyond it.',
+      'The candidate may be unaware of, or indifferent to, wider organisational needs. Colleagues may not experience them as supportive.',
+      'Performance on citizenship items suggests the candidate benefits from explicit expectations around team contribution.',
+      'Discretionary effort beyond role requirements is limited. The candidate may see work as strictly transactional.',
+    ],
+    at_risk: [
+      'Organisational citizenship is a significant constraint. The candidate may contribute nothing beyond formal role, or create drag on team effectiveness.',
+      'Colleagues are unlikely to experience the candidate as supportive. Shared processes may suffer from lack of investment.',
+      'Performance in this area is well below the expected range. Roles where team contribution matters would present sustained difficulty.',
+      'The candidate may actively avoid or undermine organisational initiatives that require contribution beyond their own tasking.',
+    ],
+    high_risk: [
+      'Organisational citizenship is severely limited. Even basic collegial contribution may be absent.',
+      'The candidate shows marked disengagement from wider organisational outcomes. Contribution is strictly transactional.',
+      'Organisational citizenship is in the lowest range observed on this assessment. Team-oriented roles should be reconsidered.',
+      'Significant scaffolding is required. The candidate is unlikely to contribute beyond role requirements without explicit structure and consequence.',
+    ],
+  },
+
+  'Ethical & Cultural Judgment': {
+    exceptional: [
+      'Ethical and cultural judgment is a clear strength. The candidate navigates situations where organisational standards and cultural context interact, and reaches defensible decisions without losing sight of either.',
+      'The candidate distinguishes genuine ethical issues from cultural difference, and responds appropriately to each. Judgment is balanced and considered.',
+      'Ethical and cultural judgment is well above the expected range. The candidate recognises when norms conflict and manages the tension thoughtfully rather than defaulting to one side.',
+      'The candidate is trusted with complex moral and cultural questions. Decisions are made transparently and with reference to principle.',
+    ],
+    strong: [
+      'Ethical and cultural judgment is solid and dependable. The candidate handles most situations involving ethical or cultural complexity appropriately.',
+      'The candidate navigates ethical and cultural tensions well. Very complex cases may occasionally require consultation, but the pattern is reliable.',
+      'Ethical and cultural judgment is above average. The candidate reaches sound conclusions when principle and context interact.',
+      'The candidate handles typical ethical and cultural situations effectively. Judgment is generally sound.',
+    ],
+    capable: [
+      'Ethical and cultural judgment is functional. The candidate handles routine situations adequately but may struggle when ethical and cultural considerations pull in different directions.',
+      'The candidate manages standard ethical and cultural questions. Complex cases may reveal limits in balancing principle and context.',
+      'Ethical and cultural judgment is at the expected baseline. The candidate reaches reasonable conclusions but may not fully consider all dimensions.',
+      'The candidate handles typical situations well. Cases where norms conflict may require additional thought or consultation.',
+    ],
+    developing: [
+      'Ethical and cultural judgment is below the expected range. The candidate may default to one frame (ethical or cultural) without adequately considering the other.',
+      'The candidate may misread situations where standards and cultural context interact, or reach conclusions that don\u2019t fully account for both.',
+      'Performance on ethical and cultural judgment items suggests the candidate benefits from structured frameworks and case discussion.',
+      'The candidate may find it difficult to distinguish genuine ethical issues from cultural differences, or vice versa.',
+    ],
+    at_risk: [
+      'Ethical and cultural judgment is a significant constraint. The candidate may reach inappropriate conclusions when standards and cultural context interact.',
+      'Judgment is likely to be inconsistent. The candidate may apply rules mechanically or defer entirely to context, rather than balancing both.',
+      'Performance in this area is well below the expected range. Roles requiring nuanced ethical and cultural judgment would present sustained difficulty.',
+      'The candidate may create risk through misjudged responses to complex situations, or avoid judgment entirely.',
+    ],
+    high_risk: [
+      'Ethical and cultural judgment is severely limited. Even routine situations involving ethical or cultural complexity may produce poor outcomes.',
+      'The candidate shows marked difficulty navigating situations where standards and context interact. Judgment is likely to be unreliable.',
+      'Ethical and cultural judgment is in the lowest range observed on this assessment. Roles requiring this capability should be reconsidered.',
+      'Significant scaffolding is required. The candidate is unlikely to reach defensible conclusions in complex ethical and cultural situations without close support.',
+    ],
+  },
+
+  'Motivation & Drive': {
+    exceptional: [
+      'Motivation and drive are a clear strength. The candidate sustains effort over time, including on work that is uninteresting, difficult, or without visible reward.',
+      'The candidate pursues goals with persistence and energy. Effort is not contingent on external stimulation or recognition.',
+      'Motivation and drive are well above the expected range. The candidate maintains momentum through long or unrewarding tasks.',
+      'The candidate is genuinely self-driven. Intrinsic motivation carries them through periods where external rewards are distant or absent.',
+    ],
+    strong: [
+      'Motivation and drive are solid and reliable. The candidate sustains effort in most situations, including difficult ones.',
+      'The candidate is motivated and persistent. Very long or heavily unrewarding tasks may test this, but the pattern holds.',
+      'Motivation and drive are above average. The candidate works with consistent energy and commitment.',
+      'The candidate demonstrates good drive in typical situations. Effort is generally sustained.',
+    ],
+    capable: [
+      'Motivation and drive are functional. The candidate sustains effort on tasks that are interesting or reasonably rewarded, but may flag on unengaging work.',
+      'The candidate is reasonably motivated. Effort may depend on task characteristics or external reinforcement.',
+      'Motivation and drive are at the expected baseline. The candidate works adequately in normal conditions but may not be self-generating.',
+      'The candidate performs acceptably. Sustained effort on unrewarding tasks may need support or periodic reinforcement.',
+    ],
+    developing: [
+      'Motivation and drive are below the expected range. The candidate may show variable effort depending on task interest or reward.',
+      'The candidate may find it difficult to sustain effort on work that is uninteresting or without visible reward.',
+      'Performance on motivation items suggests the candidate benefits from clear purpose, progress visibility, and periodic recognition.',
+      'The candidate may require more external structure than peers to maintain consistent output.',
+    ],
+    at_risk: [
+      'Motivation and drive are a significant constraint. The candidate may show low sustained effort or effort that is highly contingent on external factors.',
+      'Discretionary effort is likely to be minimal. Tasks without reward or interest are unlikely to be completed to standard.',
+      'Performance in this area is well below the expected range. Roles requiring self-driven sustained effort would present difficulty.',
+      'The candidate may need frequent external reinforcement to maintain momentum, which may not be available in many roles.',
+    ],
+    high_risk: [
+      'Motivation and drive are severely limited. Even routine effort may be inconsistent or absent.',
+      'The candidate shows marked difficulty sustaining effort over time. Long or unrewarding tasks are unlikely to be completed.',
+      'Motivation and drive are in the lowest range observed on this assessment. Roles requiring intrinsic drive should be reconsidered.',
+      'Significant scaffolding is required. The candidate is unlikely to maintain sustained effort without close management and frequent reinforcement.',
+    ],
+  },
+
+  'Learning Orientation': {
+    exceptional: [
+      'Learning orientation is a clear strength. The candidate actively uses feedback, failure, and new information to improve, including from sources that challenge existing views.',
+      'The candidate treats mistakes as information rather than threats. Learning is pursued deliberately and applied quickly.',
+      'Learning orientation is well above the expected range. The candidate seeks feedback proactively and changes behaviour accordingly.',
+      'The candidate is genuinely curious and adaptive. New information and criticism are absorbed and used constructively.',
+    ],
+    strong: [
+      'Learning orientation is solid and reliable. The candidate uses feedback and new information to improve performance.',
+      'The candidate learns from experience and adjusts approach appropriately. Very challenging feedback may take brief processing, but the pattern holds.',
+      'Learning orientation is above average. The candidate takes feedback seriously and applies it.',
+      'The candidate demonstrates good learning behaviour in typical situations. Improvement over time is visible.',
+    ],
+    capable: [
+      'Learning orientation is functional. The candidate accepts feedback and adjusts where necessary, but may not actively seek development.',
+      'The candidate learns from experience. Feedback may be applied unevenly, and some lessons may need repetition.',
+      'Learning orientation is at the expected baseline. The candidate is open to learning but not proactively so.',
+      'The candidate handles typical feedback situations adequately. Challenging or unfamiliar feedback may take longer to absorb.',
+    ],
+    developing: [
+      'Learning orientation is below the expected range. The candidate may accept feedback nominally but not consistently act on it.',
+      'The candidate may find challenging feedback difficult to process. Learning from failure is inconsistent.',
+      'Performance on learning items suggests the candidate benefits from structured development conversations and clear expectations.',
+      'The candidate may repeat mistakes rather than adjusting approach, or see feedback as criticism rather than information.',
+    ],
+    at_risk: [
+      'Learning orientation is a significant constraint. The candidate may be defensive, resistant, or slow to change behaviour in response to feedback.',
+      'Learning from experience is limited. The candidate may repeatedly make similar errors without adjustment.',
+      'Performance in this area is well below the expected range. Roles requiring continuous learning would present sustained difficulty.',
+      'The candidate may reject or dismiss feedback that challenges their approach, limiting development.',
+    ],
+    high_risk: [
+      'Learning orientation is severely limited. Even direct feedback is unlikely to produce behaviour change.',
+      'The candidate shows marked resistance to learning or development. Improvement over time is unlikely.',
+      'Learning orientation is in the lowest range observed on this assessment. Roles requiring adaptability and growth should be reconsidered.',
+      'Significant scaffolding is required. The candidate is unlikely to learn and adjust without intensive, structured intervention.',
+    ],
+  },
 };
 
 export const sectionImplications = {
-  // ---------- Cognitive ----------
+  // ----- COGNITIVE -----
   'Verbal Reasoning': {
     exceptional: [
       'Consider using this capability in writing-intensive roles. The candidate can be trusted with materials requiring nuance, judgement, or drafting.',
@@ -985,7 +1140,7 @@ export const sectionImplications = {
     ],
   },
 
-  // ---------- Behavioral ----------
+  // ----- BEHAVIORAL -----
   'Decision Making': {
     exceptional: [
       'The candidate can be trusted with high-stakes or ambiguous decisions. Consider using this strength in roles where judgment under uncertainty is central.',
@@ -1298,7 +1453,7 @@ export const sectionImplications = {
     ],
   },
 
-  // ---------- Cultural: Values Alignment ----------
+  // ----- CULTURAL -----
   'Values Alignment': {
     exceptional: [
       'The candidate can be trusted as a cultural anchor. Consider using this strength in roles where values-based decisions set the tone for others.',
@@ -1338,7 +1493,6 @@ export const sectionImplications = {
     ],
   },
 
-  // ---------- Cultural: Cultural Adaptability ----------
   'Cultural Adaptability': {
     exceptional: [
       'The candidate can be trusted in culturally diverse or unfamiliar environments. Consider using this strength in cross-cultural teams, international roles, or integration work.',
@@ -1378,7 +1532,6 @@ export const sectionImplications = {
     ],
   },
 
-  // ---------- Cultural: Team Compatibility ----------
   'Team Compatibility': {
     exceptional: [
       'The candidate can be trusted as a stabilising team presence. Consider using this strength in teams that need cohesion, especially through change or pressure.',
@@ -1418,7 +1571,6 @@ export const sectionImplications = {
     ],
   },
 
-  // ---------- Cultural: Attitudinal Markers ----------
   'Attitudinal Markers': {
     exceptional: [
       'The candidate can be trusted with work requiring sustained intrinsic motivation. Consider using this strength in roles with low external reward or high autonomy.',
@@ -1457,12 +1609,169 @@ export const sectionImplications = {
       'This is a critical constraint. Work should be closely supported and externally structured until capability is built.',
     ],
   },
+
+  'Organisational Citizenship': {
+    exceptional: [
+      'The candidate can be trusted as an organisational anchor — someone who invests beyond formal role and strengthens the workplace in ways that are difficult to mandate.',
+      'Reliable for improving shared processes, supporting colleagues, and contributing to outcomes beyond their own tasking. Very few candidates give at this level consistently.',
+      'Assign the candidate to roles where organisational health matters — team development, process improvement, culture-building, or mentoring.',
+      'This is a genuine differentiator. Consider using the candidate to model discretionary contribution or to lead informal improvement efforts.',
+    ],
+    strong: [
+      'Suitable for most roles with normal oversight. The candidate contributes beyond role requirements and supports colleagues.',
+      'The candidate is a dependable organisational citizen. No specific intervention required.',
+      'Assign work with standard oversight. Contribution to the wider organisation should be reliable.',
+      'This capability can be counted on. Consider stretching the candidate with broader improvement or mentoring responsibilities.',
+    ],
+    capable: [
+      'Suitable for standard roles. Where wider contribution is expected, make expectations explicit and recognise it when it occurs.',
+      'Acceptable for most purposes. The candidate delivers their own role reliably but may not consistently extend beyond it.',
+      'Reinforce the value of contributions beyond formal role — helping colleagues, improving processes — through recognition and explicit expectation.',
+      'If the role demands sustained organisational contribution, targeted coaching is recommended.',
+    ],
+    developing: [
+      'Pair the candidate with a strong organisational citizen to model contribution beyond role.',
+      'Provide structured expectations — explicit examples of what discretionary contribution looks like — and recognise it when it appears.',
+      'Avoid placing the candidate in roles where success depends on contributions beyond their own tasking until capability improves.',
+      'Set specific development goals around team contribution and review progress quarterly.',
+    ],
+    at_risk: [
+      'Significant support is required. Do not rely on the candidate to contribute beyond formal role.',
+      'Where organisational contribution is central to the role, reconsider fit or provide close supervision and explicit expectations.',
+      'Structured development plan needed. Track contribution to shared outcomes formally.',
+      'This is a priority development area. Expect to invest time in building citizenship through explicit expectation and reinforcement.',
+    ],
+    high_risk: [
+      'Do not rely on this capability for roles where shared contribution matters.',
+      'Roles requiring organisational citizenship should be reconsidered for this candidate. If unavoidable, make expectations explicit and monitor closely.',
+      'Substantial, ongoing support would be needed. Consider whether this is the right fit for the role\u2019s contribution demands.',
+      'This is a critical constraint. Contribution beyond formal role should not be relied on; structure work accordingly.',
+    ],
+  },
+
+  'Ethical & Cultural Judgment': {
+    exceptional: [
+      'The candidate can be trusted with complex ethical and cultural decisions where principle and context interact. Consider using this strength in roles requiring nuanced judgment.',
+      'Reliable for navigating situations where organisational standards and cultural expectations conflict. Very few candidates handle this tension so thoughtfully.',
+      'Assign to work involving policy interpretation, cross-cultural engagements, or decisions where ethical and cultural considerations must be balanced.',
+      'This is a genuine differentiator. Consider using the candidate as a reference point for others facing complex ethical and cultural questions.',
+    ],
+    strong: [
+      'Suitable for most roles with normal oversight. Highly complex ethical and cultural cases may still warrant consultation.',
+      'The candidate navigates ethical and cultural complexity well in most situations. No specific intervention required.',
+      'Assign work with standard oversight where ethical and cultural considerations intersect.',
+      'This capability can be counted on. Consider stretching the candidate with more complex ethical and cultural decision-making over time.',
+    ],
+    capable: [
+      'Suitable for standard roles. Where ethical and cultural considerations conflict, provide frameworks and consultation.',
+      'Acceptable for most purposes. Complex cases may reveal limits in balancing principle and context.',
+      'Provide structured frameworks, case discussion, and consultation for ethically or culturally complex situations.',
+      'If the role demands consistent excellence in ethical and cultural judgment, targeted coaching is recommended.',
+    ],
+    developing: [
+      'Pair the candidate with a trusted colleague for situations where ethical and cultural considerations interact.',
+      'Provide structured support — case discussion, frameworks, and review — before consequential decisions.',
+      'Avoid placing the candidate in roles requiring nuanced ethical and cultural judgment until capability improves.',
+      'Set specific development goals around balancing principle and context, and review progress quarterly.',
+    ],
+    at_risk: [
+      'Significant support is required. Do not assign the candidate responsibility for decisions involving complex ethical and cultural judgment.',
+      'Where ethical and cultural judgment is central to the role, reconsider fit or provide close supervision and structured consultation.',
+      'Structured development plan needed. Track ethical and cultural judgment outcomes formally.',
+      'This is a priority development area. Expect to invest time in building judgment through structured frameworks and supervised practice.',
+    ],
+    high_risk: [
+      'Do not rely on this capability for decisions involving ethical or cultural complexity.',
+      'Roles requiring ethical and cultural judgment should be reconsidered for this candidate. If unavoidable, provide close oversight and formal review.',
+      'Substantial, ongoing support would be needed. Consider whether this is the right fit for the role\u2019s judgment demands.',
+      'This is a critical constraint. Complex ethical and cultural decisions should be escalated, reviewed, or reassigned until capability is built.',
+    ],
+  },
+
+  'Motivation & Drive': {
+    exceptional: [
+      'The candidate can be trusted with work requiring sustained intrinsic motivation, including tasks that are difficult, uninteresting, or without visible reward.',
+      'Reliable for long-horizon work where effort must be self-generated. Very few candidates sustain drive this consistently.',
+      'Assign the candidate challenging or unrewarding work where persistence matters — long projects, difficult problems, or low-visibility tasking.',
+      'This is a genuine differentiator. Consider using the candidate as a model for sustained effort or to anchor difficult workstreams.',
+    ],
+    strong: [
+      'Suitable for most roles with normal oversight. Very long or heavily unrewarding tasks may occasionally require reinforcement.',
+      'The candidate shows good sustained effort in typical situations. No specific intervention required.',
+      'Assign work with standard oversight. Motivation should hold across the range of normal tasking.',
+      'This capability can be counted on. Consider stretching the candidate with gradually more demanding or less rewarded assignments.',
+    ],
+    capable: [
+      'Suitable for standard roles. Where tasks are uninteresting or reward is distant, provide purpose and progress visibility.',
+      'Acceptable for most purposes. Sustained effort may vary with task characteristics; monitor on unrewarding work.',
+      'Provide clear purpose, progress milestones, and periodic recognition to sustain motivation on difficult tasking.',
+      'If the role demands consistent self-driven effort, targeted development is recommended.',
+    ],
+    developing: [
+      'Pair the candidate with a highly driven colleague on long or unrewarding tasks until capability is reinforced.',
+      'Provide structured support — clear goals, progress visibility, and periodic reinforcement — particularly on tasks that lack external reward.',
+      'Avoid placing the candidate in roles requiring sustained self-driven effort until capability improves.',
+      'Set specific development goals around persistence and effort, and review progress quarterly.',
+    ],
+    at_risk: [
+      'Significant support is required. Do not assign the candidate work requiring sustained intrinsic motivation.',
+      'Where drive is central to the role, reconsider fit or provide close supervision and frequent reinforcement.',
+      'Structured development plan needed. Track sustained effort and output formally.',
+      'This is a priority development area. Expect to invest time in building drive through structured goals, feedback, and staged challenge.',
+    ],
+    high_risk: [
+      'Do not rely on this capability for work requiring self-generated or sustained effort.',
+      'Roles requiring intrinsic drive should be reconsidered for this candidate. If unavoidable, provide close management and external structure.',
+      'Substantial, ongoing support would be needed. Consider whether this is the right fit for the role\u2019s drive demands.',
+      'This is a critical constraint. Long or unrewarding work should be reassigned or heavily structured until capability is built.',
+    ],
+  },
+
+  'Learning Orientation': {
+    exceptional: [
+      'The candidate can be trusted with work where rapid learning and adjustment are essential. Consider using this strength in roles requiring continuous improvement or adaptation.',
+      'Reliable for using feedback and failure as information rather than threat. Very few candidates learn this cleanly.',
+      'Assign to work involving new domains, complex feedback, or high-development environments where learning speed matters.',
+      'This is a genuine differentiator. Consider using the candidate as a model for learning culture or to support colleagues who find feedback difficult.',
+    ],
+    strong: [
+      'Suitable for most roles with normal oversight. Very challenging feedback may take brief processing, but the pattern is reliable.',
+      'The candidate learns from experience and adjusts behaviour appropriately. No specific intervention required.',
+      'Assign work with standard oversight. Learning and development should occur as expected.',
+      'This capability can be counted on. Consider stretching the candidate with progressively more challenging learning demands.',
+    ],
+    capable: [
+      'Suitable for standard roles. Where feedback is challenging or development demands are high, provide structure and support.',
+      'Acceptable for most purposes. The candidate learns adequately but may not actively seek development.',
+      'Provide structured development conversations and clear expectations. Reinforce learning from experience.',
+      'If the role demands continuous learning and adaptation, targeted coaching is recommended.',
+    ],
+    developing: [
+      'Pair the candidate with a strong learner or mentor for development-intensive roles until capability is reinforced.',
+      'Provide structured support — regular feedback, explicit development goals, and coaching — with clear expectations about behaviour change.',
+      'Avoid placing the candidate in roles requiring rapid learning or frequent behaviour change until capability improves.',
+      'Set specific development goals around receiving and acting on feedback, and review progress quarterly.',
+    ],
+    at_risk: [
+      'Significant support is required. Do not assign the candidate to roles requiring continuous learning or rapid adaptation.',
+      'Where learning orientation is central to the role, reconsider fit or provide close supervision and structured coaching.',
+      'Structured development plan needed. Track learning behaviour and adjustment formally.',
+      'This is a priority development area. Expect to invest time in building receptivity to feedback through structured coaching.',
+    ],
+    high_risk: [
+      'Do not rely on this capability for roles requiring learning or behaviour change.',
+      'Roles requiring continuous learning should be reconsidered for this candidate. If unavoidable, provide intensive coaching and close oversight.',
+      'Substantial, ongoing support would be needed. Consider whether this is the right fit for the role\u2019s learning demands.',
+      'This is a critical constraint. Development expectations should be carefully managed, or the role reconsidered.',
+    ],
+  },
 };
 
 // ============================================================
 // 4. HELPERS
 // ============================================================
 
+// Deterministic hash for picking a variant. Same seed → same index.
 function hashString(str) {
   let hash = 0;
   const text = String(str || '');
@@ -1473,6 +1782,7 @@ function hashString(str) {
   return Math.abs(hash);
 }
 
+// Convert percentage → band key.
 export function getBandKey(percentage) {
   const value = Number(percentage);
   if (!Number.isFinite(value)) return 'capable';
@@ -1484,6 +1794,9 @@ export function getBandKey(percentage) {
   return 'high_risk';
 }
 
+// Pick a summary or implication phrase.
+//   type: 'summary' | 'implication'
+//   seed: any string — we recommend `${candidateId}:${section}:${percentage}`
 export function pickNarrative(section, band, seed, type) {
   const bank = type === 'implication' ? sectionImplications : sectionSummaries;
   const generic = type === 'implication' ? genericImplications : genericSummaries;
@@ -1496,6 +1809,7 @@ export function pickNarrative(section, band, seed, type) {
   return variants[idx];
 }
 
+// Look up a section definition, falling back to a generic phrase.
 export function getSectionDefinition(section) {
   if (!section) return '';
   if (sectionDefinitions[section]) return sectionDefinitions[section];
