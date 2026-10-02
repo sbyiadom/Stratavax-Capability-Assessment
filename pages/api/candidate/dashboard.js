@@ -1,11 +1,10 @@
-// pages/api/candidate/dashboard.js - FULLY CORRECTED
-// Uses assessment_type's question_count and time_limit_minutes
+// pages/api/candidate/dashboard.js - DYNAMIC SECTIONS
+// Adds a `sections` array per assessment card, queried from unique_questions.
+// This makes the "Assessment Areas" list always reflect current content,
+// instead of relying on hardcoded arrays that go stale after every rebuild.
 
 import { createClient } from '@supabase/supabase-js';
 
-// ============================================================
-// CORRECT PRACTICAL ASSESSMENT IDs
-// ============================================================
 const PRACTICAL_ASSESSMENT_IDS = [
   'c2bc4994-1c4a-4094-a763-8d9d560b759e',
   '243275ec-9bb5-43ce-9f02-1111b2ca66e0',
@@ -15,9 +14,6 @@ const PRACTICAL_ASSESSMENT_IDS = [
 
 const NATIONAL_SERVICE_ASSESSMENT_ID = 'bdb9d46e-9fac-4d00-8478-1f649e7ac600';
 
-// ============================================================
-// ASSESSMENT TYPE CODE MAP
-// ============================================================
 const ASSESSMENT_TYPE_CODE_MAP = {
   '17003efb-923f-49a5-bdeb-e4996c864a87': 'general',
   'd09953bf-59cd-40ed-a9bb-308c3b5cfb7d': 'leadership',
@@ -37,9 +33,6 @@ const ASSESSMENT_TYPE_CODE_MAP = {
   '928f81fc-35ea-40ac-83cb-7c3a0c1c18dc': 'practical_logistics'
 };
 
-// ============================================================
-// ASSESSMENT TITLE MAP - Deterministic fallback for known IDs
-// ============================================================
 const ASSESSMENT_TITLE_MAP = {
   '17003efb-923f-49a5-bdeb-e4996c864a87': 'General Assessment',
   'd09953bf-59cd-40ed-a9bb-308c3b5cfb7d': 'Leadership Assessment',
@@ -59,46 +52,79 @@ const ASSESSMENT_TITLE_MAP = {
   '928f81fc-35ea-40ac-83cb-7c3a0c1c18dc': 'Logistics & Supply Chain Assessment'
 };
 
-// ============================================================
-// PRACTICAL ASSESSMENT DEFAULTS (fallback only)
-// ============================================================
 const PRACTICAL_DEFAULTS = {
   questionCount: 40,
   timeLimitMinutes: 90,
   attemptsAllowed: 1
 };
 
+// ============================================================
+// Load all section names per assessment_type_id from unique_questions.
+// Returns a map: { [assessment_type_id]: [{ name, category, questionCount }] }
+// ============================================================
+async function loadSectionsByAssessmentType(serviceClient, typeIds) {
+  const uniqueTypeIds = [...new Set((typeIds || []).filter(Boolean))];
+  if (uniqueTypeIds.length === 0) return {};
+
+  const { data, error } = await serviceClient
+    .from('unique_questions')
+    .select('assessment_type_id, section, category')
+    .in('assessment_type_id', uniqueTypeIds);
+
+  if (error) {
+    console.error('[API] Section load error:', error);
+    return {};
+  }
+
+  const sectionsByType = {};
+  (data || []).forEach((row) => {
+    const tid = row.assessment_type_id;
+    if (!sectionsByType[tid]) sectionsByType[tid] = new Map();
+    const key = row.section || 'General';
+    const existing = sectionsByType[tid].get(key);
+    if (existing) {
+      existing.questionCount += 1;
+    } else {
+      sectionsByType[tid].set(key, {
+        name: key,
+        category: row.category || null,
+        questionCount: 1,
+      });
+    }
+  });
+
+  // Convert maps to sorted arrays
+  const result = {};
+  for (const tid of Object.keys(sectionsByType)) {
+    result[tid] = Array.from(sectionsByType[tid].values())
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }
+  return result;
+}
+
 export default async function handler(req, res) {
-  // Only allow GET requests
   if (req.method !== 'GET') {
     return res.status(405).json({ success: false, error: 'Method not allowed' });
   }
 
   try {
-    // Get environment variables
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
     if (!supabaseUrl || !serviceRoleKey) {
       console.error('[API] Missing environment variables');
-      return res.status(500).json({
-        success: false,
-        error: 'Server configuration error'
-      });
+      return res.status(500).json({ success: false, error: 'Server configuration error' });
     }
 
-    // Get token from Authorization header
     const token = req.headers.authorization?.replace('Bearer ', '');
     if (!token) {
       return res.status(401).json({ success: false, error: 'Unauthorized' });
     }
 
-    // Create Supabase client with service role key
     const serviceClient = createClient(supabaseUrl, serviceRoleKey, {
       auth: { persistSession: false }
     });
 
-    // Verify the user
     const { data: userData, error: userError } = await serviceClient.auth.getUser(token);
     if (userError || !userData?.user) {
       console.error('[API] Auth error:', userError);
@@ -107,7 +133,7 @@ export default async function handler(req, res) {
 
     const userId = userData.user.id;
 
-    // STEP 1: Get candidate profile
+    // STEP 1: Candidate profile
     const { data: profile } = await serviceClient
       .from('candidate_profiles')
       .select('full_name')
@@ -116,7 +142,7 @@ export default async function handler(req, res) {
 
     const candidateName = profile?.full_name || userData.user.user_metadata?.full_name || 'Candidate';
 
-    // STEP 2: Get candidate assessments
+    // STEP 2: Candidate assessments
     let { data: candidateAssessments, error: caError } = await serviceClient
       .from('candidate_assessments')
       .select('*')
@@ -137,7 +163,7 @@ export default async function handler(req, res) {
 
     if (missingPracticalIds.length > 0) {
       console.log('[API] Adding missing practical assessments for user:', userId);
-      
+
       const { data: assessmentsData } = await serviceClient
         .from('assessments')
         .select('id, assessment_type_id')
@@ -169,7 +195,7 @@ export default async function handler(req, res) {
             .from('candidate_assessments')
             .select('*')
             .eq('user_id', userId);
-          
+
           candidateAssessments = refreshedData || [];
         }
       }
@@ -185,11 +211,11 @@ export default async function handler(req, res) {
       });
     }
 
-    // STEP 3: Get assessment details
+    // STEP 3: Assessment details
     const assessmentIds = candidateAssessments.map(ca => ca.assessment_id).filter(Boolean);
-    
+
     let assessmentDataMap = {};
-    
+
     if (assessmentIds.length > 0) {
       const { data: assessments, error: aError } = await serviceClient
         .from('assessments')
@@ -205,7 +231,6 @@ export default async function handler(req, res) {
       }
     }
 
-    // Log missing assessment IDs for debugging
     const missingAssessmentIds = assessmentIds.filter(
       assessmentId => !assessmentDataMap[assessmentId]
     );
@@ -214,10 +239,10 @@ export default async function handler(req, res) {
       console.warn('[Candidate Dashboard API] Assessment IDs not found:', missingAssessmentIds);
     }
 
-    // STEP 4: Get assessment types with question_count and time_limit_minutes
+    // STEP 4: Assessment types
     let typeMap = {};
     const typeIds = Object.values(assessmentDataMap).map(a => a.assessment_type_id).filter(Boolean);
-    
+
     if (typeIds.length > 0) {
       const { data: types, error: tError } = await serviceClient
         .from('assessment_types')
@@ -231,30 +256,26 @@ export default async function handler(req, res) {
       }
     }
 
-    // STEP 5: Build cards with FIXED title resolution and question_count
+    // STEP 4.5: Load sections dynamically for all assessment types in play
+    const sectionsByType = await loadSectionsByAssessmentType(serviceClient, typeIds);
+
+    // STEP 5: Build cards
     const cards = candidateAssessments.map(ca => {
       const assessmentData = assessmentDataMap[ca.assessment_id] || {};
       const type = typeMap[assessmentData.assessment_type_id] || {};
-      
+
       const typeCode = ASSESSMENT_TYPE_CODE_MAP[ca.assessment_id] || type.code || 'general';
-      
-      // ============================================================
-      // FIXED: Title resolution in correct order
-      // 1. Database title (trimmed)
-      // 2. UUID title map (fallback)
-      // 3. Type name
-      // 4. 'Assessment' (final fallback)
-      // ============================================================
+
       const databaseTitle = typeof assessmentData?.title === 'string'
         ? assessmentData.title.trim()
         : '';
-      
+
       const mappedTitle = ASSESSMENT_TITLE_MAP[ca.assessment_id] || '';
-      
+
       const resolvedTypeName = typeof type?.name === 'string'
         ? type.name.trim()
         : '';
-      
+
       const title = databaseTitle || mappedTitle || resolvedTypeName || 'Assessment';
 
       let status = ca.status || 'blocked';
@@ -264,20 +285,16 @@ export default async function handler(req, res) {
 
       const isNationalService = typeCode === 'national_service' || ca.assessment_id === NATIONAL_SERVICE_ASSESSMENT_ID;
       const isPractical = typeCode && typeCode.startsWith('practical_');
-      
-      // ============================================================
-      // FIXED: question_count and time_limit_minutes from assessment_type
-      // ============================================================
+
       let questionCount;
       let timeLimitMinutes;
       let attemptsAllowed;
-      
+
       if (isNationalService) {
         questionCount = 80;
         timeLimitMinutes = 90;
         attemptsAllowed = 1;
       } else if (isPractical) {
-        // Use assessment_type's question_count, fallback to defaults
         questionCount = type.question_count || PRACTICAL_DEFAULTS.questionCount;
         timeLimitMinutes = type.time_limit_minutes || PRACTICAL_DEFAULTS.timeLimitMinutes;
         attemptsAllowed = 1;
@@ -287,13 +304,15 @@ export default async function handler(req, res) {
         attemptsAllowed = 1;
       }
 
-      // FIXED: Type name resolution
       const fallbackTypeName = typeCode
         .replace(/^practical_/, '')
         .replace(/_/g, ' ')
         .replace(/\b\w/g, char => char.toUpperCase());
-      
+
       const typeName = resolvedTypeName || mappedTitle || fallbackTypeName;
+
+      // Attach dynamically-loaded sections
+      const sections = sectionsByType[assessmentData.assessment_type_id] || [];
 
       return {
         id: ca.assessment_id,
@@ -309,11 +328,11 @@ export default async function handler(req, res) {
         expires_at: assessmentData.expires_at || null,
         completedAt: ca.completed_at || null,
         unblockedAt: ca.unblocked_at || null,
-        resultId: ca.result_id || null
+        resultId: ca.result_id || null,
+        sections: sections
       };
     });
 
-    // Sort cards
     const sortOrder = { 'unblocked': 0, 'in_progress': 1, 'blocked': 2, 'completed': 3 };
     cards.sort((a, b) => {
       const orderA = sortOrder[a.status] !== undefined ? sortOrder[a.status] : 99;
