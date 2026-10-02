@@ -1,5 +1,13 @@
 // pages/api/assessment/submit.js
-// Version: submit-behavioral-v12-frozen-only
+// Version: submit-behavioral-v13-competency-cleanup
+//
+// v13 (2026-10-02):
+//   • Competency scoring block now performs a DELETE of any existing
+//     candidate_competency_scores rows for this candidate+assessment
+//     BEFORE upserting the new rows. This prevents stale rows from
+//     prior question sets (e.g. from before an assessment rebuild)
+//     from surviving on the report. Non-fatal if the delete fails —
+//     the upsert still runs.
 //
 // v12 (Phase 7E):
 //   • Removed the fallback that loaded questions from unique_questions by
@@ -26,7 +34,7 @@
 //     so single_select, baseline, and forced_choice all score uniformly.
 //
 // Behavioural tracking, proctoring, RPC call, and response shape are all
-// unchanged from v11.
+// unchanged from v12.
 
 import { createClient } from "@supabase/supabase-js";
 import {
@@ -35,7 +43,7 @@ import {
 } from "../../../utils/scoring";
 import { calculateCompetencyScores } from "../../../utils/competencyScoring";
 
-const SUBMIT_BUILD = "submit-behavioral-v12-frozen-only";
+const SUBMIT_BUILD = "submit-behavioral-v13-competency-cleanup";
 
 const PRACTICAL_ASSESSMENT_IDS = [
   'c2bc4994-1c4a-4094-a763-8d9d560b759e',
@@ -329,17 +337,6 @@ export default async function handler(req, res) {
     }
 
     if (!frozenUsed) {
-      // Phase 7E: the fallback that used to load questions from
-      // unique_questions by assessment_type_id has been removed. Sessions
-      // must have a frozen question set in session_questions to be
-      // submitted. If they don't, scoring is unreproducible (which is how
-      // the 360 legacy assessment_results rows without session_questions
-      // got their scores).
-      //
-      // This should never fire for new sessions — /api/assessment/session.js
-      // freezes the question set at creation time (STEP 9). If it does fire,
-      // something upstream broke and we want to know about it loudly, not
-      // silently produce an unverifiable score.
       console.error('[Submit] No frozen question set for session:', sessionId);
       return res.status(409).json({
         success: false,
@@ -619,14 +616,7 @@ export default async function handler(req, res) {
     const resultId = rpcResult;
     console.log(`[Submit] Result saved (transactional): ${resultId}`);
 
-    // Phase 7E: post-submit drift check. Compares the percentage we just wrote
-    // against what recompute_session_score (the canonical SQL implementation)
-    // would compute from raw data. If they disagree, log a warning — this
-    // catches any divergence between the JS scoring engine in utils/scoring.js
-    // and the SQL function before it corrupts historical data.
-    //
-    // The check is non-fatal. If it fails (e.g. the function is missing), the
-    // submission still succeeds. The value is in the log signal.
+    // Phase 7E: post-submit drift check.
     try {
       const { data: recomputed, error: recomputeErr } = await serviceClient
         .rpc('recompute_session_score', { p_session_id: sessionId });
@@ -652,6 +642,10 @@ export default async function handler(req, res) {
 
     // ============================================================
     // STEP 19: COMPETENCY SCORING (NON-FATAL)
+    // ------------------------------------------------------
+    // v13: Before upserting new rows, delete any existing rows for this
+    // candidate+assessment. This prevents stale competency rows from
+    // prior question sets (before a rebuild) from surviving on the report.
     // ============================================================
     try {
       const validQuestionIds = questions
@@ -708,6 +702,23 @@ export default async function handler(req, res) {
             .filter(r => Number.isFinite(Number(r.competency_id)) && Number(r.competency_id) > 0);
 
           if (rows.length > 0) {
+            // v13: delete existing rows before upsert to remove any
+            // stale data from prior question sets.
+            const { error: deleteError } = await serviceClient
+              .from('candidate_competency_scores')
+              .delete()
+              .eq('candidate_id', userId)
+              .eq('assessment_id', assessment.id);
+
+            if (deleteError) {
+              console.warn('[Submit] Competency: pre-upsert delete failed (non-fatal):', {
+                message: deleteError.message,
+                code: deleteError.code
+              });
+            } else {
+              console.log(`[Submit] Competency: cleared prior rows for candidate+assessment`);
+            }
+
             const { error: upsertError } = await serviceClient
               .from('candidate_competency_scores')
               .upsert(rows, { onConflict: 'candidate_id,assessment_id,competency_id' });
@@ -726,7 +737,24 @@ export default async function handler(req, res) {
             console.log('[Submit] Competency: no rows produced by scorer');
           }
         } else {
+          // v13: no competency mappings exist for these questions. Still
+          // clean up any stale rows so the report doesn't show phantom data.
           console.log('[Submit] Competency: no mappings found for these questions');
+
+          const { error: cleanupError } = await serviceClient
+            .from('candidate_competency_scores')
+            .delete()
+            .eq('candidate_id', userId)
+            .eq('assessment_id', assessment.id);
+
+          if (cleanupError) {
+            console.warn('[Submit] Competency: stale row cleanup failed (non-fatal):', {
+              message: cleanupError.message,
+              code: cleanupError.code
+            });
+          } else {
+            console.log(`[Submit] Competency: cleaned up any stale rows for candidate+assessment`);
+          }
         }
       }
     } catch (competencyError) {
