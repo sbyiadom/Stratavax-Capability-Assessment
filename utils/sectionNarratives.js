@@ -391,6 +391,47 @@ export const sectionSummaries = {
     ],
   },
 };
+
+  // ---------- Behavioral & Soft Skills: Decision Making ----------
+  'Decision Making': {
+    exceptional: [
+      'Decision making is a clear strength. The candidate weighs options carefully under uncertainty, identifies the relevant trade-offs, and reaches defensible conclusions without unnecessary delay.',
+      'The candidate handles difficult choices well. Competing priorities are weighed deliberately, and the reasoning behind a decision is usually sound even when information is incomplete.',
+      'Decision quality is well above the expected range. The candidate distinguishes between reversible and irreversible choices and adjusts rigour accordingly.',
+      'The candidate decides with confidence and discipline. Downside risk is considered rather than ignored, and decisions are owned rather than deferred.',
+    ],
+    strong: [
+      'Decision making is solid. The candidate reaches sound conclusions on most choices and rarely acts on incomplete reasoning.',
+      'The candidate weighs options effectively and considers trade-offs. Highly ambiguous or high-stakes decisions may occasionally slow the pace, but quality holds.',
+      'Decision quality is above average. The candidate is comfortable choosing between reasonable alternatives without over-analysing.',
+      'The candidate makes timely, well-reasoned decisions in typical situations. Escalation is used appropriately rather than as avoidance.',
+    ],
+    capable: [
+      'Decision making is functional. Routine choices are handled well, but complex trade-offs or incomplete information may cause hesitation.',
+      'The candidate reaches acceptable conclusions on most decisions. Where stakes are high or options are closely matched, extra review is sensible.',
+      'Decision quality is at the expected baseline. The candidate decides correctly on standard matters but may defer or seek cover on harder calls.',
+      'The candidate handles day-to-day decisions adequately. Reversible decisions are made promptly; irreversible ones may need support to finalise.',
+    ],
+    developing: [
+      'Decision making is below the expected range. The candidate may struggle to weigh trade-offs or commit to a course of action when options are close.',
+      'The candidate is more comfortable with clear-cut choices than with ambiguous ones. Under uncertainty, decisions are slower or less well-founded.',
+      'Performance on decision items suggests the candidate benefits from structure. Without a clear framework, reasoning quality is inconsistent.',
+      'The candidate may over-rely on others to validate decisions, or under-weight downside risk when acting quickly.',
+    ],
+    at_risk: [
+      'Decision making is a significant constraint. The candidate may avoid decisions, defer them upward, or commit without adequate consideration of trade-offs.',
+      'Choice under uncertainty presents notable difficulty. Decisions may be driven by the most recent information rather than the most relevant.',
+      'Performance in this area is well below the expected range. Complex decisions are likely to be poorly reasoned or not made at all.',
+      'The candidate struggles to reach defensible conclusions where options are genuinely close. Roles requiring independent judgment will be affected.',
+    ],
+    high_risk: [
+      'Decision making is severely limited. Even routine choices may be deferred, reversed, or made without regard to consequence.',
+      'The candidate shows marked difficulty committing to well-reasoned decisions. Risk of poor outcomes in any role requiring autonomous judgment.',
+      'Decision quality is in the lowest range observed on this assessment. Independent decision-making should not be relied upon without close support.',
+      'Significant scaffolding is required. The candidate is unlikely to reach defensible conclusions under uncertainty without structured frameworks and review.',
+    ],
+  },
+
 export const sectionImplications = {
   // ---------- Cognitive: Verbal Reasoning ----------
   'Verbal Reasoning': {
