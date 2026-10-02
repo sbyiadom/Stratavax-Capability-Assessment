@@ -4,6 +4,8 @@
 // Phase 7A: Removed client-side supervisor_profiles read. Role gating comes
 //   from useRequireAuth (user_metadata) for UX routing, and the server
 //   endpoint /api/assessment-report/[resultId] for actual authorization.
+// Phase 7L (2026-10-02): Risk level resolution delegated to
+//   utils/resolveRiskLevel — no hardcoded 'Medium' fallback anywhere.
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -12,6 +14,7 @@ import { useRequireAuth } from '../../../utils/requireAuth';
 import NationalServiceReport from '../../../components/reports/NationalServiceReport';
 import StratavaxReport from '../../../components/reports/StratavaxReport';
 import AppLayout from '../../../components/AppLayout';
+import { resolveRiskLevel } from '../../../utils/resolveRiskLevel';
 
 const NATIONAL_SERVICE_ASSESSMENT_ID = 'bdb9d46e-9fac-4d00-8478-1f649e7ac600';
 
@@ -201,11 +204,6 @@ function getCategoryScores(data, result, report) {
 
 // ============================================================
 // AUTH HELPER — Phase 7A
-// Previously this read supervisor_profiles from the browser to double-check
-// the caller's role. That read would fail under RLS. The role check is now
-// enforced server-side by /api/assessment-report/[resultId], which returns
-// 401 without a token and 403 for non-admins. The client only needs the
-// access token from the current session.
 // ============================================================
 async function getValidAdminSession() {
   const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
@@ -378,7 +376,12 @@ export default function AdminReportView() {
             overallScore: roundScore(result.percentage_score ?? report.overallScore ?? data.overallScore ?? 0),
             percentage_score: roundScore(result.percentage_score ?? report.percentage_score ?? data.percentage_score ?? 0),
             classification: result.classification || report.classification || data.classification || 'Standard Profile',
-            riskLevel: result.riskLevel || report.riskLevel || result.risk_level || data.riskLevel || 'Medium',
+            // ✅ Fixed: risk level uses shared resolver — no hardcoded 'Medium'
+            riskLevel: resolveRiskLevel(
+              result,
+              report,
+              parsedResultReportData?.proctoring || data?.proctoringData
+            ),
             strengths: result.strengths || report.strengths || data.strengths || [],
             weaknesses: result.weaknesses || report.weaknesses || report.developmentAreas || data.weaknesses || [],
             recommendations: result.recommendations || report.recommendations || data.recommendations || [],
@@ -491,7 +494,8 @@ export default function AdminReportView() {
       },
       percentage_score: report.overallScore || report.percentage_score || 0,
       classification: report.classification || 'Standard Profile',
-      riskLevel: report.riskLevel || 'Medium',
+      // ✅ Fixed: fall through to report.riskLevel (now resolved above) instead of 'Medium'
+      riskLevel: report.riskLevel || report.risk_level || 'Not available',
       categoryScores: report.categoryScores || report.category_scores || [],
       strengths: report.strengths || [],
       weaknesses: report.weaknesses || [],
