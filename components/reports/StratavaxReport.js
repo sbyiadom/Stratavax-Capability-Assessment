@@ -3,11 +3,18 @@
 // Phase 6: Added CompetencyReport section (reads result.competencySummary)
 // Phase 6.5: Replaced top stat cards with supervisor-relevant metrics.
 // Phase 7E (2026-09-30): overallScore now reads result.percentage_score
-//   verbatim instead of averaging category percentages. The averaging
-//   diverged from the stored value whenever categories had unequal weights,
-//   and produced a different number on the list page (which reads the stored
-//   value) vs the detail page (which averaged). Both surfaces now agree.
-//   Historical rows were corrected by the same-day backfill migration.
+//   verbatim instead of averaging category percentages.
+// Phase 7I (2026-10-02): Type-aware layout. The component now detects the
+//   assessment type (cognitive / behavioral / cultural / performance) and
+//   renders only the sections that make sense for that type.
+//     • Cognitive — profile only. No development areas, no recommendations,
+//       no competency analysis. Cognitive ability is not trainable in the
+//       same way behavioural competencies are, so those sections would be
+//       misleading.
+//     • Behavioral / Cultural — current competency-style report.
+//     • Performance — splits into two blocks (Performance Orientation and
+//       Business Acumen) based on the `category` field on each question.
+//     • Other / default — same as Behavioral for now.
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../supabase/client';
@@ -179,6 +186,36 @@ function formatDate(dateString) {
 }
 
 // ============================================================
+// TYPE DETECTION — which layout to render
+// ============================================================
+function detectReportType(result, assessment) {
+  // Prefer explicit assessment_type code from the assessment object.
+  const typeCode =
+    assessment?.assessment_type?.code ||
+    assessment?.assessmentType?.code ||
+    assessment?.type_code ||
+    result?.assessment_type_code ||
+    result?.assessmentTypeCode ||
+    null;
+
+  if (typeCode) {
+    if (typeCode === 'cognitive') return 'cognitive';
+    if (typeCode === 'behavioral' || typeCode === 'cultural') return 'behavioral';
+    if (typeCode === 'performance') return 'performance';
+    return 'behavioral'; // default: treat like behavioural
+  }
+
+  // Fallback: infer from assessment title
+  const title = String(assessment?.title || result?.assessmentName || '').toLowerCase();
+  if (title.includes('cognitive')) return 'cognitive';
+  if (title.includes('performance')) return 'performance';
+  if (title.includes('behavioral') || title.includes('cultural')) return 'behavioral';
+
+  // Final fallback
+  return 'behavioral';
+}
+
+// ============================================================
 // STYLES
 // ============================================================
 const styles = {
@@ -202,6 +239,7 @@ const styles = {
   sectionSubtitle: { fontSize: '14px', color: '#64748b', margin: '0 0 16px 0' },
   summaryBox: { background: '#f8fafc', padding: '20px 24px', borderRadius: '12px', border: '1px solid #eef2f7' },
   summaryText: { fontSize: '15px', lineHeight: '1.7', color: '#1a202c', margin: 0 },
+  disclaimer: { background: '#eff6ff', padding: '14px 20px', borderRadius: '10px', border: '1px solid #bfdbfe', fontSize: '13px', color: '#1e40af', lineHeight: 1.6, marginTop: '12px' },
   categoryGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '16px' },
   categoryCard: { background: 'white', padding: '16px 20px', borderRadius: '12px', border: '1px solid #eef2f7', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' },
   categoryHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' },
@@ -263,7 +301,16 @@ const styles = {
   cleanCommentary: { marginTop: '12px', padding: '12px 16px', background: '#dcfce7', borderRadius: '8px', border: '1px solid #bbf7d0', fontSize: '13px', color: '#166534' },
   noBehavioralData: { textAlign: 'center', padding: '30px 20px', color: '#64748b' },
   noBehavioralSubtext: { fontSize: '13px', color: '#94a3b8', marginTop: '8px' },
-  loadingBehavioral: { textAlign: 'center', padding: '20px', color: '#64748b' }
+  loadingBehavioral: { textAlign: 'center', padding: '20px', color: '#64748b' },
+  // Performance split
+  performanceSplit: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' },
+  performanceBlock: { background: 'white', padding: '20px 24px', borderRadius: '12px', border: '1px solid #eef2f7', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' },
+  performanceBlockTitle: { fontSize: '15px', fontWeight: '700', color: '#0b2a4e', margin: '0 0 6px 0', textTransform: 'uppercase', letterSpacing: '0.04em' },
+  performanceBlockSub: { fontSize: '13px', color: '#64748b', margin: '0 0 14px 0', lineHeight: 1.5 },
+  performanceBlockValue: { fontSize: '32px', fontWeight: '800', color: '#0b2a4e', lineHeight: 1.1, marginBottom: '4px' },
+  performanceBlockCaption: { fontSize: '13px', color: '#64748b', marginBottom: '10px' },
+  performanceBlockBar: { height: '8px', background: '#e2e8f0', borderRadius: '4px', overflow: 'hidden', marginBottom: '10px' },
+  performanceBlockBarFill: { height: '100%', borderRadius: '4px', transition: 'width 0.5s ease' },
 };
 
 // ============================================================
@@ -386,16 +433,6 @@ export default function StratavaxReport({
   const weaknesses = normalizedCategoryScores.filter(item => item.percentage < 65).sort((a, b) => a.percentage - b.percentage);
   const recommendations = safeArray(result.recommendations || []);
 
-  // Authoritative score: read from the stored column. The detail page must
-  // not recompute — the score is written at submit time by the canonical
-  // scoring engine (public.recompute_session_score in Postgres) and must be
-  // displayed verbatim. Historical rows were corrected by the 2026-09-30
-  // backfill migration.
-  //
-  // Prior to this change, the component averaged category percentages, which
-  // diverged from the stored value whenever categories had unequal weights
-  // and produced two different scores for the same result across the list
-  // and detail views.
   const overallScore = safeNumber(result.percentage_score, 0);
 
   const classification = safeText(result.classification || 'Standard Profile');
@@ -407,8 +444,14 @@ export default function StratavaxReport({
   const totalQuestions = safeNumber(result.total_questions || result.totalQuestions || 0);
   const answeredQuestions = safeNumber(result.answered_questions || result.answeredQuestions || 0);
 
+  // Detect report type → drives layout
+  const reportType = detectReportType(result, assessment);
+  const isCognitive = reportType === 'cognitive';
+  const isPerformance = reportType === 'performance';
+  const isBehavioral = reportType === 'behavioral';
+
   // ============================================================
-  // PHASE 6.5 — Top card metrics computed from available data
+  // TOP CARD METRICS
   // ============================================================
   const competencies = competencySummary?.competencies || [];
   const hasCompetencyData = Array.isArray(competencies) && competencies.length > 0;
@@ -420,8 +463,6 @@ export default function StratavaxReport({
   const topCompetency = sortedCompetencies[0] || null;
   const bottomCompetency = sortedCompetencies[sortedCompetencies.length - 1] || null;
 
-  // Percentile rank: use first competency's cohort.mean as reference
-  // Fallback: use the candidate's own score alone
   const percentileInfo = (() => {
     if (!hasCompetencyData) return null;
     const firstWithCohort = competencies.find(c => c.cohort && Number.isFinite(Number(c.cohort.mean)));
@@ -436,7 +477,7 @@ export default function StratavaxReport({
     return { label: 'Bottom tier', detail: `${Math.round(overallScore)}% vs cohort avg ${Math.round(cohortMean)}%` };
   })();
 
-  // Category analysis
+  // Category analysis phrase selection (used in behavioural report)
   const generateCategoryAnalysis = (category, score) => {
     const percentage = safeNumber(score, 0);
     const levelKey = getScoreLevelKey(percentage);
@@ -460,6 +501,7 @@ export default function StratavaxReport({
     categoryAnalysis[cat.category] = generateCategoryAnalysis(cat.category, cat.percentage);
   });
 
+  // Executive summary (used in behavioural report)
   const generateExecutiveSummary = () => {
     const strengthNames = strengths.slice(0, 3).map(s => s.category || s.name || '');
     const weaknessNames = weaknesses.slice(0, 2).map(w => w.category || w.name || '');
@@ -485,6 +527,21 @@ export default function StratavaxReport({
     return summary;
   };
 
+  // Cognitive-specific executive summary
+  const generateCognitiveSummary = () => {
+    const sorted = [...normalizedCategoryScores].sort((a, b) => b.percentage - a.percentage);
+    const top = sorted[0];
+    const bottom = sorted[sorted.length - 1];
+    let summary = `${candidateName} completed the ${assessmentName} with an overall score of ${Math.round(overallScore)}%. `;
+    if (top) summary += `Highest section score: ${top.category} at ${Math.round(top.percentage)}%. `;
+    if (bottom && bottom !== top) summary += `Lowest section score: ${bottom.category} at ${Math.round(bottom.percentage)}%. `;
+    summary += `Cognitive ability assessments measure reasoning and problem-solving capacity across verbal, numerical, abstract, and logical domains. Results reflect relative performance at a point in time and should be interpreted alongside other assessment inputs.`;
+    return summary;
+  };
+
+  // ============================================================
+  // BEHAVIORAL MATRIX RENDER (shared across all report types)
+  // ============================================================
   const renderBehavioralSection = () => {
     if (loadingBehavioral) return <div style={styles.loadingBehavioral}><p>Loading behavioral data...</p></div>;
     if (!hasBehavioralData) {
@@ -586,6 +643,75 @@ export default function StratavaxReport({
     );
   };
 
+  // ============================================================
+  // RENDER — PERFORMANCE SPLIT
+  // ============================================================
+  const renderPerformanceSplit = () => {
+    // Split category_scores into performance_orientation vs business_acumen
+    // based on section names. Our data uses these section names:
+    //   Performance Orientation: Achievement Orientation, Initiative, Persistence,
+    //     Self-Management, Goal Setting, Quality Standards, Learning Orientation,
+    //     Professional Reliability
+    //   Business Acumen: Productivity & Efficiency, Quality & Effectiveness,
+    //     Goal Achievement, Employee Engagement, Financial & Operational Performance
+    const poSections = [
+      'Achievement Orientation', 'Initiative', 'Persistence', 'Self-Management',
+      'Goal Setting', 'Quality Standards', 'Learning Orientation', 'Professional Reliability'
+    ];
+    const baSections = [
+      'Productivity & Efficiency', 'Quality & Effectiveness', 'Goal Achievement',
+      'Employee Engagement', 'Financial & Operational Performance'
+    ];
+
+    const poScores = normalizedCategoryScores.filter(c => poSections.includes(c.category));
+    const baScores = normalizedCategoryScores.filter(c => baSections.includes(c.category));
+
+    const poEarned = poScores.reduce((s, c) => s + safeNumber(c.score ?? c.earned ?? 0), 0);
+    const poMax = poScores.reduce((s, c) => s + safeNumber(c.maxScore ?? c.max ?? 0), 0);
+    const poPct = poMax > 0 ? Math.round((poEarned / poMax) * 100) : 0;
+
+    const baEarned = baScores.reduce((s, c) => s + safeNumber(c.score ?? c.earned ?? 0), 0);
+    const baMax = baScores.reduce((s, c) => s + safeNumber(c.maxScore ?? c.max ?? 0), 0);
+    const baPct = baMax > 0 ? Math.round((baEarned / baMax) * 100) : 0;
+
+    return (
+      <div style={styles.performanceSplit}>
+        <div style={styles.performanceBlock}>
+          <div style={styles.performanceBlockTitle}>Performance Orientation</div>
+          <p style={styles.performanceBlockSub}>
+            Behavioural disposition — how the candidate approaches goals, work, and self-management. Scenario-based.
+          </p>
+          <div style={{ ...styles.performanceBlockValue, color: getLevelColor(poPct) }}>{poPct}%</div>
+          <div style={styles.performanceBlockCaption}>
+            {poScores.length} sections · {poMax > 0 ? `${Math.round(poEarned)} / ${Math.round(poMax)} points` : 'no data'}
+          </div>
+          <div style={styles.performanceBlockBar}>
+            <div style={{ ...styles.performanceBlockBarFill, width: poPct + '%', backgroundColor: getLevelColor(poPct) }} />
+          </div>
+          <div style={{ fontSize: '12px', color: '#64748b' }}>{getLevelLabel(poPct)}</div>
+        </div>
+
+        <div style={styles.performanceBlock}>
+          <div style={styles.performanceBlockTitle}>Business Acumen</div>
+          <p style={styles.performanceBlockSub}>
+            Operational knowledge — understanding of business metrics, quality, engagement, and financial performance.
+          </p>
+          <div style={{ ...styles.performanceBlockValue, color: getLevelColor(baPct) }}>{baPct}%</div>
+          <div style={styles.performanceBlockCaption}>
+            {baScores.length} sections · {baMax > 0 ? `${Math.round(baEarned)} / ${Math.round(baMax)} points` : 'no data'}
+          </div>
+          <div style={styles.performanceBlockBar}>
+            <div style={{ ...styles.performanceBlockBarFill, width: baPct + '%', backgroundColor: getLevelColor(baPct) }} />
+          </div>
+          <div style={{ fontSize: '12px', color: '#64748b' }}>{getLevelLabel(baPct)}</div>
+        </div>
+      </div>
+    );
+  };
+
+  // ============================================================
+  // RENDER
+  // ============================================================
   return (
     <div style={styles.container}>
       {onBack && <button onClick={onBack} style={styles.backButton}>← Back to Dashboard</button>}
@@ -602,7 +728,7 @@ export default function StratavaxReport({
         </div>
       </div>
 
-      {/* PHASE 6.5 — Rebuilt top cards */}
+      {/* TOP CARDS — vary by report type */}
       <div style={styles.statsGrid}>
         <div style={styles.statCard}>
           <div style={styles.statValue}>{Math.round(overallScore)}%</div>
@@ -612,48 +738,125 @@ export default function StratavaxReport({
           </div>
         </div>
 
-        <div style={styles.statCard}>
-          <div style={styles.statValueSmall}>
-            {percentileInfo ? percentileInfo.label : (hasCompetencyData ? 'Data pending' : 'N/A')}
-          </div>
-          <div style={styles.statLabel}>vs Cohort</div>
-          <div style={styles.statSub}>
-            {percentileInfo ? percentileInfo.detail : 'No cohort data available'}
-          </div>
-        </div>
+        {/* Cognitive: show section count instead of cohort/competency */}
+        {isCognitive && (
+          <>
+            <div style={styles.statCard}>
+              <div style={styles.statValueSmall}>{normalizedCategoryScores.length}</div>
+              <div style={styles.statLabel}>Sections Assessed</div>
+              <div style={styles.statSub}>Across 4 cognitive factors</div>
+            </div>
+            <div style={styles.statCard}>
+              <div style={{ ...styles.statValueSmall, color: '#0b2a4e' }}>
+                {normalizedCategoryScores.length > 0
+                  ? `${Math.round(Math.max(...normalizedCategoryScores.map(c => c.percentage)))}%`
+                  : '—'}
+              </div>
+              <div style={styles.statLabel}>Highest Section</div>
+              <div style={styles.statSub}>
+                {normalizedCategoryScores.length > 0
+                  ? normalizedCategoryScores.reduce((a, b) => a.percentage > b.percentage ? a : b).category
+                  : '—'}
+              </div>
+            </div>
+            <div style={styles.statCard}>
+              <div style={{ ...styles.statValueSmall, color: '#0b2a4e' }}>
+                {normalizedCategoryScores.length > 0
+                  ? `${Math.round(Math.min(...normalizedCategoryScores.map(c => c.percentage)))}%`
+                  : '—'}
+              </div>
+              <div style={styles.statLabel}>Lowest Section</div>
+              <div style={styles.statSub}>
+                {normalizedCategoryScores.length > 0
+                  ? normalizedCategoryScores.reduce((a, b) => a.percentage < b.percentage ? a : b).category
+                  : '—'}
+              </div>
+            </div>
+          </>
+        )}
 
-        <div style={styles.statCard}>
-          <div style={{ ...styles.statValueSmall, color: topCompetency ? getLevelColor(topCompetency.percentage) : '#0b2a4e' }}>
-            {topCompetency ? `${Math.round(topCompetency.percentage)}%` : '—'}
-          </div>
-          <div style={styles.statLabel}>Strongest Competency</div>
-          <div style={styles.statSub}>
-            {topCompetency ? topCompetency.name : 'Competency data not available'}
-          </div>
-        </div>
+        {/* Behavioral / Cultural: current cards (cohort + strongest/weakest competency) */}
+        {isBehavioral && (
+          <>
+            <div style={styles.statCard}>
+              <div style={styles.statValueSmall}>
+                {percentileInfo ? percentileInfo.label : (hasCompetencyData ? 'Data pending' : 'N/A')}
+              </div>
+              <div style={styles.statLabel}>vs Cohort</div>
+              <div style={styles.statSub}>
+                {percentileInfo ? percentileInfo.detail : 'No cohort data available'}
+              </div>
+            </div>
 
-        <div style={styles.statCard}>
-          <div style={{ ...styles.statValueSmall, color: bottomCompetency ? getLevelColor(bottomCompetency.percentage) : '#0b2a4e' }}>
-            {bottomCompetency ? `${Math.round(bottomCompetency.percentage)}%` : '—'}
-          </div>
-          <div style={styles.statLabel}>Weakest Competency</div>
-          <div style={styles.statSub}>
-            {bottomCompetency ? bottomCompetency.name : 'Competency data not available'}
-          </div>
-        </div>
+            <div style={styles.statCard}>
+              <div style={{ ...styles.statValueSmall, color: topCompetency ? getLevelColor(topCompetency.percentage) : '#0b2a4e' }}>
+                {topCompetency ? `${Math.round(topCompetency.percentage)}%` : '—'}
+              </div>
+              <div style={styles.statLabel}>Strongest Competency</div>
+              <div style={styles.statSub}>
+                {topCompetency ? topCompetency.name : 'Competency data not available'}
+              </div>
+            </div>
+
+            <div style={styles.statCard}>
+              <div style={{ ...styles.statValueSmall, color: bottomCompetency ? getLevelColor(bottomCompetency.percentage) : '#0b2a4e' }}>
+                {bottomCompetency ? `${Math.round(bottomCompetency.percentage)}%` : '—'}
+              </div>
+              <div style={styles.statLabel}>Weakest Competency</div>
+              <div style={styles.statSub}>
+                {bottomCompetency ? bottomCompetency.name : 'Competency data not available'}
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* Performance: show the two-block summary as cards */}
+        {isPerformance && (
+          <>
+            <div style={styles.statCard}>
+              <div style={styles.statValueSmall}>13</div>
+              <div style={styles.statLabel}>Sections</div>
+              <div style={styles.statSub}>8 orientation + 5 acumen</div>
+            </div>
+            <div style={styles.statCard}>
+              <div style={styles.statValueSmall}>Mixed</div>
+              <div style={styles.statLabel}>Scoring</div>
+              <div style={styles.statSub}>Forced-choice + single-select</div>
+            </div>
+          </>
+        )}
       </div>
 
+      {/* PERFORMANCE SPLIT — shown only for performance assessment */}
+      {isPerformance && (
+        <div style={styles.section}>
+          <h2 style={styles.sectionTitle}>Performance Profile</h2>
+          <p style={styles.sectionSubtitle}>
+            This assessment combines two distinct measures. The scores below are separated so they can be interpreted independently.
+          </p>
+          {renderPerformanceSplit()}
+        </div>
+      )}
+
+      {/* EXECUTIVE SUMMARY — wording differs per type */}
       <div style={styles.section}>
         <h2 style={styles.sectionTitle}>Executive Summary</h2>
         <div style={styles.summaryBox}>
-          <p style={styles.summaryText}>{generateExecutiveSummary()}</p>
+          <p style={styles.summaryText}>
+            {isCognitive ? generateCognitiveSummary() : generateExecutiveSummary()}
+          </p>
         </div>
+        {isCognitive && (
+          <div style={styles.disclaimer}>
+            <strong>About this report:</strong> Cognitive ability assessment measures reasoning capacity at a point in time. It is a directional signal, not a diagnostic. Scores should be used alongside other evidence of capability (performance, portfolio, interviews), not in isolation.
+          </div>
+        )}
       </div>
 
-      {/* Category Scores */}
+      {/* CATEGORY ANALYSIS — shown for all types */}
       {normalizedCategoryScores.length > 0 && (
         <div style={styles.section}>
-          <h2 style={styles.sectionTitle}>Category Analysis</h2>
+          <h2 style={styles.sectionTitle}>{isCognitive ? 'Section Breakdown' : 'Category Analysis'}</h2>
           <div style={styles.categoryGrid}>
             {normalizedCategoryScores.map((cat, index) => {
               const name = cat.category;
@@ -675,7 +878,9 @@ export default function StratavaxReport({
                   </div>
                   <div style={styles.categoryAnalysis}>
                     <p style={styles.categorySummary}>{analysis.summary}</p>
-                    <p style={styles.categorySupervisor}><strong>Supervisor Note:</strong> {analysis.supervisorNote}</p>
+                    {!isCognitive && (
+                      <p style={styles.categorySupervisor}><strong>Supervisor Note:</strong> {analysis.supervisorNote}</p>
+                    )}
                   </div>
                 </div>
               );
@@ -684,8 +889,8 @@ export default function StratavaxReport({
         </div>
       )}
 
-      {/* Competency Analysis */}
-      {competencySummary && competencySummary.hasCompetencies === true && (
+      {/* COMPETENCY ANALYSIS — only if data exists (never for cognitive) */}
+      {!isCognitive && competencySummary && competencySummary.hasCompetencies === true && (
         <div style={styles.section}>
           <CompetencyReport
             mode="single"
@@ -696,11 +901,11 @@ export default function StratavaxReport({
         </div>
       )}
 
-      {/* Strengths */}
-      {strengths.length > 0 && (
+      {/* STRENGTHS — behavioural + performance only, not cognitive */}
+      {!isCognitive && strengths.length > 0 && (
         <div style={styles.section}>
           <h2 style={styles.sectionTitle}>Strengths</h2>
-          <p style={styles.sectionSubtitle}>The following categories are identified as strengths (score greater than or equal to 75%). These areas represent the candidate's strongest capabilities.</p>
+          <p style={styles.sectionSubtitle}>The following categories are identified as strengths (score greater than or equal to 75%).</p>
           <div style={styles.strengthGrid}>
             {strengths.slice(0, 5).map((strength, index) => {
               const name = strength.category || strength.name || 'Unknown';
@@ -713,8 +918,8 @@ export default function StratavaxReport({
                     <span style={styles.strengthName}>{name}</span>
                     <span style={{ ...styles.strengthScore, color: getLevelColor(percentage) }}>{Math.round(percentage)}%</span>
                   </div>
-                  <p style={styles.strengthDescription}>{analysis.summary || `${name} shows strong evidence of capability.`}</p>
-                  <p style={styles.strengthNote}><strong>Implication:</strong> {analysis.supervisorNote || 'Continue to leverage this strength in appropriate assignments.'}</p>
+                  <p style={styles.strengthDescription}>{analysis.summary}</p>
+                  <p style={styles.strengthNote}><strong>Implication:</strong> {analysis.supervisorNote}</p>
                 </div>
               );
             })}
@@ -722,11 +927,11 @@ export default function StratavaxReport({
         </div>
       )}
 
-      {/* Development Areas */}
-      {weaknesses.length > 0 && (
+      {/* DEVELOPMENT AREAS — behavioural + performance only, not cognitive */}
+      {!isCognitive && weaknesses.length > 0 && (
         <div style={styles.section}>
           <h2 style={styles.sectionTitle}>Development Areas</h2>
-          <p style={styles.sectionSubtitle}>The following categories are identified as areas for development (score below 65%). These areas represent opportunities for growth.</p>
+          <p style={styles.sectionSubtitle}>The following categories are identified as areas for development (score below 65%).</p>
           <div style={styles.developmentGrid}>
             {weaknesses.slice(0, 5).map((weakness, index) => {
               const name = weakness.category || weakness.name || 'Unknown';
@@ -739,8 +944,8 @@ export default function StratavaxReport({
                     <span style={styles.developmentName}>{name}</span>
                     <span style={{ ...styles.developmentScore, color: getLevelColor(percentage) }}>{Math.round(percentage)}%</span>
                   </div>
-                  <p style={styles.developmentDescription}>{analysis.summary || `${name} shows opportunities for development.`}</p>
-                  <p style={styles.developmentNote}><strong>Development Focus:</strong> {analysis.supervisorNote || 'Consider providing additional training and support in this area.'}</p>
+                  <p style={styles.developmentDescription}>{analysis.summary}</p>
+                  <p style={styles.developmentNote}><strong>Development Focus:</strong> {analysis.supervisorNote}</p>
                 </div>
               );
             })}
@@ -748,32 +953,34 @@ export default function StratavaxReport({
         </div>
       )}
 
-      {/* Recommendations */}
-      <div style={styles.section}>
-        <h2 style={styles.sectionTitle}>Recommendations</h2>
-        {recommendations.length > 0 ? (
-          <div style={styles.recommendationGrid}>
-            {recommendations.map((rec, index) => (
-              <div key={index} style={styles.recommendationCard}>
-                <div style={styles.recommendationHeader}>
-                  <span style={styles.recommendationNumber}>{index + 1}</span>
-                  <span style={styles.recommendationPriority}>{rec.priority || 'Medium'} Priority</span>
+      {/* RECOMMENDATIONS — behavioural + performance only, not cognitive */}
+      {!isCognitive && (
+        <div style={styles.section}>
+          <h2 style={styles.sectionTitle}>Recommendations</h2>
+          {recommendations.length > 0 ? (
+            <div style={styles.recommendationGrid}>
+              {recommendations.map((rec, index) => (
+                <div key={index} style={styles.recommendationCard}>
+                  <div style={styles.recommendationHeader}>
+                    <span style={styles.recommendationNumber}>{index + 1}</span>
+                    <span style={styles.recommendationPriority}>{rec.priority || 'Medium'} Priority</span>
+                  </div>
+                  <p style={styles.recommendationText}>{rec.recommendation || rec.text || rec.description || ''}</p>
+                  {rec.action && <p style={styles.recommendationAction}><strong>Action:</strong> {rec.action}</p>}
+                  {rec.impact && <p style={styles.recommendationImpact}><strong>Impact:</strong> {rec.impact}</p>}
                 </div>
-                <p style={styles.recommendationText}>{rec.recommendation || rec.text || rec.description || ''}</p>
-                {rec.action && <p style={styles.recommendationAction}><strong>Action:</strong> {rec.action}</p>}
-                {rec.impact && <p style={styles.recommendationImpact}><strong>Impact:</strong> {rec.impact}</p>}
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div style={styles.emptyState}>
-            <p>No specific recommendations are available based on the current assessment results.</p>
-            <p style={styles.emptyStateSub}>Continued reinforcement, practical validation, and regular feedback are recommended to support the candidate's professional growth.</p>
-          </div>
-        )}
-      </div>
+              ))}
+            </div>
+          ) : (
+            <div style={styles.emptyState}>
+              <p>No specific recommendations are available based on the current assessment results.</p>
+              <p style={styles.emptyStateSub}>Continued reinforcement, practical validation, and regular feedback are recommended to support the candidate's professional growth.</p>
+            </div>
+          )}
+        </div>
+      )}
 
-      {/* Behavioral Matrix */}
+      {/* BEHAVIORAL MATRIX — shown for all types */}
       <div style={styles.behavioralToggleContainer}>
         <button onClick={toggleBehavioral} style={styles.behavioralToggleButton}>
           {showBehavioral ? 'Hide Behavioral Matrix' : 'Show Behavioral Matrix'}
