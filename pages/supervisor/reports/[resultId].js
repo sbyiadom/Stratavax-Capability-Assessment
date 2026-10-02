@@ -1,5 +1,7 @@
 // pages/supervisor/reports/[resultId].js - COMPLETE FIXED
 // Phase 6: Passes competencySummary from the API response into StratavaxReport
+// Phase 7L (2026-10-02): Risk level resolution delegated to
+//   utils/resolveRiskLevel — no hardcoded 'Medium' fallback.
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -7,6 +9,7 @@ import { supabase } from '../../../supabase/client';
 import NationalServiceReport from '../../../components/reports/NationalServiceReport';
 import StratavaxReport from '../../../components/reports/StratavaxReport';
 import AppLayout from '../../../components/AppLayout';
+import { resolveRiskLevel } from '../../../utils/resolveRiskLevel';
 
 const NATIONAL_SERVICE_ASSESSMENT_ID = 'bdb9d46e-9fac-4d00-8478-1f649e7ac600';
 const BEHAVIORAL_ASSESSMENT_ID = '671bf00f-46cc-46f5-a217-d5a90dafb9b6';
@@ -262,7 +265,8 @@ export default function SupervisorReportView() {
         recommendations: recommendations,
         riskFactors: riskFactors,
         classification: result?.classification || report?.classification || 'Standard Profile',
-        riskLevel: result?.risk_level || report?.riskLevel || 'Medium',
+        // ✅ Fixed: no more hardcoded 'Medium' fallback
+        riskLevel: resolveRiskLevel(result, report, parsedResultReportData?.proctoring),
         executiveSummary: report?.executiveSummary || '',
         supervisorImplication: report?.supervisorImplication || ''
       };
