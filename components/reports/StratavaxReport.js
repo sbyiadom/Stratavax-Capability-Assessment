@@ -4,21 +4,29 @@
 // Phase 6.5: Replaced top stat cards with supervisor-relevant metrics.
 // Phase 7E (2026-09-30): overallScore now reads result.percentage_score
 //   verbatim instead of averaging category percentages.
-// Phase 7I (2026-10-02): Type-aware layout. The component now detects the
-//   assessment type (cognitive / behavioral / cultural / performance) and
-//   renders only the sections that make sense for that type.
-//     • Cognitive — profile only. No development areas, no recommendations,
-//       no competency analysis. Cognitive ability is not trainable in the
-//       same way behavioural competencies are, so those sections would be
-//       misleading.
-//     • Behavioral / Cultural — current competency-style report.
-//     • Performance — splits into two blocks (Performance Orientation and
-//       Business Acumen) based on the `category` field on each question.
-//     • Other / default — same as Behavioral for now.
+// Phase 7J (2026-10-02): Section cards now read from utils/sectionNarratives.
+//   Each section in category_scores is rendered as a self-contained card with:
+//     • Section name and score
+//     • What this section measures (from sectionDefinitions)
+//     • What the score suggests (from sectionSummaries, banded)
+//     • Supervisor implication (from sectionImplications, banded)
+//   Content is picked deterministically per candidate via pickNarrative, so
+//   different candidates see different wording for the same band, and the
+//   same candidate always sees the same wording on refresh. Sections with no
+//   authored content fall back to generic banks.
+//   The old competencySummary path (which depended on question_competencies
+//   mappings) is no longer used for section analysis. Cognitive, Behavioral,
+//   Cultural Fit, and Performance assessments now render complete reports
+//   without needing those mappings.
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../supabase/client';
 import CompetencyReport from './CompetencyReport';
+import {
+  getBandKey,
+  pickNarrative,
+  getSectionDefinition,
+} from '../../utils/sectionNarratives';
 import {
   getScorePhrase,
   getManufacturingPhrase,
@@ -95,68 +103,14 @@ function safeArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
-function calculateScore(result) {
-  let categoryScores = [];
-  if (result.category_scores && Array.isArray(result.category_scores) && result.category_scores.length > 0) {
-    categoryScores = result.category_scores;
-  } else if (result.categoryScores && Array.isArray(result.categoryScores) && result.categoryScores.length > 0) {
-    categoryScores = result.categoryScores;
-  } else if (result.category_scores && typeof result.category_scores === 'object' && !Array.isArray(result.category_scores)) {
-    categoryScores = Object.values(result.category_scores);
-  }
-  if (categoryScores.length === 0 && result.report_data) {
-    try {
-      let reportData = result.report_data;
-      if (typeof reportData === 'string') reportData = JSON.parse(reportData);
-      if (reportData.categoryScores && Array.isArray(reportData.categoryScores) && reportData.categoryScores.length > 0) {
-        categoryScores = reportData.categoryScores;
-      } else if (reportData.category_scores && Array.isArray(reportData.category_scores) && reportData.category_scores.length > 0) {
-        categoryScores = reportData.category_scores;
-      } else if (reportData.category_scores && typeof reportData.category_scores === 'object') {
-        categoryScores = Object.values(reportData.category_scores);
-      }
-    } catch (e) {}
-  }
-  if (categoryScores.length > 0) {
-    let totalEarned = 0, totalMax = 0, validPercentages = [];
-    categoryScores.forEach(cat => {
-      let score = safeNumber(cat.score || cat.earned || 0);
-      let maxScore = safeNumber(cat.maxScore || cat.max || 0);
-      let pct = safeNumber(cat.percentage || 0);
-      if (score > 0 && maxScore > 0) { totalEarned += score; totalMax += maxScore; }
-      if (pct > 0 && pct <= 100) validPercentages.push(pct);
-    });
-    if (totalEarned > 0 && totalMax > 0) {
-      const calc = Math.round((totalEarned / totalMax) * 100);
-      if (calc >= 0 && calc <= 100) return calc;
-    }
-    if (validPercentages.length > 0) {
-      return Math.round(validPercentages.reduce((a, b) => a + b, 0) / validPercentages.length);
-    }
-  }
-  if (result.percentage_score !== undefined && result.percentage_score !== null) {
-    const val = safeNumber(result.percentage_score);
-    if (val > 0 && val <= 100) return val;
-  }
-  if (result.total_score !== undefined && result.max_score !== undefined) {
-    const total = safeNumber(result.total_score);
-    const max = safeNumber(result.max_score);
-    if (max > 0) {
-      const calc = Math.round((total / max) * 100);
-      if (calc >= 0 && calc <= 100) return calc;
-    }
-  }
-  return 0;
-}
-
 function getLevelLabel(score) {
   const value = safeNumber(score, 0);
   if (value >= 85) return 'Exceptional';
   if (value >= 75) return 'Strong';
-  if (value >= 65) return 'Adequate';
+  if (value >= 65) return 'Capable';
   if (value >= 55) return 'Developing';
-  if (value >= 40) return 'Priority Development';
-  return 'Critical Gap';
+  if (value >= 40) return 'At Risk';
+  return 'High Risk';
 }
 
 function getLevelColor(score) {
@@ -186,10 +140,9 @@ function formatDate(dateString) {
 }
 
 // ============================================================
-// TYPE DETECTION — which layout to render
+// TYPE DETECTION
 // ============================================================
 function detectReportType(result, assessment) {
-  // Prefer explicit assessment_type code from the assessment object.
   const typeCode =
     assessment?.assessment_type?.code ||
     assessment?.assessmentType?.code ||
@@ -200,18 +153,16 @@ function detectReportType(result, assessment) {
 
   if (typeCode) {
     if (typeCode === 'cognitive') return 'cognitive';
-    if (typeCode === 'behavioral' || typeCode === 'cultural') return 'behavioral';
     if (typeCode === 'performance') return 'performance';
-    return 'behavioral'; // default: treat like behavioural
+    if (typeCode === 'behavioral' || typeCode === 'cultural') return 'behavioral';
+    return 'behavioral';
   }
 
-  // Fallback: infer from assessment title
   const title = String(assessment?.title || result?.assessmentName || '').toLowerCase();
   if (title.includes('cognitive')) return 'cognitive';
   if (title.includes('performance')) return 'performance';
   if (title.includes('behavioral') || title.includes('cultural')) return 'behavioral';
 
-  // Final fallback
   return 'behavioral';
 }
 
@@ -240,17 +191,24 @@ const styles = {
   summaryBox: { background: '#f8fafc', padding: '20px 24px', borderRadius: '12px', border: '1px solid #eef2f7' },
   summaryText: { fontSize: '15px', lineHeight: '1.7', color: '#1a202c', margin: 0 },
   disclaimer: { background: '#eff6ff', padding: '14px 20px', borderRadius: '10px', border: '1px solid #bfdbfe', fontSize: '13px', color: '#1e40af', lineHeight: 1.6, marginTop: '12px' },
-  categoryGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '16px' },
-  categoryCard: { background: 'white', padding: '16px 20px', borderRadius: '12px', border: '1px solid #eef2f7', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' },
-  categoryHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' },
-  categoryName: { fontSize: '15px', fontWeight: '600', color: '#1a202c' },
-  categoryScore: { fontSize: '20px', fontWeight: '700' },
-  categoryBar: { height: '6px', background: '#e2e8f0', borderRadius: '3px', overflow: 'hidden', marginBottom: '8px' },
-  categoryBarFill: { height: '100%', borderRadius: '3px', transition: 'width 0.5s ease' },
-  categoryDetail: { fontSize: '12px', color: '#94a3b8', marginBottom: '10px' },
-  categoryAnalysis: { borderTop: '1px solid #eef2f7', paddingTop: '10px' },
-  categorySummary: { fontSize: '14px', lineHeight: '1.6', color: '#334155', margin: '0 0 6px 0' },
-  categorySupervisor: { fontSize: '13px', color: '#475569', margin: 0, fontStyle: 'italic' },
+
+  // Section cards (new layout)
+  sectionCardGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))', gap: '18px' },
+  sectionCard: { background: 'white', borderRadius: '12px', border: '1px solid #eef2f7', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', overflow: 'hidden' },
+  sectionCardHeader: { padding: '18px 22px 14px 22px', borderBottom: '1px solid #f1f5f9' },
+  sectionCardTopRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '10px' },
+  sectionCardName: { fontSize: '16px', fontWeight: '700', color: '#0f172a', margin: 0 },
+  sectionCardScore: { fontSize: '24px', fontWeight: '800', lineHeight: 1 },
+  sectionCardBand: { fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: '4px' },
+  sectionCardBar: { height: '6px', background: '#e2e8f0', borderRadius: '3px', overflow: 'hidden', marginTop: '12px' },
+  sectionCardBarFill: { height: '100%', borderRadius: '3px', transition: 'width 0.5s ease' },
+  sectionCardMeta: { fontSize: '12px', color: '#94a3b8', marginTop: '8px', fontFamily: 'monospace' },
+  sectionCardBody: { padding: '16px 22px 20px 22px' },
+  sectionCardLabel: { fontSize: '10px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.06em', color: '#94a3b8', marginBottom: '6px', marginTop: 0, display: 'block' },
+  sectionCardDefinition: { fontSize: '13px', color: '#64748b', lineHeight: 1.6, margin: '0 0 14px 0', fontStyle: 'italic' },
+  sectionCardSummary: { fontSize: '14px', color: '#1e293b', lineHeight: 1.65, margin: '0 0 14px 0' },
+  sectionCardImplication: { fontSize: '13px', color: '#334155', lineHeight: 1.6, margin: 0, padding: '12px 14px', background: '#f8fafc', borderRadius: '8px', borderLeft: '3px solid #6366f1' },
+
   strengthGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '16px' },
   strengthCard: { background: 'white', padding: '16px 20px', borderRadius: '12px', border: '1px solid #eef2f7', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' },
   strengthHeader: { display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' },
@@ -259,6 +217,7 @@ const styles = {
   strengthScore: { fontSize: '18px', fontWeight: '700' },
   strengthDescription: { fontSize: '14px', lineHeight: '1.6', color: '#334155', margin: '0 0 6px 0' },
   strengthNote: { fontSize: '13px', color: '#475569', margin: 0, fontStyle: 'italic' },
+
   developmentGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '16px' },
   developmentCard: { background: 'white', padding: '16px 20px', borderRadius: '12px', border: '1px solid #eef2f7', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' },
   developmentHeader: { display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' },
@@ -267,6 +226,7 @@ const styles = {
   developmentScore: { fontSize: '18px', fontWeight: '700' },
   developmentDescription: { fontSize: '14px', lineHeight: '1.6', color: '#334155', margin: '0 0 6px 0' },
   developmentNote: { fontSize: '13px', color: '#475569', margin: 0, fontStyle: 'italic' },
+
   recommendationGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '16px' },
   recommendationCard: { background: 'white', padding: '16px 20px', borderRadius: '12px', border: '1px solid #eef2f7', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' },
   recommendationHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' },
@@ -302,7 +262,7 @@ const styles = {
   noBehavioralData: { textAlign: 'center', padding: '30px 20px', color: '#64748b' },
   noBehavioralSubtext: { fontSize: '13px', color: '#94a3b8', marginTop: '8px' },
   loadingBehavioral: { textAlign: 'center', padding: '20px', color: '#64748b' },
-  // Performance split
+
   performanceSplit: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' },
   performanceBlock: { background: 'white', padding: '20px 24px', borderRadius: '12px', border: '1px solid #eef2f7', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' },
   performanceBlockTitle: { fontSize: '15px', fontWeight: '700', color: '#0b2a4e', margin: '0 0 6px 0', textTransform: 'uppercase', letterSpacing: '0.04em' },
@@ -339,8 +299,6 @@ export default function StratavaxReport({
                             behavioralMatrix !== undefined &&
                             typeof behavioralMatrix === 'object' &&
                             Object.keys(behavioralMatrix).length > 0;
-
-  const competencySummary = result?.competencySummary || null;
 
   const getBehavioralValue = (key, fallback = '0') => {
     if (!hasBehavioralData) return fallback;
@@ -389,7 +347,7 @@ export default function StratavaxReport({
     );
   }
 
-  // Category scores normalization
+  // ---------- Category scores normalization ----------
   const rawCategoryScores = result.categoryScores ?? result.category_scores ?? reportData.categoryScores ?? reportData.category_scores ?? [];
   const categoryScoresArray = Array.isArray(rawCategoryScores)
     ? rawCategoryScores
@@ -429,6 +387,13 @@ export default function StratavaxReport({
     }))
     .filter((item) => item.category && item.category !== '');
 
+  // Sort alphabetically for consistent section ordering
+  const sortedSections = [...normalizedCategoryScores].sort((a, b) => {
+    const aName = a.category || '';
+    const bName = b.category || '';
+    return aName.localeCompare(bName);
+  });
+
   const strengths = normalizedCategoryScores.filter(item => item.percentage >= 75).sort((a, b) => b.percentage - a.percentage);
   const weaknesses = normalizedCategoryScores.filter(item => item.percentage < 65).sort((a, b) => a.percentage - b.percentage);
   const recommendations = safeArray(result.recommendations || []);
@@ -441,107 +406,67 @@ export default function StratavaxReport({
   const candidateEmail = safeText(candidate?.email || result.candidateEmail || '');
   const assessmentName = safeText(assessment?.title || result.assessmentName || 'Assessment');
   const completedAt = result.completed_at || result.completedAt || null;
-  const totalQuestions = safeNumber(result.total_questions || result.totalQuestions || 0);
-  const answeredQuestions = safeNumber(result.answered_questions || result.answeredQuestions || 0);
 
-  // Detect report type → drives layout
   const reportType = detectReportType(result, assessment);
   const isCognitive = reportType === 'cognitive';
   const isPerformance = reportType === 'performance';
-  const isBehavioral = reportType === 'behavioral';
 
-  // ============================================================
-  // TOP CARD METRICS
-  // ============================================================
-  const competencies = competencySummary?.competencies || [];
-  const hasCompetencyData = Array.isArray(competencies) && competencies.length > 0;
+  // ---------- Deterministic narrative seeding ----------
+  // Seed the narrative picker with candidateId + resultId so the same
+  // candidate sees the same wording on refresh, and different candidates
+  // see different wording.
+  const narrativeSeed = `${candidate?.id || candidate?.user_id || result?.user_id || 'candidate'}:${result?.id || result?.result_id || 'result'}`;
 
-  const sortedCompetencies = hasCompetencyData
-    ? [...competencies].sort((a, b) => safeNumber(b.percentage) - safeNumber(a.percentage))
-    : [];
-
-  const topCompetency = sortedCompetencies[0] || null;
-  const bottomCompetency = sortedCompetencies[sortedCompetencies.length - 1] || null;
-
-  const percentileInfo = (() => {
-    if (!hasCompetencyData) return null;
-    const firstWithCohort = competencies.find(c => c.cohort && Number.isFinite(Number(c.cohort.mean)));
-    if (!firstWithCohort) return null;
-    const cohortMean = safeNumber(firstWithCohort.cohort.mean, null);
-    if (cohortMean === null) return null;
-    const diff = overallScore - cohortMean;
-    if (diff > 15) return { label: 'Top tier', detail: `${Math.round(overallScore)}% vs cohort avg ${Math.round(cohortMean)}%` };
-    if (diff > 5) return { label: 'Above average', detail: `${Math.round(overallScore)}% vs cohort avg ${Math.round(cohortMean)}%` };
-    if (diff > -5) return { label: 'Around average', detail: `${Math.round(overallScore)}% vs cohort avg ${Math.round(cohortMean)}%` };
-    if (diff > -15) return { label: 'Below average', detail: `${Math.round(overallScore)}% vs cohort avg ${Math.round(cohortMean)}%` };
-    return { label: 'Bottom tier', detail: `${Math.round(overallScore)}% vs cohort avg ${Math.round(cohortMean)}%` };
-  })();
-
-  // Category analysis phrase selection (used in behavioural report)
-  const generateCategoryAnalysis = (category, score) => {
-    const percentage = safeNumber(score, 0);
-    const levelKey = getScoreLevelKey(percentage);
-    const levelLabel = getLevelLabel(percentage);
-    const grade = getGrade(percentage);
-    const summaryPhrases = scoreLevelPhrases[levelKey]?.summary || [];
-    const supervisorPhrases = scoreLevelPhrases[levelKey]?.supervisor || [];
-    const summary = selectPhrase(summaryPhrases, `${category}-${percentage}-summary`) || `${category} shows ${levelLabel.toLowerCase()} evidence of capability.`;
-    const supervisorNote = selectPhrase(supervisorPhrases, `${category}-${percentage}-supervisor`) || `Supervisor should provide appropriate guidance and feedback for this area.`;
-    return {
-      level: levelKey,
-      label: levelLabel,
-      grade,
-      summary: replaceVariables(summary, { area: category, percentage: Math.round(percentage) }),
-      supervisorNote: replaceVariables(supervisorNote, { area: category, percentage: Math.round(percentage) })
-    };
+  // Helper to get both narratives for a section
+  const getSectionNarratives = (sectionName, percentage) => {
+    const band = getBandKey(percentage);
+    const summary = pickNarrative(sectionName, band, narrativeSeed, 'summary');
+    const implication = pickNarrative(sectionName, band, narrativeSeed, 'implication');
+    const definition = getSectionDefinition(sectionName);
+    return { band, summary, implication, definition };
   };
 
-  const categoryAnalysis = {};
-  normalizedCategoryScores.forEach((cat) => {
-    categoryAnalysis[cat.category] = generateCategoryAnalysis(cat.category, cat.percentage);
-  });
-
-  // Executive summary (used in behavioural report)
+  // ---------- Executive summary ----------
   const generateExecutiveSummary = () => {
     const strengthNames = strengths.slice(0, 3).map(s => s.category || s.name || '');
     const weaknessNames = weaknesses.slice(0, 2).map(w => w.category || w.name || '');
     let summary = '';
+
+    if (isCognitive) {
+      const sorted = [...normalizedCategoryScores].sort((a, b) => b.percentage - a.percentage);
+      const top = sorted[0];
+      const bottom = sorted[sorted.length - 1];
+      summary = `${candidateName} completed the ${assessmentName} with an overall score of ${Math.round(overallScore)}%. `;
+      if (top) summary += `Highest section: ${top.category} at ${Math.round(top.percentage)}%. `;
+      if (bottom && bottom !== top) summary += `Lowest section: ${bottom.category} at ${Math.round(bottom.percentage)}%. `;
+      summary += `This assessment measures reasoning capacity across verbal, numerical, abstract, and logical domains. Results reflect relative performance at a point in time.`;
+      return summary;
+    }
+
     if (overallScore >= 75) summary = `${candidateName} completed the ${assessmentName} with a score of ${Math.round(overallScore)}%, indicating strong overall performance. `;
     else if (overallScore >= 65) summary = `${candidateName} completed the ${assessmentName} with a score of ${Math.round(overallScore)}%, indicating adequate overall performance with room for growth. `;
     else if (overallScore >= 55) summary = `${candidateName} completed the ${assessmentName} with a score of ${Math.round(overallScore)}%, indicating developing capability with clear opportunities for improvement. `;
     else summary = `${candidateName} completed the ${assessmentName} with a score of ${Math.round(overallScore)}%, indicating significant development opportunities. `;
+
     if (strengthNames.length > 0 && strengthNames[0]) {
       const topStrengths = strengthNames.filter(n => n && n !== 'Unknown').join(', ');
       if (topStrengths) summary += `Key strengths include ${topStrengths}. `;
-      else summary += `Key strengths were identified across multiple categories. `;
     } else summary += `No dominant strength areas were identified above the current threshold. `;
+
     if (weaknessNames.length > 0 && weaknessNames[0]) {
       const topWeaknesses = weaknessNames.filter(n => n && n !== 'Unknown').join(' and ');
       if (topWeaknesses) summary += `Development opportunities include ${topWeaknesses}. `;
-      else summary += `Development opportunities were identified in several areas. `;
     } else summary += `No major development areas were identified below the current threshold. `;
+
     if (overallScore >= 75) summary += `This profile suggests strong potential for professional growth and increased responsibility.`;
     else if (overallScore >= 65) summary += `With targeted development and practical application, the candidate can strengthen their overall capability.`;
     else if (overallScore >= 55) summary += `Structured development and focused practice will help build a stronger foundation for professional growth.`;
     else summary += `Immediate intervention and comprehensive development are recommended in the identified areas.`;
+
     return summary;
   };
 
-  // Cognitive-specific executive summary
-  const generateCognitiveSummary = () => {
-    const sorted = [...normalizedCategoryScores].sort((a, b) => b.percentage - a.percentage);
-    const top = sorted[0];
-    const bottom = sorted[sorted.length - 1];
-    let summary = `${candidateName} completed the ${assessmentName} with an overall score of ${Math.round(overallScore)}%. `;
-    if (top) summary += `Highest section score: ${top.category} at ${Math.round(top.percentage)}%. `;
-    if (bottom && bottom !== top) summary += `Lowest section score: ${bottom.category} at ${Math.round(bottom.percentage)}%. `;
-    summary += `Cognitive ability assessments measure reasoning and problem-solving capacity across verbal, numerical, abstract, and logical domains. Results reflect relative performance at a point in time and should be interpreted alongside other assessment inputs.`;
-    return summary;
-  };
-
-  // ============================================================
-  // BEHAVIORAL MATRIX RENDER (shared across all report types)
-  // ============================================================
+  // ---------- Behavioral matrix render ----------
   const renderBehavioralSection = () => {
     if (loadingBehavioral) return <div style={styles.loadingBehavioral}><p>Loading behavioral data...</p></div>;
     if (!hasBehavioralData) {
@@ -643,17 +568,8 @@ export default function StratavaxReport({
     );
   };
 
-  // ============================================================
-  // RENDER — PERFORMANCE SPLIT
-  // ============================================================
+  // ---------- Performance split ----------
   const renderPerformanceSplit = () => {
-    // Split category_scores into performance_orientation vs business_acumen
-    // based on section names. Our data uses these section names:
-    //   Performance Orientation: Achievement Orientation, Initiative, Persistence,
-    //     Self-Management, Goal Setting, Quality Standards, Learning Orientation,
-    //     Professional Reliability
-    //   Business Acumen: Productivity & Efficiency, Quality & Effectiveness,
-    //     Goal Achievement, Employee Engagement, Financial & Operational Performance
     const poSections = [
       'Achievement Orientation', 'Initiative', 'Persistence', 'Self-Management',
       'Goal Setting', 'Quality Standards', 'Learning Orientation', 'Professional Reliability'
@@ -709,9 +625,50 @@ export default function StratavaxReport({
     );
   };
 
-  // ============================================================
-  // RENDER
-  // ============================================================
+  // ---------- Section card renderer ----------
+  const renderSectionCard = (section, index) => {
+    const name = section.category;
+    const percentage = section.percentage;
+    const maxScore = safeNumber(section.maxScore || section.max || 0);
+    const earnedScore = safeNumber(section.score || section.earned || 0);
+    const { band, summary, implication, definition } = getSectionNarratives(name, percentage);
+    const bandLabel = getLevelLabel(percentage);
+    const color = getLevelColor(percentage);
+
+    return (
+      <div key={index} style={styles.sectionCard}>
+        <div style={styles.sectionCardHeader}>
+          <div style={styles.sectionCardTopRow}>
+            <h3 style={styles.sectionCardName}>{name}</h3>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ ...styles.sectionCardScore, color }}>{Math.round(percentage)}%</div>
+              <div style={{ ...styles.sectionCardBand, color }}>{bandLabel}</div>
+            </div>
+          </div>
+          <div style={styles.sectionCardBar}>
+            <div style={{ ...styles.sectionCardBarFill, width: Math.min(percentage, 100) + '%', backgroundColor: color }} />
+          </div>
+          {maxScore > 0 && (
+            <div style={styles.sectionCardMeta}>
+              {Math.round(earnedScore)} of {Math.round(maxScore)} points
+            </div>
+          )}
+        </div>
+        <div style={styles.sectionCardBody}>
+          <span style={styles.sectionCardLabel}>What this measures</span>
+          <p style={styles.sectionCardDefinition}>{definition}</p>
+
+          <span style={styles.sectionCardLabel}>What the score suggests</span>
+          <p style={styles.sectionCardSummary}>{summary}</p>
+
+          <span style={styles.sectionCardLabel}>Supervisor implication</span>
+          <p style={styles.sectionCardImplication}>{implication}</p>
+        </div>
+      </div>
+    );
+  };
+
+  // ---------- Render ----------
   return (
     <div style={styles.container}>
       {onBack && <button onClick={onBack} style={styles.backButton}>← Back to Dashboard</button>}
@@ -728,7 +685,7 @@ export default function StratavaxReport({
         </div>
       </div>
 
-      {/* TOP CARDS — vary by report type */}
+      {/* Top metric cards */}
       <div style={styles.statsGrid}>
         <div style={styles.statCard}>
           <div style={styles.statValue}>{Math.round(overallScore)}%</div>
@@ -738,13 +695,12 @@ export default function StratavaxReport({
           </div>
         </div>
 
-        {/* Cognitive: show section count instead of cohort/competency */}
         {isCognitive && (
           <>
             <div style={styles.statCard}>
               <div style={styles.statValueSmall}>{normalizedCategoryScores.length}</div>
               <div style={styles.statLabel}>Sections Assessed</div>
-              <div style={styles.statSub}>Across 4 cognitive factors</div>
+              <div style={styles.statSub}>Across cognitive factors</div>
             </div>
             <div style={styles.statCard}>
               <div style={{ ...styles.statValueSmall, color: '#0b2a4e' }}>
@@ -775,42 +731,30 @@ export default function StratavaxReport({
           </>
         )}
 
-        {/* Behavioral / Cultural: current cards (cohort + strongest/weakest competency) */}
-        {isBehavioral && (
+        {!isCognitive && !isPerformance && (
           <>
             <div style={styles.statCard}>
-              <div style={styles.statValueSmall}>
-                {percentileInfo ? percentileInfo.label : (hasCompetencyData ? 'Data pending' : 'N/A')}
-              </div>
-              <div style={styles.statLabel}>vs Cohort</div>
-              <div style={styles.statSub}>
-                {percentileInfo ? percentileInfo.detail : 'No cohort data available'}
-              </div>
+              <div style={styles.statValueSmall}>{normalizedCategoryScores.length}</div>
+              <div style={styles.statLabel}>Sections Assessed</div>
+              <div style={styles.statSub}>Across competencies</div>
             </div>
-
             <div style={styles.statCard}>
-              <div style={{ ...styles.statValueSmall, color: topCompetency ? getLevelColor(topCompetency.percentage) : '#0b2a4e' }}>
-                {topCompetency ? `${Math.round(topCompetency.percentage)}%` : '—'}
+              <div style={{ ...styles.statValueSmall, color: '#2e7d32' }}>
+                {strengths.length}
               </div>
-              <div style={styles.statLabel}>Strongest Competency</div>
-              <div style={styles.statSub}>
-                {topCompetency ? topCompetency.name : 'Competency data not available'}
-              </div>
+              <div style={styles.statLabel}>Strengths</div>
+              <div style={styles.statSub}>Sections at 75%+</div>
             </div>
-
             <div style={styles.statCard}>
-              <div style={{ ...styles.statValueSmall, color: bottomCompetency ? getLevelColor(bottomCompetency.percentage) : '#0b2a4e' }}>
-                {bottomCompetency ? `${Math.round(bottomCompetency.percentage)}%` : '—'}
+              <div style={{ ...styles.statValueSmall, color: '#c62828' }}>
+                {weaknesses.length}
               </div>
-              <div style={styles.statLabel}>Weakest Competency</div>
-              <div style={styles.statSub}>
-                {bottomCompetency ? bottomCompetency.name : 'Competency data not available'}
-              </div>
+              <div style={styles.statLabel}>Development Areas</div>
+              <div style={styles.statSub}>Sections below 65%</div>
             </div>
           </>
         )}
 
-        {/* Performance: show the two-block summary as cards */}
         {isPerformance && (
           <>
             <div style={styles.statCard}>
@@ -827,7 +771,7 @@ export default function StratavaxReport({
         )}
       </div>
 
-      {/* PERFORMANCE SPLIT — shown only for performance assessment */}
+      {/* Performance split (only for performance) */}
       {isPerformance && (
         <div style={styles.section}>
           <h2 style={styles.sectionTitle}>Performance Profile</h2>
@@ -838,13 +782,11 @@ export default function StratavaxReport({
         </div>
       )}
 
-      {/* EXECUTIVE SUMMARY — wording differs per type */}
+      {/* Executive summary */}
       <div style={styles.section}>
         <h2 style={styles.sectionTitle}>Executive Summary</h2>
         <div style={styles.summaryBox}>
-          <p style={styles.summaryText}>
-            {isCognitive ? generateCognitiveSummary() : generateExecutiveSummary()}
-          </p>
+          <p style={styles.summaryText}>{generateExecutiveSummary()}</p>
         </div>
         {isCognitive && (
           <div style={styles.disclaimer}>
@@ -853,107 +795,20 @@ export default function StratavaxReport({
         )}
       </div>
 
-      {/* CATEGORY ANALYSIS — shown for all types */}
-      {normalizedCategoryScores.length > 0 && (
+      {/* Section analysis — full 5-piece cards */}
+      {sortedSections.length > 0 && (
         <div style={styles.section}>
-          <h2 style={styles.sectionTitle}>{isCognitive ? 'Section Breakdown' : 'Category Analysis'}</h2>
-          <div style={styles.categoryGrid}>
-            {normalizedCategoryScores.map((cat, index) => {
-              const name = cat.category;
-              const percentage = cat.percentage;
-              const maxScore = safeNumber(cat.maxScore || cat.max || 100, 100);
-              const earnedScore = safeNumber(cat.score || cat.earned || 0);
-              const analysis = categoryAnalysis[name] || generateCategoryAnalysis(name, percentage);
-              return (
-                <div key={index} style={styles.categoryCard}>
-                  <div style={styles.categoryHeader}>
-                    <span style={styles.categoryName}>{name}</span>
-                    <span style={{ ...styles.categoryScore, color: getLevelColor(percentage) }}>{Math.round(percentage)}%</span>
-                  </div>
-                  <div style={styles.categoryBar}>
-                    <div style={{ ...styles.categoryBarFill, width: Math.min(percentage, 100) + '%', backgroundColor: getLevelColor(percentage) }} />
-                  </div>
-                  <div style={styles.categoryDetail}>
-                    Score: {Math.round(earnedScore)} / {Math.round(maxScore)} • Grade: {analysis.grade} • {analysis.label}
-                  </div>
-                  <div style={styles.categoryAnalysis}>
-                    <p style={styles.categorySummary}>{analysis.summary}</p>
-                    {!isCognitive && (
-                      <p style={styles.categorySupervisor}><strong>Supervisor Note:</strong> {analysis.supervisorNote}</p>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
+          <h2 style={styles.sectionTitle}>{isCognitive ? 'Section Analysis' : 'Section Analysis'}</h2>
+          <p style={styles.sectionSubtitle}>
+            Each section below shows what it measures, what the score suggests, and what the supervisor should consider.
+          </p>
+          <div style={styles.sectionCardGrid}>
+            {sortedSections.map((section, index) => renderSectionCard(section, index))}
           </div>
         </div>
       )}
 
-      {/* COMPETENCY ANALYSIS — only if data exists (never for cognitive) */}
-      {!isCognitive && competencySummary && competencySummary.hasCompetencies === true && (
-        <div style={styles.section}>
-          <CompetencyReport
-            mode="single"
-            data={competencySummary}
-            title="Competency Analysis"
-            subtitle="Competency-level results for this attempt, with cohort comparison."
-          />
-        </div>
-      )}
-
-      {/* STRENGTHS — behavioural + performance only, not cognitive */}
-      {!isCognitive && strengths.length > 0 && (
-        <div style={styles.section}>
-          <h2 style={styles.sectionTitle}>Strengths</h2>
-          <p style={styles.sectionSubtitle}>The following categories are identified as strengths (score greater than or equal to 75%).</p>
-          <div style={styles.strengthGrid}>
-            {strengths.slice(0, 5).map((strength, index) => {
-              const name = strength.category || strength.name || 'Unknown';
-              const percentage = strength.percentage;
-              const analysis = categoryAnalysis[name] || generateCategoryAnalysis(name, percentage);
-              return (
-                <div key={index} style={styles.strengthCard}>
-                  <div style={styles.strengthHeader}>
-                    <span style={styles.strengthNumber}>{index + 1}</span>
-                    <span style={styles.strengthName}>{name}</span>
-                    <span style={{ ...styles.strengthScore, color: getLevelColor(percentage) }}>{Math.round(percentage)}%</span>
-                  </div>
-                  <p style={styles.strengthDescription}>{analysis.summary}</p>
-                  <p style={styles.strengthNote}><strong>Implication:</strong> {analysis.supervisorNote}</p>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* DEVELOPMENT AREAS — behavioural + performance only, not cognitive */}
-      {!isCognitive && weaknesses.length > 0 && (
-        <div style={styles.section}>
-          <h2 style={styles.sectionTitle}>Development Areas</h2>
-          <p style={styles.sectionSubtitle}>The following categories are identified as areas for development (score below 65%).</p>
-          <div style={styles.developmentGrid}>
-            {weaknesses.slice(0, 5).map((weakness, index) => {
-              const name = weakness.category || weakness.name || 'Unknown';
-              const percentage = weakness.percentage;
-              const analysis = categoryAnalysis[name] || generateCategoryAnalysis(name, percentage);
-              return (
-                <div key={index} style={styles.developmentCard}>
-                  <div style={styles.developmentHeader}>
-                    <span style={styles.developmentNumber}>{index + 1}</span>
-                    <span style={styles.developmentName}>{name}</span>
-                    <span style={{ ...styles.developmentScore, color: getLevelColor(percentage) }}>{Math.round(percentage)}%</span>
-                  </div>
-                  <p style={styles.developmentDescription}>{analysis.summary}</p>
-                  <p style={styles.developmentNote}><strong>Development Focus:</strong> {analysis.supervisorNote}</p>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* RECOMMENDATIONS — behavioural + performance only, not cognitive */}
+      {/* Recommendations — only shown for non-cognitive assessments */}
       {!isCognitive && (
         <div style={styles.section}>
           <h2 style={styles.sectionTitle}>Recommendations</h2>
@@ -973,14 +828,14 @@ export default function StratavaxReport({
             </div>
           ) : (
             <div style={styles.emptyState}>
-              <p>No specific recommendations are available based on the current assessment results.</p>
-              <p style={styles.emptyStateSub}>Continued reinforcement, practical validation, and regular feedback are recommended to support the candidate's professional growth.</p>
+              <p>Section-level implications above serve as the recommendations for this report.</p>
+              <p style={styles.emptyStateSub}>Continued reinforcement, practical validation, and regular feedback are recommended.</p>
             </div>
           )}
         </div>
       )}
 
-      {/* BEHAVIORAL MATRIX — shown for all types */}
+      {/* Behavioral matrix */}
       <div style={styles.behavioralToggleContainer}>
         <button onClick={toggleBehavioral} style={styles.behavioralToggleButton}>
           {showBehavioral ? 'Hide Behavioral Matrix' : 'Show Behavioral Matrix'}
