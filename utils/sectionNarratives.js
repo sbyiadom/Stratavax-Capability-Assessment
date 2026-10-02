@@ -30,9 +30,8 @@
 //
 // Authoring progress:
 //   Framework + generic fallback banks + Cognitive (Verbal, Numerical,
-//   Abstract, Logical) + Behavioral & Soft Skills (Decision Making,
-//   Communication, Adaptability, Accountability). Subsequent sessions add
-//   further batches.
+//   Abstract, Logical) + Behavioral & Soft Skills (all 8 sections).
+//   Next: Cultural & Attitudinal Fit (8 sections).
 
 // ============================================================
 // 1. SECTION DEFINITIONS
@@ -393,7 +392,7 @@ export const sectionSummaries = {
     ],
   },
 
-  // ---------- Behavioral & Soft Skills: Decision Making ----------
+  // ---------- Behavioral: Decision Making ----------
   'Decision Making': {
     exceptional: [
       'Decision making is a clear strength. The candidate weighs options carefully under uncertainty, identifies the relevant trade-offs, and reaches defensible conclusions without unnecessary delay.',
@@ -433,7 +432,7 @@ export const sectionSummaries = {
     ],
   },
 
-  // ---------- Behavioral & Soft Skills: Communication ----------
+  // ---------- Behavioral: Communication ----------
   'Communication': {
     exceptional: [
       'Communication is a clear strength. The candidate conveys information clearly and concisely, adapts register and medium to the audience, and handles difficult messages with candour.',
@@ -473,7 +472,7 @@ export const sectionSummaries = {
     ],
   },
 
-  // ---------- Behavioral & Soft Skills: Adaptability ----------
+  // ---------- Behavioral: Adaptability ----------
   'Adaptability': {
     exceptional: [
       'Adaptability is a clear strength. The candidate adjusts approach smoothly when context shifts, treats change as normal rather than threatening, and maintains effectiveness through uncertainty.',
@@ -513,7 +512,7 @@ export const sectionSummaries = {
     ],
   },
 
-  // ---------- Behavioral & Soft Skills: Accountability ----------
+  // ---------- Behavioral: Accountability ----------
   'Accountability': {
     exceptional: [
       'Accountability is a clear strength. The candidate owns outcomes — good and bad — without deflecting to circumstance, colleagues, or system. Responsibility is taken quickly and cleanly.',
@@ -550,6 +549,166 @@ export const sectionSummaries = {
       'The candidate shows marked difficulty taking responsibility. Failures are unlikely to be owned or used constructively.',
       'Accountability is in the lowest range observed on this assessment. Roles requiring reliability and ownership should be reconsidered.',
       'Significant scaffolding is required. The candidate is unlikely to accept responsibility without explicit structure, monitoring, and consequence.',
+    ],
+  },
+
+  // ---------- Behavioral: Collaboration ----------
+  'Collaboration': {
+    exceptional: [
+      'Collaboration is a clear strength. The candidate works effectively with others — builds trust quickly, handles disagreement without damage, and keeps shared goals ahead of personal position.',
+      'The candidate contributes to team performance beyond their own output. Others are supported, credit is shared, and friction is resolved rather than left to accumulate.',
+      'Collaboration is well above the expected range. The candidate reads team dynamics accurately and adjusts contribution to what the group needs.',
+      'The candidate is comfortable with constructive conflict. Disagreement is used to improve outcomes rather than avoided or escalated.',
+    ],
+    strong: [
+      'Collaboration is solid and reliable. The candidate works well in teams and rarely creates friction.',
+      'The candidate contributes to shared outcomes and handles disagreement maturely. Very complex team dynamics may occasionally require adjustment, but the pattern is dependable.',
+      'Collaboration is above average. The candidate is a dependable team member who contributes without needing to dominate.',
+      'The candidate works effectively with others in typical situations. Trust is built and maintained.',
+    ],
+    capable: [
+      'Collaboration is functional. The candidate works adequately in teams but may prefer independence and contribute less where group effort is required.',
+      'The candidate manages routine collaboration well. Conflict or cross-functional tension may reveal less comfort with joint work.',
+      'Collaboration is at the expected baseline. The candidate is a reasonable team member but does not consistently strengthen the team.',
+      'The candidate handles standard teamwork adequately. Where trust must be built quickly or differences resolved, more effort may be needed.',
+    ],
+    developing: [
+      'Collaboration is below the expected range. The candidate may work in parallel rather than with others, or avoid the friction that comes with real teamwork.',
+      'The candidate may struggle with disagreement or shared ownership. Contributions to team outcomes are inconsistent.',
+      'Performance on collaboration items suggests the candidate benefits from clear roles, structured communication, and explicit shared goals.',
+      'The candidate may prioritise individual delivery over team process in ways that affect collective outcomes.',
+    ],
+    at_risk: [
+      'Collaboration is a significant constraint. The candidate may create friction, avoid joint work, or fail to contribute to shared outcomes.',
+      'Team dynamics present notable difficulty. Conflict may be mishandled, avoided entirely, or escalated unnecessarily.',
+      'Performance in this area is well below the expected range. Roles requiring close teamwork would present sustained difficulty.',
+      'The candidate struggles to build or maintain trust with colleagues. Collaboration may reduce rather than enhance team performance.',
+    ],
+    high_risk: [
+      'Collaboration is severely limited. Even routine joint work may be disrupted by the candidate\u2019s approach.',
+      'The candidate shows marked difficulty working with others. Team outcomes may be affected by friction, withdrawal, or unmanaged conflict.',
+      'Collaboration is in the lowest range observed on this assessment. Roles requiring sustained teamwork should be reconsidered.',
+      'Significant scaffolding is required. The candidate is unlikely to collaborate effectively without structured process and close facilitation.',
+    ],
+  },
+
+  // ---------- Behavioral: Integrity ----------
+  'Integrity': {
+    exceptional: [
+      'Integrity is a clear strength. The candidate maintains ethical standards under pressure — states uncomfortable truths, refuses shortcuts that cross lines, and is transparent when it would be easier not to be.',
+      'The candidate\u2019s actions align with stated principles even when the cost is real. Consistency between word and deed is a defining feature.',
+      'Integrity is well above the expected range. The candidate raises ethical concerns proactively and proportionately, without grandstanding or evasion.',
+      'The candidate is trusted with sensitive matters. Transparency and directness are maintained under conditions where others might compromise.',
+    ],
+    strong: [
+      'Integrity is solid and dependable. The candidate maintains standards under normal pressure and is generally transparent.',
+      'The candidate behaves consistently with stated principles. Extreme pressure or high personal cost may test this, but the pattern is reliable.',
+      'Integrity is above average. The candidate is honest and direct without being needlessly harsh.',
+      'The candidate maintains ethical standards in typical situations. Disclosure happens as expected.',
+    ],
+    capable: [
+      'Integrity is functional. The candidate maintains standards in routine situations but may soften or delay disclosure when stakes are high.',
+      'The candidate generally behaves consistently with stated principles. Under significant pressure, transparency may waver.',
+      'Integrity is at the expected baseline. The candidate is honest in ordinary matters but may weigh consequences more heavily than principle at the margins.',
+      'The candidate handles standard ethical situations adequately. High-cost situations may require support to hold the line.',
+    ],
+    developing: [
+      'Integrity is below the expected range. The candidate may soften truths, delay disclosure, or rationalise small compromises when under pressure.',
+      'Standards may bend under pressure in ways the candidate does not fully acknowledge. Consistency between stated and observed behaviour is inconsistent.',
+      'Performance on integrity items suggests the candidate benefits from clear expectations and explicit ethical frameworks.',
+      'The candidate may avoid uncomfortable disclosures, prefer ambiguity to directness, or allow situational factors to override stated principles.',
+    ],
+    at_risk: [
+      'Integrity is a significant constraint. The candidate may compromise standards under pressure, withhold relevant information, or rationalise conduct in ways that affect trust.',
+      'Transparency is inconsistent. What is stated and what is done may diverge under pressure.',
+      'Performance in this area is well below the expected range. Roles requiring ethical reliability would present sustained difficulty.',
+      'The candidate struggles to maintain principles when the cost is real. Trust is likely to be affected.',
+    ],
+    high_risk: [
+      'Integrity is severely limited. Even routine situations may produce compromises or omissions that would not be expected.',
+      'The candidate shows marked difficulty maintaining standards. Ethical behaviour may be contingent on convenience or visibility.',
+      'Integrity is in the lowest range observed on this assessment. Roles requiring ethical reliability should be reconsidered.',
+      'Significant scaffolding is required. The candidate is unlikely to maintain standards without close oversight and explicit consequence.',
+    ],
+  },
+
+  // ---------- Behavioral: Resilience ----------
+  'Resilience': {
+    exceptional: [
+      'Resilience is a clear strength. The candidate sustains composure and performance under sustained pressure, recovers quickly from setback, and does not transmit stress to those around them.',
+      'The candidate maintains perspective under difficulty. Setbacks are processed and absorbed rather than allowed to affect ongoing work.',
+      'Resilience is well above the expected range. The candidate performs effectively in conditions that would degrade others\u2019 output.',
+      'The candidate recovers from failure without prolonged disruption. Composure and judgment are maintained through demanding periods.',
+    ],
+    strong: [
+      'Resilience is solid and reliable. The candidate handles most pressure and setback without significant loss of function.',
+      'The candidate sustains performance through demanding periods. Very high or sustained pressure may take a toll, but recovery is generally quick.',
+      'Resilience is above average. The candidate maintains composure in typical high-pressure situations.',
+      'The candidate recovers from setbacks and continues effectively. Stress is managed without undue spillover.',
+    ],
+    capable: [
+      'Resilience is functional. The candidate handles routine pressure well but may show strain under sustained or intense demand.',
+      'The candidate manages typical setbacks adequately. Prolonged pressure may affect composure or output.',
+      'Resilience is at the expected baseline. The candidate copes with ordinary difficulty but may need support during extended challenge.',
+      'The candidate recovers from setback in time but may be slower than peers. Recovery is supported by structure and support.',
+    ],
+    developing: [
+      'Resilience is below the expected range. The candidate may show strain under pressure and take longer than peers to recover from setback.',
+      'The candidate copes with short-term difficulty but struggles when pressure is sustained. Output may drop during demanding periods.',
+      'Performance on resilience items suggests the candidate benefits from recovery time, clarity, and support during difficult periods.',
+      'The candidate may transmit stress to colleagues or find judgment compromised under sustained pressure.',
+    ],
+    at_risk: [
+      'Resilience is a significant constraint. The candidate may be significantly affected by pressure in ways that affect performance, judgment, or relationships.',
+      'Sustained demand is likely to produce strain that shows in output, composure, or colleagues\u2019 experience.',
+      'Performance in this area is well below the expected range. Roles with inherent pressure would present sustained difficulty.',
+      'The candidate may need active support to maintain function through demanding periods.',
+    ],
+    high_risk: [
+      'Resilience is severely limited. Even routine pressure may disrupt the candidate\u2019s work or composure.',
+      'The candidate shows marked difficulty sustaining performance under demand. Recovery from setback may be prolonged or incomplete.',
+      'Resilience is in the lowest range observed on this assessment. High-pressure roles should be reconsidered.',
+      'Significant scaffolding is required. The candidate is unlikely to sustain performance under pressure without substantial support.',
+    ],
+  },
+
+  // ---------- Behavioral: Stakeholder Focus ----------
+  'Stakeholder Focus': {
+    exceptional: [
+      'Stakeholder focus is a clear strength. The candidate reads the interests, expectations, and priorities of clients, partners, and senior stakeholders accurately, and manages them proactively.',
+      'The candidate balances competing stakeholder needs without losing sight of the underlying objectives. Expectations are managed honestly and early.',
+      'Stakeholder focus is well above the expected range. The candidate anticipates concerns before they are raised and communicates in ways that build confidence.',
+      'The candidate handles difficult stakeholders with composure. Conflicting demands are surfaced, prioritised, and managed rather than left to escalate.',
+    ],
+    strong: [
+      'Stakeholder focus is solid and reliable. The candidate manages most stakeholder relationships well and communicates expectations clearly.',
+      'The candidate balances stakeholder needs effectively. Highly complex or politically sensitive relationships may occasionally require support.',
+      'Stakeholder focus is above average. Concerns are addressed promptly and expectations managed appropriately.',
+      'The candidate manages typical stakeholder relationships effectively. Trust is built and maintained.',
+    ],
+    capable: [
+      'Stakeholder focus is functional. The candidate handles routine stakeholder interactions well but may be less effective with competing demands or senior audiences.',
+      'The candidate manages standard relationships adequately. Complex stakeholder landscapes may reveal gaps in anticipation or management.',
+      'Stakeholder focus is at the expected baseline. The candidate responds to stakeholder needs but may not proactively shape expectations.',
+      'The candidate handles typical stakeholder situations well. Higher-stakes or politically complex contexts may need support.',
+    ],
+    developing: [
+      'Stakeholder focus is below the expected range. The candidate may misread stakeholder priorities, fail to manage expectations proactively, or allow issues to escalate.',
+      'The candidate may focus on immediate delivery without adequately considering wider stakeholder interests.',
+      'Performance on stakeholder items suggests the candidate benefits from structured briefings and clear escalation routes.',
+      'Competing stakeholder demands may cause confusion or reactive rather than anticipatory management.',
+    ],
+    at_risk: [
+      'Stakeholder focus is a significant constraint. The candidate may mishandle relationships, miss expectations, or create friction with senior audiences or clients.',
+      'Stakeholder management is likely to produce unmet expectations, surprises, or unnecessary escalation.',
+      'Performance in this area is well below the expected range. Roles with significant external or senior stakeholder contact would present sustained difficulty.',
+      'The candidate struggles to balance competing interests in ways that affect outcomes and relationships.',
+    ],
+    high_risk: [
+      'Stakeholder focus is severely limited. Even routine stakeholder interactions may create friction or unmet expectations.',
+      'The candidate shows marked difficulty managing relationships. Senior or external stakeholders are unlikely to be handled effectively.',
+      'Stakeholder focus is in the lowest range observed on this assessment. Roles requiring stakeholder management should be reconsidered.',
+      'Significant scaffolding is required. The candidate is unlikely to manage stakeholder relationships effectively without close support and structure.',
     ],
   },
 };
@@ -715,7 +874,7 @@ export const sectionImplications = {
     ],
   },
 
-  // ---------- Behavioral & Soft Skills: Decision Making ----------
+  // ---------- Behavioral: Decision Making ----------
   'Decision Making': {
     exceptional: [
       'The candidate can be trusted with high-stakes or ambiguous decisions. Consider using this strength in roles where judgment under uncertainty is central.',
@@ -755,7 +914,7 @@ export const sectionImplications = {
     ],
   },
 
-  // ---------- Behavioral & Soft Skills: Communication ----------
+  // ---------- Behavioral: Communication ----------
   'Communication': {
     exceptional: [
       'The candidate can be trusted with high-stakes or sensitive communication. Consider using this strength in roles requiring stakeholder management, negotiation, or delivery of difficult news.',
@@ -795,7 +954,7 @@ export const sectionImplications = {
     ],
   },
 
-  // ---------- Behavioral & Soft Skills: Adaptability ----------
+  // ---------- Behavioral: Adaptability ----------
   'Adaptability': {
     exceptional: [
       'The candidate can be trusted in fast-changing or ambiguous environments. Consider using this strength in roles where context shifts frequently or requirements emerge as work proceeds.',
@@ -835,7 +994,7 @@ export const sectionImplications = {
     ],
   },
 
-  // ---------- Behavioral & Soft Skills: Accountability ----------
+  // ---------- Behavioral: Accountability ----------
   'Accountability': {
     exceptional: [
       'The candidate can be trusted with work where ownership and reliability are critical. Consider using this strength in roles with high autonomy or low oversight.',
@@ -872,6 +1031,166 @@ export const sectionImplications = {
       'Roles requiring accountability should be reconsidered for this candidate. If unavoidable, provide close supervision and explicit consequence.',
       'Substantial, ongoing support would be needed. Consider whether this is the right fit for the role\u2019s reliability demands.',
       'This is a critical constraint. Ownership should be assigned only with monitoring, structure, and clear consequences.',
+    ],
+  },
+
+  // ---------- Behavioral: Collaboration ----------
+  'Collaboration': {
+    exceptional: [
+      'The candidate can be trusted with joint work where trust, candour, and shared ownership matter. Consider using this strength in cross-functional teams, projects, or roles requiring influence without authority.',
+      'Reliable for team settings involving disagreement, shared accountability, or diverse working styles. Very few candidates collaborate this cleanly.',
+      'Assign the candidate to teams where dynamics matter — high-stakes projects, integration efforts, or teams under pressure.',
+      'This is a genuine differentiator. Consider using the candidate to build team norms or to work with colleagues who need support on collaboration.',
+    ],
+    strong: [
+      'Suitable for most team settings with normal oversight. Highly charged team dynamics may still warrant a second pair of eyes.',
+      'The candidate collaborates reliably and handles disagreement maturely. No specific intervention required.',
+      'Assign joint work with standard oversight. The candidate contributes to shared outcomes without creating friction.',
+      'This capability can be counted on. Consider stretching the candidate with cross-functional or higher-stakes team work.',
+    ],
+    capable: [
+      'Suitable for standard team work. Where dynamics are complex or conflict is likely, provide facilitation or clear roles.',
+      'Acceptable for most collaboration. Shared ownership may need to be explicit to draw out the candidate\u2019s best contribution.',
+      'Provide clear roles, structured communication, and a light touch on conflict resolution where needed.',
+      'If the role demands sustained collaborative excellence, targeted coaching on team behaviour is recommended.',
+    ],
+    developing: [
+      'Pair the candidate with a stronger collaborator for complex or high-friction team work until capability is reinforced.',
+      'Provide structured support — clear roles, explicit shared goals, and facilitation — before joint work begins.',
+      'Avoid assigning the candidate to teams with significant conflict or unclear dynamics until capability improves.',
+      'Set specific development goals around trust-building and constructive disagreement, and review progress quarterly.',
+    ],
+    at_risk: [
+      'Significant support is required. Do not assign the candidate to teams with complex dynamics or high interdependence.',
+      'Where collaboration is central to the role, reconsider fit or provide close facilitation and structured process.',
+      'Structured development plan needed. Track team outcomes and peer feedback formally.',
+      'This is a priority development area. Expect to invest time in building collaboration capability through supervised joint work.',
+    ],
+    high_risk: [
+      'Do not rely on this capability for work requiring sustained teamwork.',
+      'Roles involving close collaboration should be reconsidered for this candidate. If unavoidable, provide close facilitation and explicit process.',
+      'Substantial, ongoing support would be needed. Consider whether this is the right fit for the role\u2019s team demands.',
+      'This is a critical constraint. Joint work should be highly structured and closely supported until capability is built.',
+    ],
+  },
+
+  // ---------- Behavioral: Integrity ----------
+  'Integrity': {
+    exceptional: [
+      'The candidate can be trusted with sensitive information, decisions with ethical dimensions, and situations where the right call is costly. Consider using this strength where trust is critical.',
+      'Reliable for roles requiring ethical judgment under pressure. Very few candidates maintain standards this consistently.',
+      'Assign to work involving confidential information, regulatory matters, or decisions where the easy path and the right path diverge.',
+      'This is a genuine differentiator. Consider using the candidate as a reference point for ethical conduct or to support colleagues in difficult situations.',
+    ],
+    strong: [
+      'Suitable for most roles with normal oversight. Extreme pressure or high personal cost may still test the candidate, but the pattern is reliable.',
+      'The candidate maintains standards and transparency under normal pressure. No specific intervention required.',
+      'Assign ethical and confidential work with standard oversight. Behaviour should align with stated principles.',
+      'This capability can be counted on. Consider stretching the candidate with roles requiring ethical judgment over time.',
+    ],
+    capable: [
+      'Suitable for standard work. Where pressure to compromise is likely, provide explicit expectations and clear support.',
+      'Acceptable for most purposes. Transparency may waver under high cost or visibility; verify in sensitive matters.',
+      'Provide clear ethical frameworks, explicit expectations, and support when the right path is difficult.',
+      'If the role demands consistent ethical reliability under pressure, targeted coaching is recommended.',
+    ],
+    developing: [
+      'Pair the candidate with a trusted colleague for matters involving ethical judgment or sensitive information until capability is reinforced.',
+      'Provide structured support — clear ethical expectations, escalation routes, and explicit consequences for compromise.',
+      'Avoid assigning the candidate roles with significant ethical exposure until capability improves.',
+      'Set specific development goals around transparency and consistency, and review progress quarterly.',
+    ],
+    at_risk: [
+      'Significant support is required. Do not assign the candidate to roles involving sensitive information or ethical judgment.',
+      'Where integrity is central to the role, reconsider fit or provide close supervision and formal monitoring.',
+      'Structured development plan needed. Track ethical conduct and disclosure formally.',
+      'This is a priority development area. Expect to invest time in building reliability and transparency through explicit structure and feedback.',
+    ],
+    high_risk: [
+      'Do not rely on this capability for decisions with ethical dimensions or sensitive information.',
+      'Roles requiring integrity should be reconsidered for this candidate. If unavoidable, provide close oversight and explicit consequence.',
+      'Substantial, ongoing support would be needed. Consider whether this is the right fit for the role\u2019s ethical demands.',
+      'This is a critical constraint. Ethical exposure should be minimised or eliminated until capability is built.',
+    ],
+  },
+
+  // ---------- Behavioral: Resilience ----------
+  'Resilience': {
+    exceptional: [
+      'The candidate can be trusted in high-pressure or high-stakes environments. Consider using this strength in roles where sustained demand is the norm.',
+      'Reliable under pressure, during setbacks, and through extended difficulty. Very few candidates maintain performance this cleanly.',
+      'Assign to demanding roles, crisis work, or environments where composure matters — the candidate is likely to stabilise others under pressure.',
+      'This is a genuine differentiator. Consider using the candidate as a stabiliser during difficult periods or as a support for colleagues under strain.',
+    ],
+    strong: [
+      'Suitable for most roles with normal levels of pressure. Extreme or prolonged demand may still warrant support and recovery time.',
+      'The candidate sustains performance through typical pressure and recovers from setback well. No specific intervention required.',
+      'Assign high-pressure work with standard oversight. The candidate should absorb reasonable demand without significant impact.',
+      'This capability can be counted on. Consider stretching the candidate with gradually more demanding assignments.',
+    ],
+    capable: [
+      'Suitable for roles with predictable pressure. Where demand is sustained or intense, provide recovery time and support.',
+      'Acceptable for most purposes. Prolonged pressure may affect composure; monitor during extended challenges.',
+      'Provide structure and recovery periods during demanding phases. Check in during extended difficulty.',
+      'If the role demands consistent performance under sustained pressure, targeted development is recommended.',
+    ],
+    developing: [
+      'Pair the candidate with a stronger colleague during high-pressure periods until capability is reinforced.',
+      'Provide structured support — clear priorities, recovery time, and regular check-ins — during demanding phases.',
+      'Avoid placing the candidate in roles with sustained high pressure or crisis conditions until capability improves.',
+      'Set specific development goals around stress management and recovery, and review progress quarterly.',
+    ],
+    at_risk: [
+      'Significant support is required. Do not assign the candidate to roles with sustained pressure or frequent crisis.',
+      'Where resilience is central to the role, reconsider fit or provide close supervision and structured recovery.',
+      'Structured development plan needed. Monitor wellbeing and performance during demanding periods.',
+      'This is a priority development area. Expect to invest time in building resilience through graduated exposure and support.',
+    ],
+    high_risk: [
+      'Do not rely on this capability for roles involving pressure, crisis, or sustained demand.',
+      'Roles requiring resilience should be reconsidered for this candidate. If unavoidable, minimise pressure and provide substantial support.',
+      'Substantial, ongoing support would be needed. Consider whether this is the right fit for the role\u2019s demands.',
+      'This is a critical constraint. High-pressure work should be avoided or heavily supported until capability is built.',
+    ],
+  },
+
+  // ---------- Behavioral: Stakeholder Focus ----------
+  'Stakeholder Focus': {
+    exceptional: [
+      'The candidate can be trusted with high-stakes stakeholder relationships — clients, partners, senior executives. Consider using this strength where relationship management is critical.',
+      'Reliable for managing competing interests, expectations, and politically sensitive contexts. Very few candidates handle stakeholder complexity this cleanly.',
+      'Assign to client-facing, executive-facing, or partnership roles where trust and expectation management are central.',
+      'This is a genuine differentiator. Consider using the candidate as a relationship anchor on complex or sensitive engagements.',
+    ],
+    strong: [
+      'Suitable for most stakeholder-facing work with normal oversight. Highly political or complex landscapes may warrant a second view.',
+      'The candidate manages stakeholder relationships and expectations effectively. No specific intervention required.',
+      'Assign stakeholder-facing work with standard oversight. Trust should be built and maintained reliably.',
+      'This capability can be counted on. Consider stretching the candidate with more senior or complex stakeholder exposure.',
+    ],
+    capable: [
+      'Suitable for standard stakeholder work. Where interests conflict or senior audiences are involved, provide review and clear escalation routes.',
+      'Acceptable for most purposes. Complex or politically sensitive relationships may require support to manage effectively.',
+      'Provide structured briefings, clear escalation routes, and support on difficult stakeholder conversations.',
+      'If the role demands consistent excellence in stakeholder management, targeted coaching is recommended.',
+    ],
+    developing: [
+      'Pair the candidate with a stronger stakeholder manager for complex or high-stakes relationships until capability is reinforced.',
+      'Provide structured support — briefings, escalation routes, and review of key communications — before significant engagements.',
+      'Avoid assigning the candidate standalone ownership of significant external or senior stakeholder relationships until capability improves.',
+      'Set specific development goals around expectation management and relationship building, and review progress quarterly.',
+    ],
+    at_risk: [
+      'Significant support is required. Do not assign the candidate standalone ownership of high-stakes stakeholder relationships.',
+      'Where stakeholder management is central to the role, reconsider fit or provide close supervision and structured support.',
+      'Structured development plan needed. Track stakeholder outcomes and relationship health formally.',
+      'This is a priority development area. Expect to invest time in building stakeholder capability through supervised practice.',
+    ],
+    high_risk: [
+      'Do not rely on this capability for stakeholder-facing work.',
+      'Roles requiring significant stakeholder management should be reconsidered for this candidate. If unavoidable, review all significant interactions.',
+      'Substantial, ongoing support would be needed. Consider whether this is the right fit for the role\u2019s stakeholder demands.',
+      'This is a critical constraint. Stakeholder relationships should be managed by others or heavily supervised until capability is built.',
     ],
   },
 };
