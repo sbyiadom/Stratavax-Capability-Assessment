@@ -1,44 +1,18 @@
 // utils/sectionNarratives.js
 // Universal section narrative library.
 //
-// Purpose:
-//   Every assessment in the platform has sections (Verbal Reasoning, Integrity,
-//   Values Alignment, etc.). This file provides:
-//     1. A short definition of what each section measures.
-//     2. Banded narrative summaries (what the score suggests).
-//     3. Banded supervisor implications (what to do about it).
-//
-// Fallback behaviour:
-//   If a section has no authored narratives, the generic banks below are used.
-//   Every section on every assessment therefore renders meaningful,
-//   candidate-specific wording, even before it is authored.
-//
-// Determinism:
-//   pickNarrative() selects a variant based on a hash of the seed string
-//   (typically candidateId + section + band + type). The same candidate always
-//   sees the same wording for a given section and band, but different
-//   candidates see different wording. Sections within one candidate's report
-//   also see different wording because section is part of the seed.
-//
-// Band keys:
-//   exceptional  →  85%+
-//   strong       →  75–84%
-//   capable      →  65–74%
-//   developing   →  55–64%
-//   at_risk      →  40–54%
-//   high_risk    →  <40%
-//
 // Authoring progress:
-//   Framework + generic fallback banks + Cognitive (Verbal, Numerical,
-//   Abstract, Logical) + Behavioral & Soft Skills (all 8 sections).
-//   Next: Cultural & Attitudinal Fit (8 sections).
+//   Cognitive (4) + Behavioral & Soft Skills (8) + Cultural & Attitudinal Fit
+//   (Values Alignment, Cultural Adaptability, Team Compatibility,
+//   Attitudinal Markers). Remaining Cultural sections: Organisational
+//   Citizenship, Ethical & Cultural Judgment, Motivation & Drive,
+//   Learning Orientation.
 
 // ============================================================
 // 1. SECTION DEFINITIONS
 // ============================================================
 
 export const sectionDefinitions = {
-  // ---------- Cognitive Ability (type 3) ----------
   'Verbal Reasoning':
     'Understanding and drawing conclusions from written language — comprehension, analogies, and inference.',
   'Numerical Reasoning':
@@ -47,8 +21,6 @@ export const sectionDefinitions = {
     'Recognising patterns, rules, and relationships in unfamiliar or symbolic material.',
   'Logical Reasoning':
     'Drawing valid inferences from premises — deductive, conditional, and categorical reasoning.',
-
-  // ---------- Behavioral & Soft Skills (type 7) ----------
   'Decision Making':
     'Choosing between options under uncertainty, with attention to trade-offs and downside risk.',
   'Communication':
@@ -65,8 +37,6 @@ export const sectionDefinitions = {
     'Sustaining composure and recovery under sustained pressure or setback.',
   'Stakeholder Focus':
     'Managing the expectations and interests of clients, partners, and senior stakeholders.',
-
-  // ---------- Cultural & Attitudinal Fit (type 9) ----------
   'Values Alignment':
     'Choosing behaviours consistent with stated organisational values, especially when it costs something.',
   'Cultural Adaptability':
@@ -83,8 +53,6 @@ export const sectionDefinitions = {
     'Sustained effort, especially on work that is uninteresting, difficult, or without visible reward.',
   'Learning Orientation':
     'Using feedback, failure, and new information to improve — including from unexpected sources.',
-
-  // ---------- Performance Orientation (part of type 6) ----------
   'Achievement Orientation':
     'Drive to set, pursue, and exceed demanding goals.',
   'Initiative':
@@ -99,8 +67,6 @@ export const sectionDefinitions = {
     'Choosing the right standard for the work — not over-polishing, not under-delivering.',
   'Professional Reliability':
     'Following through on commitments, communicating changes, and being dependable.',
-
-  // ---------- Business Acumen (part of type 6) ----------
   'Productivity & Efficiency':
     'Understanding of productivity metrics, efficiency levers, and the trade-offs between them.',
   'Quality & Effectiveness':
@@ -111,8 +77,6 @@ export const sectionDefinitions = {
     'Understanding of engagement, retention, and the drivers of discretionary effort.',
   'Financial & Operational Performance':
     'Understanding of core financial and operational metrics — margin, cash flow, ROI, liquidity.',
-
-  // ---------- Other assessments (partial, from known structure) ----------
   'Vision / Strategy':
     'Setting direction, framing long-term priorities, and translating intent into action.',
   'People Leadership':
@@ -146,7 +110,7 @@ export const sectionDefinitions = {
 };
 
 // ============================================================
-// 2. GENERIC BANKS (fallback for unauthored sections)
+// 2. GENERIC BANKS
 // ============================================================
 
 export const genericSummaries = {
@@ -232,7 +196,7 @@ export const genericImplications = {
 // ============================================================
 
 export const sectionSummaries = {
-  // ---------- Cognitive: Verbal Reasoning ----------
+  // ---------- Cognitive ----------
   'Verbal Reasoning': {
     exceptional: [
       'Verbal reasoning is a clear strength. The candidate extracts meaning from complex written material with ease and reasons confidently about implications, not just surface content.',
@@ -272,7 +236,6 @@ export const sectionSummaries = {
     ],
   },
 
-  // ---------- Cognitive: Numerical Reasoning ----------
   'Numerical Reasoning': {
     exceptional: [
       'Numerical reasoning is a clear strength. The candidate works confidently with quantitative material and reasons fluently about proportions, patterns, and relationships between numbers.',
@@ -312,7 +275,6 @@ export const sectionSummaries = {
     ],
   },
 
-  // ---------- Cognitive: Abstract Reasoning ----------
   'Abstract Reasoning': {
     exceptional: [
       'Abstract reasoning is a clear strength. The candidate identifies patterns and underlying rules in unfamiliar material quickly and with confidence.',
@@ -352,7 +314,6 @@ export const sectionSummaries = {
     ],
   },
 
-  // ---------- Cognitive: Logical Reasoning ----------
   'Logical Reasoning': {
     exceptional: [
       'Logical reasoning is a clear strength. The candidate draws valid inferences from premises with confidence and reliably distinguishes necessary from possible conclusions.',
@@ -392,7 +353,7 @@ export const sectionSummaries = {
     ],
   },
 
-  // ---------- Behavioral: Decision Making ----------
+  // ---------- Behavioral ----------
   'Decision Making': {
     exceptional: [
       'Decision making is a clear strength. The candidate weighs options carefully under uncertainty, identifies the relevant trade-offs, and reaches defensible conclusions without unnecessary delay.',
@@ -432,7 +393,6 @@ export const sectionSummaries = {
     ],
   },
 
-  // ---------- Behavioral: Communication ----------
   'Communication': {
     exceptional: [
       'Communication is a clear strength. The candidate conveys information clearly and concisely, adapts register and medium to the audience, and handles difficult messages with candour.',
@@ -472,7 +432,6 @@ export const sectionSummaries = {
     ],
   },
 
-  // ---------- Behavioral: Adaptability ----------
   'Adaptability': {
     exceptional: [
       'Adaptability is a clear strength. The candidate adjusts approach smoothly when context shifts, treats change as normal rather than threatening, and maintains effectiveness through uncertainty.',
@@ -512,7 +471,6 @@ export const sectionSummaries = {
     ],
   },
 
-  // ---------- Behavioral: Accountability ----------
   'Accountability': {
     exceptional: [
       'Accountability is a clear strength. The candidate owns outcomes — good and bad — without deflecting to circumstance, colleagues, or system. Responsibility is taken quickly and cleanly.',
@@ -552,7 +510,6 @@ export const sectionSummaries = {
     ],
   },
 
-  // ---------- Behavioral: Collaboration ----------
   'Collaboration': {
     exceptional: [
       'Collaboration is a clear strength. The candidate works effectively with others — builds trust quickly, handles disagreement without damage, and keeps shared goals ahead of personal position.',
@@ -592,7 +549,6 @@ export const sectionSummaries = {
     ],
   },
 
-  // ---------- Behavioral: Integrity ----------
   'Integrity': {
     exceptional: [
       'Integrity is a clear strength. The candidate maintains ethical standards under pressure — states uncomfortable truths, refuses shortcuts that cross lines, and is transparent when it would be easier not to be.',
@@ -632,7 +588,6 @@ export const sectionSummaries = {
     ],
   },
 
-  // ---------- Behavioral: Resilience ----------
   'Resilience': {
     exceptional: [
       'Resilience is a clear strength. The candidate sustains composure and performance under sustained pressure, recovers quickly from setback, and does not transmit stress to those around them.',
@@ -672,7 +627,6 @@ export const sectionSummaries = {
     ],
   },
 
-  // ---------- Behavioral: Stakeholder Focus ----------
   'Stakeholder Focus': {
     exceptional: [
       'Stakeholder focus is a clear strength. The candidate reads the interests, expectations, and priorities of clients, partners, and senior stakeholders accurately, and manages them proactively.',
@@ -711,10 +665,170 @@ export const sectionSummaries = {
       'Significant scaffolding is required. The candidate is unlikely to manage stakeholder relationships effectively without close support and structure.',
     ],
   },
+
+  // ---------- Cultural: Values Alignment ----------
+  'Values Alignment': {
+    exceptional: [
+      'Values alignment is a clear strength. The candidate consistently chooses behaviours that reflect the organisation\u2019s stated values, including when doing so carries a personal or professional cost.',
+      'The candidate holds to stated principles in situations where short-term advantage would favour a different course. Values function as a genuine constraint, not a slogan.',
+      'Values alignment is well above the expected range. The candidate can articulate what the values mean in practice and behaves accordingly in ambiguous situations.',
+      'The candidate treats organisational values as operative. Decisions are made with reference to them, not merely justified by them after the fact.',
+    ],
+    strong: [
+      'Values alignment is solid and dependable. The candidate generally behaves in line with stated values and treats them as meaningful.',
+      'The candidate follows through on values when the cost is moderate. Very high-cost situations may test this, but the pattern is reliable.',
+      'Values alignment is above average. The candidate acts consistently with stated principles in most situations.',
+      'The candidate is values-aware and behaves accordingly. Occasional small deviations occur but are not characteristic.',
+    ],
+    capable: [
+      'Values alignment is functional. The candidate behaves in line with stated values when the cost is low, but may weigh situational factors more heavily when the cost rises.',
+      'The candidate subscribes to the organisation\u2019s values in principle. Behaviour under pressure may drift from stated principles.',
+      'Values alignment is at the expected baseline. The candidate is generally consistent but may not treat values as a decisive constraint.',
+      'The candidate handles routine values situations adequately. High-cost decisions may reveal a preference for pragmatism over principle.',
+    ],
+    developing: [
+      'Values alignment is below the expected range. The candidate may hold the values nominally but deviate when convenient or when under pressure.',
+      'The candidate may prioritise outcomes over stated principles in ways that create inconsistency between words and actions.',
+      'Performance on values items suggests the candidate benefits from explicit examples of what the values look like in practice.',
+      'The candidate may not fully internalise what the values require in day-to-day work, especially in ambiguous situations.',
+    ],
+    at_risk: [
+      'Values alignment is a significant constraint. The candidate may behave in ways that conflict with stated values, or treat them as aspirational rather than binding.',
+      'Consistency between stated values and observed behaviour is likely to be an issue, particularly when the cost is real.',
+      'Performance in this area is well below the expected range. Roles where cultural fit is central would present sustained difficulty.',
+      'The candidate struggles to prioritise values over convenience or immediate benefit in ways that affect trust and team culture.',
+    ],
+    high_risk: [
+      'Values alignment is severely limited. The candidate\u2019s behaviour may routinely diverge from the organisation\u2019s stated values.',
+      'The candidate shows marked difficulty acting in line with stated principles. Values are unlikely to be a meaningful constraint on behaviour.',
+      'Values alignment is in the lowest range observed on this assessment. Cultural fit should be a serious consideration.',
+      'Significant scaffolding is required. The candidate is unlikely to behave consistently with the values without close oversight and explicit expectations.',
+    ],
+  },
+
+  // ---------- Cultural: Cultural Adaptability ----------
+  'Cultural Adaptability': {
+    exceptional: [
+      'Cultural adaptability is a clear strength. The candidate works effectively across differing norms, communication styles, and expectations, and adjusts their own approach without losing effectiveness.',
+      'The candidate reads cultural context accurately and modifies behaviour accordingly. Assumptions are tested rather than imposed.',
+      'Cultural adaptability is well above the expected range. The candidate is comfortable in unfamiliar cultural settings and learns the unwritten rules quickly.',
+      'The candidate navigates cultural differences with sensitivity and confidence. Diversity of style and expectation is treated as a resource rather than a friction.',
+    ],
+    strong: [
+      'Cultural adaptability is solid and reliable. The candidate works well across most cultural contexts and adjusts approach appropriately.',
+      'The candidate is respectful of differing norms and adapts behaviour reasonably. Very unfamiliar settings may take adjustment, but the pattern is dependable.',
+      'Cultural adaptability is above average. The candidate works effectively in culturally mixed teams and contexts.',
+      'The candidate manages cultural differences well in typical situations. Trust is built across backgrounds.',
+    ],
+    capable: [
+      'Cultural adaptability is functional. The candidate works adequately across cultural boundaries but may default to familiar norms under pressure.',
+      'The candidate is respectful of difference but may not always adjust behaviour to fit. Cultural nuance may occasionally be missed.',
+      'Cultural adaptability is at the expected baseline. The candidate copes with cultural diversity but may not seek it out.',
+      'The candidate handles standard cross-cultural situations adequately. Unfamiliar norms may take time to absorb.',
+    ],
+    developing: [
+      'Cultural adaptability is below the expected range. The candidate may be uncomfortable in unfamiliar cultural settings or apply their own norms without adjustment.',
+      'The candidate finds cultural difference effortful. Cross-cultural interactions may reveal gaps in flexibility or reading of context.',
+      'Performance on cultural adaptability items suggests the candidate benefits from structured exposure and explicit guidance on differing norms.',
+      'The candidate may misinterpret behaviour that would be clear in a familiar cultural context.',
+    ],
+    at_risk: [
+      'Cultural adaptability is a significant constraint. The candidate may struggle in culturally mixed environments or create friction through unadjusted expectations.',
+      'Cross-cultural work presents notable difficulty. Misunderstandings, unintended offence, or missed cues are likely.',
+      'Performance in this area is well below the expected range. Roles with significant cultural diversity would present sustained difficulty.',
+      'The candidate may not recognise their own cultural defaults or the impact of those defaults on colleagues from other backgrounds.',
+    ],
+    high_risk: [
+      'Cultural adaptability is severely limited. Even routine cross-cultural interactions may create friction or misunderstanding.',
+      'The candidate shows marked difficulty working across cultural boundaries. Adjustment to unfamiliar norms is unlikely without close support.',
+      'Cultural adaptability is in the lowest range observed on this assessment. Culturally diverse roles should be reconsidered.',
+      'Significant scaffolding is required. The candidate is unlikely to work effectively across cultures without substantial guidance and structure.',
+    ],
+  },
+
+  // ---------- Cultural: Team Compatibility ----------
+  'Team Compatibility': {
+    exceptional: [
+      'Team compatibility is a clear strength. The candidate integrates into established team dynamics quickly while still contributing individually. Trust is built without needing to dominate the space.',
+      'The candidate is a stabilising presence in teams. Differences are accommodated, norms are respected, and contribution flows naturally.',
+      'Team compatibility is well above the expected range. The candidate reads team climate accurately and adapts their working style to strengthen the group.',
+      'The candidate is genuinely additive to team culture. Others work better because of the candidate\u2019s presence.',
+    ],
+    strong: [
+      'Team compatibility is solid and dependable. The candidate fits into teams well and contributes to a functional working environment.',
+      'The candidate integrates into teams without friction and adds value. Very particular team cultures may take brief adjustment.',
+      'Team compatibility is above average. The candidate is well-liked and works harmoniously with colleagues.',
+      'The candidate works well in established teams. Trust is built and maintained without difficulty.',
+    ],
+    capable: [
+      'Team compatibility is functional. The candidate fits into most teams but may need time to settle into established dynamics.',
+      'The candidate works adequately with colleagues. Distinct or strong team cultures may reveal limits in adaptability.',
+      'Team compatibility is at the expected baseline. The candidate is a reasonable team member but may not actively strengthen team culture.',
+      'The candidate handles standard team environments well. High-cohesion teams or long-standing dynamics may need adjustment time.',
+    ],
+    developing: [
+      'Team compatibility is below the expected range. The candidate may not fit easily into established team dynamics or may create friction over time.',
+      'The candidate may prefer working independently and contribute less to team cohesion than would be expected.',
+      'Performance on team compatibility items suggests the candidate benefits from structured induction and clear team norms.',
+      'The candidate may find team environments harder to navigate than they expect, or misread unwritten team rules.',
+    ],
+    at_risk: [
+      'Team compatibility is a significant constraint. The candidate may struggle to integrate into established teams or disrupt team cohesion.',
+      'Team dynamics present notable difficulty. Friction, isolation, or unresolved tension is likely over time.',
+      'Performance in this area is well below the expected range. Roles requiring close team membership would present sustained difficulty.',
+      'The candidate may not recognise the impact of their style on team functioning, or may struggle to adapt to norms they do not share.',
+    ],
+    high_risk: [
+      'Team compatibility is severely limited. Even routine team membership may create significant friction.',
+      'The candidate shows marked difficulty integrating into teams. Cohesion and collaboration are likely to be affected.',
+      'Team compatibility is in the lowest range observed on this assessment. Team-based roles should be reconsidered.',
+      'Significant scaffolding is required. The candidate is unlikely to work effectively as a team member without close support and structure.',
+    ],
+  },
+
+  // ---------- Cultural: Attitudinal Markers ----------
+  'Attitudinal Markers': {
+    exceptional: [
+      'Attitudinal markers are a clear strength. The candidate shows sustained motivation, engagement, and work ethic across a range of situations — including ones where effort is unobserved or reward is distant.',
+      'The candidate demonstrates genuine investment in work quality and organisational outcomes. Engagement is not contingent on visibility.',
+      'Attitudinal markers are well above the expected range. The candidate brings energy and commitment to tasks regardless of how externally rewarding they are.',
+      'The candidate treats work as inherently worth doing well. Effort is applied consistently, not strategically.',
+    ],
+    strong: [
+      'Attitudinal markers are solid and reliable. The candidate shows good engagement and work ethic across typical situations.',
+      'The candidate is dependable and motivated. Long or unrewarding tasks may occasionally test this, but the pattern holds.',
+      'Attitudinal markers are above average. The candidate is engaged and applies consistent effort.',
+      'The candidate demonstrates positive work attitudes in most situations. Motivation is generally stable.',
+    ],
+    capable: [
+      'Attitudinal markers are functional. The candidate shows adequate engagement when the task or context is motivating, but effort may vary with reward or visibility.',
+      'The candidate maintains basic work ethic. Motivation may be more situational than intrinsic.',
+      'Attitudinal markers are at the expected baseline. The candidate is engaged when conditions are favourable but may not be self-driving.',
+      'The candidate performs adequately in typical circumstances. Sustained effort on unengaging tasks may need support.',
+    ],
+    developing: [
+      'Attitudinal markers are below the expected range. The candidate may show inconsistent engagement or effort contingent on reward, visibility, or interest.',
+      'Motivation may dip on tasks that are not immediately rewarding. Work ethic is variable.',
+      'Performance on attitudinal items suggests the candidate benefits from clear purpose, regular feedback, and visible connection to outcomes.',
+      'The candidate may approach work instrumentally rather than treating it as intrinsically worth doing well.',
+    ],
+    at_risk: [
+      'Attitudinal markers are a significant constraint. The candidate may show low engagement, minimal discretionary effort, or inconsistent work ethic.',
+      'Motivation is likely to be fragile. Effort may not be sustained under low visibility or reward.',
+      'Performance in this area is well below the expected range. Roles requiring self-driven effort would present sustained difficulty.',
+      'The candidate may disengage from tasks that are not directly motivating, affecting both output and colleagues\u2019 experience.',
+    ],
+    high_risk: [
+      'Attitudinal markers are severely limited. Even routine engagement may be inconsistent or absent.',
+      'The candidate shows marked difficulty sustaining effort or interest. Discretionary contribution is unlikely.',
+      'Attitudinal markers are in the lowest range observed on this assessment. Roles requiring intrinsic motivation should be reconsidered.',
+      'Significant scaffolding is required. The candidate is unlikely to show consistent engagement without close management and frequent reinforcement.',
+    ],
+  },
 };
 
 export const sectionImplications = {
-  // ---------- Cognitive: Verbal Reasoning ----------
+  // ---------- Cognitive ----------
   'Verbal Reasoning': {
     exceptional: [
       'Consider using this capability in writing-intensive roles. The candidate can be trusted with materials requiring nuance, judgement, or drafting.',
@@ -754,7 +868,6 @@ export const sectionImplications = {
     ],
   },
 
-  // ---------- Cognitive: Numerical Reasoning ----------
   'Numerical Reasoning': {
     exceptional: [
       'The candidate can be trusted with quantitative work requiring interpretation, judgement, or analysis. Consider using this strength in data-heavy roles or on projects where numerical precision matters.',
@@ -794,7 +907,6 @@ export const sectionImplications = {
     ],
   },
 
-  // ---------- Cognitive: Abstract Reasoning ----------
   'Abstract Reasoning': {
     exceptional: [
       'The candidate can be trusted with problems that require seeing structure in unfamiliar material. Consider using this strength in roles involving analysis, design, or novel problem solving.',
@@ -834,7 +946,6 @@ export const sectionImplications = {
     ],
   },
 
-  // ---------- Cognitive: Logical Reasoning ----------
   'Logical Reasoning': {
     exceptional: [
       'The candidate can be trusted with problems requiring careful inference. Consider using this strength in roles involving analysis, policy, or structured decision-making.',
@@ -874,7 +985,7 @@ export const sectionImplications = {
     ],
   },
 
-  // ---------- Behavioral: Decision Making ----------
+  // ---------- Behavioral ----------
   'Decision Making': {
     exceptional: [
       'The candidate can be trusted with high-stakes or ambiguous decisions. Consider using this strength in roles where judgment under uncertainty is central.',
@@ -914,7 +1025,6 @@ export const sectionImplications = {
     ],
   },
 
-  // ---------- Behavioral: Communication ----------
   'Communication': {
     exceptional: [
       'The candidate can be trusted with high-stakes or sensitive communication. Consider using this strength in roles requiring stakeholder management, negotiation, or delivery of difficult news.',
@@ -954,7 +1064,6 @@ export const sectionImplications = {
     ],
   },
 
-  // ---------- Behavioral: Adaptability ----------
   'Adaptability': {
     exceptional: [
       'The candidate can be trusted in fast-changing or ambiguous environments. Consider using this strength in roles where context shifts frequently or requirements emerge as work proceeds.',
@@ -994,7 +1103,6 @@ export const sectionImplications = {
     ],
   },
 
-  // ---------- Behavioral: Accountability ----------
   'Accountability': {
     exceptional: [
       'The candidate can be trusted with work where ownership and reliability are critical. Consider using this strength in roles with high autonomy or low oversight.',
@@ -1034,7 +1142,6 @@ export const sectionImplications = {
     ],
   },
 
-  // ---------- Behavioral: Collaboration ----------
   'Collaboration': {
     exceptional: [
       'The candidate can be trusted with joint work where trust, candour, and shared ownership matter. Consider using this strength in cross-functional teams, projects, or roles requiring influence without authority.',
@@ -1074,7 +1181,6 @@ export const sectionImplications = {
     ],
   },
 
-  // ---------- Behavioral: Integrity ----------
   'Integrity': {
     exceptional: [
       'The candidate can be trusted with sensitive information, decisions with ethical dimensions, and situations where the right call is costly. Consider using this strength where trust is critical.',
@@ -1114,7 +1220,6 @@ export const sectionImplications = {
     ],
   },
 
-  // ---------- Behavioral: Resilience ----------
   'Resilience': {
     exceptional: [
       'The candidate can be trusted in high-pressure or high-stakes environments. Consider using this strength in roles where sustained demand is the norm.',
@@ -1154,7 +1259,6 @@ export const sectionImplications = {
     ],
   },
 
-  // ---------- Behavioral: Stakeholder Focus ----------
   'Stakeholder Focus': {
     exceptional: [
       'The candidate can be trusted with high-stakes stakeholder relationships — clients, partners, senior executives. Consider using this strength where relationship management is critical.',
@@ -1193,13 +1297,172 @@ export const sectionImplications = {
       'This is a critical constraint. Stakeholder relationships should be managed by others or heavily supervised until capability is built.',
     ],
   },
+
+  // ---------- Cultural: Values Alignment ----------
+  'Values Alignment': {
+    exceptional: [
+      'The candidate can be trusted as a cultural anchor. Consider using this strength in roles where values-based decisions set the tone for others.',
+      'Reliable for ethical, cultural, and value-laden decisions where the right call may be unpopular. Very few candidates hold this consistently.',
+      'Assign work where the organisation\u2019s values need to be modelled visibly — team leadership, onboarding, or high-trust engagements.',
+      'This is a genuine differentiator. Consider using the candidate to reinforce cultural standards or support colleagues in values-driven decisions.',
+    ],
+    strong: [
+      'Suitable for most roles with normal oversight. Extreme pressure or high personal cost may still test this, but the pattern is reliable.',
+      'The candidate aligns well with stated values in most situations. No specific intervention required.',
+      'Assign work with standard supervision. Values alignment should be dependable.',
+      'This capability can be counted on. Consider using the candidate where cultural fit matters moderately.',
+    ],
+    capable: [
+      'Suitable for standard roles. Where values conflicts are likely or cost is high, provide clarity and support.',
+      'Acceptable for most purposes. Values alignment may waver when pressure rises; monitor in high-stakes situations.',
+      'Reinforce expectations by referencing values in decisions and giving examples of what alignment looks like in practice.',
+      'If the role demands consistent values-based decision-making, targeted coaching is recommended.',
+    ],
+    developing: [
+      'Pair the candidate with a values-anchored colleague on decisions where principle and pragmatism may conflict.',
+      'Provide structured support — concrete examples, case discussions, and check-ins on values-relevant decisions.',
+      'Avoid placing the candidate in roles where cultural leadership or values-based decisions are central until capability improves.',
+      'Set specific development goals around values consistency and review progress quarterly.',
+    ],
+    at_risk: [
+      'Significant support is required. Do not assign the candidate roles where cultural fit or values alignment is central.',
+      'Where values alignment is critical, reconsider fit or provide close supervision and explicit expectations.',
+      'Structured development plan needed. Track consistency between stated values and observed behaviour.',
+      'This is a priority development area. Expect to invest time in reinforcing values through explicit guidance and feedback.',
+    ],
+    high_risk: [
+      'Do not rely on this capability for roles where cultural fit matters.',
+      'Roles requiring values alignment should be reconsidered for this candidate. If unavoidable, provide close oversight and clear consequences.',
+      'Substantial, ongoing support would be needed. Consider whether this is the right fit for the organisation\u2019s culture.',
+      'This is a critical constraint. Cultural fit should be carefully weighed before placing the candidate in values-critical roles.',
+    ],
+  },
+
+  // ---------- Cultural: Cultural Adaptability ----------
+  'Cultural Adaptability': {
+    exceptional: [
+      'The candidate can be trusted in culturally diverse or unfamiliar environments. Consider using this strength in cross-cultural teams, international roles, or integration work.',
+      'Reliable for adapting to unfamiliar norms, styles, and expectations. Very few candidates navigate cultural difference this smoothly.',
+      'Assign the candidate to culturally mixed teams, international engagements, or contexts where norms are not yet established.',
+      'This is a genuine differentiator. Consider using the candidate as a cultural bridge or mentor for colleagues working across cultures.',
+    ],
+    strong: [
+      'Suitable for most cross-cultural roles with normal oversight. Very unfamiliar settings may warrant additional support.',
+      'The candidate adapts well to cultural difference. No specific intervention required.',
+      'Assign culturally mixed or geographically distributed work with standard oversight. Trust should be built effectively.',
+      'This capability can be counted on. Consider stretching the candidate with progressively more unfamiliar cultural contexts.',
+    ],
+    capable: [
+      'Suitable for most roles involving cultural diversity. Where norms are very unfamiliar, provide orientation and check-ins.',
+      'Acceptable for most purposes. Adjustment may take longer in strongly unfamiliar settings.',
+      'Provide cultural orientation, briefing, and support where norms differ significantly from the candidate\u2019s default.',
+      'If the role demands sustained cross-cultural effectiveness, targeted development is recommended.',
+    ],
+    developing: [
+      'Pair the candidate with a culturally adept colleague in unfamiliar settings until capability is reinforced.',
+      'Provide structured support — cultural briefings, mentoring, and feedback — particularly when entering new environments.',
+      'Avoid placing the candidate in roles with high cultural novelty until capability improves.',
+      'Set specific development goals around cross-cultural flexibility and review progress quarterly.',
+    ],
+    at_risk: [
+      'Significant support is required. Do not assign the candidate to culturally unfamiliar or highly diverse environments without support.',
+      'Where cultural adaptability is central to the role, reconsider fit or provide close supervision and structured guidance.',
+      'Structured development plan needed. Track cross-cultural interactions and outcomes formally.',
+      'This is a priority development area. Expect to invest time in building cultural flexibility through graduated exposure.',
+    ],
+    high_risk: [
+      'Do not rely on this capability for cross-cultural work.',
+      'Roles requiring cultural adaptability should be reconsidered for this candidate. If unavoidable, provide close supervision and cultural mediation.',
+      'Substantial, ongoing support would be needed. Consider whether this is the right fit for the role\u2019s cultural demands.',
+      'This is a critical constraint. Cross-cultural interactions should be supported or mediated until capability is built.',
+    ],
+  },
+
+  // ---------- Cultural: Team Compatibility ----------
+  'Team Compatibility': {
+    exceptional: [
+      'The candidate can be trusted as a stabilising team presence. Consider using this strength in teams that need cohesion, especially through change or pressure.',
+      'Reliable for integrating into established teams and strengthening team culture. Very few candidates fit this smoothly without losing individual voice.',
+      'Assign the candidate to teams where cultural fit and cohesion matter — new teams, cross-functional groups, or teams in transition.',
+      'This is a genuine differentiator. Consider using the candidate as an informal anchor for team norms and peer support.',
+    ],
+    strong: [
+      'Suitable for most team environments with normal oversight. Very high-cohesion or long-established teams may take brief adjustment.',
+      'The candidate integrates well and contributes to team functioning. No specific intervention required.',
+      'Assign team membership with standard oversight. Trust should be built and maintained.',
+      'This capability can be counted on. Consider stretching the candidate with more complex team structures over time.',
+    ],
+    capable: [
+      'Suitable for standard team environments. Where team culture is strong or distinctive, allow time and support for integration.',
+      'Acceptable for most purposes. The candidate fits adequately but may not actively strengthen team cohesion.',
+      'Provide structured induction, clear team norms, and check-ins during the integration period.',
+      'If the role demands sustained team cohesion, targeted development is recommended.',
+    ],
+    developing: [
+      'Pair the candidate with a team anchor during integration and through the early months of team membership.',
+      'Provide structured support — clear norms, explicit expectations, and regular check-ins — particularly in established teams.',
+      'Avoid placing the candidate in highly cohesive or high-friction teams until capability improves.',
+      'Set specific development goals around team integration and review progress quarterly.',
+    ],
+    at_risk: [
+      'Significant support is required. Do not place the candidate in teams where cohesion is central without close support.',
+      'Where team compatibility is critical, reconsider fit or provide close supervision and structured integration.',
+      'Structured development plan needed. Track team outcomes and peer feedback formally.',
+      'This is a priority development area. Expect to invest time in building team integration capability through supervised experience.',
+    ],
+    high_risk: [
+      'Do not rely on this capability for team-based work.',
+      'Roles requiring close team membership should be reconsidered for this candidate. If unavoidable, provide close support and explicit structure.',
+      'Substantial, ongoing support would be needed. Consider whether this is the right fit for the role\u2019s team demands.',
+      'This is a critical constraint. Team integration should be closely supported or individual work arrangements considered.',
+    ],
+  },
+
+  // ---------- Cultural: Attitudinal Markers ----------
+  'Attitudinal Markers': {
+    exceptional: [
+      'The candidate can be trusted with work requiring sustained intrinsic motivation. Consider using this strength in roles with low external reward or high autonomy.',
+      'Reliable for consistent effort without close oversight or visible reward. Very few candidates maintain engagement this consistently.',
+      'Assign self-directed work, remote arrangements, or roles where discretionary effort matters. The candidate is likely to sustain quality without external pressure.',
+      'This is a genuine differentiator. Consider using the candidate as a model for work ethic or to support colleagues who need structure to stay engaged.',
+    ],
+    strong: [
+      'Suitable for most roles with normal oversight. Long or unrewarding tasks may occasionally require reinforcement.',
+      'The candidate shows good engagement and work ethic in typical situations. No specific intervention required.',
+      'Assign work with standard oversight. Motivation should be stable.',
+      'This capability can be counted on. Consider stretching the candidate with gradually more autonomous or less externally rewarding assignments.',
+    ],
+    capable: [
+      'Suitable for standard roles. Where tasks are unrewarding or visibility is low, provide purpose and regular reinforcement.',
+      'Acceptable for most purposes. Engagement may vary with task characteristics; monitor on lower-reward assignments.',
+      'Provide clear purpose, regular feedback, and visible connection to outcomes to sustain engagement.',
+      'If the role demands sustained intrinsic motivation, targeted development is recommended.',
+    ],
+    developing: [
+      'Pair the candidate with a highly engaged colleague on low-reward or high-autonomy tasks until capability is reinforced.',
+      'Provide structured support — clear purpose, regular feedback, and check-ins — particularly on tasks that are not intrinsically motivating.',
+      'Avoid placing the candidate in roles with low visibility or distant reward until capability improves.',
+      'Set specific development goals around engagement and work ethic, and review progress quarterly.',
+    ],
+    at_risk: [
+      'Significant support is required. Do not assign the candidate to work requiring sustained self-driven effort.',
+      'Where intrinsic motivation is central to the role, reconsider fit or provide close supervision and frequent reinforcement.',
+      'Structured development plan needed. Track engagement and effort formally.',
+      'This is a priority development area. Expect to invest time in building intrinsic motivation through purpose, feedback, and staged challenge.',
+    ],
+    high_risk: [
+      'Do not rely on this capability for work requiring discretionary effort or self-direction.',
+      'Roles requiring sustained engagement should be reconsidered for this candidate. If unavoidable, provide close management and frequent reinforcement.',
+      'Substantial, ongoing support would be needed. Consider whether this is the right fit for the role\u2019s engagement demands.',
+      'This is a critical constraint. Work should be closely supported and externally structured until capability is built.',
+    ],
+  },
 };
 
 // ============================================================
 // 4. HELPERS
 // ============================================================
 
-// Deterministic hash for picking a variant. Same seed → same index.
 function hashString(str) {
   let hash = 0;
   const text = String(str || '');
@@ -1210,7 +1473,6 @@ function hashString(str) {
   return Math.abs(hash);
 }
 
-// Convert percentage → band key.
 export function getBandKey(percentage) {
   const value = Number(percentage);
   if (!Number.isFinite(value)) return 'capable';
@@ -1222,9 +1484,6 @@ export function getBandKey(percentage) {
   return 'high_risk';
 }
 
-// Pick a summary or implication phrase.
-//   type: 'summary' | 'implication'
-//   seed: any string — we recommend `${candidateId}:${section}:${percentage}`
 export function pickNarrative(section, band, seed, type) {
   const bank = type === 'implication' ? sectionImplications : sectionSummaries;
   const generic = type === 'implication' ? genericImplications : genericSummaries;
@@ -1237,7 +1496,6 @@ export function pickNarrative(section, band, seed, type) {
   return variants[idx];
 }
 
-// Look up a section definition, falling back to a generic phrase.
 export function getSectionDefinition(section) {
   if (!section) return '';
   if (sectionDefinitions[section]) return sectionDefinitions[section];
