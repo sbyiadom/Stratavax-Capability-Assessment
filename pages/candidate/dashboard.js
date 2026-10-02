@@ -1,4 +1,8 @@
-// pages/candidate/dashboard.js - FULLY CORRECTED WITH ALL ASSESSMENT NAMES
+// pages/candidate/dashboard.js - DYNAMIC SECTIONS
+// Reads assessment sections from the API (which queries them from
+// unique_questions), instead of using hardcoded arrays. This means
+// the "Assessment Areas" list on the detail panel always reflects
+// the current content in the database.
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
@@ -55,11 +59,11 @@ export default function CandidateDashboard() {
       setUserName(data.candidateName || "Candidate");
       setAssessments(data.assessmentCards || []);
       setStats(data.stats || { total: 0, completed: 0, ready: 0, inProgress: 0, blocked: 0 });
-      
+
       if (data.assessmentCards && data.assessmentCards.length > 0) {
         setSelectedAssessment(data.assessmentCards[0]);
       }
-      
+
       setLoading(false);
 
     } catch (err) {
@@ -96,12 +100,12 @@ export default function CandidateDashboard() {
 
   const getExpirationStatus = (expiresAt) => {
     if (!expiresAt) return { status: 'no_expiry', label: '', color: '', days: null };
-    
+
     const now = new Date();
     const expiry = new Date(expiresAt);
     const diffTime = expiry - now;
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    
+
     if (diffDays < 0) {
       return { status: 'expired', label: 'EXPIRED', color: '#dc2626', days: diffDays };
     } else if (diffDays === 0) {
@@ -145,206 +149,24 @@ export default function CandidateDashboard() {
   };
 
   // ============================================================
-  // ASSESSMENT-SPECIFIC CATEGORY MAPPINGS
-  // ============================================================
-  const getAssessmentAreas = (typeCode, title) => {
-    const areasByType = {
-      national_service: [
-        "Workplace Readiness",
-        "Intellectual Capability",
-        "Safety & Risk Awareness",
-        "Problem Solving",
-        "Technical Fundamentals",
-        "Communication",
-        "Teamwork",
-        "Professional Conduct"
-      ],
-      cognitive: [
-        "Logical / Abstract Reasoning",
-        "Mechanical Reasoning",
-        "Memory & Attention",
-        "Numerical Reasoning",
-        "Perceptual Speed & Accuracy",
-        "Spatial Reasoning",
-        "Verbal Reasoning"
-      ],
-      leadership: [
-        "Change Leadership & Agility",
-        "Communication & Influence",
-        "Cultural Alignment",
-        "Decision-Making & Problem-Solving",
-        "Execution & Results Orientation",
-        "People Management & Coaching",
-        "Resilience & Stress Management",
-        "Role Readiness",
-        "Vision & Strategic Thinking"
-      ],
-      technical: [
-        "CIP & Maintenance",
-        "Conveyors & Line Efficiency",
-        "Filling & Bottling",
-        "Packaging & Labeling",
-        "Safety & Efficiency",
-        "Water Treatment & Quality"
-      ],
-      performance: [
-        "Employee Engagement and Behavior",
-        "Financial and Operational Performance",
-        "Goal Achievement and Strategic Alignment",
-        "Productivity and Efficiency",
-        "Work Quality and Effectiveness"
-      ],
-      cultural: [
-        "Attitude",
-        "Core Values",
-        "Environmental Fit",
-        "Interpersonal",
-        "Leadership",
-        "Work Style"
-      ],
-      personality: [
-        "Ownership",
-        "Collaboration",
-        "Action",
-        "Analysis",
-        "Risk Tolerance",
-        "Structure"
-      ],
-      strategic_leadership: [
-        "Vision / Strategy",
-        "People Leadership",
-        "Decision Making",
-        "Accountability",
-        "Emotional Intelligence",
-        "Execution Drive",
-        "Ethics"
-      ],
-      behavioral: [
-        "Adaptability",
-        "Clinical",
-        "Collaboration",
-        "Communication Style",
-        "Decision-Making",
-        "FBA",
-        "Leadership"
-      ],
-      manufacturing_baseline: [
-        "Technical Fundamentals",
-        "Troubleshooting",
-        "Numerical Aptitude",
-        "Safety & Work Ethic"
-      ],
-      manufacturing_technical: [
-        "CIP & Maintenance",
-        "Conveyors & Line Efficiency",
-        "Filling & Bottling",
-        "Packaging & Labeling",
-        "Safety & Efficiency",
-        "Water Treatment & Quality"
-      ],
-      practical_mechanical: [
-        "Hydraulics & Pneumatics",
-        "Mechanical Maintenance",
-        "Pumps & Compressors",
-        "Welding & Fabrication",
-        "Mechanical Troubleshooting",
-        "Preventive Maintenance",
-        "Piping Systems",
-        "Rotating Equipment"
-      ],
-      practical_electrical: [
-        "PLC Programming",
-        "Motor Controls",
-        "Sensors & Instrumentation",
-        "Electrical Troubleshooting",
-        "VFD & Soft Starters",
-        "Control Circuits",
-        "Power Distribution",
-        "Electrical Safety"
-      ],
-      practical_logistics: [
-        "Inventory Management",
-        "Warehousing Operations",
-        "Transportation Logistics",
-        "Procurement",
-        "Supply Chain Optimization",
-        "Material Handling",
-        "Distribution Planning",
-        "Supply Chain Analytics"
-      ],
-      practical_quality: [
-        "Quality Control",
-        "Process Capability",
-        "Inspection Techniques",
-        "Statistical Process Control",
-        "Continuous Improvement",
-        "Root Cause Analysis",
-        "Quality Management Systems",
-        "Measurement Systems Analysis"
-      ],
-      general: [
-        "Cognitive Ability",
-        "Communication",
-        "Cultural & Attitudinal Fit",
-        "Emotional Intelligence",
-        "Ethics & Integrity",
-        "Leadership & Management",
-        "Performance Metrics",
-        "Personality & Behavioral",
-        "Problem-Solving",
-        "Technical & Manufacturing"
-      ]
-    };
-
-    if (typeCode && areasByType[typeCode]) {
-      return areasByType[typeCode];
-    }
-
-    const titleLower = (title || '').toLowerCase();
-    if (titleLower.includes('national service')) return areasByType.national_service;
-    if (titleLower.includes('cognitive')) return areasByType.cognitive;
-    if (titleLower.includes('leadership')) return areasByType.leadership;
-    if (titleLower.includes('technical') && !titleLower.includes('practical')) return areasByType.technical;
-    if (titleLower.includes('performance')) return areasByType.performance;
-    if (titleLower.includes('cultural')) return areasByType.cultural;
-    if (titleLower.includes('personality')) return areasByType.personality;
-    if (titleLower.includes('strategic')) return areasByType.strategic_leadership;
-    if (titleLower.includes('behavioral')) return areasByType.behavioral;
-    if (titleLower.includes('manufacturing baseline')) return areasByType.manufacturing_baseline;
-    if (titleLower.includes('mechanical') || titleLower.includes('practical_mechanical')) 
-      return areasByType.practical_mechanical;
-    if (titleLower.includes('electrical') || titleLower.includes('practical_electrical')) 
-      return areasByType.practical_electrical;
-    if (titleLower.includes('logistics') || titleLower.includes('practical_logistics')) 
-      return areasByType.practical_logistics;
-    if (titleLower.includes('quality') || titleLower.includes('practical_quality')) 
-      return areasByType.practical_quality;
-
-    return areasByType.general;
-  };
-
-  // ============================================================
   // FIXED: getShortName - Returns cleaned title without generic fallback
   // ============================================================
   const getShortName = (title, isNationalService) => {
-    // National Service gets a special label
     if (isNationalService) return 'National Service';
-    
-    // If title is missing, return a fallback
+
     if (!title) return 'Assessment';
-    
+
     const originalTitle = typeof title === 'string' ? title.trim() : '';
-    
+
     if (!originalTitle) return 'Assessment';
-    
-    // Remove common suffixes for cleaner display
+
     const suffixes = [
       ' Recruitment Assessment',
       ' Technical Assessment',
       ' Competence Assessment',
       ' Assessment'
     ];
-    
+
     let shortName = originalTitle;
     for (const suffix of suffixes) {
       if (shortName.endsWith(suffix)) {
@@ -352,120 +174,120 @@ export default function CandidateDashboard() {
         break;
       }
     }
-    
+
     return shortName || originalTitle;
   };
 
   const getAssessmentColor = (typeCode) => {
     const colors = {
-      general: { 
-        gradient: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)', 
-        border: '#6366f1', 
+      general: {
+        gradient: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
+        border: '#6366f1',
         light: 'rgba(99, 102, 241, 0.08)',
         hover: 'rgba(99, 102, 241, 0.15)',
         glow: 'rgba(99, 102, 241, 0.25)'
       },
-      leadership: { 
-        gradient: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)', 
-        border: '#8b5cf6', 
+      leadership: {
+        gradient: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
+        border: '#8b5cf6',
         light: 'rgba(139, 92, 246, 0.08)',
         hover: 'rgba(139, 92, 246, 0.15)',
         glow: 'rgba(139, 92, 246, 0.25)'
       },
-      cognitive: { 
-        gradient: 'linear-gradient(135deg, #06b6d4 0%, #0891b2 100%)', 
-        border: '#06b6d4', 
+      cognitive: {
+        gradient: 'linear-gradient(135deg, #06b6d4 0%, #0891b2 100%)',
+        border: '#06b6d4',
         light: 'rgba(6, 182, 212, 0.08)',
         hover: 'rgba(6, 182, 212, 0.15)',
         glow: 'rgba(6, 182, 212, 0.25)'
       },
-      cultural: { 
-        gradient: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', 
-        border: '#10b981', 
+      cultural: {
+        gradient: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+        border: '#10b981',
         light: 'rgba(16, 185, 129, 0.08)',
         hover: 'rgba(16, 185, 129, 0.15)',
         glow: 'rgba(16, 185, 129, 0.25)'
       },
-      personality: { 
-        gradient: 'linear-gradient(135deg, #14b8a6 0%, #0d9488 100%)', 
-        border: '#14b8a6', 
+      personality: {
+        gradient: 'linear-gradient(135deg, #14b8a6 0%, #0d9488 100%)',
+        border: '#14b8a6',
         light: 'rgba(20, 184, 166, 0.08)',
         hover: 'rgba(20, 184, 166, 0.15)',
         glow: 'rgba(20, 184, 166, 0.25)'
       },
-      strategic_leadership: { 
-        gradient: 'linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%)', 
-        border: '#1e40af', 
+      strategic_leadership: {
+        gradient: 'linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%)',
+        border: '#1e40af',
         light: 'rgba(30, 64, 175, 0.08)',
         hover: 'rgba(30, 64, 175, 0.15)',
         glow: 'rgba(30, 64, 175, 0.25)'
       },
-      performance: { 
-        gradient: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)', 
-        border: '#f59e0b', 
+      performance: {
+        gradient: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+        border: '#f59e0b',
         light: 'rgba(245, 158, 11, 0.08)',
         hover: 'rgba(245, 158, 11, 0.15)',
         glow: 'rgba(245, 158, 11, 0.25)'
       },
-      technical: { 
-        gradient: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)', 
-        border: '#ef4444', 
+      technical: {
+        gradient: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+        border: '#ef4444',
         light: 'rgba(239, 68, 68, 0.08)',
         hover: 'rgba(239, 68, 68, 0.15)',
         glow: 'rgba(239, 68, 68, 0.25)'
       },
-      behavioral: { 
-        gradient: 'linear-gradient(135deg, #a855f7 0%, #9333ea 100%)', 
-        border: '#a855f7', 
+      behavioral: {
+        gradient: 'linear-gradient(135deg, #a855f7 0%, #9333ea 100%)',
+        border: '#a855f7',
         light: 'rgba(168, 85, 247, 0.08)',
         hover: 'rgba(168, 85, 247, 0.15)',
         glow: 'rgba(168, 85, 247, 0.25)'
       },
-      manufacturing_baseline: { 
-        gradient: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)', 
-        border: '#22c55e', 
+      manufacturing_baseline: {
+        gradient: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
+        border: '#22c55e',
         light: 'rgba(34, 197, 94, 0.08)',
         hover: 'rgba(34, 197, 94, 0.15)',
         glow: 'rgba(34, 197, 94, 0.25)'
       },
-      manufacturing_technical: { 
-        gradient: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)', 
-        border: '#ef4444', 
+      manufacturing_technical: {
+        gradient: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+        border: '#ef4444',
         light: 'rgba(239, 68, 68, 0.08)',
         hover: 'rgba(239, 68, 68, 0.15)',
         glow: 'rgba(239, 68, 68, 0.25)'
       },
-      national_service: { 
-        gradient: 'linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%)', 
-        border: '#1d4ed8', 
+      national_service: {
+        gradient: 'linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%)',
+        border: '#1d4ed8',
         light: 'rgba(29, 78, 216, 0.08)',
         hover: 'rgba(29, 78, 216, 0.15)',
         glow: 'rgba(29, 78, 216, 0.25)'
       },
-      practical_mechanical: { 
-        gradient: 'linear-gradient(135deg, #1a237e 0%, #0d47a1 100%)', 
-        border: '#1a237e', 
+      practical_mechanical: {
+        gradient: 'linear-gradient(135deg, #1a237e 0%, #0d47a1 100%)',
+        border: '#1a237e',
         light: 'rgba(26, 35, 126, 0.08)',
         hover: 'rgba(26, 35, 126, 0.15)',
         glow: 'rgba(26, 35, 126, 0.25)'
       },
-      practical_electrical: { 
-        gradient: 'linear-gradient(135deg, #b71c1c 0%, #880e4f 100%)', 
-        border: '#b71c1c', 
+      practical_electrical: {
+        gradient: 'linear-gradient(135deg, #b71c1c 0%, #880e4f 100%)',
+        border: '#b71c1c',
         light: 'rgba(183, 28, 28, 0.08)',
         hover: 'rgba(183, 28, 28, 0.15)',
         glow: 'rgba(183, 28, 28, 0.25)'
       },
-      practical_logistics: { 
-        gradient: 'linear-gradient(135deg, #e65100 0%, #bf360c 100%)', 
-        border: '#e65100', 
+      practical_logistics: {
+        gradient: 'linear-gradient(135deg, #e65100 0%, #bf360c 100%)',
+        border: '#e65100',
         light: 'rgba(230, 81, 0, 0.08)',
         hover: 'rgba(230, 81, 0, 0.15)',
         glow: 'rgba(230, 81, 0, 0.25)'
       },
-      practical_quality: { 
-        gradient: 'linear-gradient(135deg, #1b5e20 0%, #004d40 100%)', 
-        border: '#1b5e20', 
+      practical_quality: {
+        gradient: 'linear-gradient(135deg, #1b5e20 0%, #004d40 100%)',
+        border: '#1b5e20',
         light: 'rgba(27, 94, 32, 0.08)',
         hover: 'rgba(27, 94, 32, 0.15)',
         glow: 'rgba(27, 94, 32, 0.25)'
@@ -490,14 +312,14 @@ export default function CandidateDashboard() {
   if (!session) return null;
 
   const getStatusInfo = (status) => {
-    switch(status) {
-      case 'unblocked': 
+    switch (status) {
+      case 'unblocked':
         return { bg: 'rgba(34, 197, 94, 0.15)', color: '#16a34a', label: 'Ready to Start' };
-      case 'in_progress': 
+      case 'in_progress':
         return { bg: 'rgba(251, 191, 36, 0.15)', color: '#d97706', label: 'In Progress' };
-      case 'completed': 
+      case 'completed':
         return { bg: 'rgba(59, 130, 246, 0.15)', color: '#2563eb', label: 'Completed' };
-      default: 
+      default:
         return { bg: 'rgba(148, 163, 184, 0.15)', color: '#64748b', label: 'Blocked' };
     }
   };
@@ -505,17 +327,17 @@ export default function CandidateDashboard() {
   return (
     <div style={styles.pageContainer}>
       <div style={styles.pageBackground} />
-      
+
       <div style={styles.content}>
         {/* Header */}
         <header style={styles.header}>
           <div style={styles.headerContent}>
             <div style={styles.headerLeft}>
               <div style={styles.logoWrapper}>
-                <Image 
-                  src="/images/stratavax-logo.png" 
-                  alt="Stratavax" 
-                  width={40} 
+                <Image
+                  src="/images/stratavax-logo.png"
+                  alt="Stratavax"
+                  width={40}
                   height={40}
                   priority
                 />
@@ -607,7 +429,7 @@ export default function CandidateDashboard() {
               </div>
               <span style={styles.sectionCount}>{assessments.length} available</span>
             </div>
-            
+
             {assessments.length === 0 ? (
               <div style={styles.emptyState}>
                 <p style={styles.emptyTitle}>No assessments available</p>
@@ -621,19 +443,19 @@ export default function CandidateDashboard() {
                     const isSelected = selectedAssessment?.id === assessment.id;
                     const isNationalService = assessment.isNationalService || assessment.typeCode === 'national_service';
                     const displayName = getShortName(assessment.title, isNationalService);
-                    
+
                     const expiryStatus = getExpirationStatus(assessment.expires_at);
                     const isExpired = expiryStatus.status === 'expired';
 
                     return (
-                      <div 
-                        key={assessment.id} 
+                      <div
+                        key={assessment.id}
                         style={{
                           ...styles.compactCard,
                           background: isSelected ? colors.light : 'white',
                           border: isSelected ? `2px solid ${colors.border}` : '1px solid rgba(226, 232, 240, 0.6)',
-                          boxShadow: isSelected 
-                            ? `0 8px 32px ${colors.glow}` 
+                          boxShadow: isSelected
+                            ? `0 8px 32px ${colors.glow}`
                             : '0 2px 8px rgba(0,0,0,0.04)',
                           transform: isSelected ? 'translateY(-2px)' : 'translateY(0)',
                           transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
@@ -657,8 +479,8 @@ export default function CandidateDashboard() {
                         <div style={styles.compactContent}>
                           <div style={styles.compactLeft}>
                             <span style={styles.compactIcon}>{isNationalService ? 'NS' : 'AS'}</span>
-                            <span style={{ 
-                              ...styles.compactName, 
+                            <span style={{
+                              ...styles.compactName,
                               color: isSelected ? colors.border : '#0a1929',
                               fontWeight: isSelected ? '600' : '500',
                               textDecoration: isExpired ? 'line-through' : 'none'
@@ -679,8 +501,8 @@ export default function CandidateDashboard() {
                                 {expiryStatus.days}d
                               </span>
                             )}
-                            <span style={{ 
-                              ...styles.compactArrow, 
+                            <span style={{
+                              ...styles.compactArrow,
                               color: isSelected ? colors.border : '#94a3b8',
                               transform: isSelected ? 'rotate(180deg)' : 'rotate(0)'
                             }}>▾</span>
@@ -736,7 +558,7 @@ export default function CandidateDashboard() {
                       {selectedAssessment.isNationalService && (
                         <span style={styles.detailNsBadge}>National Service (Always Available)</span>
                       )}
-                      
+
                       {selectedAssessment.expires_at && (() => {
                         const expiryStatus = getExpirationStatus(selectedAssessment.expires_at);
                         if (expiryStatus.status === 'expired') {
@@ -814,8 +636,8 @@ export default function CandidateDashboard() {
                                 fontSize: '14px',
                                 color: isUrgent ? '#991b1b' : '#475569'
                               }}>
-                                {expiryStatus.status === 'today' 
-                                  ? 'This assessment expires TODAY. Please complete it now.' 
+                                {expiryStatus.status === 'today'
+                                  ? 'This assessment expires TODAY. Please complete it now.'
                                   : `You have ${expiryStatus.days} days remaining to complete this assessment.`}
                               </div>
                               <div style={{
@@ -849,16 +671,29 @@ export default function CandidateDashboard() {
                       return null;
                     })()}
 
-                    {/* Assessment Areas */}
+                    {/* Assessment Areas — now pulled dynamically from the API */}
                     <div style={styles.detailAreas}>
                       <h4 style={styles.detailAreasTitle}>Assessment Areas</h4>
                       <div style={styles.detailAreasGrid}>
-                        {getAssessmentAreas(selectedAssessment.typeCode, selectedAssessment.title).map((area, index) => (
-                          <div key={index} style={styles.detailAreaItem}>
-                            <span style={styles.detailAreaBullet}>•</span>
-                            <span style={styles.detailAreaText}>{area}</span>
+                        {selectedAssessment.sections && selectedAssessment.sections.length > 0 ? (
+                          selectedAssessment.sections.map((section, index) => (
+                            <div key={index} style={styles.detailAreaItem}>
+                              <span style={styles.detailAreaBullet}>•</span>
+                              <span style={styles.detailAreaText}>
+                                {section.name}
+                                {section.questionCount ? (
+                                  <span style={{ color: '#94a3b8', marginLeft: 6, fontSize: 11 }}>
+                                    ({section.questionCount})
+                                  </span>
+                                ) : null}
+                              </span>
+                            </div>
+                          ))
+                        ) : (
+                          <div style={styles.detailAreaItem}>
+                            <span style={styles.detailAreaText}>Sections will appear once configured.</span>
                           </div>
-                        ))}
+                        )}
                       </div>
                     </div>
 
@@ -887,12 +722,12 @@ export default function CandidateDashboard() {
                               <span style={styles.detailInfoLabel}>Expires</span>
                               <span style={{
                                 ...styles.detailInfoValue,
-                                color: expiryStatus.status === 'expired' ? '#dc2626' : 
+                                color: expiryStatus.status === 'expired' ? '#dc2626' :
                                        expiryStatus.status === 'soon' ? '#d97706' : '#0a1929',
                                 fontWeight: expiryStatus.status === 'expired' || expiryStatus.status === 'soon' ? '700' : '500'
                               }}>
-                                {expiryStatus.status === 'expired' ? 'EXPIRED' : 
-                                 expiryStatus.status === 'today' ? 'Today' : 
+                                {expiryStatus.status === 'expired' ? 'EXPIRED' :
+                                 expiryStatus.status === 'today' ? 'Today' :
                                  `${expiryStatus.days} days remaining`}
                               </span>
                             </div>
@@ -958,8 +793,8 @@ export default function CandidateDashboard() {
           <div style={styles.infoNote}>
             <span style={styles.infoIcon}>i</span>
             <span>
-              <strong>Note:</strong> The <strong>National Service Assessment</strong> is always available to all candidates. 
-              Other assessments must be <strong>unblocked by your supervisor</strong> before starting. 
+              <strong>Note:</strong> The <strong>National Service Assessment</strong> is always available to all candidates.
+              Other assessments must be <strong>unblocked by your supervisor</strong> before starting.
               If an assessment has been reset, refresh the dashboard and it will show as ready.
             </span>
           </div>
@@ -1004,14 +839,14 @@ const styles = {
   pageContainer: { position: "relative", minHeight: "100vh", width: "100%", overflow: "hidden" },
   pageBackground: { position: "fixed", top: 0, left: 0, right: 0, bottom: 0, backgroundImage: "url(/images/dashboard1-bg.jpg)", backgroundSize: "cover", backgroundPosition: "center", zIndex: -1 },
   content: { position: "relative", zIndex: 1, minHeight: "100vh", width: "100%", display: "flex", flexDirection: "column" },
-  
+
   loadingContainer: { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", position: "relative", overflow: "hidden" },
   loadingBackground: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundImage: "url(/images/loading-bg.jpg)", backgroundSize: "cover", backgroundPosition: "center", filter: "brightness(0.7)", zIndex: 0 },
   loadingContent: { position: "relative", textAlign: "center", color: "white", zIndex: 1, textShadow: "2px 2px 4px rgba(0,0,0,0.5)" },
   loadingLogo: { fontSize: "32px", fontWeight: "700", marginBottom: "20px", letterSpacing: "2px", color: "white" },
   loadingSpinner: { width: "50px", height: "50px", border: "4px solid rgba(255,255,255,0.2)", borderTop: "4px solid white", borderRadius: "50%", animation: "spin 1s linear infinite", margin: "0 auto 20px" },
   loadingText: { fontSize: "16px", opacity: 0.9 },
-  
+
   header: { padding: "16px 32px", background: "rgba(255,255,255,0.08)", backdropFilter: "blur(20px)", borderBottom: "1px solid rgba(255,255,255,0.1)" },
   headerContent: { maxWidth: "1280px", margin: "0 auto", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "16px", flexWrap: "wrap" },
   headerLeft: { display: "flex", alignItems: "center", gap: "12px" },
@@ -1020,9 +855,9 @@ const styles = {
   headerDivider: { color: "rgba(255,255,255,0.4)", fontSize: "18px", fontWeight: "300" },
   headerSubtitle: { fontSize: "15px", color: "rgba(255,255,255,0.8)", fontWeight: "400" },
   headerRight: { display: "flex", alignItems: "center", gap: "12px" },
-  profileButton: { 
-    display: "flex", 
-    alignItems: "center", 
+  profileButton: {
+    display: "flex",
+    alignItems: "center",
     gap: "10px",
     padding: "6px 16px 6px 6px",
     background: "rgba(255,255,255,0.1)",
@@ -1036,10 +871,10 @@ const styles = {
     textDecoration: "none",
     transition: "all 0.2s"
   },
-  profileAvatar: { 
-    width: "32px", 
-    height: "32px", 
-    borderRadius: "50%", 
+  profileAvatar: {
+    width: "32px",
+    height: "32px",
+    borderRadius: "50%",
     background: "linear-gradient(135deg, #6366f1, #4f46e5)",
     display: "flex",
     alignItems: "center",
@@ -1048,25 +883,25 @@ const styles = {
     fontWeight: "600",
     color: "white"
   },
-  logoutButton: { 
-    padding: "8px 20px", 
-    background: "rgba(255,255,255,0.08)", 
-    color: "white", 
-    border: "1px solid rgba(255,255,255,0.15)", 
-    borderRadius: "50px", 
-    cursor: "pointer", 
-    fontSize: "13px", 
-    fontWeight: "500", 
+  logoutButton: {
+    padding: "8px 20px",
+    background: "rgba(255,255,255,0.08)",
+    color: "white",
+    border: "1px solid rgba(255,255,255,0.15)",
+    borderRadius: "50px",
+    cursor: "pointer",
+    fontSize: "13px",
+    fontWeight: "500",
     backdropFilter: "blur(10px)",
     transition: "all 0.2s"
   },
-  
+
   welcomeSection: { maxWidth: "1280px", margin: "32px auto 20px", padding: "0 32px" },
-  welcomeContent: { 
-    display: "flex", 
-    justifyContent: "space-between", 
-    alignItems: "center", 
-    gap: "20px", 
+  welcomeContent: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: "20px",
     flexWrap: "wrap",
     background: "rgba(255,255,255,0.06)",
     backdropFilter: "blur(20px)",
@@ -1077,101 +912,101 @@ const styles = {
   welcomeTitle: { fontSize: "24px", fontWeight: "600", margin: "0 0 4px 0", color: "white", textShadow: "0 2px 4px rgba(0,0,0,0.2)" },
   welcomeName: { color: "#ffd700" },
   welcomeText: { fontSize: "14px", color: "rgba(255,255,255,0.8)", margin: 0 },
-  progressBadge: { 
-    background: "rgba(255,255,255,0.1)", 
-    padding: "8px 20px", 
-    borderRadius: "50px", 
-    display: "flex", 
-    alignItems: "baseline", 
-    gap: "4px", 
+  progressBadge: {
+    background: "rgba(255,255,255,0.1)",
+    padding: "8px 20px",
+    borderRadius: "50px",
+    display: "flex",
+    alignItems: "baseline",
+    gap: "4px",
     border: "1px solid rgba(255,255,255,0.1)",
     backdropFilter: "blur(10px)"
   },
   progressCount: { fontSize: "20px", fontWeight: "700", color: "white" },
   progressTotal: { fontSize: "14px", color: "rgba(255,255,255,0.6)" },
   progressLabel: { fontSize: "13px", color: "rgba(255,255,255,0.6)", marginLeft: "8px" },
-  
+
   statsBar: { maxWidth: "1280px", margin: "0 auto 24px", padding: "0 32px" },
   statsGrid: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "12px" },
-  
-  statCard: { 
-    padding: "18px 22px", 
-    borderRadius: "14px", 
-    display: "flex", 
-    alignItems: "center", 
-    gap: "16px", 
-    border: "2px solid", 
-    transition: "all 0.3s", 
-    boxShadow: "0 10px 25px rgba(0,0,0,0.18)", 
-    minHeight: "86px" 
+
+  statCard: {
+    padding: "18px 22px",
+    borderRadius: "14px",
+    display: "flex",
+    alignItems: "center",
+    gap: "16px",
+    border: "2px solid",
+    transition: "all 0.3s",
+    boxShadow: "0 10px 25px rgba(0,0,0,0.18)",
+    minHeight: "86px"
   },
-  
-  statIcon: { 
-    fontSize: "32px", 
-    color: "#ffffff", 
-    fontWeight: "700", 
-    lineHeight: "1" 
+
+  statIcon: {
+    fontSize: "32px",
+    color: "#ffffff",
+    fontWeight: "700",
+    lineHeight: "1"
   },
-  
-  statNumber: { 
-    fontSize: "34px", 
-    fontWeight: "800", 
-    color: "#ffffff", 
-    lineHeight: "1" 
+
+  statNumber: {
+    fontSize: "34px",
+    fontWeight: "800",
+    color: "#ffffff",
+    lineHeight: "1"
   },
-  
-  statLabel: { 
-    fontSize: "14px", 
-    color: "#ffffff", 
-    fontWeight: "700", 
-    marginTop: "4px", 
-    letterSpacing: "0.2px" 
+
+  statLabel: {
+    fontSize: "14px",
+    color: "#ffffff",
+    fontWeight: "700",
+    marginTop: "4px",
+    letterSpacing: "0.2px"
   },
-  
+
   mainContent: { maxWidth: "1280px", margin: "0 auto", padding: "0 32px 40px", flex: 1 },
   errorBox: { marginBottom: "16px", padding: "12px 16px", borderRadius: "12px", background: "rgba(239, 68, 68, 0.1)", border: "1px solid rgba(239, 68, 68, 0.2)", color: "#ef4444", display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: "14px" },
   retryButton: { padding: "4px 16px", background: "#ef4444", color: "white", border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "12px" },
-  
+
   section: { marginBottom: "28px" },
   sectionHeader: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "16px", flexWrap: "wrap", gap: "8px" },
   sectionTitle: { fontSize: "18px", fontWeight: "600", color: "white", margin: 0, textShadow: "0 2px 4px rgba(0,0,0,0.2)" },
   sectionSubtitle: { fontSize: "13px", color: "rgba(255,255,255,0.6)", margin: "2px 0 0 0" },
   sectionCount: { fontSize: "13px", color: "rgba(255,255,255,0.7)", padding: "4px 16px", background: "rgba(255,255,255,0.08)", borderRadius: "50px", border: "1px solid rgba(255,255,255,0.06)" },
-  
+
   compactGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "10px", marginBottom: "24px" },
-  compactCard: { 
+  compactCard: {
     position: "relative",
-    borderRadius: "12px", 
+    borderRadius: "12px",
     overflow: "hidden",
     transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
     cursor: "pointer",
     height: "44px"
   },
-  compactGradient: { 
-    position: "absolute", 
-    top: 0, 
-    left: 0, 
-    right: 0, 
-    height: "3px" 
+  compactGradient: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    height: "3px"
   },
-  compactContent: { 
-    padding: "8px 16px", 
-    display: "flex", 
-    justifyContent: "space-between", 
-    alignItems: "center", 
+  compactContent: {
+    padding: "8px 16px",
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
     height: "100%"
   },
   compactLeft: { display: "flex", alignItems: "center", gap: "8px" },
   compactIcon: { fontSize: "14px" },
   compactName: { fontSize: "13px", fontWeight: "500", color: "#0a1929", transition: "color 0.3s" },
   compactRight: { display: "flex", alignItems: "center", gap: "8px" },
-  compactNsTag: { 
-    fontSize: "9px", 
-    fontWeight: "700", 
-    padding: "2px 6px", 
-    background: "rgba(29, 78, 216, 0.15)", 
-    color: "#1d4ed8", 
-    borderRadius: "4px" 
+  compactNsTag: {
+    fontSize: "9px",
+    fontWeight: "700",
+    padding: "2px 6px",
+    background: "rgba(29, 78, 216, 0.15)",
+    color: "#1d4ed8",
+    borderRadius: "4px"
   },
   compactExpiry: {
     fontSize: "9px",
@@ -1192,22 +1027,22 @@ const styles = {
     borderRadius: "4px",
     marginLeft: "6px"
   },
-  
-  detailSection: { 
-    background: "rgba(255,255,255,0.95)", 
+
+  detailSection: {
+    background: "rgba(255,255,255,0.95)",
     backdropFilter: "blur(20px)",
-    borderRadius: "16px", 
-    padding: "24px 28px", 
+    borderRadius: "16px",
+    padding: "24px 28px",
     boxShadow: "0 20px 60px rgba(0,0,0,0.15)",
     border: "1px solid rgba(255,255,255,0.2)",
     marginTop: "4px",
     animation: "fadeIn 0.4s ease"
   },
-  detailHeader: { 
-    display: "flex", 
-    justifyContent: "space-between", 
-    alignItems: "center", 
-    flexWrap: "wrap", 
+  detailHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    flexWrap: "wrap",
     gap: "12px",
     marginBottom: "12px",
     paddingBottom: "12px",
@@ -1217,22 +1052,22 @@ const styles = {
   detailTitle: { fontSize: "20px", fontWeight: "600", color: "#0a1929", margin: 0 },
   detailType: { fontSize: "12px", color: "#64748b", padding: "2px 12px", background: "#f1f5f9", borderRadius: "12px" },
   detailActions: { display: "flex", alignItems: "center", gap: "12px" },
-  detailStartButton: { 
-    padding: "10px 28px", 
-    background: "linear-gradient(135deg, #1a237e, #4f46e5)", 
-    color: "white", 
-    border: "none", 
-    borderRadius: "10px", 
-    cursor: "pointer", 
-    fontSize: "14px", 
-    fontWeight: "600", 
-    fontFamily: "inherit", 
+  detailStartButton: {
+    padding: "10px 28px",
+    background: "linear-gradient(135deg, #1a237e, #4f46e5)",
+    color: "white",
+    border: "none",
+    borderRadius: "10px",
+    cursor: "pointer",
+    fontSize: "14px",
+    fontWeight: "600",
+    fontFamily: "inherit",
     transition: "all 0.3s",
     boxShadow: "0 4px 12px rgba(26, 35, 126, 0.2)"
   },
   detailBlocked: { fontSize: "13px", color: "#94a3b8", fontWeight: "500" },
   detailCompleted: { fontSize: "13px", color: "#16a34a", fontWeight: "600" },
-  
+
   detailStatusRow: { display: "flex", alignItems: "center", gap: "10px", marginBottom: "10px", flexWrap: "wrap" },
   detailStatusBadge: { padding: "4px 14px", borderRadius: "50px", fontSize: "12px", fontWeight: "600" },
   detailNsBadge: { fontSize: "11px", fontWeight: "600", padding: "2px 12px", background: "#dbeafe", color: "#1e40af", borderRadius: "50px" },
@@ -1263,17 +1098,17 @@ const styles = {
     flexWrap: "wrap"
   },
   detailDescription: { fontSize: "14px", color: "#64748b", margin: "0 0 16px 0", lineHeight: "1.6" },
-  
+
   detailAreas: { marginBottom: "16px" },
   detailAreasTitle: { fontSize: "14px", fontWeight: "600", color: "#0a1929", margin: "0 0 10px 0" },
   detailAreasGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "6px" },
   detailAreaItem: { display: "flex", alignItems: "center", gap: "8px", padding: "4px 12px", background: "#f8fafc", borderRadius: "8px", border: "1px solid #f1f5f9" },
   detailAreaBullet: { color: "#6366f1", fontSize: "14px", fontWeight: "bold" },
   detailAreaText: { fontSize: "13px", color: "#334155" },
-  
-  detailInfo: { 
-    display: "grid", 
-    gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", 
+
+  detailInfo: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))",
     gap: "12px",
     paddingTop: "14px",
     borderTop: "1px solid #f1f5f9"
@@ -1281,11 +1116,11 @@ const styles = {
   detailInfoItem: { display: "flex", flexDirection: "column", gap: "1px" },
   detailInfoLabel: { fontSize: "11px", color: "#94a3b8" },
   detailInfoValue: { fontSize: "14px", fontWeight: "500", color: "#0a1929" },
-  
+
   emptyState: { textAlign: "center", padding: "60px 40px", background: "rgba(255,255,255,0.08)", backdropFilter: "blur(20px)", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.06)" },
   emptyTitle: { fontSize: "18px", fontWeight: "600", color: "white", margin: "0 0 8px 0", textShadow: "0 2px 4px rgba(0,0,0,0.2)" },
   emptySub: { fontSize: "14px", color: "rgba(255,255,255,0.6)", margin: 0 },
-  
+
   guidelinesSection: { marginTop: "20px", marginBottom: "24px", background: "rgba(255,255,255,0.06)", backdropFilter: "blur(20px)", borderRadius: "16px", padding: "24px", border: "1px solid rgba(255,255,255,0.06)" },
   guidelinesTitle: { fontSize: "16px", fontWeight: "600", color: "white", margin: "0 0 16px 0", textShadow: "0 2px 4px rgba(0,0,0,0.2)" },
   guidelinesGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: "12px" },
@@ -1293,10 +1128,10 @@ const styles = {
   guidelineIcon: { fontSize: "22px", flexShrink: 0 },
   guidelineCardTitle: { fontSize: "13px", fontWeight: "600", color: "white", margin: "0 0 2px 0" },
   guidelineCardText: { fontSize: "12px", color: "rgba(255,255,255,0.6)", margin: 0, lineHeight: "1.4" },
-  
+
   infoNote: { padding: "12px 20px", background: "rgba(59, 130, 246, 0.08)", backdropFilter: "blur(10px)", borderRadius: "12px", display: "flex", alignItems: "center", gap: "10px", color: "#93c5fd", fontSize: "13px", border: "1px solid rgba(59, 130, 246, 0.1)" },
   infoIcon: { fontSize: "18px" },
-  
+
   footer: { marginTop: "auto", padding: "16px 32px", background: "rgba(10,22,40,0.8)", backdropFilter: "blur(20px)", borderTop: "1px solid rgba(255,255,255,0.05)" },
   footerContent: { maxWidth: "1280px", margin: "0 auto", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", flexWrap: "wrap" },
   footerLeft: { display: "flex", alignItems: "center", gap: "8px" },
