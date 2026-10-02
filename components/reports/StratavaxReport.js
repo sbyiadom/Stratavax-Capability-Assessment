@@ -10,14 +10,14 @@
 //     • What this section measures (from sectionDefinitions)
 //     • What the score suggests (from sectionSummaries, banded)
 //     • Supervisor implication (from sectionImplications, banded)
-//   Content is picked deterministically per candidate via pickNarrative, so
-//   different candidates see different wording for the same band, and the
-//   same candidate always sees the same wording on refresh. Sections with no
-//   authored content fall back to generic banks.
-//   The old competencySummary path (which depended on question_competencies
-//   mappings) is no longer used for section analysis. Cognitive, Behavioral,
-//   Cultural Fit, and Performance assessments now render complete reports
-//   without needing those mappings.
+//   Content is picked deterministically per candidate via pickNarrative.
+// Phase 7K (2026-10-02): Header adjustments + commentary threshold fixes.
+//   • Classification line hidden for cognitive assessments (it was meaningless).
+//   • Risk Level label becomes "Proctoring Risk" for cognitive.
+//   • Behavioural commentary thresholds recalibrated — 11 right-click attempts
+//     no longer triggers "significant disregard for assessment rules".
+//     Commentary now scales at >10 / >30 violations and >5 / >20 tab switches,
+//     matching the risk-level thresholds used by the submit endpoint.
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../supabase/client';
@@ -192,7 +192,7 @@ const styles = {
   summaryText: { fontSize: '15px', lineHeight: '1.7', color: '#1a202c', margin: 0 },
   disclaimer: { background: '#eff6ff', padding: '14px 20px', borderRadius: '10px', border: '1px solid #bfdbfe', fontSize: '13px', color: '#1e40af', lineHeight: 1.6, marginTop: '12px' },
 
-  // Section cards (new layout)
+  // Section cards
   sectionCardGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))', gap: '18px' },
   sectionCard: { background: 'white', borderRadius: '12px', border: '1px solid #eef2f7', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', overflow: 'hidden' },
   sectionCardHeader: { padding: '18px 22px 14px 22px', borderBottom: '1px solid #f1f5f9' },
@@ -387,7 +387,6 @@ export default function StratavaxReport({
     }))
     .filter((item) => item.category && item.category !== '');
 
-  // Sort alphabetically for consistent section ordering
   const sortedSections = [...normalizedCategoryScores].sort((a, b) => {
     const aName = a.category || '';
     const bName = b.category || '';
@@ -411,13 +410,8 @@ export default function StratavaxReport({
   const isCognitive = reportType === 'cognitive';
   const isPerformance = reportType === 'performance';
 
-  // ---------- Deterministic narrative seeding ----------
-  // Seed the narrative picker with candidateId + resultId so the same
-  // candidate sees the same wording on refresh, and different candidates
-  // see different wording.
   const narrativeSeed = `${candidate?.id || candidate?.user_id || result?.user_id || 'candidate'}:${result?.id || result?.result_id || 'result'}`;
 
-  // Helper to get both narratives for a section
   const getSectionNarratives = (sectionName, percentage) => {
     const band = getBandKey(percentage);
     const summary = pickNarrative(sectionName, band, narrativeSeed, 'summary');
@@ -426,7 +420,6 @@ export default function StratavaxReport({
     return { band, summary, implication, definition };
   };
 
-  // ---------- Executive summary ----------
   const generateExecutiveSummary = () => {
     const strengthNames = strengths.slice(0, 3).map(s => s.category || s.name || '');
     const weaknessNames = weaknesses.slice(0, 2).map(w => w.category || w.name || '');
@@ -466,7 +459,7 @@ export default function StratavaxReport({
     return summary;
   };
 
-  // ---------- Behavioral matrix render ----------
+  // ---------- Behavioral matrix render (with fixed thresholds) ----------
   const renderBehavioralSection = () => {
     if (loadingBehavioral) return <div style={styles.loadingBehavioral}><p>Loading behavioral data...</p></div>;
     if (!hasBehavioralData) {
@@ -486,6 +479,11 @@ export default function StratavaxReport({
     const rightClickAttempts = getBehavioralValue('rightClickAttempts', 0);
     const riskLevel = getBehavioralValue('riskLevel', 'Low Risk');
     const riskFactors = getBehavioralValue('riskFactors', []);
+
+    const normalizedRisk = String(riskLevel || '').toLowerCase();
+    const isHighRisk = normalizedRisk === 'high' || normalizedRisk === 'high risk';
+    const isMediumRisk = normalizedRisk === 'medium' || normalizedRisk === 'medium risk';
+
     return (
       <>
         <div style={styles.behavioralStats}>
@@ -500,21 +498,24 @@ export default function StratavaxReport({
             <span style={styles.behavioralLabel}>Risk Level</span>
             <span style={{
               ...styles.riskBadge,
-              background: riskLevel === 'High Risk' || riskLevel === 'high' ? '#fee2e2' :
-                        riskLevel === 'Medium Risk' || riskLevel === 'medium' ? '#fef3c7' : '#dcfce7',
-              color: riskLevel === 'High Risk' || riskLevel === 'high' ? '#991b1b' :
-                     riskLevel === 'Medium Risk' || riskLevel === 'medium' ? '#92400e' : '#166534'
+              background: isHighRisk ? '#fee2e2' : isMediumRisk ? '#fef3c7' : '#dcfce7',
+              color: isHighRisk ? '#991b1b' : isMediumRisk ? '#92400e' : '#166534'
             }}>
               {typeof riskLevel === 'string' ? riskLevel.charAt(0).toUpperCase() + riskLevel.slice(1) : 'Low Risk'}
             </span>
           </div>
         </div>
+
         <div style={styles.riskSummary}>
-          <p>Behavioral flags: {violations} violation(s), {tabSwitches} tab switch(es), and {answerChanges} answer change(s).</p>
+          <p>
+            Behavioural flags: {violations} violation(s), {tabSwitches} tab switch(es), {answerChanges} answer change(s),
+            {copyPasteAttempts} copy/paste attempt(s), {rightClickAttempts} right-click attempt(s).
+          </p>
           {Array.isArray(riskFactors) && riskFactors.length > 0 && (
             <p style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>Risk Factors: {riskFactors.join(', ')}</p>
           )}
         </div>
+
         <div style={styles.behavioralCommentary}>
           <h4 style={styles.commentaryTitle}>Assessment Integrity Analysis</h4>
           <div style={styles.commentaryMetrics}>
@@ -523,9 +524,11 @@ export default function StratavaxReport({
               <span style={styles.commentaryText}>
                 {tabSwitches === 0
                   ? '✅ No tab switching detected. Candidate maintained focus on the assessment.'
-                  : tabSwitches <= 3
-                    ? `⚠️ Minimal tab switching (${tabSwitches} switches). This may indicate occasional distraction.`
-                    : `❌ High tab switching (${tabSwitches} switches). This suggests significant distraction or potential external reference use.`}
+                  : tabSwitches <= 5
+                    ? `⚠️ Minimal tab switching (${tabSwitches}). Consistent with brief distraction; unlikely to affect validity.`
+                    : tabSwitches <= 20
+                      ? `⚠️ Moderate tab switching (${tabSwitches}). Worth noting, but not automatically concerning.`
+                      : `❌ High tab switching (${tabSwitches}). This may indicate repeated external reference.`}
               </span>
             </div>
             <div style={styles.commentaryItem}>
@@ -533,9 +536,11 @@ export default function StratavaxReport({
               <span style={styles.commentaryText}>
                 {violations === 0
                   ? '✅ No rule violations detected. Candidate followed all assessment guidelines.'
-                  : violations <= 3
-                    ? `⚠️ Minor violations (${violations} violations). These may be accidental.`
-                    : `❌ High violations (${violations} violations). This indicates significant disregard for assessment rules.`}
+                  : violations <= 10
+                    ? `⚠️ Minor violations (${violations}). Typically corresponds to right-click attempts or accidental keystrokes.`
+                    : violations <= 30
+                      ? `⚠️ Moderate violations (${violations}). Review recommended before treating the score as authoritative.`
+                      : `❌ High violations (${violations}). Assessment validity should be reviewed.`}
               </span>
             </div>
             <div style={styles.commentaryItem}>
@@ -544,24 +549,50 @@ export default function StratavaxReport({
                 {answerChanges === 0
                   ? '✅ No answer changes. Candidate was confident in their responses.'
                   : answerChanges <= 5
-                    ? `⚠️ Few answer changes (${answerChanges} changes). This is normal behavior.`
-                    : `❌ Many answer changes (${answerChanges} changes). This may indicate uncertainty or guessing.`}
+                    ? `⚠️ Few answer changes (${answerChanges}). Normal deliberation behaviour.`
+                    : answerChanges <= 15
+                      ? `⚠️ Several answer changes (${answerChanges}). May indicate uncertainty on those questions.`
+                      : `❌ Many answer changes (${answerChanges}). May indicate guessing or low confidence.`}
+              </span>
+            </div>
+            <div style={styles.commentaryItem}>
+              <span style={styles.commentaryLabel}>Copy/Paste:</span>
+              <span style={styles.commentaryText}>
+                {copyPasteAttempts === 0
+                  ? '✅ No copy/paste attempts detected.'
+                  : copyPasteAttempts <= 3
+                    ? `⚠️ Few copy/paste attempts (${copyPasteAttempts}). Likely accidental.`
+                    : `❌ Repeated copy/paste attempts (${copyPasteAttempts}). Review recommended.`}
+              </span>
+            </div>
+            <div style={styles.commentaryItem}>
+              <span style={styles.commentaryLabel}>Right-Click:</span>
+              <span style={styles.commentaryText}>
+                {rightClickAttempts === 0
+                  ? '✅ No right-click attempts detected.'
+                  : rightClickAttempts <= 10
+                    ? `⚠️ Some right-click attempts (${rightClickAttempts}). Typically habitual rather than intentional.`
+                    : `❌ Frequent right-click attempts (${rightClickAttempts}). Habitual or intentional — worth noting.`}
               </span>
             </div>
           </div>
-          {(violations > 0 || tabSwitches > 5) ? (
+
+          {(violations > 10 || tabSwitches > 20 || answerChanges > 15 || copyPasteAttempts > 3) ? (
             <div style={styles.recommendationBox}>
               <h5 style={styles.recommendationTitle2}>Recommendations</h5>
               <ul style={styles.recommendationList}>
-                {tabSwitches > 20 && <li>Consider invalidating the assessment due to excessive tab switching.</li>}
-                {violations > 10 && <li>Immediate review required. Assessment validity is compromised.</li>}
-                {tabSwitches > 5 && tabSwitches <= 20 && <li>Conduct a follow-up interview to discuss potential external reference use.</li>}
-                {violations > 3 && violations <= 10 && <li>Review specific flagged questions and discuss with candidate.</li>}
-                {answerChanges > 5 && <li>Review questions where answers were changed for potential ambiguity.</li>}
+                {tabSwitches > 50 && <li>Consider invalidating the assessment due to excessive tab switching.</li>}
+                {violations > 30 && <li>Assessment validity should be reviewed before relying on the score.</li>}
+                {tabSwitches > 20 && tabSwitches <= 50 && <li>Follow-up interview recommended to discuss potential external reference use.</li>}
+                {violations > 10 && violations <= 30 && <li>Review specific flagged behaviours with the candidate before treating the score as authoritative.</li>}
+                {answerChanges > 15 && <li>Review questions with multiple changes for potential ambiguity.</li>}
+                {copyPasteAttempts > 3 && <li>Review copy/paste events — may indicate attempted external sourcing.</li>}
               </ul>
             </div>
           ) : (
-            <div style={styles.cleanCommentary}>No concerning behavioral patterns detected. The candidate completed the assessment with integrity.</div>
+            <div style={styles.cleanCommentary}>
+              No concerning behavioural patterns detected at the threshold required for review. The candidate completed the assessment within expected behavioural norms.
+            </div>
           )}
         </div>
       </>
@@ -631,7 +662,7 @@ export default function StratavaxReport({
     const percentage = section.percentage;
     const maxScore = safeNumber(section.maxScore || section.max || 0);
     const earnedScore = safeNumber(section.score || section.earned || 0);
-    const { band, summary, implication, definition } = getSectionNarratives(name, percentage);
+    const { summary, implication, definition } = getSectionNarratives(name, percentage);
     const bandLabel = getLevelLabel(percentage);
     const color = getLevelColor(percentage);
 
@@ -680,12 +711,13 @@ export default function StratavaxReport({
           {candidateEmail && <div><span style={styles.label}>Email:</span> <span style={styles.value}>{candidateEmail}</span></div>}
           <div><span style={styles.label}>Assessment:</span> <span style={styles.value}>{assessmentName}</span></div>
           <div><span style={styles.label}>Completed:</span> <span style={styles.value}>{formatDate(completedAt)}</span></div>
-          <div><span style={styles.label}>Classification:</span> <span style={styles.value}>{classification}</span></div>
-          <div><span style={styles.label}>Risk Level:</span> <span style={styles.value}>{riskLevel}</span></div>
+          {!isCognitive && (
+            <div><span style={styles.label}>Classification:</span> <span style={styles.value}>{classification}</span></div>
+          )}
+          <div><span style={styles.label}>{isCognitive ? 'Proctoring Risk:' : 'Risk Level:'}</span> <span style={styles.value}>{riskLevel}</span></div>
         </div>
       </div>
 
-      {/* Top metric cards */}
       <div style={styles.statsGrid}>
         <div style={styles.statCard}>
           <div style={styles.statValue}>{Math.round(overallScore)}%</div>
@@ -771,7 +803,6 @@ export default function StratavaxReport({
         )}
       </div>
 
-      {/* Performance split (only for performance) */}
       {isPerformance && (
         <div style={styles.section}>
           <h2 style={styles.sectionTitle}>Performance Profile</h2>
@@ -782,7 +813,6 @@ export default function StratavaxReport({
         </div>
       )}
 
-      {/* Executive summary */}
       <div style={styles.section}>
         <h2 style={styles.sectionTitle}>Executive Summary</h2>
         <div style={styles.summaryBox}>
@@ -795,10 +825,9 @@ export default function StratavaxReport({
         )}
       </div>
 
-      {/* Section analysis — full 5-piece cards */}
       {sortedSections.length > 0 && (
         <div style={styles.section}>
-          <h2 style={styles.sectionTitle}>{isCognitive ? 'Section Analysis' : 'Section Analysis'}</h2>
+          <h2 style={styles.sectionTitle}>Section Analysis</h2>
           <p style={styles.sectionSubtitle}>
             Each section below shows what it measures, what the score suggests, and what the supervisor should consider.
           </p>
@@ -808,7 +837,6 @@ export default function StratavaxReport({
         </div>
       )}
 
-      {/* Recommendations — only shown for non-cognitive assessments */}
       {!isCognitive && (
         <div style={styles.section}>
           <h2 style={styles.sectionTitle}>Recommendations</h2>
@@ -835,7 +863,6 @@ export default function StratavaxReport({
         </div>
       )}
 
-      {/* Behavioral matrix */}
       <div style={styles.behavioralToggleContainer}>
         <button onClick={toggleBehavioral} style={styles.behavioralToggleButton}>
           {showBehavioral ? 'Hide Behavioral Matrix' : 'Show Behavioral Matrix'}
