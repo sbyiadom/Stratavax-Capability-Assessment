@@ -1,4 +1,4 @@
-// pages/supervisor/[user_id].js - APPROACH 1.5
+// pages/supervisor/[user_id].js - APPROACH 1.5 + RISK LEVEL FIX
 // Keeps the hero banner, score panel, and action buttons from the original
 // supervisor report design. Replaces the tab content with <StratavaxReport />
 // so that the supervisor path, admin path, and any other report reader see
@@ -17,6 +17,14 @@
 //   • Behavioral matrix table
 //
 // UUID guard from Phase 7B is preserved — non-UUID path segments fail fast.
+//
+// 2026-10-02: Risk level resolution fix. Prior version defaulted to the
+// literal string 'Medium' whenever result.risk_level was missing — which
+// happened whenever the API returned a `generatedReport` without the column.
+// The hero panel then showed 'Medium' while the matrix footer (reading from
+// proctoring.summary.riskLevel) showed 'low'. Both surfaces now go through
+// resolveRiskLevel(), which prefers the DB column and derives from risk_score
+// as a fallback. No hardcoded defaults.
 
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/router";
@@ -24,6 +32,38 @@ import AppLayout from "../../components/AppLayout";
 import { supabase } from "../../supabase/client";
 import ResetAssessmentButton from "../../components/ResetAssessmentButton";
 import StratavaxReport from "../../components/reports/StratavaxReport";
+
+// ============================================================
+// RISK LEVEL RESOLUTION
+// Prefer the DB column (result.risk_level). Fall back to the report object's
+// copy, then to the proctoring summary, then to a value derived from
+// risk_score. Never return a hardcoded default like 'Medium' when we have
+// real data — that misled supervisors when the column was missing from the
+// API response.
+// ============================================================
+function resolveRiskLevel(result, report, proctoringData) {
+  const fromResult = result?.risk_level || result?.riskLevel;
+  const fromReport = report?.riskLevel || report?.risk_level;
+  const fromProctoring = proctoringData?.summary?.riskLevel || proctoringData?.summary?.risk_level;
+
+  const candidate = fromResult || fromReport || fromProctoring;
+  if (typeof candidate === 'string' && candidate.trim() !== '') {
+    return candidate;
+  }
+
+  const score = Number(
+    result?.risk_score ??
+    report?.riskScore ??
+    proctoringData?.summary?.riskScore
+  );
+  if (Number.isFinite(score)) {
+    if (score >= 70) return 'high';
+    if (score >= 40) return 'medium';
+    return 'low';
+  }
+
+  return 'Not available';
+}
 
 // ============================================================
 // HELPERS
@@ -125,7 +165,7 @@ function getToneGradient(score) {
 function getBadgeStyle(value) {
   const text = safeText(value, "").toLowerCase();
   if (text.includes("critical") || text.includes("high")) return styles.badgeCritical;
-  if (text.includes("elevated") || text.includes("risk") || text.includes("develop")) return styles.badgeWarm;
+  if (text.includes("elevated") || text.includes("risk") || text.includes("develop") || text.includes("medium")) return styles.badgeWarm;
   if (text.includes("low") || text.includes("strong") || text.includes("excellent")) return styles.badgeGood;
   return styles.badgeNeutral;
 }
@@ -148,9 +188,13 @@ function extractBehavioralData(report) {
   const behavioral = report?.report_data?.behavioral || {};
 
   const MAX_REASONABLE_SECONDS = 8 * 60 * 60;
-  const isTimeAbnormal = summary.isTimeAbnormal || behavioral.isTimeAbnormal || summary.duration > MAX_REASONABLE_SECONDS || behavioral.totalTime > MAX_REASONABLE_SECONDS;
+  const isTimeAbnormal =
+    summary.isTimeAbnormal ||
+    behavioral.isTimeAbnormal ||
+    summary.duration > MAX_REASONABLE_SECONDS ||
+    behavioral.totalTime > MAX_REASONABLE_SECONDS;
 
-  let totalTime = summary.duration || behavioral.totalTime || 0;
+  const totalTime = summary.duration || behavioral.totalTime || 0;
   let totalTimeFormatted = summary.durationFormatted || behavioral.totalTimeFormatted || '00:00:00';
   let avgTimePerQuestion = summary.avgTimePerQuestion || behavioral.avgTimePerQuestion || '0s';
 
@@ -399,7 +443,15 @@ export default function SupervisorUserReportPage() {
   const assessmentName = cleanReport.assessmentName || assessment?.title || "Assessment";
   const overallScore = cleanReport.percentage || cleanReport.overallPercentage || cleanReport.score || 0;
   const classification = cleanReport.classification || cleanReport.overallClassification || "Not classified";
-  const riskLevel = cleanReport.riskLevel || cleanReport.risk_level || "Not available";
+
+  // ✅ Fixed: risk level now resolves from DB column, report copy, proctoring
+  // summary, then risk_score — in that order. Never a hardcoded default.
+  const riskLevel = resolveRiskLevel(
+    cleanReport,
+    cleanReport,
+    cleanReport?.proctoring_data
+  );
+
   const responseCount = cleanReport.responseCount || cleanReport.answered_questions || 0;
 
   const scoreColor = getToneColor(overallScore);
