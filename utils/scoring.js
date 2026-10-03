@@ -1,30 +1,17 @@
 // utils/scoring.js
 // Phase 6.5: forced-choice scoring rescaled so random responses yield 0.
+// Phase 7E (2026-09-30): baseline assessment type suffix match.
+// Phase 8 (2026-10-03): added normalizeResultCategoryScores,
+//   calculateResultScore, and calculateRecommendation as the shared
+//   result-level entry points. Every page and API must use these.
 //
 // CENTRAL SCORING ENGINE
 //
 // Supports THREE scoring models:
 //   1) Baseline exact-match (multi-select, exact set match = 1, else 0)
-//   2) Single-select weighted (one answer, answer-weighted, real max per question)
-//   3) Forced-choice most/least (TWO picks per question: most-likely and
-//      least-likely; both contribute, and rejecting the best answer is a
-//      strong negative signal)
-//
-// Phase 6.5 addition:
-//   scoreForcedChoiceResponse now rescales its output so a response with
-//   no signal (random picking, expected raw score 0.5) returns 0 rather
-//   than 0.5. This eliminates the ~50% floor that made random selection
-//   score the same as thoughtful mid-tier selection. New results should
-//   be tagged scoring_version = 2.
-//
-// Phase 7E (2026-09-30):
-//   isBaselineAssessmentType now matches any assessment_type code ending
-//   in "_baseline" (e.g. "manufacturing_baseline"). Previously it checked
-//   for "manufacturing_baseline_baseline", which never matched the actual
-//   code in the database, so baseline assessments were silently scored as
-//   single_select. That made multi-select "select all that apply" questions
-//   score too generously (one correct pick out of three got credit for one,
-//   when the correct behaviour is 0 unless all correct answers are picked).
+//   2) Single-select weighted (one answer, answer-weighted)
+//   3) Forced-choice most/least (TWO picks per question; rejecting the
+//      best answer is a strong negative signal)
 
 // ======================================================
 // BASIC HELPERS
@@ -274,46 +261,15 @@ export const arraysMatchExactly = function (left, right) {
 // FORCED-CHOICE SCORING
 // ------------------------------------------------------
 // Candidate picks TWO answers per question:
-//   answer_id       = most likely  (what they'd do)
-//   least_answer_id = least likely (what they'd never do)
+//   answer_id       = most likely
+//   least_answer_id = least likely
 //
-// Raw scoring (per question, out of a max of 1.0):
-//   Let maxAns = max score across all answers (usually 5)
-//   Let minAns = min score across all answers (usually 1)
-//   Let range  = maxAns - minAns
-//
-//   mostScore  = (selected.score - minAns) / range    // 0..1
-//   leastScore = (maxAns - rejected.score) / range    // 0..1
-//
-//   rawCombined = (mostScore * 0.7) + (leastScore * 0.3)   // 0..1
-//
-// IMPORTANT: with 4 answers scored 5/4/2/1, a random pick produces
-// an expected rawCombined of 0.5 (both mostScore and leastScore average
-// 0.5). A thoughtful candidate produces higher; a discriminating one
-// higher still. But the floor of 0.5 means a random picker scores the
-// same as a candidate who picks thoughtfully but not expertly.
-//
-// RESCALE: we shift the raw scale so that 0.5 (random expectation)
-// maps to 0, and 1.0 stays 1.0:
-//
-//   score = max(0, (rawCombined - 0.5) / (1 - 0.5))
-//         = max(0, (rawCombined - 0.5) * 2)
-//
-// Effect:
-//   random picking        → 0.0     (High Risk)
-//   thoughtful, mid-tier  → 0.4–0.6
-//   discriminating        → 0.8–1.0 (Exceptional)
-//
-// This produces the calibration the platform needs to credibly claim
-// that assessments discriminate between candidates.
+// With 4 answers scored 5/4/2/1, random picking averages rawCombined 0.5.
+// Rescale: score = max(0, (rawCombined - 0.5) * 2). Random → 0.
 // ======================================================
 
 export const FORCED_CHOICE_WEIGHT_MOST = 0.7;
 export const FORCED_CHOICE_WEIGHT_LEAST = 0.3;
-
-// Expected raw score from a random response. Given 4 answers with
-// values 5/4/2/1, both the mostScore and leastScore average to 0.5,
-// so the weighted combined averages to 0.5.
 export const FORCED_CHOICE_RANDOM_BASELINE = 0.5;
 
 export const scoreForcedChoiceResponse = function (response) {
@@ -362,8 +318,6 @@ export const scoreForcedChoiceResponse = function (response) {
     const s = getAnswerScoreValue(leastAnswer);
     leastScore = (maxAns - s) / range;
   } else {
-    // No least pick submitted. We can only use the most pick, and we
-    // apply the same rescale so that "no info" still lands near 0.
     const partialCombined = mostScore;
     const partialRescaled = Math.max(
       0,
@@ -383,7 +337,6 @@ export const scoreForcedChoiceResponse = function (response) {
     (mostScore * FORCED_CHOICE_WEIGHT_MOST) +
     (leastScore * FORCED_CHOICE_WEIGHT_LEAST);
 
-  // Rescale so random (0.5) → 0 and perfect (1.0) → 1.0.
   const denom = 1 - FORCED_CHOICE_RANDOM_BASELINE;
   const rescaled = denom > 0
     ? Math.max(0, (rawCombined - FORCED_CHOICE_RANDOM_BASELINE) / denom)
@@ -443,7 +396,6 @@ export const scoreQuestionResponse = function (response, isBaseline, mode) {
     };
   }
 
-  // single_select
   const selectedId = selectedAnswerIds.length > 0 ? selectedAnswerIds[0] : null;
   let selectedAnswer = null;
 
@@ -466,10 +418,6 @@ export const scoreQuestionResponse = function (response, isBaseline, mode) {
   };
 };
 
-// Phase 7E (2026-09-30): suffix match instead of exact string.
-// Matches "manufacturing_baseline", "electrical_baseline", etc.
-// Also matches the numeric id 19 for backwards compatibility with any
-// caller that still passes the raw assessment type id.
 export const isBaselineAssessmentType = function (assessmentTypeOrId) {
   const normalized = String(
     assessmentTypeOrId === undefined || assessmentTypeOrId === null ? "" : assessmentTypeOrId
@@ -922,6 +870,307 @@ export const getDevelopmentAreas = function (categoryScores, limit) {
 };
 
 // ======================================================
+// PHASE 8 (2026-10-03) — SHARED RESULT-LEVEL ENTRY POINTS
+// ------------------------------------------------------
+// Every page and API that needs "what did this candidate score?" and
+// "what should we recommend?" must call these. No page should re-derive
+// scores from raw category data, band thresholds, or recommendation
+// rules — those live here and nowhere else.
+// ======================================================
+
+export const normalizeResultCategoryScores = function (raw) {
+  let parsed = raw;
+
+  if (typeof parsed === "string") {
+    try {
+      parsed = JSON.parse(parsed);
+    } catch (error) {
+      return [];
+    }
+  }
+
+  if (!parsed) return [];
+
+  let items = [];
+
+  if (Array.isArray(parsed)) {
+    items = parsed;
+  } else if (typeof parsed === "object") {
+    items = Object.keys(parsed).map(function (key) {
+      const value = parsed[key];
+      if (value && typeof value === "object") {
+        return Object.assign({ category: key, name: key }, value);
+      }
+      return { category: key, name: key, percentage: value };
+    });
+  }
+
+  return items
+    .map(function (item) {
+      if (!item || typeof item !== "object") return null;
+
+      const category = normalizeText(
+        item.category !== undefined
+          ? item.category
+          : item.name !== undefined
+          ? item.name
+          : item.label !== undefined
+          ? item.label
+          : item.title !== undefined
+          ? item.title
+          : item.area !== undefined
+          ? item.area
+          : item.dimension !== undefined
+          ? item.dimension
+          : "",
+        ""
+      );
+
+      if (!category) return null;
+
+      const score = toNumber(
+        item.score !== undefined
+          ? item.score
+          : item.earned !== undefined
+          ? item.earned
+          : item.totalScore !== undefined
+          ? item.totalScore
+          : item.rawScore !== undefined
+          ? item.rawScore
+          : 0,
+        0
+      );
+
+      const maxPossible = toNumber(
+        item.maxPossible !== undefined
+          ? item.maxPossible
+          : item.maxScore !== undefined
+          ? item.maxScore
+          : item.max !== undefined
+          ? item.max
+          : item.max_score !== undefined
+          ? item.max_score
+          : 0,
+        0
+      );
+
+      let percentage = null;
+
+      if (item.percentage !== undefined && item.percentage !== null) {
+        percentage = clampPercentage(item.percentage);
+      } else if (maxPossible > 0) {
+        percentage = calculatePercentage(score, maxPossible);
+      } else if (item.percentage_score !== undefined) {
+        percentage = clampPercentage(item.percentage_score);
+      }
+
+      if (percentage === null) {
+        if (score >= 0 && score <= 100 && maxPossible === 0) {
+          percentage = clampPercentage(score);
+        } else {
+          percentage = 0;
+        }
+      }
+
+      return {
+        category: category,
+        name: category,
+        score: score,
+        maxPossible: maxPossible,
+        percentage: percentage
+      };
+    })
+    .filter(function (item) {
+      return item !== null;
+    });
+};
+
+export const calculateResultScore = function (result, options) {
+  const opts = options || {};
+  const safeResult = result || {};
+
+  const assessmentType =
+    opts.assessmentType !== undefined
+      ? opts.assessmentType
+      : safeResult.assessment_type_code !== undefined
+      ? safeResult.assessment_type_code
+      : safeResult.assessmentTypeCode !== undefined
+      ? safeResult.assessmentTypeCode
+      : safeResult.assessmentType !== undefined
+      ? safeResult.assessmentType
+      : null;
+
+  const isBaseline =
+    opts.isBaseline !== undefined
+      ? Boolean(opts.isBaseline)
+      : isBaselineAssessmentType(assessmentType);
+
+  const storedPercentage = toNumber(
+    safeResult.percentage_score !== undefined
+      ? safeResult.percentage_score
+      : safeResult.percentageScore !== undefined
+      ? safeResult.percentageScore
+      : safeResult.overallScore !== undefined
+      ? safeResult.overallScore
+      : null,
+    NaN
+  );
+
+  if (Number.isFinite(storedPercentage) && storedPercentage >= 0 && storedPercentage <= 100) {
+    const details = getClassificationDetailsFromPercentage(storedPercentage);
+
+    return {
+      source: "stored_percentage",
+      totalScore: toNumber(safeResult.total_score, 0),
+      maxScore: toNumber(safeResult.max_score, 0),
+      percentage: clampPercentage(storedPercentage),
+      grade: details.grade,
+      gradeDescription: details.gradeDescription,
+      classification: details.classification,
+      band: details.band,
+      label: details.label,
+      color: details.color,
+      bg: details.bg,
+      description: details.description,
+      categoryScores: normalizeResultCategoryScores(
+        safeResult.category_scores !== undefined
+          ? safeResult.category_scores
+          : safeResult.categoryScores !== undefined
+          ? safeResult.categoryScores
+          : []
+      )
+    };
+  }
+
+  const categoryScores = normalizeResultCategoryScores(
+    safeResult.category_scores !== undefined
+      ? safeResult.category_scores
+      : safeResult.categoryScores !== undefined
+      ? safeResult.categoryScores
+      : []
+  );
+
+  if (categoryScores.length > 0) {
+    let totalScore = 0;
+    let totalMax = 0;
+    let hasMaxData = false;
+
+    categoryScores.forEach(function (item) {
+      totalScore += toNumber(item.score, 0);
+      totalMax += toNumber(item.maxPossible, 0);
+      if (item.maxPossible > 0) hasMaxData = true;
+    });
+
+    let derivedPercentage;
+
+    if (hasMaxData && totalMax > 0) {
+      derivedPercentage = calculatePercentage(totalScore, totalMax);
+    } else {
+      const sum = categoryScores.reduce(function (acc, item) {
+        return acc + clampPercentage(item.percentage);
+      }, 0);
+      derivedPercentage = roundNumber(sum / categoryScores.length, 2);
+    }
+
+    const details = getClassificationDetailsFromPercentage(derivedPercentage);
+
+    return {
+      source: "derived_from_categories",
+      totalScore: totalScore,
+      maxScore: totalMax,
+      percentage: clampPercentage(derivedPercentage),
+      grade: details.grade,
+      gradeDescription: details.gradeDescription,
+      classification: details.classification,
+      band: details.band,
+      label: details.label,
+      color: details.color,
+      bg: details.bg,
+      description: details.description,
+      categoryScores: categoryScores
+    };
+  }
+
+  const directTotal = toNumber(safeResult.total_score, NaN);
+  const directMax = toNumber(safeResult.max_score, NaN);
+
+  if (Number.isFinite(directTotal) && Number.isFinite(directMax) && directMax > 0) {
+    const derivedPercentage = calculatePercentage(directTotal, directMax);
+    const details = getClassificationDetailsFromPercentage(derivedPercentage);
+
+    return {
+      source: "derived_from_totals",
+      totalScore: directTotal,
+      maxScore: directMax,
+      percentage: clampPercentage(derivedPercentage),
+      grade: details.grade,
+      gradeDescription: details.gradeDescription,
+      classification: details.classification,
+      band: details.band,
+      label: details.label,
+      color: details.color,
+      bg: details.bg,
+      description: details.description,
+      categoryScores: []
+    };
+  }
+
+  const details = getClassificationDetailsFromPercentage(0);
+
+  return {
+    source: "no_data",
+    totalScore: 0,
+    maxScore: 0,
+    percentage: 0,
+    grade: details.grade,
+    gradeDescription: details.gradeDescription,
+    classification: details.classification,
+    band: details.band,
+    label: details.label,
+    color: details.color,
+    bg: details.bg,
+    description: details.description,
+    categoryScores: []
+  };
+};
+
+export const calculateRecommendation = function (scoreOrDetails, options) {
+  const opts = options || {};
+
+  let band;
+  let percentage;
+
+  if (typeof scoreOrDetails === "object" && scoreOrDetails !== null) {
+    band = scoreOrDetails.band;
+    percentage = clampPercentage(scoreOrDetails.percentage);
+  } else {
+    percentage = clampPercentage(scoreOrDetails);
+    band = getPerformanceBand(percentage).key;
+  }
+
+  const assessmentType = String(opts.assessmentType || "").toLowerCase();
+
+  const isNationalService =
+    assessmentType === "national_service" ||
+    assessmentType.indexOf("national") >= 0;
+
+  if (isNationalService) {
+    if (band === "exceptional" || band === "strong") return "Highly Recommended";
+    if (band === "adequate") return "Recommended";
+    if (band === "developing") return "Reserve Pool";
+    if (band === "priority_development") return "Reserve Pool";
+    return "Not Recommended";
+  }
+
+  if (band === "exceptional") return "Highly Recommended";
+  if (band === "strong") return "Recommended";
+  if (band === "adequate") return "Recommended";
+  if (band === "developing") return "Consider with Development";
+  if (band === "priority_development") return "Not Recommended";
+  return "Not Recommended";
+};
+
+// ======================================================
 // DEFAULT EXPORT
 // ======================================================
 
@@ -982,5 +1231,10 @@ export default {
   calculateCategoryScores: calculateCategoryScores,
   getStrengthAreas: getStrengthAreas,
   getTopStrengths: getTopStrengths,
-  getDevelopmentAreas: getDevelopmentAreas
+  getDevelopmentAreas: getDevelopmentAreas,
+
+  // Phase 8 shared entry points
+  normalizeResultCategoryScores: normalizeResultCategoryScores,
+  calculateResultScore: calculateResultScore,
+  calculateRecommendation: calculateRecommendation
 };
