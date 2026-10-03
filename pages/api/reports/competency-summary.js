@@ -1,11 +1,15 @@
 // pages/api/reports/competency-summary.js
 // Phase 6 — Competency Reports API (v5)
+// Phase 8 (2026-10-03) — swapped local safeNumber/round1 for
+//   utils/scoring helpers (toNumber, roundNumber). No behaviour change;
+//   the numeric helpers were already equivalent.
 //
 // v5 change: any query that filters by a large list of candidate IDs is
 //            now chunked (150 per request) to avoid PostgREST/Vercel URL
 //            length limits that caused "Bad Request" at scale.
 
 import { createClient } from '@supabase/supabase-js';
+import { toNumber, roundNumber, clampPercentage } from '../../../utils/scoring';
 
 const CLASSIFICATION_ORDER = [
   'Exceptional',
@@ -26,8 +30,7 @@ const DISCRIMINATION = {
 const IN_CHUNK_SIZE = 150;
 
 function safeNumber(value, fallback = 0) {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : fallback;
+  return toNumber(value, fallback);
 }
 
 function median(values) {
@@ -47,7 +50,7 @@ function stddev(values) {
 }
 
 function round1(value) {
-  return Math.round(safeNumber(value, 0) * 10) / 10;
+  return roundNumber(toNumber(value, 0), 1);
 }
 
 function classifyDiscrimination(sd) {
