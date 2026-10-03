@@ -1,13 +1,22 @@
-// pages/api/admin/reports.js — COMPLETE CORRECTED VERSION V3
+// pages/api/admin/reports.js — COMPLETE CORRECTED VERSION V4
 // Fixes National Service overall score mismatch between report list and report detail
 // V2 adds safe parsing for report_data when Supabase returns it as a JSON string
 // V3 (Phase 7A) adds auth + admin role check. Endpoint previously had no
 //    caller verification — any unauthenticated request returned all reports.
+// V4 (Phase 8, 2026-10-03) recommendation now sourced from
+//    utils/scoring.calculateRecommendation. The local version used thresholds
+//    85/70/50 while every other page used 85/75/65, producing inconsistent
+//    recommendations for the same candidate across surfaces. Removed.
 //
 // Data reads remain service-role; the auth client is only used to verify the
 // caller's identity and role.
 
 import { createClient } from '@supabase/supabase-js';
+import {
+  calculateRecommendation,
+  roundNumber,
+  toNumber,
+} from '../../../utils/scoring';
 
 const NATIONAL_SERVICE_ASSESSMENT_ID = 'bdb9d46e-9fac-4d00-8478-1f649e7ac600';
 
@@ -15,16 +24,14 @@ const NATIONAL_SERVICE_ASSESSMENT_ID = 'bdb9d46e-9fac-4d00-8478-1f649e7ac600';
 // HELPER: SAFE NUMBER
 // ============================================================
 function safeNumber(value, fallback = 0) {
-  const numberValue = Number(value);
-  return Number.isFinite(numberValue) ? numberValue : fallback;
+  return toNumber(value, fallback);
 }
 
 // ============================================================
 // HELPER: ROUND SCORE
 // ============================================================
 function roundScore(value) {
-  const numberValue = safeNumber(value, 0);
-  return Math.round(numberValue);
+  return roundNumber(toNumber(value, 0), 0);
 }
 
 // ============================================================
@@ -48,18 +55,6 @@ function getReportData(result) {
   }
 
   return {};
-}
-
-// ============================================================
-// RECOMMENDATION LOGIC
-// ============================================================
-function getRecommendation(workplaceReadiness, intellectualCapability, overallScore) {
-  const overall = safeNumber(overallScore, 0);
-
-  if (overall >= 85) return 'Highly Recommended';
-  if (overall >= 70) return 'Recommended';
-  if (overall >= 50) return 'Reserve Pool';
-  return 'Not Recommended';
 }
 
 // ============================================================
@@ -412,14 +407,15 @@ export default async function handler(req, res) {
 
       const categoryScores = getCategoryScores(result);
 
+      // Phase 8: recommendation is now sourced from utils/scoring so every
+      // page agrees. Preserve the stored value if the row already has one
+      // that isn't a placeholder.
       let recommendation = result.recommendation || null;
 
       if (!recommendation || recommendation === 'N/A' || recommendation === '') {
-        recommendation = getRecommendation(
-          workplaceReadiness,
-          intellectualCapability,
-          overallScore
-        );
+        recommendation = calculateRecommendation(overallScore, {
+          assessmentType: isNationalService ? 'national_service' : (assessmentType?.code || ''),
+        });
       }
 
       const parsedReportData = getReportData(result);
