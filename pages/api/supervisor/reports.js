@@ -1,50 +1,30 @@
 // pages/api/supervisor/reports.js
 // Phase 7B — server-side reports payload for the supervisor reports pages.
+// Phase 8 (2026-10-03) — recommendation now sourced from
+//   utils/scoring.calculateRecommendation. The local version used thresholds
+//   85/75/65/50 while admin/reports.js used 85/70/50, so the same candidate
+//   could show different recommendation labels on different pages. Removed.
 //
 // ROOT CAUSE OF PREVIOUS FAILURE:
 //   This endpoint used the anon client + the caller's bearer token, so all reads
 //   were subject to RLS. Phase 7 enabled RLS on every table with a default-deny
-//   policy set, so SELECTs returned 0 rows silently for every supervisor. The
-//   Vercel logs showed:
-//     [Supervisor Reports] Found candidates by legacy fields: 0
-//     [Supervisor Reports] Total assigned candidates: 0
+//   policy set, so SELECTs returned 0 rows silently for every supervisor.
 //
 // FIX:
 //   Switch to utils/apiAuth.js (service role) and enforce scoping in code via
-//   the get_scoped_candidate_ids RPC, exactly like the other supervisor
-//   endpoints. RLS remains enabled as defense-in-depth on the DB; this
-//   endpoint bypasses it deliberately for the service role.
+//   the get_scoped_candidate_ids RPC.
 //
 // SCOPING MODEL:
 //   • admin      → all candidates
 //   • supervisor → union of primary (candidate_profiles.supervisor_id)
 //                  and junction (candidate_supervisors.supervisor_id) links
-//   • shared_report_access is currently EMPTY (verified 2026-09-20),
-//     so the shared-access path is intentionally omitted. If the feature
-//     becomes active, add a union branch here — do NOT expose it elsewhere.
 //
-// RESPONSE SHAPE (preserved from Phase 7A so pages/supervisor/reports/index.js
-// and pages/supervisor/reports/[resultId].js consume it unchanged):
-//   List mode:
-//     { success, reports[], nationalServiceReports[], otherReports[],
-//       candidates[], stats: { total, completed, inProgress } }
-//   Single-result mode (when ?assessment_id= is passed and 1 result matches):
-//     { success, result, candidate, assessment, generatedReport, reports[],
-//       candidates[], stats }
-//
-// PER-CANDIDATE FIELDS (unchanged):
-//   result_id, candidate_id, candidate_name, candidate_email, university,
-//   programme, assessment_id, assessment_title, assessment_code, score,
-//   percentage_score, workplace_readiness, intellectual_capability,
-//   recommendation, is_national_service, is_completed, is_auto_submitted,
-//   completed_at, category_scores, report_data, _result
-//
-// 2026-10-02: SELECT now includes risk_level, risk_score, proctoring_data,
-//   total_questions, and answered_questions. Previously omitted from the query,
-//   so downstream components had no way to read them and fell back to
-//   misleading defaults ('Medium') or 'Not available'.
+// 2026-10-02: SELECT includes risk_level, risk_score, proctoring_data,
+//   total_questions, and answered_questions so downstream components can
+//   read them.
 
 import { authorizeRequest } from '../../../utils/apiAuth';
+import { calculateRecommendation, toNumber } from '../../../utils/scoring';
 
 const LOG_TAG = '[Supervisor Reports]';
 const CHUNK_SIZE = 100;
@@ -68,8 +48,7 @@ function logError(stage, error, extra = {}) {
 }
 
 function safeNumber(value, fallback = 0) {
-  const num = Number(value);
-  return Number.isFinite(num) ? num : fallback;
+  return toNumber(value, fallback);
 }
 
 function getReportData(result) {
@@ -97,26 +76,6 @@ function getNationalServiceOverallScore(result) {
       result?.percentage_score ??
       0
   );
-}
-
-function calculateRecommendation(workplaceReadiness, intellectualCapability, overallScore) {
-  const workplace = safeNumber(workplaceReadiness);
-  const intellectual = safeNumber(intellectualCapability);
-  const overall = safeNumber(overallScore);
-
-  if (overall > 0) {
-    if (overall >= 85) return 'Highly Recommended';
-    if (overall >= 75) return 'Recommended';
-    if (overall >= 65) return 'Reserve Pool';
-    if (overall >= 50) return 'Consider for Development';
-    return 'Not Recommended';
-  }
-
-  if (workplace >= 85 && intellectual >= 85) return 'Highly Recommended';
-  if (workplace >= 75 && intellectual >= 75) return 'Recommended';
-  if (workplace >= 65 && intellectual >= 65) return 'Reserve Pool';
-  if (workplace >= 50 || intellectual >= 50) return 'Consider for Development';
-  return 'Not Recommended';
 }
 
 export default async function handler(req, res) {
@@ -216,8 +175,6 @@ export default async function handler(req, res) {
     const candidateIds = targetCandidates.map((c) => c.id);
 
     // ---- Fetch assessment_results with embedded join, chunked ----
-    // 2026-10-02: select now includes risk_level, risk_score, proctoring_data,
-    // total_questions, answered_questions — these were previously missing.
     const allResults = [];
 
     for (const slice of chunk(candidateIds, CHUNK_SIZE)) {
@@ -306,11 +263,12 @@ export default async function handler(req, res) {
 
       const workplaceReadiness = safeNumber(result.workplace_readiness || 0);
       const intellectualCapability = safeNumber(result.intellectual_capability || 0);
-      const recommendation = calculateRecommendation(
-        workplaceReadiness,
-        intellectualCapability,
-        overallScore
-      );
+
+      // Phase 8: single shared recommendation function.
+      const recommendation = calculateRecommendation(overallScore, {
+        assessmentType: isNationalService ? 'national_service' : (type?.code || ''),
+      });
+
       const isCompleted =
         !!result.completed_at ||
         (result.percentage_score !== null && result.percentage_score !== undefined);
@@ -336,7 +294,6 @@ export default async function handler(req, res) {
         completed_at: result.completed_at,
         category_scores: result.category_scores || [],
         report_data: result.report_data || {},
-        // 2026-10-02 additions — passed through to the report component
         risk_level: result.risk_level || null,
         risk_score: result.risk_score ?? null,
         proctoring_data: result.proctoring_data || {},
@@ -375,7 +332,6 @@ export default async function handler(req, res) {
           category_scores: report.category_scores || [],
           recommendation: report.recommendation,
           completed_at: report.completed_at,
-          // 2026-10-02: ensure risk + proctoring survive the shape spread
           risk_level: report.risk_level,
           risk_score: report.risk_score,
           proctoring_data: report.proctoring_data,
