@@ -1,40 +1,29 @@
 // pages/api/assessment/submit.js
-// Version: submit-behavioral-v13-competency-cleanup
+// Version: submit-per-question-mode-v14
+//
+// v14 (2026-10-03):
+//   • Scoring is now decided per question, not per assessment. The handler
+//     reads scoring_mode from unique_questions alongside section and
+//     subsection, and passes it to scoreQuestionResponse for each question.
+//     Assessment-level scoring_mode (from assessment_types) is used only as
+//     a fallback when a question's mode is null.
+//   • Why: Performance Assessment has 40 forced_choice and 40 single_select
+//     questions in the same assessment. Under the old assessment-level
+//     resolution, all 80 were scored as single_select, which produced a
+//     spurious 100% for every candidate. Per-question mode fixes this.
+//   • loadFrozenQuestions SELECT now includes scoring_mode from
+//     unique_questions. Each assembled question carries question.scoring_mode.
+//   • No changes to auth, session handling, RPC call, behavioural tracking,
+//     proctoring, competency scoring, or response shape.
 //
 // v13 (2026-10-02):
-//   • Competency scoring block now performs a DELETE of any existing
-//     candidate_competency_scores rows for this candidate+assessment
-//     BEFORE upserting the new rows. This prevents stale rows from
-//     prior question sets (e.g. from before an assessment rebuild)
-//     from surviving on the report. Non-fatal if the delete fails —
-//     the upsert still runs.
-//
+//   • Competency scoring performs a DELETE of candidate_competency_scores
+//     for this candidate+assessment before upserting, to clear stale rows.
 // v12 (Phase 7E):
-//   • Removed the fallback that loaded questions from unique_questions by
-//     assessment_type_id when a session had no frozen question set. Sessions
-//     must now have a frozen set in session_questions to be submitted. If
-//     they don't, submission fails with NO_FROZEN_QUESTIONS. This prevents
-//     the silent unreproducible scoring that produced the 360 legacy
-//     assessment_results rows without session_questions.
-//   • Added a post-submit drift check: after the RPC writes the result, we
-//     call recompute_session_score(session_id) and log a warning if the
-//     stored percentage differs from the recomputed one. Non-fatal — if the
-//     SQL function is missing or errors, the submission still succeeds.
-//
-// v11 (kept):
-//   • Competency scoring step at the end of submission. After the
-//     transactional RPC succeeds and resultId is available, this file:
-//       1. Fetches question_competencies for the frozen question set
-//       2. Runs calculateCompetencyScores using the SAME scoring engine
-//       3. Upserts rows into candidate_competency_scores
-//   • The competency block is wrapped in try/catch and is NON-FATAL.
-//
-// v10 (kept):
-//   • Replaced inline scoring with the unified engine in utils/scoring.js
-//     so single_select, baseline, and forced_choice all score uniformly.
-//
-// Behavioural tracking, proctoring, RPC call, and response shape are all
-// unchanged from v12.
+//   • Session must have a frozen question set in session_questions.
+//   • Post-submit drift check against recompute_session_score.
+// v11: competency scoring at end of submission (non-fatal).
+// v10: unified scoring engine in utils/scoring.js.
 
 import { createClient } from "@supabase/supabase-js";
 import {
@@ -43,7 +32,7 @@ import {
 } from "../../../utils/scoring";
 import { calculateCompetencyScores } from "../../../utils/competencyScoring";
 
-const SUBMIT_BUILD = "submit-behavioral-v13-competency-cleanup";
+const SUBMIT_BUILD = "submit-per-question-mode-v14";
 
 const PRACTICAL_ASSESSMENT_IDS = [
   'c2bc4994-1c4a-4094-a763-8d9d560b759e',
@@ -83,6 +72,8 @@ function safeArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
+// v14: also selects scoring_mode from unique_questions and attaches it to
+// each assembled question, so the scoring loop can decide per question.
 async function loadFrozenQuestions(serviceClient, sessionId) {
   const { data: frozen, error: frozenErr } = await serviceClient
     .from("session_questions")
@@ -100,7 +91,7 @@ async function loadFrozenQuestions(serviceClient, sessionId) {
 
   const { data: questions, error: qErr } = await serviceClient
     .from("unique_questions")
-    .select("id, question_text, section, subsection")
+    .select("id, question_text, section, subsection, scoring_mode")
     .in("id", questionIds);
 
   if (qErr || !questions) {
@@ -162,6 +153,7 @@ async function loadFrozenQuestions(serviceClient, sessionId) {
       question_text: q.question_text,
       section: q.section || "General",
       subsection: q.subsection || "",
+      scoring_mode: q.scoring_mode || null,
       answers: orderedAnswers
     });
   }
@@ -287,11 +279,14 @@ export default async function handler(req, res) {
 
     const typeCode = assessmentType?.code || 'general';
     const isBaseline = isBaselineAssessmentType(typeCode);
-    const scoringMode = isBaseline
+
+    // v14: the assessment-level mode is now only a fallback. The per-question
+    // mode from unique_questions takes precedence in the scoring loop below.
+    const assessmentFallbackMode = isBaseline
       ? 'baseline'
       : (assessmentType?.scoring_mode === 'forced_choice' ? 'forced_choice' : 'single_select');
 
-    console.log(`[Submit] Resolved scoring mode: ${scoringMode}`);
+    console.log(`[Submit] Assessment fallback mode: ${assessmentFallbackMode}`);
 
     const { data: responses, error: responsesError } = await serviceClient
       .from("responses")
@@ -320,7 +315,7 @@ export default async function handler(req, res) {
 
     let questions = null;
     let frozenUsed = false;
-    let denominatorOverridden = false;
+    const denominatorOverridden = false;
     let expectedDenominator = null;
     let actualDenominator = null;
     let frozenAssessmentVersion = null;
@@ -334,6 +329,15 @@ export default async function handler(req, res) {
       frozenScoringVersion = frozenResult.scoringVersion;
       console.log(`[Submit] Questions found: ${questions.length} (source: session_questions / frozen)`);
       console.log(`[Submit] Versions: assessment=v${frozenAssessmentVersion}, scoring=v${frozenScoringVersion}`);
+
+      // v14: log the per-question mode distribution so we can see at a glance
+      // whether the frozen set carries mixed modes (e.g. Performance).
+      const modeCounts = {};
+      questions.forEach(q => {
+        const m = q.scoring_mode || assessmentFallbackMode;
+        modeCounts[m] = (modeCounts[m] || 0) + 1;
+      });
+      console.log(`[Submit] Per-question mode distribution:`, modeCounts);
     }
 
     if (!frozenUsed) {
@@ -355,9 +359,12 @@ export default async function handler(req, res) {
     let totalEarned = 0;
     let totalMax = 0;
 
+    // v14: score per question using q.scoring_mode, falling back to the
+    // assessment-level mode only when a question has no mode set.
     questions.forEach(q => {
       const response = responseLookup[q.id];
       const section = q.section || "General";
+      const questionMode = q.scoring_mode || assessmentFallbackMode;
 
       if (!categoryEarnedMap[section]) {
         categoryEarnedMap[section] = 0;
@@ -371,7 +378,7 @@ export default async function handler(req, res) {
           least_answer_id: null,
           unique_questions: q
         };
-        const scored = scoreQuestionResponse(answeredShape, isBaseline, scoringMode);
+        const scored = scoreQuestionResponse(answeredShape, isBaseline, questionMode);
         totalMax += Number(scored.maxScore) || 0;
         categoryMaxMap[section] += Number(scored.maxScore) || 0;
         return;
@@ -382,7 +389,7 @@ export default async function handler(req, res) {
         unique_questions: q
       };
 
-      const scored = scoreQuestionResponse(responseShape, isBaseline, scoringMode);
+      const scored = scoreQuestionResponse(responseShape, isBaseline, questionMode);
       const earned = Number(scored.score) || 0;
       const max = Number(scored.maxScore) || 0;
 
@@ -398,7 +405,7 @@ export default async function handler(req, res) {
     }
 
     const finalPercentage = totalMax > 0 ? Math.round((totalEarned / totalMax) * 100) : 0;
-    console.log(`[Submit] Score: ${totalEarned}/${totalMax} = ${finalPercentage}% (mode=${scoringMode})`);
+    console.log(`[Submit] Score: ${totalEarned}/${totalMax} = ${finalPercentage}% (per-question mode)`);
 
     const categoryScores = Object.keys(categoryEarnedMap).map(category => {
       const earned = categoryEarnedMap[category];
@@ -406,6 +413,18 @@ export default async function handler(req, res) {
       const percentage = Math.round((earned / max) * 100);
       return { category, earned, max, percentage };
     });
+
+    // v14: scoring_mode recorded in report_data reflects whether the frozen
+    // set carried a single mode or a mix. It is not used for scoring — it is
+    // metadata for later inspection.
+    const distinctModes = new Set(
+      questions
+        .map(q => q.scoring_mode || assessmentFallbackMode)
+        .filter(Boolean)
+    );
+    const scoredWithMode = distinctModes.size === 1
+      ? Array.from(distinctModes)[0]
+      : 'mixed';
 
     let recommendation = null;
     if (isNationalService) {
@@ -502,7 +521,8 @@ export default async function handler(req, res) {
       actualDenominator: actualDenominator,
       assessmentVersion: frozenAssessmentVersion || 1,
       scoringVersion: frozenScoringVersion || 1,
-      scoringMode: scoringMode,
+      scoringMode: scoredWithMode,
+      scoringModeDistribution: Array.from(distinctModes),
       behavioral: {
         tabSwitches: totalTabSwitches,
         violations: totalViolations,
@@ -629,7 +649,7 @@ export default async function handler(req, res) {
           console.warn('[Submit] DRIFT DETECTED between JS engine and SQL function:', {
             sessionId,
             assessmentId: assessment.id,
-            scoringMode,
+            scoringMode: scoredWithMode,
             storedPct: finalPercentage,
             recomputedPct,
             delta: recomputedPct - finalPercentage
@@ -642,10 +662,6 @@ export default async function handler(req, res) {
 
     // ============================================================
     // STEP 19: COMPETENCY SCORING (NON-FATAL)
-    // ------------------------------------------------------
-    // v13: Before upserting new rows, delete any existing rows for this
-    // candidate+assessment. This prevents stale competency rows from
-    // prior question sets (before a rebuild) from surviving on the report.
     // ============================================================
     try {
       const validQuestionIds = questions
@@ -674,17 +690,20 @@ export default async function handler(req, res) {
                 question_text: question.question_text,
                 section: question.section,
                 subsection: question.subsection,
+                scoring_mode: question.scoring_mode,
                 unique_answers: question.answers || []
               }
             };
           });
 
+          // v14: pass the resolved per-question mode to the competency scorer
+          // so mixed-mode assessments score competencies correctly.
           const competencyScores = calculateCompetencyScores(
             responsesWithQuestions,
             questionCompetencies,
             {
               code: typeCode,
-              scoring_mode: scoringMode
+              scoring_mode: scoredWithMode === 'mixed' ? assessmentFallbackMode : scoredWithMode
             }
           );
 
@@ -702,8 +721,6 @@ export default async function handler(req, res) {
             .filter(r => Number.isFinite(Number(r.competency_id)) && Number(r.competency_id) > 0);
 
           if (rows.length > 0) {
-            // v13: delete existing rows before upsert to remove any
-            // stale data from prior question sets.
             const { error: deleteError } = await serviceClient
               .from('candidate_competency_scores')
               .delete()
@@ -737,8 +754,6 @@ export default async function handler(req, res) {
             console.log('[Submit] Competency: no rows produced by scorer');
           }
         } else {
-          // v13: no competency mappings exist for these questions. Still
-          // clean up any stale rows so the report doesn't show phantom data.
           console.log('[Submit] Competency: no mappings found for these questions');
 
           const { error: cleanupError } = await serviceClient
@@ -773,7 +788,8 @@ export default async function handler(req, res) {
       isNationalService: isNationalService,
       isAutoSubmitted: autoSubmitted || false,
       submitBuild: SUBMIT_BUILD,
-      scoringMode: scoringMode,
+      scoringMode: scoredWithMode,
+      scoringModeDistribution: Array.from(distinctModes),
       frozenSetUsed: frozenUsed,
       denominatorOverridden: denominatorOverridden,
       assessmentVersion: frozenAssessmentVersion || 1,
