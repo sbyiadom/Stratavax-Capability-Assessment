@@ -1,25 +1,13 @@
 // pages/assessment/[id].js - FORCED-CHOICE + PER-QUESTION SCORING MODE SUPPORT
-// Phase 6.5 (responsive): mobile-first layout. Desktop 3-column unchanged.
-// Tablet 2-column. Mobile single column with sticky footer nav.
-// Phase 7A: logViolation now routes through /api/assessment/session PATCH.
-// Removed the client-side supabase.from("assessment_sessions").update() call.
-// Phase 7F (2026-10-01): Wide-layout fix. mainContent now uses the full
-//   viewport width instead of a 1400px cap, side columns are narrower, the
-//   question card uses the middle column fully, and question/answer text
-//   sizes were bumped up. Grid uses minmax(0, 1fr) to prevent the classic
-//   CSS Grid trap where 1fr won't shrink below content width.
-// Phase 7G (2026-10-01): Navigator compaction. Grid changed to 7 columns
-//   so a 100-question set fits without internal scrolling. The navigator
-//   card no longer stretches to fill the sidebar column — it hugs its
-//   content, matching the Moodle convention.
-// Phase 7H (2026-10-01): Question card content is now vertically centered
-//   within the card so short questions don't leave a visible void at the
-//   bottom.
-// Phase 7I (2026-10-02): Per-question scoring mode. Each question now carries
-//   its own scoring_mode (falling back to the assessment-level mode). This
-//   enables mixed-format assessments like Performance Assessment, which has
-//   both forced-choice (Performance Orientation) and single-select (Business
-//   Acumen) questions.
+// Phase 6.5 (responsive): mobile-first layout.
+// Phase 7A: logViolation routes through /api/assessment/session PATCH.
+// Phase 7F-7I: layout and per-question scoring mode.
+// Phase 8 (2026-10-03): question card clipping fix.
+//   - The card no longer uses justifyContent:center with overflow:hidden,
+//     which was hiding the top of long question stems. Card now aligns to
+//     flex-start and grows with content. Long question text scrolls inside
+//     its own wrapper rather than being cut.
+//   - mainContent and middleColumn no longer constrain height; page scrolls.
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
@@ -213,13 +201,6 @@ function AssessmentContent() {
   const isNationalService = assessmentTypeCode === 'national_service' ||
     (assessment && assessment.title && assessment.title.toLowerCase().includes('national service'));
 
-  // ============================================================
-  // Phase 7I: Per-question scoring mode resolution.
-  // Question-level scoring_mode overrides the assessment-level default.
-  // This enables mixed-format assessments (e.g. Performance Assessment,
-  // which mixes Performance Orientation forced-choice questions with
-  // Business Acumen single-select questions).
-  // ============================================================
   const currentScoringMode = currentQuestion?.scoring_mode || defaultScoringMode;
   const isForcedChoice = currentScoringMode === "forced_choice";
   const isMultipleCorrect = isNationalService ? false : Boolean(currentQuestion.isMultipleCorrect);
@@ -230,7 +211,6 @@ function AssessmentContent() {
     return { most: entry.most !== undefined ? entry.most : null, least: entry.least !== undefined ? entry.least : null };
   }
 
-  // Per-question helper: determines if a question uses forced choice
   function questionUsesForcedChoice(question) {
     const mode = question?.scoring_mode || defaultScoringMode;
     return mode === "forced_choice";
@@ -246,7 +226,6 @@ function AssessmentContent() {
            (answers[questionId] !== undefined && answers[questionId] !== null && answers[questionId] !== "");
   }
 
-  // Count total answered across mixed modes
   const answeredCount = questions.filter((q) => isAnsweredForQuestion(q.id, q)).length;
   const totalAnswered = answeredCount;
   const totalChanges = Object.values(answerChangeCount).reduce((a, b) => a + safeNumber(b, 0), 0);
@@ -496,7 +475,7 @@ function AssessmentContent() {
       await persistAnswer(questionId, String(next.most), next.least != null ? String(next.least) : undefined, isChange);
     }
   }
-
+  
   useEffect(() => {
     if (loading || alreadySubmitted || accessDenied || !session || isTimeExpired) return;
     const handleVisibilityChange = () => {
@@ -1047,123 +1026,127 @@ function AssessmentContent() {
 
           <div className="assessment-middle" style={styles.middleColumn}>
             <div className="assessment-question-card" style={styles.questionCard}>
-              <div style={styles.questionText}>
-                {currentQuestion.question_text}
+              <div style={styles.questionTextScroll}>
+                <div style={styles.questionText}>
+                  {currentQuestion.question_text}
+                </div>
               </div>
 
-              {!isForcedChoice && isMultipleCorrect && !isNationalService && (
-                <div style={styles.multipleHint}>💡 Select one or more answers</div>
-              )}
+              <div style={styles.answersScroll}>
+                {!isForcedChoice && isMultipleCorrect && !isNationalService && (
+                  <div style={styles.multipleHint}>💡 Select one or more answers</div>
+                )}
 
-              {isForcedChoice && (
-                <>
-                  <div style={styles.forcedChoiceHint}>
-                    <strong>Most likely:</strong> which action would you <em>most</em> likely take? &nbsp;
-                    <strong>Least likely:</strong> which would you <em>least</em> likely take?
-                  </div>
-                  <div className="forced-choice-header" style={styles.forcedChoiceHeaderRow}>
-                    <div style={styles.forcedChoiceHeaderSpacer} />
-                    <div style={styles.forcedChoiceHeaderCol}>Most</div>
-                    <div style={styles.forcedChoiceHeaderCol}>Least</div>
-                  </div>
-                </>
-              )}
+                {isForcedChoice && (
+                  <>
+                    <div style={styles.forcedChoiceHint}>
+                      <strong>Most likely:</strong> which action would you <em>most</em> likely take? &nbsp;
+                      <strong>Least likely:</strong> which would you <em>least</em> likely take?
+                    </div>
+                    <div className="forced-choice-header" style={styles.forcedChoiceHeaderRow}>
+                      <div style={styles.forcedChoiceHeaderSpacer} />
+                      <div style={styles.forcedChoiceHeaderCol}>Most</div>
+                      <div style={styles.forcedChoiceHeaderCol}>Least</div>
+                    </div>
+                  </>
+                )}
 
-              <div className="answers-container" style={styles.answersContainer}>
-                {safeArray(currentQuestion.answers).map((answer, index) => {
-                  const optionLetter = String.fromCharCode(65 + index);
+                <div className="answers-container" style={styles.answersContainer}>
+                  {safeArray(currentQuestion.answers).map((answer, index) => {
+                    const optionLetter = String.fromCharCode(65 + index);
 
-                  if (isForcedChoice) {
-                    const isMost = String(getForcedChoicePicks(currentQuestion.id).most) === String(answer.id);
-                    const isLeast = String(getForcedChoicePicks(currentQuestion.id).least) === String(answer.id);
-                    const isFlashingMost = flashCell && flashCell.questionId === currentQuestion.id &&
-                      String(flashCell.answerId) === String(answer.id) && flashCell.side === "most";
-                    const isFlashingLeast = flashCell && flashCell.questionId === currentQuestion.id &&
-                      String(flashCell.answerId) === String(answer.id) && flashCell.side === "least";
+                    if (isForcedChoice) {
+                      const isMost = String(getForcedChoicePicks(currentQuestion.id).most) === String(answer.id);
+                      const isLeast = String(getForcedChoicePicks(currentQuestion.id).least) === String(answer.id);
+                      const isFlashingMost = flashCell && flashCell.questionId === currentQuestion.id &&
+                        String(flashCell.answerId) === String(answer.id) && flashCell.side === "most";
+                      const isFlashingLeast = flashCell && flashCell.questionId === currentQuestion.id &&
+                        String(flashCell.answerId) === String(answer.id) && flashCell.side === "least";
 
+                      return (
+                        <div
+                          key={answer.id}
+                          className="answer-option forced-choice-row"
+                          style={{ ...styles.forcedChoiceRow, opacity: isDisabled ? 0.6 : 1 }}
+                        >
+                          <div className="forced-choice-text" style={styles.forcedChoiceTextWrap}>
+                            <span style={{
+                              color: (isMost || isLeast) ? primaryColor : "#1e293b",
+                              fontSize: "16px",
+                              fontWeight: (isMost || isLeast) ? 600 : 400
+                            }}>
+                              {optionLetter}. {answer.answer_text}
+                            </span>
+                          </div>
+                          <div className="forced-choice-buttons" style={styles.forcedChoiceChoicesWrap}>
+                            <div style={styles.forcedChoiceChoiceCol}>
+                              <button
+                                type="button"
+                                onClick={() => handleForcedChoiceSelect(currentQuestion.id, answer.id, "most")}
+                                disabled={isDisabled}
+                                aria-label="Most likely"
+                                className="choice-button"
+                                style={{
+                                  ...styles.choiceButton,
+                                  background: isMost ? successColor : (isFlashingMost ? "#fff3e0" : "white"),
+                                  borderColor: isMost ? successColor : "#cbd5e1",
+                                  color: isMost ? "white" : "#0b2a4e"
+                                }}
+                              >
+                                {isMost ? "✓" : "Most"}
+                              </button>
+                            </div>
+                            <div style={styles.forcedChoiceChoiceCol}>
+                              <button
+                                type="button"
+                                onClick={() => handleForcedChoiceSelect(currentQuestion.id, answer.id, "least")}
+                                disabled={isDisabled}
+                                aria-label="Least likely"
+                                className="choice-button"
+                                style={{
+                                  ...styles.choiceButton,
+                                  background: isLeast ? dangerColor : (isFlashingLeast ? "#fff3e0" : "white"),
+                                  borderColor: isLeast ? dangerColor : "#cbd5e1",
+                                  color: isLeast ? "white" : "#0b2a4e"
+                                }}
+                              >
+                                {isLeast ? "✕" : "Least"}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    const selected = isAnswerSelected(currentQuestion.id, answer.id);
                     return (
-                      <div
+                      <button
                         key={answer.id}
-                        className="answer-option forced-choice-row"
-                        style={{ ...styles.forcedChoiceRow, opacity: isDisabled ? 0.6 : 1 }}
+                        className="answer-option"
+                        onClick={() => handleAnswerSelect(currentQuestion.id, answer.id, isMultipleCorrect)}
+                        disabled={isDisabled}
+                        style={{
+                          ...styles.answerCard,
+                          background: selected ? "#e3f2fd" : "white",
+                          borderColor: selected ? primaryColor : "#e2e8f0",
+                          opacity: isDisabled ? 0.6 : 1,
+                          cursor: isDisabled ? "not-allowed" : "pointer"
+                        }}
                       >
-                        <div className="forced-choice-text" style={styles.forcedChoiceTextWrap}>
-                          <span style={{
-                            color: (isMost || isLeast) ? primaryColor : "#1e293b",
-                            fontSize: "16px",
-                            fontWeight: (isMost || isLeast) ? 600 : 400
-                          }}>
-                            {optionLetter}. {answer.answer_text}
-                          </span>
+                        <div style={{
+                          ...styles.answerCheckbox,
+                          background: selected ? primaryColor : "white",
+                          borderColor: selected ? primaryColor : "#cbd5e1"
+                        }}>
+                          {selected && <span style={{ color: "white", fontSize: "14px" }}>✓</span>}
                         </div>
-                        <div className="forced-choice-buttons" style={styles.forcedChoiceChoicesWrap}>
-                          <div style={styles.forcedChoiceChoiceCol}>
-                            <button
-                              type="button"
-                              onClick={() => handleForcedChoiceSelect(currentQuestion.id, answer.id, "most")}
-                              disabled={isDisabled}
-                              aria-label="Most likely"
-                              className="choice-button"
-                              style={{
-                                ...styles.choiceButton,
-                                background: isMost ? successColor : (isFlashingMost ? "#fff3e0" : "white"),
-                                borderColor: isMost ? successColor : "#cbd5e1",
-                                color: isMost ? "white" : "#0b2a4e"
-                              }}
-                            >
-                              {isMost ? "✓" : "Most"}
-                            </button>
-                          </div>
-                          <div style={styles.forcedChoiceChoiceCol}>
-                            <button
-                              type="button"
-                              onClick={() => handleForcedChoiceSelect(currentQuestion.id, answer.id, "least")}
-                              disabled={isDisabled}
-                              aria-label="Least likely"
-                              className="choice-button"
-                              style={{
-                                ...styles.choiceButton,
-                                background: isLeast ? dangerColor : (isFlashingLeast ? "#fff3e0" : "white"),
-                                borderColor: isLeast ? dangerColor : "#cbd5e1",
-                                color: isLeast ? "white" : "#0b2a4e"
-                              }}
-                            >
-                              {isLeast ? "✕" : "Least"}
-                            </button>
-                          </div>
-                        </div>
-                      </div>
+                        <span style={{ flex: 1, color: selected ? primaryColor : "#1e293b", fontSize: "17px", fontWeight: selected ? 600 : 400 }}>
+                          {optionLetter}. {answer.answer_text}
+                        </span>
+                      </button>
                     );
-                  }
-
-                  const selected = isAnswerSelected(currentQuestion.id, answer.id);
-                  return (
-                    <button
-                      key={answer.id}
-                      className="answer-option"
-                      onClick={() => handleAnswerSelect(currentQuestion.id, answer.id, isMultipleCorrect)}
-                      disabled={isDisabled}
-                      style={{
-                        ...styles.answerCard,
-                        background: selected ? "#e3f2fd" : "white",
-                        borderColor: selected ? primaryColor : "#e2e8f0",
-                        opacity: isDisabled ? 0.6 : 1,
-                        cursor: isDisabled ? "not-allowed" : "pointer"
-                      }}
-                    >
-                      <div style={{
-                        ...styles.answerCheckbox,
-                        background: selected ? primaryColor : "white",
-                        borderColor: selected ? primaryColor : "#cbd5e1"
-                      }}>
-                        {selected && <span style={{ color: "white", fontSize: "14px" }}>✓</span>}
-                      </div>
-                      <span style={{ flex: 1, color: selected ? primaryColor : "#1e293b", fontSize: "17px", fontWeight: selected ? 600 : 400 }}>
-                        {optionLetter}. {answer.answer_text}
-                      </span>
-                    </button>
-                  );
-                })}
+                  })}
+                </div>
               </div>
             </div>
 
@@ -1253,11 +1236,6 @@ function AssessmentContent() {
           100% { transform: rotate(360deg); }
         }
 
-        /* ============================================ */
-        /* RESPONSIVE — Phase 6.5 / Phase 7F             */
-        /* ============================================ */
-
-        /* TABLET: 768px – 1023px */
         @media (max-width: 1023px) {
           .assessment-main {
             grid-template-columns: minmax(0, 1fr) 180px !important;
@@ -1274,7 +1252,6 @@ function AssessmentContent() {
           }
         }
 
-        /* MOBILE: up to 767px */
         @media (max-width: 767px) {
           .assessment-main {
             grid-template-columns: 1fr !important;
@@ -1291,7 +1268,6 @@ function AssessmentContent() {
           .assessment-question-card {
             min-height: auto !important;
             padding: 16px 16px 18px 16px !important;
-            justify-content: flex-start !important;
           }
           .forced-choice-header {
             display: none !important;
@@ -1345,7 +1321,6 @@ function AssessmentContent() {
           }
         }
 
-        /* VERY SMALL PHONES: up to 400px */
         @media (max-width: 400px) {
           .assessment-main {
             padding: 6px 8px 80px 8px !important;
@@ -1402,31 +1377,27 @@ const styles = {
     maxWidth: "100%",
     width: "100%",
     margin: "0 auto",
-    padding: "16px 20px",
+    padding: "16px 20px 24px 20px",
     display: "grid",
     gridTemplateColumns: "minmax(160px, 180px) minmax(0, 1fr) minmax(200px, 240px)",
     gap: "18px",
-    flex: 1,
-    minHeight: 0,
-    height: "calc(100vh - 100px)",
-    maxHeight: "calc(100vh - 100px)",
-    overflow: "hidden",
     boxSizing: "border-box",
+    alignItems: "start",
   },
-  leftSidebar: { display: "flex", flexDirection: "column", gap: "12px", height: "100%", overflow: "hidden", flexShrink: 0 },
-  statusCard: { background: "white", borderRadius: "12px", padding: "14px 16px", border: "1px solid #e2e8f0", flexShrink: 0 },
+  leftSidebar: { display: "flex", flexDirection: "column", gap: "12px", alignSelf: "start" },
+  statusCard: { background: "white", borderRadius: "12px", padding: "14px 16px", border: "1px solid #e2e8f0" },
   statusNumber: { fontSize: "16px", fontWeight: 600, color: "#0f172a" },
   statusBadge: { fontSize: "12px", color: "#64748b", fontStyle: "italic", marginTop: "2px" },
-  statsCard: { background: "white", borderRadius: "12px", padding: "14px 16px", border: "1px solid #e2e8f0", flexShrink: 0 },
+  statsCard: { background: "white", borderRadius: "12px", padding: "14px 16px", border: "1px solid #e2e8f0" },
   statsRow: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "3px 0" },
   statsLabel: { fontSize: "13px", color: "#64748b" },
   statsValue: { fontSize: "14px", fontWeight: 600, color: "#0f172a" },
   statsDivider: { height: "1px", background: "#e2e8f0", margin: "6px 0" },
   progressBar: { height: "4px", background: "#e2e8f0", borderRadius: "4px", overflow: "hidden", marginTop: "4px" },
   progressFill: { height: "100%", background: "linear-gradient(90deg, #f9b83a, #f5a623)", borderRadius: "4px", transition: "width 0.3s ease" },
-  metaCard: { background: "white", borderRadius: "12px", padding: "12px 16px", border: "1px solid #e2e8f0", flexShrink: 0, overflow: "hidden" },
+  metaCard: { background: "white", borderRadius: "12px", padding: "12px 16px", border: "1px solid #e2e8f0", overflow: "hidden" },
   metaItem: { fontSize: "13px", color: "#64748b", padding: "2px 0" },
-  middleColumn: { display: "flex", flexDirection: "column", height: "100%", overflow: "hidden", gap: "12px", minWidth: 0 },
+  middleColumn: { display: "flex", flexDirection: "column", gap: "12px", minWidth: 0, alignSelf: "start" },
   questionCard: {
     background: "white",
     borderRadius: "12px",
@@ -1434,41 +1405,40 @@ const styles = {
     border: "1px solid #e2e8f0",
     display: "flex",
     flexDirection: "column",
-    justifyContent: "center",
-    flex: "1",
-    overflow: "hidden",
+    justifyContent: "flex-start",
     boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
-    minHeight: "400px",
     width: "100%",
   },
-  questionText: { fontSize: "19px", lineHeight: "1.75", color: "#0f172a", fontWeight: 500, padding: "0 4px 18px 4px", flexShrink: 0 },
-  multipleHint: { padding: "10px 16px", background: "#f0f4ff", borderRadius: "8px", fontSize: "14px", color: "#0b2a4e", flexShrink: 0, marginBottom: "14px", borderLeft: "3px solid #f9b83a" },
-  forcedChoiceHint: { padding: "10px 16px", background: "#f0f4ff", borderRadius: "8px", fontSize: "14px", color: "#0b2a4e", flexShrink: 0, marginBottom: "14px", borderLeft: "3px solid #f9b83a" },
-  forcedChoiceHeaderRow: { display: "grid", gridTemplateColumns: "1fr 70px 70px", gap: "10px", padding: "0 4px 10px 4px", flexShrink: 0 },
+  questionTextScroll: { flexShrink: 0, marginBottom: "16px" },
+  questionText: { fontSize: "19px", lineHeight: "1.75", color: "#0f172a", fontWeight: 500, padding: 0, margin: 0 },
+  answersScroll: { display: "flex", flexDirection: "column", gap: 0 },
+  multipleHint: { padding: "10px 16px", background: "#f0f4ff", borderRadius: "8px", fontSize: "14px", color: "#0b2a4e", marginBottom: "14px", borderLeft: "3px solid #f9b83a" },
+  forcedChoiceHint: { padding: "10px 16px", background: "#f0f4ff", borderRadius: "8px", fontSize: "14px", color: "#0b2a4e", marginBottom: "14px", borderLeft: "3px solid #f9b83a" },
+  forcedChoiceHeaderRow: { display: "grid", gridTemplateColumns: "1fr 70px 70px", gap: "10px", padding: "0 4px 10px 4px" },
   forcedChoiceHeaderSpacer: {},
   forcedChoiceHeaderCol: { textAlign: "center", fontSize: "11px", fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em" },
-  forcedChoiceRow: { display: "grid", gridTemplateColumns: "1fr 70px 70px", gap: "10px", padding: "14px 18px", border: "2px solid #e2e8f0", borderRadius: "8px", alignItems: "center", background: "white", flexShrink: 0, minHeight: "68px" },
+  forcedChoiceRow: { display: "grid", gridTemplateColumns: "1fr 70px 70px", gap: "10px", padding: "14px 18px", border: "2px solid #e2e8f0", borderRadius: "8px", alignItems: "center", background: "white", minHeight: "68px" },
   forcedChoiceTextWrap: { textAlign: "left" },
   forcedChoiceChoicesWrap: { display: "contents" },
   forcedChoiceChoiceCol: { display: "flex", justifyContent: "center" },
   choiceButton: { width: "36px", height: "36px", borderRadius: "50%", border: "2px solid", fontSize: "14px", fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.15s ease" },
-  answersContainer: { display: "flex", flexDirection: "column", gap: "10px", flexShrink: 0, paddingRight: "4px" },
-  answerCard: { padding: "16px 22px", border: "2px solid", borderRadius: "8px", cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: "16px", fontSize: "17px", flexShrink: 0, minHeight: "60px", background: "white" },
+  answersContainer: { display: "flex", flexDirection: "column", gap: "10px", paddingRight: "4px" },
+  answerCard: { padding: "16px 22px", border: "2px solid", borderRadius: "8px", cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: "16px", fontSize: "17px", minHeight: "60px", background: "white" },
   answerCheckbox: { width: "24px", height: "24px", borderRadius: "5px", border: "2px solid", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 },
-  navButtons: { display: "flex", gap: "10px", flexShrink: 0 },
+  navButtons: { display: "flex", gap: "10px" },
   navButton: { flex: 1, padding: "12px 20px", borderRadius: "8px", fontSize: "15px", fontWeight: 500, border: "2px solid #e2e8f0", background: "white", color: "#475569", cursor: "pointer" },
   nextButton: { flex: 1, padding: "12px 20px", borderRadius: "8px", fontSize: "15px", fontWeight: 500, border: "none", background: "#0b2a4e", color: "white", cursor: "pointer" },
   submitButton: { flex: 1, padding: "12px 20px", borderRadius: "8px", fontSize: "15px", fontWeight: 500, border: "none", background: "#2e7d32", color: "white", cursor: "pointer" },
-  rightColumn: { display: "flex", flexDirection: "column", height: "100%", overflow: "hidden", flexShrink: 0 },
-  navigatorCard: { background: "white", borderRadius: "12px", padding: "12px", border: "1px solid #e2e8f0", display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "0 2px 8px rgba(0,0,0,0.05)" },
-  navigatorHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px", flexShrink: 0 },
+  rightColumn: { display: "flex", flexDirection: "column", alignSelf: "start" },
+  navigatorCard: { background: "white", borderRadius: "12px", padding: "12px", border: "1px solid #e2e8f0", display: "flex", flexDirection: "column", boxShadow: "0 2px 8px rgba(0,0,0,0.05)" },
+  navigatorHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" },
   navigatorTitle: { fontSize: "13px", fontWeight: 600, color: "#0f172a" },
-  questionGrid: { display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: "4px", flex: "initial", overflowY: "auto", padding: "2px", alignContent: "start" },
+  questionGrid: { display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: "4px", padding: "2px" },
   gridItem: { aspectRatio: "1", border: "1px solid", borderRadius: "5px", fontSize: "11px", fontWeight: 500, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", minWidth: "0", minHeight: "0" },
-  legend: { display: "flex", justifyContent: "space-between", padding: "6px 0 0", borderTop: "1px solid #e2e8f0", flexWrap: "wrap", gap: "4px", flexShrink: 0, marginTop: "6px" },
+  legend: { display: "flex", justifyContent: "space-between", padding: "6px 0 0", borderTop: "1px solid #e2e8f0", flexWrap: "wrap", gap: "4px", marginTop: "6px" },
   legendItem: { display: "flex", alignItems: "center", gap: "3px", fontSize: "9px", color: "#64748b" },
   legendDot: { width: "8px", height: "8px", borderRadius: "3px", display: "inline-block" },
-  navigatorTimer: { display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", padding: "6px 0 0", borderTop: "1px solid #e2e8f0", marginTop: "6px", flexShrink: 0 },
+  navigatorTimer: { display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", padding: "6px 0 0", borderTop: "1px solid #e2e8f0", marginTop: "6px" },
   navigatorTimerLabel: { fontSize: "12px" },
   navigatorTimerValue: { fontSize: "14px", fontWeight: 700, color: "#0b2a4e", fontFamily: "monospace" },
   modalOverlay: { position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: "12px" },
