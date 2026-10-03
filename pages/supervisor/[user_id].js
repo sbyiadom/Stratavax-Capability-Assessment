@@ -4,27 +4,11 @@
 // so that the supervisor path, admin path, and any other report reader see
 // the same section cards, hand-authored narratives, and behavioural matrix.
 //
-// Previous version had six custom tabs (Overview / Categories / Strengths /
-// Development / Questions / Recommendations). Those duplicated — imperfectly —
-// what StratavaxReport already renders. Collapsing to one embedded report
-// removes the duplication and guarantees consistency across surfaces.
-//
-// Retained from the prior version:
-//   • Hero banner with candidate name + assessment title + IDs
-//   • Score panel with overall %, classification badges, risk level
-//   • PDF download button
-//   • Reset assessment button
-//   • Behavioral matrix table
-//
-// UUID guard from Phase 7B is preserved — non-UUID path segments fail fast.
-//
-// 2026-10-02: Risk level resolution fix. Prior version defaulted to the
-// literal string 'Medium' whenever result.risk_level was missing — which
-// happened whenever the API returned a `generatedReport` without the column.
-// The hero panel then showed 'Medium' while the matrix footer (reading from
-// proctoring.summary.riskLevel) showed 'low'. Both surfaces now go through
-// resolveRiskLevel(), which prefers the DB column and derives from risk_score
-// as a fallback. No hardcoded defaults.
+// 2026-10-02: Risk level resolution fix — no hardcoded 'Medium' fallback.
+// Phase 8 (2026-10-03): local getTone/getToneLabel/getToneColor deleted.
+//   Now delegates to utils/scoring.getClassificationDetailsFromPercentage.
+//   This was the fifth copy of the band table in the codebase; it now
+//   uses the shared one.
 
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/router";
@@ -32,14 +16,17 @@ import AppLayout from "../../components/AppLayout";
 import { supabase } from "../../supabase/client";
 import ResetAssessmentButton from "../../components/ResetAssessmentButton";
 import StratavaxReport from "../../components/reports/StratavaxReport";
+import {
+  getClassificationDetailsFromPercentage,
+  calculateResultScore,
+  toNumber,
+} from "../../utils/scoring";
 
 // ============================================================
 // RISK LEVEL RESOLUTION
 // Prefer the DB column (result.risk_level). Fall back to the report object's
 // copy, then to the proctoring summary, then to a value derived from
-// risk_score. Never return a hardcoded default like 'Medium' when we have
-// real data — that misled supervisors when the column was missing from the
-// API response.
+// risk_score. Never return a hardcoded default like 'Medium'.
 // ============================================================
 function resolveRiskLevel(result, report, proctoringData) {
   const fromResult = result?.risk_level || result?.riskLevel;
@@ -77,8 +64,7 @@ function safeArray(value) {
 }
 
 function safeNumber(value, fallback = 0) {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : fallback;
+  return toNumber(value, fallback);
 }
 
 function safeText(value, fallback = "Not available") {
@@ -122,44 +108,23 @@ function isValidUUID(value) {
   );
 }
 
-function getTone(score) {
-  const value = safeNumber(score, 0);
-  if (value >= 85) return "excellent";
-  if (value >= 75) return "strong";
-  if (value >= 65) return "capable";
-  if (value >= 55) return "developing";
-  if (value >= 40) return "risk";
-  return "critical";
-}
-
-function getToneLabel(score) {
-  const value = safeNumber(score, 0);
-  if (value >= 85) return "Exceptional";
-  if (value >= 75) return "Strong";
-  if (value >= 65) return "Capable";
-  if (value >= 55) return "Developing";
-  if (value >= 40) return "At Risk";
-  return "Critical";
-}
-
+// Band-derived colour and gradient, shared band table.
 function getToneColor(score) {
-  const tone = getTone(score);
-  if (tone === "excellent") return "#0f766e";
-  if (tone === "strong") return "#2563eb";
-  if (tone === "capable") return "#4f46e5";
-  if (tone === "developing") return "#d97706";
-  if (tone === "risk") return "#ea580c";
-  return "#b42318";
+  return getClassificationDetailsFromPercentage(score).color;
 }
 
 function getToneGradient(score) {
-  const tone = getTone(score);
-  if (tone === "excellent") return "linear-gradient(135deg, #0f766e 0%, #14b8a6 100%)";
-  if (tone === "strong") return "linear-gradient(135deg, #1d4ed8 0%, #38bdf8 100%)";
-  if (tone === "capable") return "linear-gradient(135deg, #4338ca 0%, #8b5cf6 100%)";
-  if (tone === "developing") return "linear-gradient(135deg, #d97706 0%, #fbbf24 100%)";
-  if (tone === "risk") return "linear-gradient(135deg, #c2410c 0%, #fb923c 100%)";
+  const band = getClassificationDetailsFromPercentage(score).band;
+  if (band === "exceptional") return "linear-gradient(135deg, #0f766e 0%, #14b8a6 100%)";
+  if (band === "strong") return "linear-gradient(135deg, #1d4ed8 0%, #38bdf8 100%)";
+  if (band === "adequate") return "linear-gradient(135deg, #4338ca 0%, #8b5cf6 100%)";
+  if (band === "developing") return "linear-gradient(135deg, #d97706 0%, #fbbf24 100%)";
+  if (band === "priority_development") return "linear-gradient(135deg, #c2410c 0%, #fb923c 100%)";
   return "linear-gradient(135deg, #991b1b 0%, #ef4444 100%)";
+}
+
+function getToneLabel(score) {
+  return getClassificationDetailsFromPercentage(score).label;
 }
 
 function getBadgeStyle(value) {
@@ -441,11 +406,12 @@ export default function SupervisorUserReportPage() {
 
   const candidateName = cleanReport.candidateName || candidate?.full_name || candidate?.email || "Candidate";
   const assessmentName = cleanReport.assessmentName || assessment?.title || "Assessment";
-  const overallScore = cleanReport.percentage || cleanReport.overallPercentage || cleanReport.score || 0;
-  const classification = cleanReport.classification || cleanReport.overallClassification || "Not classified";
 
-  // ✅ Fixed: risk level now resolves from DB column, report copy, proctoring
-  // summary, then risk_score — in that order. Never a hardcoded default.
+  // Phase 8: shared score resolver — same function every other page uses.
+  const scoreInfo = calculateResultScore(cleanReport);
+  const overallScore = scoreInfo.percentage;
+  const classification = cleanReport.classification || cleanReport.overallClassification || scoreInfo.classification || "Not classified";
+
   const riskLevel = resolveRiskLevel(
     cleanReport,
     cleanReport,
@@ -454,7 +420,7 @@ export default function SupervisorUserReportPage() {
 
   const responseCount = cleanReport.responseCount || cleanReport.answered_questions || 0;
 
-  const scoreColor = getToneColor(overallScore);
+  const scoreColor = scoreInfo.color;
   const scoreGradient = getToneGradient(overallScore);
 
   const behavioralData = extractBehavioralData(cleanReport);
@@ -553,7 +519,7 @@ export default function SupervisorUserReportPage() {
                 <ProgressBar value={overallScore} color={scoreColor} />
                 <div style={styles.scorePanelFooter}>
                   <span style={styles.classificationBadge}>{classification}</span>
-                  <span style={styles.classificationBadge}>{getToneLabel(overallScore)}</span>
+                  <span style={styles.classificationBadge}>{scoreInfo.label}</span>
                   <span style={getBadgeStyle(riskLevel)}>{riskLevel}</span>
                 </div>
                 <p style={styles.scorePanelMeta}>Responses: {safeNumber(responseCount, 0)}</p>
@@ -582,7 +548,6 @@ export default function SupervisorUserReportPage() {
             </div>
           </header>
 
-          {/* Full StratavaxReport — the same component used on the admin path */}
           <div style={styles.reportSection}>
             <StratavaxReport
               result={cleanReport}
@@ -594,10 +559,6 @@ export default function SupervisorUserReportPage() {
             />
           </div>
 
-          {/* Standalone behavioral matrix — kept here for parity with the
-              prior supervisor page layout. StratavaxReport also has its own
-              behavioral matrix toggle, but this surface keeps the supervisor
-              version visible by default. */}
           <section style={styles.behavioralMatrixSection}>
             <h3 style={styles.matrixTitle}>🧠 Behavioral Matrix</h3>
 
