@@ -6,6 +6,8 @@
 //   endpoint /api/assessment-report/[resultId] for actual authorization.
 // Phase 7L (2026-10-02): Risk level resolution delegated to
 //   utils/resolveRiskLevel — no hardcoded 'Medium' fallback anywhere.
+// Phase 8 (2026-10-03): safeNumber/roundScore now delegate to
+//   utils/scoring (toNumber/roundNumber). No behaviour change.
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -15,6 +17,7 @@ import NationalServiceReport from '../../../components/reports/NationalServiceRe
 import StratavaxReport from '../../../components/reports/StratavaxReport';
 import AppLayout from '../../../components/AppLayout';
 import { resolveRiskLevel } from '../../../utils/resolveRiskLevel';
+import { roundNumber, toNumber } from '../../../utils/scoring';
 
 const NATIONAL_SERVICE_ASSESSMENT_ID = 'bdb9d46e-9fac-4d00-8478-1f649e7ac600';
 
@@ -22,12 +25,11 @@ const NATIONAL_SERVICE_ASSESSMENT_ID = 'bdb9d46e-9fac-4d00-8478-1f649e7ac600';
 // SCORE / REPORT DATA HELPERS
 // ============================================================
 function safeNumber(value, fallback = 0) {
-  const numberValue = Number(value);
-  return Number.isFinite(numberValue) ? numberValue : fallback;
+  return toNumber(value, fallback);
 }
 
 function roundScore(value) {
-  return Math.round(safeNumber(value, 0));
+  return Math.round(toNumber(value, 0));
 }
 
 function getReportDataObject(rawReportData) {
@@ -376,7 +378,6 @@ export default function AdminReportView() {
             overallScore: roundScore(result.percentage_score ?? report.overallScore ?? data.overallScore ?? 0),
             percentage_score: roundScore(result.percentage_score ?? report.percentage_score ?? data.percentage_score ?? 0),
             classification: result.classification || report.classification || data.classification || 'Standard Profile',
-            // ✅ Fixed: risk level uses shared resolver — no hardcoded 'Medium'
             riskLevel: resolveRiskLevel(
               result,
               report,
@@ -494,7 +495,6 @@ export default function AdminReportView() {
       },
       percentage_score: report.overallScore || report.percentage_score || 0,
       classification: report.classification || 'Standard Profile',
-      // ✅ Fixed: fall through to report.riskLevel (now resolved above) instead of 'Medium'
       riskLevel: report.riskLevel || report.risk_level || 'Not available',
       categoryScores: report.categoryScores || report.category_scores || [],
       strengths: report.strengths || [],
