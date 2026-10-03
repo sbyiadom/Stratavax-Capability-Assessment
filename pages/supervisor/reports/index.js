@@ -1,145 +1,23 @@
 // pages/supervisor/reports/index.js - COMPLETE FIXED
+// Phase 8 (2026-10-03): local calculateScore and
+//   calculateNationalServiceRecommendation removed. Both now call into
+//   utils/scoring. This was the last file with a divergent recommendation
+//   rule, so all four surfaces now agree on a candidate's recommendation.
 
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/router';
 import { supabase } from '../../../supabase/client';
 import AppLayout from '../../../components/AppLayout';
+import {
+  calculateResultScore,
+  calculateRecommendation,
+  toNumber,
+} from '../../../utils/scoring';
 
 const NATIONAL_SERVICE_ASSESSMENT_ID = 'bdb9d46e-9fac-4d00-8478-1f649e7ac600';
-const BEHAVIORAL_ASSESSMENT_ID = '671bf00f-46cc-46f5-a217-d5a90dafb9b6';
 
 function safeNumber(value, fallback = 0) {
-  if (value === null || value === undefined || value === '') return fallback;
-  const num = Number(value);
-  return Number.isFinite(num) ? num : fallback;
-}
-
-// ============================================================
-// UNIVERSAL SCORE CALCULATION FOR ALL ASSESSMENT TYPES
-// ============================================================
-function calculateScore(report) {
-  // STEP 1: Check if it's Behavioral & Soft Skills
-  const isBehavioral = report.assessment_id === BEHAVIORAL_ASSESSMENT_ID ||
-                       report.assessment_title === 'Behavioral & Soft Skills' ||
-                       report.assessment_type === 'behavioral';
-  
-  // For Behavioral & Soft Skills: use percentage_score from database
-  if (isBehavioral) {
-    if (report.percentage_score !== undefined && report.percentage_score !== null) {
-      const val = safeNumber(report.percentage_score);
-      if (val > 0 && val <= 100) {
-        return val;
-      }
-    }
-    if (report.total_score !== undefined && report.max_score !== undefined) {
-      const total = safeNumber(report.total_score);
-      const max = safeNumber(report.max_score);
-      if (max > 0) {
-        const calc = Math.round((total / max) * 100);
-        if (calc >= 0 && calc <= 100) {
-          return calc;
-        }
-      }
-    }
-  }
-  
-  // STEP 2: For all other assessments, use category_scores
-  let categoryScores = [];
-  
-  // Check direct fields
-  if (report.category_scores && Array.isArray(report.category_scores) && report.category_scores.length > 0) {
-    categoryScores = report.category_scores;
-  } else if (report.categoryScores && Array.isArray(report.categoryScores) && report.categoryScores.length > 0) {
-    categoryScores = report.categoryScores;
-  } else if (report.category_scores && typeof report.category_scores === 'object' && !Array.isArray(report.category_scores)) {
-    categoryScores = Object.values(report.category_scores);
-  }
-  
-  // Check inside report_data
-  if (categoryScores.length === 0 && report.report_data) {
-    try {
-      let reportData = report.report_data;
-      if (typeof reportData === 'string') {
-        reportData = JSON.parse(reportData);
-      }
-      if (reportData.categoryScores && Array.isArray(reportData.categoryScores) && reportData.categoryScores.length > 0) {
-        categoryScores = reportData.categoryScores;
-      } else if (reportData.category_scores && Array.isArray(reportData.category_scores) && reportData.category_scores.length > 0) {
-        categoryScores = reportData.category_scores;
-      } else if (reportData.category_scores && typeof reportData.category_scores === 'object') {
-        categoryScores = Object.values(reportData.category_scores);
-      }
-    } catch (e) {}
-  }
-  
-  // Calculate from category scores
-  if (categoryScores.length > 0) {
-    const validScores = categoryScores
-      .map(cat => {
-        let pct = safeNumber(cat.percentage || cat.score || 0);
-        
-        // If percentage > 100, try to calculate from score/maxScore
-        if (pct > 100 && cat.score !== undefined && cat.maxScore !== undefined) {
-          const score = safeNumber(cat.score);
-          const max = safeNumber(cat.maxScore);
-          if (max > 0) {
-            const calc = Math.round((score / max) * 100);
-            if (calc >= 0 && calc <= 100) {
-              pct = calc;
-            }
-          }
-        }
-        
-        // Handle earned/max format
-        if (cat.earned !== undefined && cat.max !== undefined) {
-          const earned = safeNumber(cat.earned);
-          const max = safeNumber(cat.max);
-          if (max > 0) {
-            const calc = Math.round((earned / max) * 100);
-            if (calc >= 0 && calc <= 100) {
-              pct = calc;
-            }
-          }
-        }
-        
-        return pct;
-      })
-      .filter(score => score > 0 && score <= 100);
-    
-    if (validScores.length > 0) {
-      return Math.round(validScores.reduce((a, b) => a + b, 0) / validScores.length);
-    }
-  }
-  
-  // STEP 3: Fallback to percentage_score
-  if (report.percentage_score !== undefined && report.percentage_score !== null) {
-    const val = safeNumber(report.percentage_score);
-    if (val > 0 && val <= 100) {
-      return val;
-    }
-  }
-  
-  // STEP 4: Final fallback to total/max
-  if (report.total_score !== undefined && report.max_score !== undefined) {
-    const total = safeNumber(report.total_score);
-    const max = safeNumber(report.max_score);
-    if (max > 0) {
-      const calc = Math.round((total / max) * 100);
-      if (calc >= 0 && calc <= 100) {
-        return calc;
-      }
-    }
-  }
-  
-  return 0;
-}
-
-function calculateNationalServiceRecommendation(score) {
-  const s = Number(score || 0);
-  if (s >= 85) return 'Highly Recommended';
-  if (s >= 75) return 'Recommended';
-  if (s >= 65) return 'Reserve Pool';
-  return 'Not Recommended';
+  return toNumber(value, fallback);
 }
 
 function getStatus(report) {
@@ -234,17 +112,22 @@ export default function ReportsIndex() {
       const reportsData = data.reports || [];
 
       const processedReports = reportsData.map(report => {
-        const isNationalService = 
+        const isNationalService =
           report.assessment_id === NATIONAL_SERVICE_ASSESSMENT_ID ||
           report.is_national_service === true ||
           report.assessment_title === 'National Service Recruitment Assessment';
 
-        const displayScore = calculateScore(report);
-        
-        let recommendation = report.recommendation || 'N/A';
-        if (isNationalService && displayScore > 0) {
-          recommendation = calculateNationalServiceRecommendation(displayScore);
-        }
+        // Phase 8: shared score resolver. Handles all shapes the old local
+        // function handled (behavioural short-circuit, category arrays or
+        // objects, report_data nested, stored percentage, total/max).
+        const scoreInfo = calculateResultScore(report);
+        const displayScore = scoreInfo.percentage;
+
+        const recommendation = isNationalService
+          ? calculateRecommendation(displayScore, { assessmentType: 'national_service' })
+          : (report.recommendation || calculateRecommendation(displayScore, {
+              assessmentType: report.assessment_type || report.assessment_code || '',
+            }));
 
         const status = getStatus(report);
 
@@ -297,7 +180,7 @@ export default function ReportsIndex() {
 
   const updateStats = (reports, tab) => {
     const filtered = getFilteredReportsInternal(reports, tab);
-    
+
     let totalScore = 0;
     let scoreCount = 0;
     let completed = 0;
@@ -324,13 +207,13 @@ export default function ReportsIndex() {
   };
 
   const getFilteredReportsInternal = (reports, tab) => {
-    let filtered = tab === 'national' 
+    let filtered = tab === 'national'
       ? reports.filter(r => r.isNationalService === true)
       : reports.filter(r => r.isNationalService === false);
 
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
-      filtered = filtered.filter(r => 
+      filtered = filtered.filter(r =>
         r.candidate_name.toLowerCase().includes(term) ||
         r.candidate_email.toLowerCase().includes(term) ||
         r.assessment_title.toLowerCase().includes(term) ||
@@ -570,8 +453,8 @@ export default function ReportsIndex() {
             </div>
 
             <div style={styles.filterActions}>
-              <button 
-                onClick={resetFilters} 
+              <button
+                onClick={resetFilters}
                 style={{
                   ...styles.resetButton,
                   background: activeFilterCount > 0 ? '#2563EB' : '#f1f5f9',
@@ -612,8 +495,8 @@ export default function ReportsIndex() {
             <div style={styles.statsIcon}>📈</div>
             <div>
               <div style={styles.statsValue}>
-                {filteredReports.filter(r => r.displayScore > 0).length > 0 
-                  ? Math.round(filteredReports.filter(r => r.displayScore > 0).reduce((a, b) => a + b.displayScore, 0) / filteredReports.filter(r => r.displayScore > 0).length) 
+                {filteredReports.filter(r => r.displayScore > 0).length > 0
+                  ? Math.round(filteredReports.filter(r => r.displayScore > 0).reduce((a, b) => a + b.displayScore, 0) / filteredReports.filter(r => r.displayScore > 0).length)
                   : 0}%
               </div>
               <div style={styles.statsLabel}>Average Score</div>
@@ -742,7 +625,7 @@ export default function ReportsIndex() {
                       </span>
                     </td>
                     <td style={styles.tableCell}>
-                      {report.completed_at ? new Date(report.completed_at).toISOString().split('T')[0] : 
+                      {report.completed_at ? new Date(report.completed_at).toISOString().split('T')[0] :
                        report.created_at ? new Date(report.created_at).toISOString().split('T')[0] : 'N/A'}
                     </td>
                     <td style={styles.tableCell}>
