@@ -2,12 +2,21 @@
 // FIXED: Derive strengths/weaknesses from category scores
 // Phase 6: Added CompetencyReport section (reads result.competencySummary)
 // Phase 6.5: Replaced top stat cards with supervisor-relevant metrics.
-// Phase 7E (2026-09-30): overallScore now reads result.percentage_score
-//   verbatim instead of averaging category percentages.
+// Phase 7E (2026-09-30): overallScore now reads result.percentage_score verbatim.
 // Phase 7J (2026-10-02): Section cards now read from utils/sectionNarratives.
 // Phase 7K (2026-10-02): Header adjustments + commentary threshold fixes.
-// Phase 7L (2026-10-02): Risk level resolution delegated to
-//   utils/resolveRiskLevel — no hardcoded 'Medium' fallback anywhere.
+// Phase 7L (2026-10-02): Risk level resolution delegated to utils/resolveRiskLevel.
+// Phase 8 (2026-10-03): Interpretive upgrade.
+//   - Band definitions panel added ("How to read this report").
+//   - Norm context statement added under the Executive Summary.
+//   - Strengths and Development Areas section added.
+//   - Glossary section added.
+//   - Report ID and generation timestamp added to header.
+//   - Print stylesheet embedded.
+//   - Local getLevelLabel/getLevelColor/getGrade removed; now sourced from
+//     utils/scoring.getClassificationDetailsFromPercentage.
+//   - CompetencyReport conditionally rendered when result.competencySummary
+//     is present. The import existed before but was never used.
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../supabase/client';
@@ -19,14 +28,11 @@ import {
 } from '../../utils/sectionNarratives';
 import { resolveRiskLevel } from '../../utils/resolveRiskLevel';
 import {
-  getScorePhrase,
-  getManufacturingPhrase,
-  getScoreLevelKey,
-  selectPhrase,
-  replaceVariables,
-  generalReportPhrases,
-  scoreLevelPhrases
-} from '../../utils/phraseLibrary';
+  getClassificationDetailsFromPercentage,
+  calculateResultScore,
+  PERFORMANCE_BANDS,
+  toNumber,
+} from '../../utils/scoring';
 
 // ============================================================
 // FORMAT TIME HELPERS
@@ -82,8 +88,7 @@ function extractBehavioralMatrix(report) {
 }
 
 function safeNumber(value, fallback = 0) {
-  const num = Number(value);
-  return Number.isFinite(num) ? num : fallback;
+  return toNumber(value, fallback);
 }
 
 function safeText(value, fallback = '') {
@@ -94,33 +99,19 @@ function safeArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
+// ============================================================
+// BAND LOOKUPS — sourced from utils/scoring, no local table.
+// ============================================================
 function getLevelLabel(score) {
-  const value = safeNumber(score, 0);
-  if (value >= 85) return 'Exceptional';
-  if (value >= 75) return 'Strong';
-  if (value >= 65) return 'Capable';
-  if (value >= 55) return 'Developing';
-  if (value >= 40) return 'At Risk';
-  return 'High Risk';
+  return getClassificationDetailsFromPercentage(score).label;
 }
 
 function getLevelColor(score) {
-  const value = safeNumber(score, 0);
-  if (value >= 85) return '#2e7d32';
-  if (value >= 75) return '#1565c0';
-  if (value >= 65) return '#f57c00';
-  if (value >= 55) return '#ea580c';
-  if (value >= 40) return '#c62828';
-  return '#b71c1c';
+  return getClassificationDetailsFromPercentage(score).color;
 }
 
 function getGrade(score) {
-  const value = safeNumber(score, 0);
-  if (value >= 85) return 'A';
-  if (value >= 75) return 'B';
-  if (value >= 65) return 'C';
-  if (value >= 55) return 'D';
-  return 'F';
+  return getClassificationDetailsFromPercentage(score).grade;
 }
 
 function formatDate(dateString) {
@@ -128,6 +119,33 @@ function formatDate(dateString) {
   try {
     return new Date(dateString).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
   } catch { return 'N/A'; }
+}
+
+function formatDateTime(dateString) {
+  if (!dateString) return 'N/A';
+  try {
+    const d = new Date(dateString);
+    return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+      + ' at '
+      + d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+  } catch { return 'N/A'; }
+}
+
+// ============================================================
+// BAND DEFINITIONS — what the reader needs to interpret the score.
+// Derived from the same PERFORMANCE_BANDS the rest of the platform uses.
+// ============================================================
+function getBandDefinitions() {
+  return PERFORMANCE_BANDS.map((band) => ({
+    key: band.key,
+    label: band.label,
+    range: band.max >= 100
+      ? `${band.min}% and above`
+      : `${band.min}–${Math.floor(band.max)}%`,
+    description: band.description,
+    color: band.color,
+    bg: band.bg,
+  })).reverse(); // show highest band first
 }
 
 // ============================================================
@@ -167,6 +185,7 @@ const styles = {
   header: { background: 'linear-gradient(135deg, #0b2a4e 0%, #1b4a7a 100%)', borderRadius: '12px', padding: '24px 30px', color: 'white', marginBottom: '24px' },
   title: { fontSize: '24px', fontWeight: '700', margin: '0 0 16px 0' },
   headerGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '8px 20px', fontSize: '14px' },
+  headerMetaRow: { gridColumn: '1 / -1', display: 'flex', gap: '24px', flexWrap: 'wrap', fontSize: '12px', color: 'rgba(255,255,255,0.65)', marginTop: '8px', borderTop: '1px solid rgba(255,255,255,0.15)', paddingTop: '12px' },
   label: { opacity: 0.7, marginRight: '4px' },
   value: { fontWeight: '500' },
   statsGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '24px' },
@@ -182,6 +201,33 @@ const styles = {
   summaryBox: { background: '#f8fafc', padding: '20px 24px', borderRadius: '12px', border: '1px solid #eef2f7' },
   summaryText: { fontSize: '15px', lineHeight: '1.7', color: '#1a202c', margin: 0 },
   disclaimer: { background: '#eff6ff', padding: '14px 20px', borderRadius: '10px', border: '1px solid #bfdbfe', fontSize: '13px', color: '#1e40af', lineHeight: 1.6, marginTop: '12px' },
+
+  // Band definitions panel
+  bandPanel: { background: '#f8fafc', padding: '20px 24px', borderRadius: '12px', border: '1px solid #eef2f7', marginTop: '16px' },
+  bandPanelTitle: { fontSize: '14px', fontWeight: '700', color: '#0b2a4e', margin: '0 0 4px 0', textTransform: 'uppercase', letterSpacing: '0.04em' },
+  bandPanelSub: { fontSize: '13px', color: '#64748b', margin: '0 0 14px 0' },
+  bandGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '10px' },
+  bandRow: { display: 'flex', alignItems: 'flex-start', gap: '12px', padding: '10px 12px', borderRadius: '8px', background: 'white', border: '1px solid #eef2f7' },
+  bandChip: { display: 'inline-block', padding: '3px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: '700', whiteSpace: 'nowrap', flexShrink: 0 },
+  bandText: { fontSize: '13px', color: '#334155', lineHeight: 1.5 },
+  bandRange: { fontSize: '12px', color: '#94a3b8', fontWeight: '500' },
+
+  // Strengths / development section
+  splitGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '16px' },
+  splitCard: { background: 'white', padding: '18px 22px', borderRadius: '12px', border: '1px solid #eef2f7', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' },
+  splitCardTitle: { fontSize: '13px', fontWeight: '700', color: '#0b2a4e', margin: '0 0 4px 0', textTransform: 'uppercase', letterSpacing: '0.04em' },
+  splitCardSub: { fontSize: '12px', color: '#64748b', margin: '0 0 12px 0' },
+  splitList: { margin: 0, padding: 0, listStyle: 'none' },
+  splitItem: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid #f1f5f9', fontSize: '14px' },
+  splitItemName: { color: '#1e293b', fontWeight: '500' },
+  splitItemScore: { fontWeight: '700', fontSize: '15px' },
+  splitEmpty: { fontSize: '13px', color: '#94a3b8', fontStyle: 'italic', margin: 0 },
+
+  // Glossary
+  glossaryBox: { background: '#f8fafc', padding: '20px 24px', borderRadius: '12px', border: '1px solid #eef2f7' },
+  glossaryItem: { marginBottom: '14px' },
+  glossaryTerm: { fontSize: '13px', fontWeight: '700', color: '#0b2a4e', margin: '0 0 4px 0' },
+  glossaryDef: { fontSize: '13px', color: '#475569', lineHeight: 1.6, margin: 0 },
 
   sectionCardGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))', gap: '18px' },
   sectionCard: { background: 'white', borderRadius: '12px', border: '1px solid #eef2f7', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', overflow: 'hidden' },
@@ -264,10 +310,7 @@ const styles = {
 };
 
 // ============================================================
-// COMPONENT (starts here, continues in Part 2)
-// ============================================================
-// ============================================================
-// COMPONENT (continued from Part 1)
+// COMPONENT
 // ============================================================
 export default function StratavaxReport({
   result,
@@ -280,6 +323,7 @@ export default function StratavaxReport({
   const [localBehavioralMatrix, setLocalBehavioralMatrix] = useState(null);
   const [localLoadingBehavioral, setLocalLoadingBehavioral] = useState(false);
   const [showBehavioral, setShowBehavioral] = useState(false);
+  const [showGlossary, setShowGlossary] = useState(false);
   const [hasFetched, setHasFetched] = useState(false);
 
   const reportData = result?.report_data || result || {};
@@ -330,6 +374,7 @@ export default function StratavaxReport({
   };
 
   const toggleBehavioral = () => setShowBehavioral(!showBehavioral);
+  const toggleGlossary = () => setShowGlossary(!showGlossary);
 
   if (!result) {
     return (
@@ -380,20 +425,29 @@ export default function StratavaxReport({
     }))
     .filter((item) => item.category && item.category !== '');
 
+  // Phase 8: weakest-first ordering. Supervisors act on the weakest areas
+  // first, so those belong at the top of Section Analysis.
   const sortedSections = [...normalizedCategoryScores].sort((a, b) => {
-    const aName = a.category || '';
-    const bName = b.category || '';
-    return aName.localeCompare(bName);
+    return (a.percentage || 0) - (b.percentage || 0);
   });
 
-  const strengths = normalizedCategoryScores.filter(item => item.percentage >= 75).sort((a, b) => b.percentage - a.percentage);
-  const weaknesses = normalizedCategoryScores.filter(item => item.percentage < 65).sort((a, b) => a.percentage - b.percentage);
+  const strengths = normalizedCategoryScores
+    .filter(item => item.percentage >= 75)
+    .sort((a, b) => b.percentage - a.percentage);
+
+  const weaknesses = normalizedCategoryScores
+    .filter(item => item.percentage < 65)
+    .sort((a, b) => a.percentage - b.percentage);
+
   const recommendations = safeArray(result.recommendations || []);
 
-  const overallScore = safeNumber(result.percentage_score, 0);
-  const classification = safeText(result.classification || 'Standard Profile');
+  // Phase 8: overall score now sourced from the shared resolver. Handles
+  // the case where result.percentage_score is missing but category data
+  // exists, and gives us the band/color/label from utils/scoring.
+  const scoreInfo = calculateResultScore(result);
+  const overallScore = scoreInfo.percentage;
+  const classification = scoreInfo.classification || safeText(result.classification || 'Standard Profile');
 
-  // Fixed: risk level resolved via shared helper — no hardcoded 'Medium'
   const riskLevel = safeText(
     resolveRiskLevel(result, reportData, reportData?.proctoring || result?.proctoring_data),
     'Not available'
@@ -418,6 +472,7 @@ export default function StratavaxReport({
     return { band, summary, implication, definition };
   };
 
+  // ---------- Executive summary with profile shape + integrity ----------
   const generateExecutiveSummary = () => {
     const strengthNames = strengths.slice(0, 3).map(s => s.category || s.name || '');
     const weaknessNames = weaknesses.slice(0, 2).map(w => w.category || w.name || '');
@@ -456,6 +511,22 @@ export default function StratavaxReport({
 
     return summary;
   };
+
+  // ---------- Profile shape descriptor ----------
+  const getProfileShape = () => {
+    if (normalizedCategoryScores.length < 2) return null;
+    const percentages = normalizedCategoryScores.map(s => s.percentage);
+    const max = Math.max(...percentages);
+    const min = Math.min(...percentages);
+    const spread = max - min;
+
+    if (spread <= 8) return { label: 'Flat profile', note: 'performance is consistent across sections' };
+    if (spread <= 20) return { label: 'Moderately varied profile', note: 'some sections are stronger than others' };
+    return { label: 'Spiky profile', note: 'performance varies significantly across sections' };
+  };
+
+  // ---------- Band definitions for the panel ----------
+  const bandDefs = getBandDefinitions();
 
   // ---------- Behavioral matrix render ----------
   const renderBehavioralSection = () => {
@@ -697,9 +768,23 @@ export default function StratavaxReport({
   };
 
   // ---------- Render ----------
+  const profileShape = getProfileShape();
+
   return (
     <div style={styles.container}>
-      {onBack && <button onClick={onBack} style={styles.backButton}>← Back to Dashboard</button>}
+      {/* Phase 8: embedded print stylesheet. Keeps cards whole, hides controls. */}
+      <style>{`
+        @media print {
+          .no-print { display: none !important; }
+          .section-card-print, [data-print-card] {
+            break-inside: avoid;
+            page-break-inside: avoid;
+          }
+          body { background: white; }
+        }
+      `}</style>
+
+      {onBack && <button onClick={onBack} style={styles.backButton} className="no-print">← Back to Dashboard</button>}
 
       <div style={styles.header}>
         <h1 style={styles.title}>Assessment Report</h1>
@@ -712,6 +797,11 @@ export default function StratavaxReport({
             <div><span style={styles.label}>Classification:</span> <span style={styles.value}>{classification}</span></div>
           )}
           <div><span style={styles.label}>{isCognitive ? 'Proctoring Risk:' : 'Risk Level:'}</span> <span style={styles.value}>{riskLevel}</span></div>
+
+          <div style={styles.headerMetaRow}>
+            <span>Report ID: {safeText(result?.id || result?.result_id || 'Not available')}</span>
+            <span>Generated: {formatDateTime(new Date().toISOString())}</span>
+          </div>
         </div>
       </div>
 
@@ -815,6 +905,24 @@ export default function StratavaxReport({
         <div style={styles.summaryBox}>
           <p style={styles.summaryText}>{generateExecutiveSummary()}</p>
         </div>
+
+        {/* Phase 8: norm context + profile shape + integrity summary */}
+        <div style={styles.disclaimer}>
+          <strong>How to read this report:</strong> Scores are <em>criterion-referenced</em> — they represent the proportion of available points the candidate earned. They are not normed against a reference population, so a score of 65% means the candidate demonstrated 65% of the assessed criteria, not that they outperformed 65% of a group. Use the band table below to interpret the score in context.
+        </div>
+
+        {profileShape && (
+          <div style={styles.disclaimer}>
+            <strong>Profile shape:</strong> {profileShape.label} — {profileShape.note}. {normalizedCategoryScores.length > 0 ? `Spread of ${Math.round(Math.max(...normalizedCategoryScores.map(c => c.percentage)) - Math.min(...normalizedCategoryScores.map(c => c.percentage)))} points between highest and lowest section.` : ''}
+          </div>
+        )}
+
+        {hasBehavioralData && (
+          <div style={styles.disclaimer}>
+            <strong>Integrity indicators:</strong> Proctoring risk level is <strong>{String(getBehavioralValue('riskLevel', 'Low Risk'))}</strong>. {getBehavioralValue('violations', 0)} violation(s), {getBehavioralValue('tabSwitches', 0)} tab switch(es), {getBehavioralValue('answerChanges', 0)} answer change(s). {getBehavioralValue('violations', 0) > 10 || getBehavioralValue('tabSwitches', 0) > 20 ? 'See the Behavioural Matrix section for details and review recommendations.' : 'No concerning patterns at the threshold required for review.'}
+          </div>
+        )}
+
         {isCognitive && (
           <div style={styles.disclaimer}>
             <strong>About this report:</strong> Cognitive ability assessment measures reasoning capacity at a point in time. It is a directional signal, not a diagnostic. Scores should be used alongside other evidence of capability (performance, portfolio, interviews), not in isolation.
@@ -822,11 +930,97 @@ export default function StratavaxReport({
         )}
       </div>
 
+      {/* Phase 8: band definitions — what the reader needs to interpret the score */}
+      <div style={styles.section}>
+        <h2 style={styles.sectionTitle}>How to Read the Score</h2>
+        <p style={styles.sectionSubtitle}>
+          Every section and the overall score sit within one of six bands. The band describes what the score suggests in practice.
+        </p>
+        <div style={styles.bandPanel}>
+          <p style={styles.bandPanelTitle}>Performance Bands</p>
+          <p style={styles.bandPanelSub}>Bands are applied consistently across every assessment on this platform.</p>
+          <div style={styles.bandGrid}>
+            {bandDefs.map((band) => (
+              <div key={band.key} style={styles.bandRow}>
+                <span style={{
+                  ...styles.bandChip,
+                  background: band.bg,
+                  color: band.color,
+                  border: `1px solid ${band.color}`
+                }}>
+                  {band.label}
+                </span>
+                <div style={styles.bandText}>
+                  <div style={styles.bandRange}>{band.range}</div>
+                  {band.description}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Phase 8: strengths and development summary with actual section names */}
+      {(strengths.length > 0 || weaknesses.length > 0) && (
+        <div style={styles.section}>
+          <h2 style={styles.sectionTitle}>Strengths and Development Areas</h2>
+          <p style={styles.sectionSubtitle}>
+            Sections above 75% are shown as strengths. Sections below 65% are shown as development areas.
+          </p>
+          <div style={styles.splitGrid}>
+            <div style={styles.splitCard}>
+              <p style={styles.splitCardTitle}>Strengths</p>
+              <p style={styles.splitCardSub}>Sections at or above 75%</p>
+              {strengths.length > 0 ? (
+                <ul style={styles.splitList}>
+                  {strengths.map((s, i) => (
+                    <li key={i} style={styles.splitItem}>
+                      <span style={styles.splitItemName}>{s.category}</span>
+                      <span style={{ ...styles.splitItemScore, color: getLevelColor(s.percentage) }}>{Math.round(s.percentage)}%</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p style={styles.splitEmpty}>No section reached the strength threshold (75%).</p>
+              )}
+            </div>
+
+            <div style={styles.splitCard}>
+              <p style={styles.splitCardTitle}>Development Areas</p>
+              <p style={styles.splitCardSub}>Sections below 65%</p>
+              {weaknesses.length > 0 ? (
+                <ul style={styles.splitList}>
+                  {weaknesses.map((w, i) => (
+                    <li key={i} style={styles.splitItem}>
+                      <span style={styles.splitItemName}>{w.category}</span>
+                      <span style={{ ...styles.splitItemScore, color: getLevelColor(w.percentage) }}>{Math.round(w.percentage)}%</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p style={styles.splitEmpty}>No section fell below the development threshold (65%).</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Phase 8: CompetencyReport rendered when data is present */}
+      {result?.competencySummary && (
+        <div style={styles.section}>
+          <h2 style={styles.sectionTitle}>Competency Analysis</h2>
+          <p style={styles.sectionSubtitle}>
+            Item-level competency breakdown. Each competency is scored against the full cohort that has taken this assessment.
+          </p>
+          <CompetencyReport summary={result.competencySummary} />
+        </div>
+      )}
+
       {sortedSections.length > 0 && (
         <div style={styles.section}>
           <h2 style={styles.sectionTitle}>Section Analysis</h2>
           <p style={styles.sectionSubtitle}>
-            Each section below shows what it measures, what the score suggests, and what the supervisor should consider.
+            Each section below shows what it measures, what the score suggests, and what the supervisor should consider. Sections are ordered weakest-first so the most actionable areas are at the top.
           </p>
           <div style={styles.sectionCardGrid}>
             {sortedSections.map((section, index) => renderSectionCard(section, index))}
@@ -860,7 +1054,25 @@ export default function StratavaxReport({
         </div>
       )}
 
-      <div style={styles.behavioralToggleContainer}>
+      {/* Phase 8: cognitive recommendations derived from section implications */}
+      {isCognitive && weaknesses.length > 0 && (
+        <div style={styles.section}>
+          <h2 style={styles.sectionTitle}>Recommended Actions</h2>
+          <p style={styles.sectionSubtitle}>
+            Based on the pattern of scores in this cognitive assessment.
+          </p>
+          <div style={styles.emptyState}>
+            <p style={{ marginBottom: '12px' }}>
+              This candidate has shown lower performance in <strong>{weaknesses.slice(0, 2).map(w => w.category).join(' and ')}</strong>. Cognitive ability is a measure of reasoning capacity, not trainable skill, so development recommendations focus on <em>role adjustment and support</em> rather than training.
+            </p>
+            <p style={styles.emptyStateSub}>
+              Consider: (1) reviewing whether the role's cognitive demands match this profile; (2) pairing the candidate with a stronger reasoner for analytical work; (3) providing structured frameworks, checklists, and reference material; (4) verifying conclusions before they are relied on in high-stakes decisions.
+            </p>
+          </div>
+        </div>
+      )}
+
+      <div style={styles.behavioralToggleContainer} className="no-print">
         <button onClick={toggleBehavioral} style={styles.behavioralToggleButton}>
           {showBehavioral ? 'Hide Behavioral Matrix' : 'Show Behavioral Matrix'}
         </button>
@@ -873,7 +1085,54 @@ export default function StratavaxReport({
         </div>
       )}
 
-      <div style={styles.actions}>
+      {/* Phase 8: glossary */}
+      <div style={styles.section}>
+        <h2 style={styles.sectionTitle} style={{ ...styles.sectionTitle, cursor: 'pointer' }} onClick={toggleGlossary}>
+          {showGlossary ? '▼' : '▶'} How to Interpret This Report
+        </h2>
+        {showGlossary && (
+          <div style={styles.glossaryBox}>
+            <div style={styles.glossaryItem}>
+              <p style={styles.glossaryTerm}>Band</p>
+              <p style={styles.glossaryDef}>The range a score falls into — Exceptional, Strong, Capable, Developing, At Risk, or High Risk. Bands describe what the score suggests in practice and are applied consistently across every assessment.</p>
+            </div>
+            <div style={styles.glossaryItem}>
+              <p style={styles.glossaryTerm}>Criterion-referenced</p>
+              <p style={styles.glossaryDef}>Scores represent the proportion of available points the candidate earned. They are not normed against other candidates, so 65% means the candidate demonstrated 65% of the assessed criteria, not that they outperformed 65% of a group.</p>
+            </div>
+            <div style={styles.glossaryItem}>
+              <p style={styles.glossaryTerm}>Section score</p>
+              <p style={styles.glossaryDef}>The percentage of points earned within one section of the assessment. A section with 10 questions and 8 correct answers scores 80%.</p>
+            </div>
+            <div style={styles.glossaryItem}>
+              <p style={styles.glossaryTerm}>Overall score</p>
+              <p style={styles.glossaryDef}>The combined percentage across all sections, weighted by the number of points available in each. This is the headline number for a quick view.</p>
+            </div>
+            <div style={styles.glossaryItem}>
+              <p style={styles.glossaryTerm}>Single-select scoring</p>
+              <p style={styles.glossaryDef}>Used where the candidate chooses one answer from several options, with each option carrying a different weight. Higher-weight answers score higher.</p>
+            </div>
+            <div style={styles.glossaryItem}>
+              <p style={styles.glossaryTerm}>Forced-choice scoring</p>
+              <p style={styles.glossaryDef}>Used where the candidate picks two answers per question — one most like them, one least like them. Both contribute to the score, and rejecting the best answer is a strong negative signal.</p>
+            </div>
+            <div style={styles.glossaryItem}>
+              <p style={styles.glossaryTerm}>Proctoring risk level</p>
+              <p style={styles.glossaryDef}>Derived from behavioural indicators tracked during the assessment — tab switches, violations, copy/paste attempts, and answer changes. Low risk means behaviour was within expected norms. Medium or High risk means the score should be reviewed before being treated as authoritative.</p>
+            </div>
+            <div style={styles.glossaryItem}>
+              <p style={styles.glossaryTerm}>Profile shape</p>
+              <p style={styles.glossaryDef}>Describes how consistent performance was across sections. A flat profile means the candidate performed similarly across all areas. A spiky profile means they performed much better in some areas than others.</p>
+            </div>
+            <div style={styles.glossaryItem}>
+              <p style={styles.glossaryTerm}>Supervisor implication</p>
+              <p style={styles.glossaryDef}>A recommended course of action for the supervisor based on the candidate's performance in that section. These are guidance, not prescription — use alongside role requirements and other evidence.</p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div style={styles.actions} className="no-print">
         <button onClick={() => window.print()} style={styles.printButton}>🖨️ Print Report</button>
       </div>
     </div>
