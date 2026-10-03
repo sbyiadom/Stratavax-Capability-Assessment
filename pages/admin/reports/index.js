@@ -1,18 +1,26 @@
 // pages/admin/reports/index.js - COMPLETE WITH URL-DRIVEN FILTERS
 // Phase 6: reads ?type= from URL to preselect the correct tab.
+// Phase 8 (2026-10-03): recommendation now sourced from
+//   utils/scoring.calculateRecommendation. The local
+//   calculateNationalServiceRecommendation used 85/75/65 while
+//   api/supervisor/reports.js used 85/75/65/50, producing different
+//   labels for the same candidate on different pages. Removed.
 
 import { useState, useEffect, Fragment } from 'react';
 import { useRouter } from 'next/router';
 import { supabase } from '../../../supabase/client';
 import { useRequireAuth } from '../../../utils/requireAuth';
 import AppLayout from '../../../components/AppLayout';
+import {
+  calculateRecommendation,
+  toNumber,
+} from '../../../utils/scoring';
 
 // ============================================================
 // HELPER FUNCTIONS
 // ============================================================
 function safeNumber(value, fallback = 0) {
-  const num = Number(value);
-  return Number.isFinite(num) ? num : fallback;
+  return toNumber(value, fallback);
 }
 
 function calculateNationalServiceScores(reportData, categoryScores, result) {
@@ -90,16 +98,6 @@ function calculateNationalServiceScores(reportData, categoryScores, result) {
   }
 
   return { workplaceReadiness, intellectualCapability, overallScore };
-}
-
-function calculateNationalServiceRecommendation(workplaceReadiness, intellectualCapability) {
-  const workplace = Number(workplaceReadiness || 0);
-  const intellectual = Number(intellectualCapability || 0);
-
-  if (workplace >= 85 && intellectual >= 85) return 'Highly Recommended';
-  if (workplace >= 75 && intellectual >= 75) return 'Recommended';
-  if (workplace >= 65 && intellectual >= 65) return 'Reserve Pool';
-  return 'Not Recommended';
 }
 
 // Valid type values that map to tabs
@@ -387,9 +385,9 @@ export default function AdminReportsList() {
             ) : (
               nsReports.map((report) => {
                 const score = Math.round(report.displayScore || report.percentage_score || 0);
-                const workplace = report.workplaceReadiness || 0;
-                const intellectual = report.intellectualCapability || 0;
-                const displayRecommendation = calculateNationalServiceRecommendation(workplace, intellectual);
+                const displayRecommendation = calculateRecommendation(score, {
+                  assessmentType: 'national_service'
+                });
 
                 return (
                   <tr key={report.id} style={styles.tr}>
@@ -528,9 +526,9 @@ export default function AdminReportsList() {
                               let recommendation = assessment.recommendation || 'N/A';
 
                               if (isNS) {
-                                const workplace = assessment.workplaceReadiness || 0;
-                                const intellectual = assessment.intellectualCapability || 0;
-                                recommendation = calculateNationalServiceRecommendation(workplace, intellectual);
+                                recommendation = calculateRecommendation(score, {
+                                  assessmentType: 'national_service'
+                                });
                               }
 
                               return (
@@ -613,9 +611,9 @@ export default function AdminReportsList() {
 
                 let displayRecommendation = report.recommendation || 'N/A';
                 if (isNationalService) {
-                  const workplace = report.workplaceReadiness || 0;
-                  const intellectual = report.intellectualCapability || 0;
-                  displayRecommendation = calculateNationalServiceRecommendation(workplace, intellectual);
+                  displayRecommendation = calculateRecommendation(score, {
+                    assessmentType: 'national_service'
+                  });
                 }
 
                 return (
