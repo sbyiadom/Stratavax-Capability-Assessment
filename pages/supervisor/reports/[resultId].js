@@ -2,6 +2,10 @@
 // Phase 6: Passes competencySummary from the API response into StratavaxReport
 // Phase 7L (2026-10-02): Risk level resolution delegated to
 //   utils/resolveRiskLevel — no hardcoded 'Medium' fallback.
+// Phase 8 (2026-10-03): local calculateScore removed. Now calls
+//   utils/scoring.calculateResultScore — the same function the admin
+//   pages use. Previously this file had its own five-path fallback that
+//   disagreed with the admin list page for the same candidate.
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -10,14 +14,16 @@ import NationalServiceReport from '../../../components/reports/NationalServiceRe
 import StratavaxReport from '../../../components/reports/StratavaxReport';
 import AppLayout from '../../../components/AppLayout';
 import { resolveRiskLevel } from '../../../utils/resolveRiskLevel';
+import {
+  calculateResultScore,
+  calculateRecommendation,
+  toNumber,
+} from '../../../utils/scoring';
 
 const NATIONAL_SERVICE_ASSESSMENT_ID = 'bdb9d46e-9fac-4d00-8478-1f649e7ac600';
-const BEHAVIORAL_ASSESSMENT_ID = '671bf00f-46cc-46f5-a217-d5a90dafb9b6';
 
 function safeNumber(value, fallback = 0) {
-  if (value === null || value === undefined || value === '') return fallback;
-  const num = Number(value);
-  return Number.isFinite(num) ? num : fallback;
+  return toNumber(value, fallback);
 }
 
 function getReportDataObject(rawReportData) {
@@ -30,88 +36,6 @@ function getReportDataObject(rawReportData) {
     } catch { return {}; }
   }
   return {};
-}
-
-function calculateScore(result) {
-  const isBehavioral = result.assessment_id === BEHAVIORAL_ASSESSMENT_ID ||
-                       result.assessment_title === 'Behavioral & Soft Skills';
-
-  if (isBehavioral) {
-    if (result.percentage_score) {
-      const val = safeNumber(result.percentage_score);
-      if (val > 0 && val <= 100) return val;
-    }
-  }
-
-  let categoryScores = [];
-
-  if (result.category_scores && Array.isArray(result.category_scores) && result.category_scores.length > 0) {
-    categoryScores = result.category_scores;
-  } else if (result.categoryScores && Array.isArray(result.categoryScores) && result.categoryScores.length > 0) {
-    categoryScores = result.categoryScores;
-  } else if (result.category_scores && typeof result.category_scores === 'object' && !Array.isArray(result.category_scores)) {
-    categoryScores = Object.values(result.category_scores);
-  }
-
-  if (categoryScores.length === 0 && result.report_data) {
-    try {
-      let reportData = result.report_data;
-      if (typeof reportData === 'string') reportData = JSON.parse(reportData);
-      if (reportData.categoryScores && Array.isArray(reportData.categoryScores) && reportData.categoryScores.length > 0) {
-        categoryScores = reportData.categoryScores;
-      } else if (reportData.category_scores && Array.isArray(reportData.category_scores) && reportData.category_scores.length > 0) {
-        categoryScores = reportData.category_scores;
-      } else if (reportData.category_scores && typeof reportData.category_scores === 'object') {
-        categoryScores = Object.values(reportData.category_scores);
-      }
-    } catch {}
-  }
-
-  if (categoryScores.length > 0) {
-    let totalEarned = 0;
-    let totalMax = 0;
-    let validPercentages = [];
-
-    categoryScores.forEach(cat => {
-      let score = safeNumber(cat.score || cat.earned || 0);
-      let maxScore = safeNumber(cat.maxScore || cat.max || 0);
-      let pct = safeNumber(cat.percentage || 0);
-
-      if (maxScore > 0 && score >= 0) {
-        totalEarned += score;
-        totalMax += maxScore;
-      }
-
-      if (pct > 0 && pct <= 100) {
-        validPercentages.push(pct);
-      }
-    });
-
-    if (totalMax > 0) {
-      const calc = Math.round((totalEarned / totalMax) * 100);
-      if (calc >= 0 && calc <= 100) return calc;
-    }
-
-    if (validPercentages.length > 0) {
-      return Math.round(validPercentages.reduce((a, b) => a + b, 0) / validPercentages.length);
-    }
-  }
-
-  if (result.percentage_score) {
-    const val = safeNumber(result.percentage_score);
-    if (val > 0 && val <= 100) return val;
-  }
-
-  if (result.total_score !== undefined && result.max_score !== undefined) {
-    const total = safeNumber(result.total_score);
-    const max = safeNumber(result.max_score);
-    if (max > 0) {
-      const calc = Math.round((total / max) * 100);
-      if (calc >= 0 && calc <= 100) return calc;
-    }
-  }
-
-  return 0;
 }
 
 function extractBehavioralMatrix(reportData) {
@@ -230,15 +154,15 @@ export default function SupervisorReportView() {
       const recommendations = ensureArray(result?.recommendations || report?.recommendations);
       const riskFactors = ensureArray(result?.risk_factors || report?.riskFactors);
 
-      const displayScore = calculateScore(result);
+      // Phase 8: shared score resolver — same function the admin pages use.
+      const scoreInfo = calculateResultScore(result);
+      const displayScore = scoreInfo.percentage;
 
-      let recommendation = result?.recommendation || report?.recommendation || 'N/A';
-      if (isNS && displayScore > 0) {
-        if (displayScore >= 85) recommendation = 'Highly Recommended';
-        else if (displayScore >= 75) recommendation = 'Recommended';
-        else if (displayScore >= 65) recommendation = 'Reserve Pool';
-        else recommendation = 'Not Recommended';
-      }
+      const recommendation = isNS
+        ? calculateRecommendation(displayScore, { assessmentType: 'national_service' })
+        : (result?.recommendation || report?.recommendation || calculateRecommendation(displayScore, {
+            assessmentType: result?.assessment_type_code || report?.assessment_type_code || '',
+          }));
 
       const matrix = extractBehavioralMatrix(parsedResultReportData || report);
 
@@ -264,8 +188,7 @@ export default function SupervisorReportView() {
         weaknesses: weaknesses,
         recommendations: recommendations,
         riskFactors: riskFactors,
-        classification: result?.classification || report?.classification || 'Standard Profile',
-        // ✅ Fixed: no more hardcoded 'Medium' fallback
+        classification: result?.classification || report?.classification || scoreInfo.classification || 'Standard Profile',
         riskLevel: resolveRiskLevel(result, report, parsedResultReportData?.proctoring),
         executiveSummary: report?.executiveSummary || '',
         supervisorImplication: report?.supervisorImplication || ''
