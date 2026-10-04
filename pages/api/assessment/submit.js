@@ -1,5 +1,16 @@
 // pages/api/assessment/submit.js
-// Version: submit-per-question-mode-v15
+// Version: submit-per-question-mode-v16
+//
+// v16 (2026-10-04):
+//   • Removed the fallback that summed metadata.violations across every
+//     response row and overwrote the client-supplied totalViolations.
+//     Response metadata now records PER-QUESTION deltas, so summing them
+//     was both unnecessary and wrong. This block was the direct cause of
+//     the "80 violations" false alarm on the Cultural & Attitudinal Fit
+//     report (80 rows × violations: 1 = 80).
+//   • Kept a diagnostic warning in non-production when the summed per-
+//     question violations far exceed the summary total — a signal that a
+//     client regression has started sending cumulative counts again.
 //
 // v15 (2026-10-04):
 //   • Fixed falsy-zero reset in the category accumulation loop. The old
@@ -12,8 +23,7 @@
 //     through to the scorer. Required because scoreForcedChoiceResponse
 //     reads those columns (see utils/scoring.js Phase 8.1).
 //   • Removed the `|| 1` fallback on categoryMaxMap[category] in the
-//     categoryScores mapper. If max is 0, percentage is 0 — no silent
-//     substitution that masks accumulation bugs.
+//     categoryScores mapper.
 //
 // v14 (2026-10-03):
 //   • Scoring is decided per question, not per assessment. The handler
@@ -25,10 +35,6 @@
 //     questions in the same assessment. Under the old assessment-level
 //     resolution, all 80 were scored as single_select, which produced a
 //     spurious 100% for every candidate. Per-question mode fixes this.
-//   • loadFrozenQuestions SELECT now includes scoring_mode from
-//     unique_questions. Each assembled question carries question.scoring_mode.
-//   • No changes to auth, session handling, RPC call, behavioural tracking,
-//     proctoring, competency scoring, or response shape.
 //
 // v13 (2026-10-02):
 //   • Competency scoring performs a DELETE of candidate_competency_scores
@@ -46,7 +52,7 @@ import {
 } from "../../../utils/scoring";
 import { calculateCompetencyScores } from "../../../utils/competencyScoring";
 
-const SUBMIT_BUILD = "submit-per-question-mode-v15";
+const SUBMIT_BUILD = "submit-per-question-mode-v16";
 
 const PRACTICAL_ASSESSMENT_IDS = [
   'c2bc4994-1c4a-4094-a763-8d9d560b759e',
@@ -302,7 +308,7 @@ export default async function handler(req, res) {
     const typeCode = assessmentType?.code || 'general';
     const isBaseline = isBaselineAssessmentType(typeCode);
 
-    // v14+: the assessment-level mode is now only a fallback. The per-question
+    // v14+: the assessment-level mode is only a fallback. The per-question
     // mode from unique_questions takes precedence in the scoring loop below.
     const assessmentFallbackMode = isBaseline
       ? 'baseline'
@@ -352,7 +358,6 @@ export default async function handler(req, res) {
       console.log(`[Submit] Questions found: ${questions.length} (source: session_questions / frozen)`);
       console.log(`[Submit] Versions: assessment=v${frozenAssessmentVersion}, scoring=v${frozenScoringVersion}`);
 
-      // Log per-question mode distribution.
       const modeCounts = {};
       questions.forEach(q => {
         const m = q.scoring_mode || assessmentFallbackMode;
@@ -438,8 +443,6 @@ export default async function handler(req, res) {
       return { category, earned, max, percentage };
     });
 
-    // Record the per-question mode distribution as metadata for later
-    // inspection. Not used for scoring — the loop above already did that.
     const distinctModes = new Set(
       questions
         .map(q => q.scoring_mode || assessmentFallbackMode)
@@ -473,11 +476,29 @@ export default async function handler(req, res) {
     let totalTabSwitches = Number(summary.tabSwitches) || 0;
     const externalUrlsVisited = Array.isArray(proctoring.externalUrls) ? proctoring.externalUrls.length : 0;
 
-    if (responses && responses.length > 0) {
+    // ============================================================
+    // v16: trust proctoringData.summary as the authoritative source.
+    //
+    // Response-level metadata.violations records PER-QUESTION deltas,
+    // not cumulative counts. Summing them (as v15 and earlier did) turned
+    // 80 rows × violations: 1 into "80 violations" on the report — a
+    // false alarm. The correct total is what the client sent in
+    // proctoringData.summary.totalViolations.
+    //
+    // We keep a non-production diagnostic below so a future client
+    // regression (one that starts sending cumulative counts again) shows
+    // up in the logs rather than silently inflating the report.
+    // ============================================================
+    if (process.env.NODE_ENV !== "production" && responses && responses.length > 0) {
       const responseMetadata = responses.map(r => r.metadata || {});
-      const totalViolationsFromResponses = responseMetadata.reduce((sum, meta) => sum + (Number(meta.violations) || 0), 0);
-      if (totalViolationsFromResponses > totalViolations) {
-        totalViolations = totalViolationsFromResponses;
+      const summedPerQuestion = responseMetadata.reduce(
+        (sum, meta) => sum + (Number(meta.violations) || 0), 0
+      );
+      if (summedPerQuestion > totalViolations * 2 && summedPerQuestion > 5) {
+        console.warn('[Submit] Per-question violations sum unusually high; possible client regression:', {
+          per_question_sum: summedPerQuestion,
+          summary_total: totalViolations
+        });
       }
     }
 
