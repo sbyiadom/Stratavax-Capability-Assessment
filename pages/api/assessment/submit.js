@@ -1,8 +1,22 @@
 // pages/api/assessment/submit.js
-// Version: submit-per-question-mode-v14
+// Version: submit-per-question-mode-v15
+//
+// v15 (2026-10-04):
+//   • Fixed falsy-zero reset in the category accumulation loop. The old
+//     check `if (!categoryEarnedMap[section])` reset categoryMaxMap back to
+//     0 every time a section's accumulated earned score was still 0 — so
+//     every section ended up with max: 1 instead of max: 10. Replaced with
+//     `if (!(section in categoryEarnedMap))`, which tests key existence.
+//   • loadFrozenQuestions SELECT now includes most_score and least_score
+//     from unique_answers, and both answer-assembly branches carry them
+//     through to the scorer. Required because scoreForcedChoiceResponse
+//     reads those columns (see utils/scoring.js Phase 8.1).
+//   • Removed the `|| 1` fallback on categoryMaxMap[category] in the
+//     categoryScores mapper. If max is 0, percentage is 0 — no silent
+//     substitution that masks accumulation bugs.
 //
 // v14 (2026-10-03):
-//   • Scoring is now decided per question, not per assessment. The handler
+//   • Scoring is decided per question, not per assessment. The handler
 //     reads scoring_mode from unique_questions alongside section and
 //     subsection, and passes it to scoreQuestionResponse for each question.
 //     Assessment-level scoring_mode (from assessment_types) is used only as
@@ -32,7 +46,7 @@ import {
 } from "../../../utils/scoring";
 import { calculateCompetencyScores } from "../../../utils/competencyScoring";
 
-const SUBMIT_BUILD = "submit-per-question-mode-v14";
+const SUBMIT_BUILD = "submit-per-question-mode-v15";
 
 const PRACTICAL_ASSESSMENT_IDS = [
   'c2bc4994-1c4a-4094-a763-8d9d560b759e',
@@ -72,8 +86,8 @@ function safeArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
-// v14: also selects scoring_mode from unique_questions and attaches it to
-// each assembled question, so the scoring loop can decide per question.
+// v15: also selects most_score and least_score from unique_answers so the
+// forced-choice scorer has the columns it needs.
 async function loadFrozenQuestions(serviceClient, sessionId) {
   const { data: frozen, error: frozenErr } = await serviceClient
     .from("session_questions")
@@ -101,7 +115,7 @@ async function loadFrozenQuestions(serviceClient, sessionId) {
 
   const { data: answers, error: aErr } = await serviceClient
     .from("unique_answers")
-    .select("id, question_id, answer_text, score, display_order")
+    .select("id, question_id, answer_text, score, most_score, least_score, display_order")
     .in("question_id", questionIds);
 
   if (aErr) {
@@ -137,14 +151,22 @@ async function loadFrozenQuestions(serviceClient, sessionId) {
         .map((entry) => {
           const a = answerMap[entry.answer_id];
           if (!a) return null;
-          return { id: a.id, answer_text: a.answer_text, score: a.score || 0 };
+          return {
+            id: a.id,
+            answer_text: a.answer_text,
+            score: a.score || 0,
+            most_score: a.most_score,
+            least_score: a.least_score
+          };
         })
         .filter(Boolean);
     } else {
       orderedAnswers = answersForQ.map((a) => ({
         id: a.id,
         answer_text: a.answer_text,
-        score: a.score || 0
+        score: a.score || 0,
+        most_score: a.most_score,
+        least_score: a.least_score
       }));
     }
 
@@ -280,7 +302,7 @@ export default async function handler(req, res) {
     const typeCode = assessmentType?.code || 'general';
     const isBaseline = isBaselineAssessmentType(typeCode);
 
-    // v14: the assessment-level mode is now only a fallback. The per-question
+    // v14+: the assessment-level mode is now only a fallback. The per-question
     // mode from unique_questions takes precedence in the scoring loop below.
     const assessmentFallbackMode = isBaseline
       ? 'baseline'
@@ -330,8 +352,7 @@ export default async function handler(req, res) {
       console.log(`[Submit] Questions found: ${questions.length} (source: session_questions / frozen)`);
       console.log(`[Submit] Versions: assessment=v${frozenAssessmentVersion}, scoring=v${frozenScoringVersion}`);
 
-      // v14: log the per-question mode distribution so we can see at a glance
-      // whether the frozen set carries mixed modes (e.g. Performance).
+      // Log per-question mode distribution.
       const modeCounts = {};
       questions.forEach(q => {
         const m = q.scoring_mode || assessmentFallbackMode;
@@ -359,14 +380,15 @@ export default async function handler(req, res) {
     let totalEarned = 0;
     let totalMax = 0;
 
-    // v14: score per question using q.scoring_mode, falling back to the
-    // assessment-level mode only when a question has no mode set.
+    // v15: use `in` to test key existence. The old `!categoryEarnedMap[section]`
+    // check treated 0 as falsy and reset categoryMaxMap[section] back to 0 on
+    // every subsequent question in that section, collapsing max to 1.
     questions.forEach(q => {
       const response = responseLookup[q.id];
       const section = q.section || "General";
       const questionMode = q.scoring_mode || assessmentFallbackMode;
 
-      if (!categoryEarnedMap[section]) {
+      if (!(section in categoryEarnedMap)) {
         categoryEarnedMap[section] = 0;
         categoryMaxMap[section] = 0;
       }
@@ -407,16 +429,17 @@ export default async function handler(req, res) {
     const finalPercentage = totalMax > 0 ? Math.round((totalEarned / totalMax) * 100) : 0;
     console.log(`[Submit] Score: ${totalEarned}/${totalMax} = ${finalPercentage}% (per-question mode)`);
 
+    // v15: no `|| 1` fallback. If max is 0, percentage is 0. Silent substitution
+    // was masking the accumulation bug fixed above.
     const categoryScores = Object.keys(categoryEarnedMap).map(category => {
       const earned = categoryEarnedMap[category];
-      const max = categoryMaxMap[category] || 1;
-      const percentage = Math.round((earned / max) * 100);
+      const max = categoryMaxMap[category];
+      const percentage = max > 0 ? Math.round((earned / max) * 100) : 0;
       return { category, earned, max, percentage };
     });
 
-    // v14: scoring_mode recorded in report_data reflects whether the frozen
-    // set carried a single mode or a mix. It is not used for scoring — it is
-    // metadata for later inspection.
+    // Record the per-question mode distribution as metadata for later
+    // inspection. Not used for scoring — the loop above already did that.
     const distinctModes = new Set(
       questions
         .map(q => q.scoring_mode || assessmentFallbackMode)
@@ -696,8 +719,6 @@ export default async function handler(req, res) {
             };
           });
 
-          // v14: pass the resolved per-question mode to the competency scorer
-          // so mixed-mode assessments score competencies correctly.
           const competencyScores = calculateCompetencyScores(
             responsesWithQuestions,
             questionCompetencies,
