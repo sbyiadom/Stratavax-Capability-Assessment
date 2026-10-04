@@ -5,6 +5,14 @@
 // - Writes it to responses.least_answer_id.
 // - Single-select responses leave leastAnswerId undefined; the column
 //   stays null and behavior is unchanged.
+//
+// Phase 5.1 (2026-10-04):
+// - Fixed metadata spread order. The previous version spread existing
+//   metadata LAST, which meant every save preserved old values and ignored
+//   new ones from the client. Now the incoming values take precedence.
+// - Clarified that metadata.violations / tab_switches are PER-QUESTION
+//   deltas, not running totals. The client is responsible for sending the
+//   per-question delta. submit.js sums these only if it needs a fallback.
 
 import { createClient } from "@supabase/supabase-js";
 
@@ -91,8 +99,24 @@ export default async function handler(req, res) {
 
     // ============================================================
     // BUILD METADATA COLUMN
+    //
+    // Field semantics:
+    //   tab_switches         — number of tab switches DURING this question
+    //   copy_attempts        — number of copy attempts DURING this question
+    //   paste_attempts       — number of paste attempts DURING this question
+    //   right_click_attempts — number of right-click attempts DURING this question
+    //   violations           — total violations DURING this question
+    //   previous_question    — which question the candidate was on before
+    //   is_answer_change     — computed server-side (see above)
+    //   time_on_question     — seconds spent on this question
+    //
+    // SPREAD ORDER: existing metadata first, incoming values second. This
+    // means incoming values override preserved ones. The old order
+    // (incoming first, existing last) meant new values were always
+    // discarded on update.
     // ============================================================
     const metadataColumn = {
+      ...(existing?.metadata || {}),
       tab_switches: parseInt(metadata?.tab_switches, 10) || 0,
       copy_attempts: parseInt(metadata?.copy_attempts, 10) || 0,
       paste_attempts: parseInt(metadata?.paste_attempts, 10) || 0,
@@ -100,8 +124,7 @@ export default async function handler(req, res) {
       violations: parseInt(metadata?.violations, 10) || 0,
       previous_question: parseInt(metadata?.previous_question, 10) || 0,
       is_answer_change: isAnswerChange,
-      time_on_question: parseInt(metadata?.time_on_question, 10) || 0,
-      ...(existing?.metadata || {})
+      time_on_question: parseInt(metadata?.time_on_question, 10) || 0
     };
 
     // Build response data
