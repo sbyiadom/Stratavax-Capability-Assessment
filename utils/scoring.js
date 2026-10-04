@@ -4,14 +4,22 @@
 // Phase 8 (2026-10-03): added normalizeResultCategoryScores,
 //   calculateResultScore, and calculateRecommendation as the shared
 //   result-level entry points. Every page and API must use these.
+// Phase 8.1 (2026-10-04): fixed forced-choice scoring to read
+//   most_score / least_score from unique_answers instead of the legacy
+//   score column. The old implementation read answer.score, which is
+//   stale (all rows = 3), collapsed the max/min range to 0, and returned
+//   0 for every forced-choice question.
 //
 // CENTRAL SCORING ENGINE
 //
 // Supports THREE scoring models:
 //   1) Baseline exact-match (multi-select, exact set match = 1, else 0)
 //   2) Single-select weighted (one answer, answer-weighted)
-//   3) Forced-choice most/least (TWO picks per question; rejecting the
-//      best answer is a strong negative signal)
+//   3) Forced-choice most/least (TWO picks per question)
+//      Each answer row carries most_score and least_score (both 1–5).
+//      most_score: how good the answer is when picked as "most likely".
+//      least_score: how good the answer is when picked as "least likely".
+//      We normalise to 0–1 and combine 0.7·most + 0.3·least_reject.
 
 // ======================================================
 // BASIC HELPERS
@@ -199,8 +207,34 @@ export const getQuestionAnswers = function (question) {
   return [];
 };
 
-export const getAnswerScoreValue = function (answer) {
+/**
+ * getAnswerScoreValue
+ *
+ * Reads the numeric score for an answer row. For forced-choice questions the
+ * caller must indicate which role the answer is playing ("most" or "least")
+ * because the two roles live in separate columns:
+ *   most_score  — score when picked as "most likely"
+ *   least_score — score when picked as "least likely"
+ *
+ * For single_select and baseline, the legacy `score` column is used.
+ */
+export const getAnswerScoreValue = function (answer, mode) {
   if (!answer) return 0;
+
+  if (mode === "forced_choice_most") {
+    const v = answer.most_score !== undefined && answer.most_score !== null
+      ? answer.most_score
+      : answer.score;
+    return toNumber(v, 0);
+  }
+
+  if (mode === "forced_choice_least") {
+    const v = answer.least_score !== undefined && answer.least_score !== null
+      ? answer.least_score
+      : answer.score;
+    return toNumber(v, 0);
+  }
+
   return toNumber(
     answer.score !== undefined
       ? answer.score
@@ -219,12 +253,10 @@ export const getQuestionMaxScore = function (question, isBaseline) {
   if (isBaseline) return 1;
   if (answers.length === 0) return 0;
 
-  return Math.max.apply(
-    null,
-    answers.map(function (answer) {
-      return getAnswerScoreValue(answer);
-    })
-  );
+  // For forced-choice and single-select, each question is worth at most 1
+  // point in the per-question scoring model (see scoreForcedChoiceResponse
+  // and scoreQuestionResponse below).
+  return 1;
 };
 
 export const getCorrectAnswerIdsForBaseline = function (question) {
@@ -264,13 +296,32 @@ export const arraysMatchExactly = function (left, right) {
 //   answer_id       = most likely
 //   least_answer_id = least likely
 //
-// With 4 answers scored 5/4/2/1, random picking averages rawCombined 0.5.
-// Rescale: score = max(0, (rawCombined - 0.5) * 2). Random → 0.
+// Each answer row has its own most_score and least_score (both 1–5).
+// We normalise each to 0–1 and combine 0.7·most + 0.3·least_reject.
+//
+//   most_score  1 → 0.0   5 → 1.0
+//   least_score 1 → 1.0   5 → 0.0  (rejecting the "best" answer is bad;
+//                                    rejecting the "worst" answer is fine)
+//
+// A random pick averages 0.5 on both components → 0.5 combined.
+// A candidate who picks the best answer as "most" AND the worst as "least"
+// scores 1.0. A candidate who inverts both scores 0.0.
 // ======================================================
 
 export const FORCED_CHOICE_WEIGHT_MOST = 0.7;
 export const FORCED_CHOICE_WEIGHT_LEAST = 0.3;
-export const FORCED_CHOICE_RANDOM_BASELINE = 0.5;
+
+const normalizeMostScore = function (value) {
+  // 1 → 0, 5 → 1
+  const v = toNumber(value, 3);
+  return Math.max(0, Math.min(1, (v - 1) / 4));
+};
+
+const normalizeLeastScore = function (value) {
+  // 1 → 1 (best answer rejected is bad), 5 → 0 (worst answer rejected is fine)
+  const v = toNumber(value, 3);
+  return Math.max(0, Math.min(1, (5 - v) / 4));
+};
 
 export const scoreForcedChoiceResponse = function (response) {
   const question = getQuestionFromResponse(response);
@@ -280,25 +331,13 @@ export const scoreForcedChoiceResponse = function (response) {
     return { score: 0, maxScore: 1, mode: "forced_choice", fallback: true };
   }
 
-  const answerScores = answers.map(getAnswerScoreValue);
-  const maxAns = Math.max.apply(null, answerScores);
-  const minAns = Math.min.apply(null, answerScores);
-  const range = maxAns - minAns;
-
-  if (range <= 0) {
-    return { score: 0, maxScore: 1, mode: "forced_choice", degenerate: true };
-  }
-
   const mostId = parseInt(
     response && (response.answer_id !== undefined
       ? response.answer_id
       : response.selected_answer_id),
     10
   );
-  const leastId = parseInt(
-    response && response.least_answer_id,
-    10
-  );
+  const leastId = parseInt(response && response.least_answer_id, 10);
 
   const mostAnswer = Number.isNaN(mostId)
     ? null
@@ -307,48 +346,44 @@ export const scoreForcedChoiceResponse = function (response) {
     ? null
     : answers.find(function (a) { return Number(a.id) === leastId; }) || null;
 
-  let mostScore = 0;
-  if (mostAnswer) {
-    const s = getAnswerScoreValue(mostAnswer);
-    mostScore = (s - minAns) / range;
-  }
-
-  let leastScore = 0;
-  if (leastAnswer) {
-    const s = getAnswerScoreValue(leastAnswer);
-    leastScore = (maxAns - s) / range;
-  } else {
-    const partialCombined = mostScore;
-    const partialRescaled = Math.max(
-      0,
-      (partialCombined - FORCED_CHOICE_RANDOM_BASELINE) /
-        (1 - FORCED_CHOICE_RANDOM_BASELINE)
-    );
+  if (!mostAnswer && !leastAnswer) {
     return {
-      score: partialRescaled,
+      score: 0,
       maxScore: 1,
       mode: "forced_choice",
-      partial: true,
-      rawCombined: partialCombined
+      empty: true,
+      mostAnswerId: mostId,
+      leastAnswerId: leastId
     };
   }
 
-  const rawCombined =
-    (mostScore * FORCED_CHOICE_WEIGHT_MOST) +
-    (leastScore * FORCED_CHOICE_WEIGHT_LEAST);
+  const mostComponent = mostAnswer
+    ? normalizeMostScore(mostAnswer.most_score)
+    : null;
+  const leastComponent = leastAnswer
+    ? normalizeLeastScore(leastAnswer.least_score)
+    : null;
 
-  const denom = 1 - FORCED_CHOICE_RANDOM_BASELINE;
-  const rescaled = denom > 0
-    ? Math.max(0, (rawCombined - FORCED_CHOICE_RANDOM_BASELINE) / denom)
-    : rawCombined;
+  let combined;
+  if (mostComponent !== null && leastComponent !== null) {
+    combined =
+      (mostComponent * FORCED_CHOICE_WEIGHT_MOST) +
+      (leastComponent * FORCED_CHOICE_WEIGHT_LEAST);
+  } else if (mostComponent !== null) {
+    // Partial: only "most" was picked — no penalty from missing least.
+    combined = mostComponent;
+  } else {
+    // Partial: only "least" was picked — small credit for rejecting.
+    combined = leastComponent * FORCED_CHOICE_WEIGHT_LEAST;
+  }
 
   return {
-    score: rescaled,
+    score: Math.max(0, Math.min(1, combined)),
     maxScore: 1,
     mode: "forced_choice",
-    rawCombined,
-    mostScore,
-    leastScore,
+    mostComponent,
+    leastComponent,
+    combined,
     mostAnswerId: mostId,
     leastAnswerId: leastId
   };
@@ -870,12 +905,7 @@ export const getDevelopmentAreas = function (categoryScores, limit) {
 };
 
 // ======================================================
-// PHASE 8 (2026-10-03) — SHARED RESULT-LEVEL ENTRY POINTS
-// ------------------------------------------------------
-// Every page and API that needs "what did this candidate score?" and
-// "what should we recommend?" must call these. No page should re-derive
-// scores from raw category data, band thresholds, or recommendation
-// rules — those live here and nowhere else.
+// PHASE 8 — SHARED RESULT-LEVEL ENTRY POINTS
 // ======================================================
 
 export const normalizeResultCategoryScores = function (raw) {
@@ -1180,7 +1210,6 @@ export default {
   GRADE_SCALE: GRADE_SCALE,
   FORCED_CHOICE_WEIGHT_MOST: FORCED_CHOICE_WEIGHT_MOST,
   FORCED_CHOICE_WEIGHT_LEAST: FORCED_CHOICE_WEIGHT_LEAST,
-  FORCED_CHOICE_RANDOM_BASELINE: FORCED_CHOICE_RANDOM_BASELINE,
 
   toNumber: toNumber,
   clampPercentage: clampPercentage,
@@ -1233,7 +1262,6 @@ export default {
   getTopStrengths: getTopStrengths,
   getDevelopmentAreas: getDevelopmentAreas,
 
-  // Phase 8 shared entry points
   normalizeResultCategoryScores: normalizeResultCategoryScores,
   calculateResultScore: calculateResultScore,
   calculateRecommendation: calculateRecommendation
