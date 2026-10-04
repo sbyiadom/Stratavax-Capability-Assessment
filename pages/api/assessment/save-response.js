@@ -76,9 +76,6 @@ export default async function handler(req, res) {
     const assessmentId = session.assessment_id;
     const qid = parseInt(questionId, 10);
 
-    // Read the existing row (used for answer-change detection and
-    // metadata merging). If two concurrent saves happen, this SELECT may
-    // see a stale snapshot — but the upsert below resolves correctly.
     const { data: existing, error: existingError } = await serviceClient
       .from("responses")
       .select("id, answer_id, least_answer_id, times_changed, initial_answer_id, metadata")
@@ -111,16 +108,10 @@ export default async function handler(req, res) {
 
     // ============================================================
     // METADATA
-    //
     // Field semantics (per-question deltas, NOT cumulative totals):
-    //   tab_switches         — tab switches during this question
-    //   copy_attempts        — copy attempts during this question
-    //   paste_attempts       — paste attempts during this question
-    //   right_click_attempts — right-click attempts during this question
-    //   violations           — total violations during this question
-    //   previous_question    — last question index seen
-    //   is_answer_change     — computed server-side
-    //   time_on_question     — seconds spent on this question
+    //   tab_switches, copy_attempts, paste_attempts,
+    //   right_click_attempts, violations, previous_question,
+    //   time_on_question
     //
     // SPREAD ORDER: existing first, incoming second. Incoming overrides
     // preserved. The old order (incoming first, existing last) discarded
@@ -140,15 +131,6 @@ export default async function handler(req, res) {
 
     const now = new Date().toISOString();
 
-    // ============================================================
-    // UPSERT — the row is keyed on (session_id, question_id).
-    //
-    // On insert: create the row.
-    // On conflict: update the existing row.
-    //
-    // This replaces the old SELECT-then-INSERT/UPDATE pattern, which
-    // raced under concurrent saves.
-    // ============================================================
     const upsertPayload = {
       session_id: sessionId,
       user_id: userId,
@@ -183,7 +165,6 @@ export default async function handler(req, res) {
       return res.status(500).json({ success: false, error: upsertError.message });
     }
 
-    // Update session aggregate counters.
     const { count } = await serviceClient
       .from("responses")
       .select("id", { count: "exact", head: true })
