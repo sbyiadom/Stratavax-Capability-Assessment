@@ -1012,7 +1012,7 @@ export default function StratavaxReport({
           <p style={styles.sectionSubtitle}>
             Item-level competency breakdown. Each competency is scored against the full cohort that has taken this assessment.
           </p>
-          <CompetencyReport summary={result.competencySummary} />
+          <CompetencyReport data={result.competencySummary} />
         </div>
       )}
 
