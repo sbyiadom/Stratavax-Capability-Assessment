@@ -308,8 +308,6 @@ export default async function handler(req, res) {
     const typeCode = assessmentType?.code || 'general';
     const isBaseline = isBaselineAssessmentType(typeCode);
 
-    // v14+: the assessment-level mode is only a fallback. The per-question
-    // mode from unique_questions takes precedence in the scoring loop below.
     const assessmentFallbackMode = isBaseline
       ? 'baseline'
       : (assessmentType?.scoring_mode === 'forced_choice' ? 'forced_choice' : 'single_select');
@@ -385,9 +383,7 @@ export default async function handler(req, res) {
     let totalEarned = 0;
     let totalMax = 0;
 
-    // v15: use `in` to test key existence. The old `!categoryEarnedMap[section]`
-    // check treated 0 as falsy and reset categoryMaxMap[section] back to 0 on
-    // every subsequent question in that section, collapsing max to 1.
+    // v15: use `in` to test key existence.
     questions.forEach(q => {
       const response = responseLookup[q.id];
       const section = q.section || "General";
@@ -434,8 +430,6 @@ export default async function handler(req, res) {
     const finalPercentage = totalMax > 0 ? Math.round((totalEarned / totalMax) * 100) : 0;
     console.log(`[Submit] Score: ${totalEarned}/${totalMax} = ${finalPercentage}% (per-question mode)`);
 
-    // v15: no `|| 1` fallback. If max is 0, percentage is 0. Silent substitution
-    // was masking the accumulation bug fixed above.
     const categoryScores = Object.keys(categoryEarnedMap).map(category => {
       const earned = categoryEarnedMap[category];
       const max = categoryMaxMap[category];
@@ -476,19 +470,9 @@ export default async function handler(req, res) {
     let totalTabSwitches = Number(summary.tabSwitches) || 0;
     const externalUrlsVisited = Array.isArray(proctoring.externalUrls) ? proctoring.externalUrls.length : 0;
 
-    // ============================================================
-    // v16: trust proctoringData.summary as the authoritative source.
-    //
-    // Response-level metadata.violations records PER-QUESTION deltas,
-    // not cumulative counts. Summing them (as v15 and earlier did) turned
-    // 80 rows × violations: 1 into "80 violations" on the report — a
-    // false alarm. The correct total is what the client sent in
-    // proctoringData.summary.totalViolations.
-    //
-    // We keep a non-production diagnostic below so a future client
-    // regression (one that starts sending cumulative counts again) shows
-    // up in the logs rather than silently inflating the report.
-    // ============================================================
+    // v16: diagnostic only. Response metadata records PER-QUESTION deltas,
+    // so summing is not authoritative. Log a warning in non-prod if the
+    // sum looks suspiciously high.
     if (process.env.NODE_ENV !== "production" && responses && responses.length > 0) {
       const responseMetadata = responses.map(r => r.metadata || {});
       const summedPerQuestion = responseMetadata.reduce(
