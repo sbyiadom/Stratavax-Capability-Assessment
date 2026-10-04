@@ -6,12 +6,10 @@
 // Phase 8.1 (2026-10-04): proctoring fix.
 //   - Spurious visibilitychange events that fire on initial page load no
 //     longer count as tab switches. A 2-second grace window suppresses
-//     them; the first legitimate tab switch after the grace window is
-//     still recorded.
+//     them.
 //   - persistAnswer now sends PER-QUESTION deltas (events since the last
-//     save), not cumulative counters. The cumulative totals still go to
-//     the submit endpoint via proctoringData.summary.
-//   - These two changes stop the "80 violations" false alarm on reports.
+//     save), not cumulative counters. Cumulative totals still go to the
+//     submit endpoint via proctoringData.summary.
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
@@ -20,9 +18,6 @@ import { supabase } from "../../supabase/client";
 
 const AssessmentPage = dynamic(() => Promise.resolve(AssessmentContent), { ssr: false });
 
-// Suppress spurious visibilitychange events fired by browsers during the
-// first moments of page load. Real tab switches during the first 2s are
-// improbable and not worth the false positive.
 const PROCTORING_GRACE_MS = 2000;
 
 function safeArray(value) {
@@ -168,7 +163,6 @@ function AssessmentContent() {
   const [timeLimitSeconds, setTimeLimitSeconds] = useState(7200);
   const [questionStartTime, setQuestionStartTime] = useState(Date.now());
 
-  // Cumulative counters (for the final submit payload).
   const [tabSwitchCount, setTabSwitchCount] = useState(0);
   const [copyAttempts, setCopyAttempts] = useState(0);
   const [pasteAttempts, setPasteAttempts] = useState(0);
@@ -202,14 +196,7 @@ function AssessmentContent() {
   const autoSubmitRef = useRef(false);
   const urlCheckIntervalRef = useRef(null);
 
-  // ----------------------------------------------------------
-  // Per-question delta tracking.
-  //
-  // These refs accumulate events since the last persistAnswer() call.
-  // When persistAnswer runs, it reads these, sends them, and resets them
-  // to zero. The cumulative counters above are what the submit endpoint
-  // receives in proctoringData.summary.
-  // ----------------------------------------------------------
+  // Per-question delta tracking (see persistAnswer).
   const deltaRef = useRef({
     tab_switches: 0,
     violations: 0,
@@ -218,8 +205,7 @@ function AssessmentContent() {
     right_click_attempts: 0
   });
 
-  // Set to Date.now() when the assessment actually starts (after init).
-  // Used to suppress spurious visibilitychange events on page load.
+  // Suppresses spurious visibility events fired during page load.
   const proctoringReadyAtRef = useRef(0);
 
   const primaryColor = "#0b2a4e";
@@ -308,8 +294,6 @@ function AssessmentContent() {
     setUrlVisitStartTime(Date.now());
   }
 
-  // Records a violation. Increments both the cumulative counter (for the
-  // final submit payload) and the per-question delta (for the next save).
   async function logViolation(violationType, opts = {}) {
     if (!sessionIdRef.current || alreadySubmitted || isAutoSubmitting || isTimeExpired) return;
 
@@ -367,9 +351,8 @@ function AssessmentContent() {
         const timeSpentSeconds = Math.floor((Date.now() - questionStartTime) / 1000);
         const timeOnQuestion = Math.floor((Date.now() - (questionStartTimes[qId] || questionStartTime)) / 1000);
 
-        // On auto-submit, still send per-question metadata, but read from
-        // the delta refs. The final cumulative numbers are sent via
-        // proctoringData.summary below.
+        // Auto-submit writes zero deltas per row; the cumulative totals
+        // are sent via proctoringData.summary below.
         if (qForcedChoice && typeof answer === "object" && !Array.isArray(answer)) {
           if (answer.most == null) return null;
           return saveAnswer(sessionIdRef.current, qId, String(answer.most), answer.least != null ? String(answer.least) : undefined, {
@@ -444,7 +427,7 @@ function AssessmentContent() {
     const timeSpentSeconds = Math.floor((Date.now() - questionStartTime) / 1000);
     const timeOnQuestion = Math.floor((Date.now() - (questionStartTimes[questionId] || questionStartTime)) / 1000);
 
-    // Snapshot the per-question deltas and reset them.
+    // Snapshot per-question deltas, then reset.
     const deltas = { ...deltaRef.current };
     deltaRef.current = {
       tab_switches: 0,
@@ -555,7 +538,6 @@ function AssessmentContent() {
     if (loading || alreadySubmitted || accessDenied || !session || isTimeExpired) return;
     const handleVisibilityChange = () => {
       if (document.hidden) {
-        // logViolation internally suppresses events during the grace window.
         const newCount = tabSwitchCount + 1;
         setTabSwitchCount(newCount);
         const currentUrl = window.location.href;
@@ -730,7 +712,6 @@ function AssessmentContent() {
         }
 
         setQuestionStartTime(Date.now());
-        // Arm the proctoring grace window AFTER the page has settled.
         proctoringReadyAtRef.current = Date.now() + PROCTORING_GRACE_MS;
         setLoading(false);
       } catch (err) {
