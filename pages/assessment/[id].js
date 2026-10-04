@@ -3,11 +3,15 @@
 // Phase 7A: logViolation routes through /api/assessment/session PATCH.
 // Phase 7F-7I: layout and per-question scoring mode.
 // Phase 8 (2026-10-03): question card clipping fix.
-//   - The card no longer uses justifyContent:center with overflow:hidden,
-//     which was hiding the top of long question stems. Card now aligns to
-//     flex-start and grows with content. Long question text scrolls inside
-//     its own wrapper rather than being cut.
-//   - mainContent and middleColumn no longer constrain height; page scrolls.
+// Phase 8.1 (2026-10-04): proctoring fix.
+//   - Spurious visibilitychange events that fire on initial page load no
+//     longer count as tab switches. A 2-second grace window suppresses
+//     them; the first legitimate tab switch after the grace window is
+//     still recorded.
+//   - persistAnswer now sends PER-QUESTION deltas (events since the last
+//     save), not cumulative counters. The cumulative totals still go to
+//     the submit endpoint via proctoringData.summary.
+//   - These two changes stop the "80 violations" false alarm on reports.
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
@@ -15,6 +19,11 @@ import dynamic from "next/dynamic";
 import { supabase } from "../../supabase/client";
 
 const AssessmentPage = dynamic(() => Promise.resolve(AssessmentContent), { ssr: false });
+
+// Suppress spurious visibilitychange events fired by browsers during the
+// first moments of page load. Real tab switches during the first 2s are
+// improbable and not worth the false positive.
+const PROCTORING_GRACE_MS = 2000;
 
 function safeArray(value) {
   return Array.isArray(value) ? value : [];
@@ -159,11 +168,13 @@ function AssessmentContent() {
   const [timeLimitSeconds, setTimeLimitSeconds] = useState(7200);
   const [questionStartTime, setQuestionStartTime] = useState(Date.now());
 
+  // Cumulative counters (for the final submit payload).
   const [tabSwitchCount, setTabSwitchCount] = useState(0);
   const [copyAttempts, setCopyAttempts] = useState(0);
   const [pasteAttempts, setPasteAttempts] = useState(0);
   const [rightClickAttempts, setRightClickAttempts] = useState(0);
   const [violationCount, setViolationCount] = useState(0);
+
   const [violationMessage, setViolationMessage] = useState("");
   const [showViolationWarning, setShowViolationWarning] = useState(false);
   const [questionStartTimes, setQuestionStartTimes] = useState({});
@@ -190,6 +201,26 @@ function AssessmentContent() {
   const submittingRef = useRef(false);
   const autoSubmitRef = useRef(false);
   const urlCheckIntervalRef = useRef(null);
+
+  // ----------------------------------------------------------
+  // Per-question delta tracking.
+  //
+  // These refs accumulate events since the last persistAnswer() call.
+  // When persistAnswer runs, it reads these, sends them, and resets them
+  // to zero. The cumulative counters above are what the submit endpoint
+  // receives in proctoringData.summary.
+  // ----------------------------------------------------------
+  const deltaRef = useRef({
+    tab_switches: 0,
+    violations: 0,
+    copy_attempts: 0,
+    paste_attempts: 0,
+    right_click_attempts: 0
+  });
+
+  // Set to Date.now() when the assessment actually starts (after init).
+  // Used to suppress spurious visibilitychange events on page load.
+  const proctoringReadyAtRef = useRef(0);
 
   const primaryColor = "#0b2a4e";
   const accentColor = "#f9b83a";
@@ -277,10 +308,25 @@ function AssessmentContent() {
     setUrlVisitStartTime(Date.now());
   }
 
-  async function logViolation(violationType) {
+  // Records a violation. Increments both the cumulative counter (for the
+  // final submit payload) and the per-question delta (for the next save).
+  async function logViolation(violationType, opts = {}) {
     if (!sessionIdRef.current || alreadySubmitted || isAutoSubmitting || isTimeExpired) return;
+
+    // Suppress spurious events during page-load grace window.
+    if (Date.now() < proctoringReadyAtRef.current) {
+      return;
+    }
+
     const newCount = violationCount + 1;
     setViolationCount(newCount);
+    deltaRef.current.violations += 1;
+
+    if (opts.tabSwitch) deltaRef.current.tab_switches += 1;
+    if (opts.copyAttempt) deltaRef.current.copy_attempts += 1;
+    if (opts.pasteAttempt) deltaRef.current.paste_attempts += 1;
+    if (opts.rightClickAttempt) deltaRef.current.right_click_attempts += 1;
+
     try {
       await apiCall('/api/assessment/session', {
         method: 'PATCH',
@@ -292,6 +338,7 @@ function AssessmentContent() {
     } catch (err) {
       console.error("Failed to sync violation count to DB:", err);
     }
+
     let message = violationType;
     if (currentExternalUrl) {
       const domain = extractDomain(currentExternalUrl);
@@ -315,29 +362,43 @@ function AssessmentContent() {
         if (answer === null || answer === undefined || answer === "") return null;
         const questionObj = questions.find(q => String(q.id) === String(qId));
         const qForcedChoice = questionUsesForcedChoice(questionObj);
+        const changeCount = answerChangeCount[qId] || 0;
+        const initialAns = initialAnswers[qId];
+        const timeSpentSeconds = Math.floor((Date.now() - questionStartTime) / 1000);
+        const timeOnQuestion = Math.floor((Date.now() - (questionStartTimes[qId] || questionStartTime)) / 1000);
+
+        // On auto-submit, still send per-question metadata, but read from
+        // the delta refs. The final cumulative numbers are sent via
+        // proctoringData.summary below.
         if (qForcedChoice && typeof answer === "object" && !Array.isArray(answer)) {
           if (answer.most == null) return null;
-          const changeCount = answerChangeCount[qId] || 0;
-          const initialAns = initialAnswers[qId] || answer.most;
           return saveAnswer(sessionIdRef.current, qId, String(answer.most), answer.least != null ? String(answer.least) : undefined, {
-            time_spent_seconds: Math.floor((Date.now() - questionStartTime) / 1000),
-            times_changed: changeCount, initial_answer_id: String(initialAns), is_answer_change: false,
-            tab_switches: tabSwitchCount, copy_attempts: copyAttempts, paste_attempts: pasteAttempts,
-            right_click_attempts: rightClickAttempts, violations: violationCount,
-            external_urls_visited: externalUrlVisits, domain_visits: domainVisits
+            time_spent_seconds: timeSpentSeconds,
+            time_on_question: timeOnQuestion,
+            times_changed: changeCount,
+            initial_answer_id: initialAns != null ? String(initialAns) : String(answer.most),
+            is_answer_change: false,
+            tab_switches: 0,
+            copy_attempts: 0,
+            paste_attempts: 0,
+            right_click_attempts: 0,
+            violations: 0,
+            previous_question: currentIndex
           });
         }
         const answerToStore = Array.isArray(answer) ? answer.join(",") : String(answer);
-        const changeCount = answerChangeCount[qId] || 0;
-        const initialAns = initialAnswers[qId] || answer;
         return saveAnswer(sessionIdRef.current, qId, answerToStore, undefined, {
-          time_spent_seconds: Math.floor((Date.now() - questionStartTime) / 1000),
+          time_spent_seconds: timeSpentSeconds,
+          time_on_question: timeOnQuestion,
           times_changed: changeCount,
-          initial_answer_id: Array.isArray(initialAns) ? initialAns.join(",") : String(initialAns),
-          is_answer_change: false, tab_switches: tabSwitchCount,
-          copy_attempts: copyAttempts, paste_attempts: pasteAttempts,
-          right_click_attempts: rightClickAttempts, violations: violationCount,
-          external_urls_visited: externalUrlVisits, domain_visits: domainVisits
+          initial_answer_id: Array.isArray(initialAns) ? initialAns.join(",") : (initialAns != null ? String(initialAns) : answerToStore),
+          is_answer_change: false,
+          tab_switches: 0,
+          copy_attempts: 0,
+          paste_attempts: 0,
+          right_click_attempts: 0,
+          violations: 0,
+          previous_question: currentIndex
         });
       });
       await Promise.all(answerPromises.filter(p => p !== null));
@@ -382,16 +443,30 @@ function AssessmentContent() {
     setSaveStatus(prev => ({ ...prev, [questionId]: "saving" }));
     const timeSpentSeconds = Math.floor((Date.now() - questionStartTime) / 1000);
     const timeOnQuestion = Math.floor((Date.now() - (questionStartTimes[questionId] || questionStartTime)) / 1000);
+
+    // Snapshot the per-question deltas and reset them.
+    const deltas = { ...deltaRef.current };
+    deltaRef.current = {
+      tab_switches: 0,
+      violations: 0,
+      copy_attempts: 0,
+      paste_attempts: 0,
+      right_click_attempts: 0
+    };
+
     try {
       await saveAnswer(sessionIdRef.current, questionId, answerValue, leastValue, {
-        time_spent_seconds: timeSpentSeconds, time_on_question: timeOnQuestion,
+        time_spent_seconds: timeSpentSeconds,
+        time_on_question: timeOnQuestion,
         times_changed: nextChangeCount,
         initial_answer_id: initialAnswers[questionId] != null ? String(initialAnswers[questionId]) : String(answerValue),
-        is_answer_change: isChange, tab_switches: tabSwitchCount,
-        copy_attempts: copyAttempts, paste_attempts: pasteAttempts,
-        right_click_attempts: rightClickAttempts, violations: violationCount,
-        previous_question: currentIndex,
-        external_urls_visited: externalUrlVisits, domain_visits: domainVisits
+        is_answer_change: isChange,
+        tab_switches: deltas.tab_switches,
+        copy_attempts: deltas.copy_attempts,
+        paste_attempts: deltas.paste_attempts,
+        right_click_attempts: deltas.right_click_attempts,
+        violations: deltas.violations,
+        previous_question: currentIndex
       });
       setSaveStatus(prev => ({ ...prev, [questionId]: "saved" }));
     } catch (err) {
@@ -475,11 +550,12 @@ function AssessmentContent() {
       await persistAnswer(questionId, String(next.most), next.least != null ? String(next.least) : undefined, isChange);
     }
   }
-  
+
   useEffect(() => {
     if (loading || alreadySubmitted || accessDenied || !session || isTimeExpired) return;
     const handleVisibilityChange = () => {
       if (document.hidden) {
+        // logViolation internally suppresses events during the grace window.
         const newCount = tabSwitchCount + 1;
         setTabSwitchCount(newCount);
         const currentUrl = window.location.href;
@@ -490,9 +566,9 @@ function AssessmentContent() {
           switchDetail.description = `Tab switch to external site: ${domain} (${category})`;
           switchDetail.domain = domain;
           switchDetail.category = category;
-          logViolation(`Tab switch to external site: ${domain} (${category})`);
+          logViolation(`Tab switch to external site: ${domain} (${category})`, { tabSwitch: true });
         } else {
-          logViolation("Tab switch");
+          logViolation("Tab switch", { tabSwitch: true });
         }
         setTabSwitchDetails(prev => [...prev, switchDetail]);
       }
@@ -508,7 +584,7 @@ function AssessmentContent() {
         switchDetail.description = `Page hide to external site: ${domain} (${category})`;
         switchDetail.domain = domain;
         switchDetail.category = category;
-        logViolation(`Page hide to external site: ${domain} (${category})`);
+        logViolation(`Page hide to external site: ${domain} (${category})`, { tabSwitch: true });
       }
       setTabSwitchDetails(prev => [...prev, switchDetail]);
     };
@@ -525,7 +601,7 @@ function AssessmentContent() {
     const handleContextMenu = (event) => {
       event.preventDefault();
       setRightClickAttempts(prev => prev + 1);
-      logViolation("Right-click attempt");
+      logViolation("Right-click attempt", { rightClickAttempt: true });
       return false;
     };
     document.addEventListener("contextmenu", handleContextMenu);
@@ -580,6 +656,7 @@ function AssessmentContent() {
         setExternalUrlVisits([]); setDomainVisits({}); setTabSwitchDetails([]);
         setIsTimeExpired(false);
         sessionIdRef.current = null; submittingRef.current = false; autoSubmitRef.current = false;
+        deltaRef.current = { tab_switches: 0, violations: 0, copy_attempts: 0, paste_attempts: 0, right_click_attempts: 0 };
 
         const authResponse = await supabase.auth.getSession();
         const authSession = authResponse && authResponse.data ? authResponse.data.session : null;
@@ -595,7 +672,6 @@ function AssessmentContent() {
 
         const resolvedTypeCode = assessmentInfo.assessment_type?.code || assessmentInfo.assessmentType?.code || assessmentInfo.type_code || null;
         const resolvedScoringMode = assessmentInfo.assessment_type?.scoring_mode || assessmentInfo.assessmentType?.scoring_mode || "single_select";
-        console.log(`[Assessment] Type: ${resolvedTypeCode || 'unknown'}, Default Scoring: ${resolvedScoringMode}`);
 
         setAssessment(assessmentInfo);
         setAssessmentType(assessmentInfo.assessment_type || assessmentInfo.assessmentType || null);
@@ -615,25 +691,20 @@ function AssessmentContent() {
         const durationSeconds = deriveDurationSeconds(sessionData);
         if (durationSeconds <= 0) throw new Error('Unable to determine session duration');
         setTimeLimitSeconds(durationSeconds);
-        console.log(`[Assessment] Duration: ${Math.round(durationSeconds / 60)} minutes (${durationSeconds} seconds)`);
 
         const questionData = await fetchQuestions(assessmentTypeId, resolvedTypeCode, sessionData?.id);
         setQuestions(questionData || []);
-        if (questionData && questionData.length > 0) {
-          const distinctModes = [...new Set(questionData.map(q => q.scoring_mode || resolvedScoringMode))];
-          console.log(`[Assessment] Question scoring modes present: ${distinctModes.join(', ')}`);
-        }
 
         if (sessionData && sessionData.id) {
           const savedTimer = localStorage.getItem(`timer_${sessionData.id}`);
           if (savedTimer) {
             const elapsed = parseInt(savedTimer, 10);
-            if (elapsed > 0 && elapsed < durationSeconds) { setElapsedSeconds(elapsed); console.log(`[Timer] Restored: ${elapsed}s`); }
+            if (elapsed > 0 && elapsed < durationSeconds) { setElapsedSeconds(elapsed); }
           }
           const savedIndex = localStorage.getItem(`current_index_${sessionData.id}`);
           if (savedIndex !== null && questionData && questionData.length > 0) {
             const idx = parseInt(savedIndex, 10);
-            if (Number.isFinite(idx) && idx > 0 && idx < questionData.length) { setCurrentIndex(idx); console.log(`[Assessment] Restored index: ${idx}`); }
+            if (Number.isFinite(idx) && idx > 0 && idx < questionData.length) { setCurrentIndex(idx); }
           }
         }
 
@@ -659,6 +730,8 @@ function AssessmentContent() {
         }
 
         setQuestionStartTime(Date.now());
+        // Arm the proctoring grace window AFTER the page has settled.
+        proctoringReadyAtRef.current = Date.now() + PROCTORING_GRACE_MS;
         setLoading(false);
       } catch (err) {
         console.error("Assessment initialization error:", err);
@@ -703,10 +776,10 @@ function AssessmentContent() {
 
   useEffect(() => {
     if (loading || alreadySubmitted || accessDenied || !session || isTimeExpired) return;
-    const handleCopy = (event) => { event.preventDefault(); setCopyAttempts(prev => prev + 1); logViolation("Copy attempt"); return false; };
-    const handlePaste = (event) => { event.preventDefault(); setPasteAttempts(prev => prev + 1); logViolation("Paste attempt"); return false; };
+    const handleCopy = (event) => { event.preventDefault(); setCopyAttempts(prev => prev + 1); logViolation("Copy attempt", { copyAttempt: true }); return false; };
+    const handlePaste = (event) => { event.preventDefault(); setPasteAttempts(prev => prev + 1); logViolation("Paste attempt", { pasteAttempt: true }); return false; };
     const handleCut = (event) => { event.preventDefault(); logViolation("Cut attempt"); return false; };
-    const handleContextMenu2 = (event) => { event.preventDefault(); setRightClickAttempts(prev => prev + 1); logViolation("Right-click attempt"); return false; };
+    const handleContextMenu2 = (event) => { event.preventDefault(); setRightClickAttempts(prev => prev + 1); logViolation("Right-click attempt", { rightClickAttempt: true }); return false; };
     const handleKeyDown = (event) => {
       const key = String(event.key || "").toLowerCase();
       if (event.key === "PrintScreen") { event.preventDefault(); logViolation("Screenshot attempt"); return false; }
@@ -769,7 +842,6 @@ function AssessmentContent() {
         domainVisits, sessionId: sessionIdRef.current
       };
       const result = await submitAssessment(sessionIdRef.current, false, null, false, proctoringData, assessmentId);
-      console.log('[Assessment] Submit result:', result);
       setAlreadySubmitted(true);
       setShowSuccessModal(true);
       setTimeout(() => router.push('/candidate/assessment-complete'), 2000);
