@@ -12,7 +12,15 @@
 //   new ones from the client. Now the incoming values take precedence.
 // - Clarified that metadata.violations / tab_switches are PER-QUESTION
 //   deltas, not running totals. The client is responsible for sending the
-//   per-question delta. submit.js sums these only if it needs a fallback.
+//   per-question delta. submit.js no longer sums these.
+//
+// Phase 5.2 (2026-10-04):
+// - Replaced the SELECT-then-INSERT/UPDATE pattern with a single
+//   .upsert() call. The old pattern had a race condition: two concurrent
+//   saves for the same (session_id, question_id) could both see "no row"
+//   and both attempt to insert, producing a duplicate key error. The
+//   upsert uses the unique constraint responses_session_id_question_id_key
+//   as the conflict target, so concurrent calls are safe.
 
 import { createClient } from "@supabase/supabase-js";
 
@@ -44,7 +52,6 @@ export default async function handler(req, res) {
       auth: { persistSession: false, autoRefreshToken: false }
     });
 
-    // Get user from token
     const { data: userData, error: userError } = await serviceClient.auth.getUser(token);
     if (userError || !userData?.user) {
       return res.status(401).json({ success: false, error: "Invalid token" });
@@ -52,7 +59,6 @@ export default async function handler(req, res) {
 
     const userId = userData.user.id;
 
-    // Get session to get assessment_id
     const { data: session, error: sessionError } = await serviceClient
       .from("assessment_sessions")
       .select("assessment_id, user_id")
@@ -68,26 +74,32 @@ export default async function handler(req, res) {
     }
 
     const assessmentId = session.assessment_id;
+    const qid = parseInt(questionId, 10);
 
-    // Check if response exists
+    // Read the existing row (used for answer-change detection and
+    // metadata merging). If two concurrent saves happen, this SELECT may
+    // see a stale snapshot — but the upsert below resolves correctly.
     const { data: existing, error: existingError } = await serviceClient
       .from("responses")
       .select("id, answer_id, least_answer_id, times_changed, initial_answer_id, metadata")
       .eq("session_id", sessionId)
-      .eq("question_id", parseInt(questionId, 10))
+      .eq("question_id", qid)
       .maybeSingle();
+
+    if (existingError) {
+      console.error("[SaveResponse] Existing row read error:", existingError);
+    }
 
     const isNew = !existing;
 
-    // An answer change is only counted when the MOST pick changes.
-    // Setting least for the first time is not a change.
     const isAnswerChange = existing && existing.answer_id != null
       ? String(existing.answer_id) !== String(answer)
       : false;
 
-    const newChangeCount = isNew ? 0 : (existing.times_changed || 0) + (isAnswerChange ? 1 : 0);
+    const newChangeCount = isNew
+      ? 0
+      : (existing.times_changed || 0) + (isAnswerChange ? 1 : 0);
 
-    // Normalize least answer ID
     const normalizedLeastAnswerId =
       leastAnswerId === undefined || leastAnswerId === null || leastAnswerId === ""
         ? null
@@ -98,22 +110,21 @@ export default async function handler(req, res) {
       : normalizedLeastAnswerId;
 
     // ============================================================
-    // BUILD METADATA COLUMN
+    // METADATA
     //
-    // Field semantics:
-    //   tab_switches         — number of tab switches DURING this question
-    //   copy_attempts        — number of copy attempts DURING this question
-    //   paste_attempts       — number of paste attempts DURING this question
-    //   right_click_attempts — number of right-click attempts DURING this question
-    //   violations           — total violations DURING this question
-    //   previous_question    — which question the candidate was on before
-    //   is_answer_change     — computed server-side (see above)
+    // Field semantics (per-question deltas, NOT cumulative totals):
+    //   tab_switches         — tab switches during this question
+    //   copy_attempts        — copy attempts during this question
+    //   paste_attempts       — paste attempts during this question
+    //   right_click_attempts — right-click attempts during this question
+    //   violations           — total violations during this question
+    //   previous_question    — last question index seen
+    //   is_answer_change     — computed server-side
     //   time_on_question     — seconds spent on this question
     //
-    // SPREAD ORDER: existing metadata first, incoming values second. This
-    // means incoming values override preserved ones. The old order
-    // (incoming first, existing last) meant new values were always
-    // discarded on update.
+    // SPREAD ORDER: existing first, incoming second. Incoming overrides
+    // preserved. The old order (incoming first, existing last) discarded
+    // new values on update.
     // ============================================================
     const metadataColumn = {
       ...(existing?.metadata || {}),
@@ -127,58 +138,52 @@ export default async function handler(req, res) {
       time_on_question: parseInt(metadata?.time_on_question, 10) || 0
     };
 
-    // Build response data
-    const responseData = {
+    const now = new Date().toISOString();
+
+    // ============================================================
+    // UPSERT — the row is keyed on (session_id, question_id).
+    //
+    // On insert: create the row.
+    // On conflict: update the existing row.
+    //
+    // This replaces the old SELECT-then-INSERT/UPDATE pattern, which
+    // raced under concurrent saves.
+    // ============================================================
+    const upsertPayload = {
       session_id: sessionId,
       user_id: userId,
       assessment_id: assessmentId,
-      question_id: parseInt(questionId, 10),
+      question_id: qid,
       answer_id: String(answer),
       least_answer_id: safeLeastAnswerId,
       time_spent_seconds: parseInt(metadata?.time_spent_seconds, 10) || 0,
-      updated_at: new Date().toISOString(),
-      metadata: metadataColumn
+      updated_at: now,
+      metadata: metadataColumn,
+      times_changed: newChangeCount,
+      initial_answer_id: isNew
+        ? (metadata?.initial_answer_id || String(answer))
+        : (existing.initial_answer_id || metadata?.initial_answer_id || String(answer))
     };
 
     if (isNew) {
-      responseData.created_at = new Date().toISOString();
-      responseData.first_saved_at = new Date().toISOString();
-      responseData.times_changed = 0;
-      responseData.initial_answer_id = metadata?.initial_answer_id || String(answer);
-    } else {
-      responseData.times_changed = newChangeCount;
-      responseData.initial_answer_id =
-        existing.initial_answer_id || metadata?.initial_answer_id || String(answer);
+      upsertPayload.created_at = now;
+      upsertPayload.first_saved_at = now;
     }
 
-    // Save or update
-    let result;
-    if (isNew) {
-      const { data, error } = await serviceClient
-        .from("responses")
-        .insert(responseData)
-        .select();
+    const { data: upsertData, error: upsertError } = await serviceClient
+      .from("responses")
+      .upsert(upsertPayload, {
+        onConflict: "session_id,question_id",
+        ignoreDuplicates: false
+      })
+      .select();
 
-      if (error) {
-        console.error("Insert error:", error);
-        return res.status(500).json({ success: false, error: error.message });
-      }
-      result = data;
-    } else {
-      const { data, error } = await serviceClient
-        .from("responses")
-        .update(responseData)
-        .eq("id", existing.id)
-        .select();
-
-      if (error) {
-        console.error("Update error:", error);
-        return res.status(500).json({ success: false, error: error.message });
-      }
-      result = data;
+    if (upsertError) {
+      console.error("[SaveResponse] Upsert error:", upsertError);
+      return res.status(500).json({ success: false, error: upsertError.message });
     }
 
-    // Update session answered count and total time
+    // Update session aggregate counters.
     const { count } = await serviceClient
       .from("responses")
       .select("id", { count: "exact", head: true })
@@ -188,15 +193,15 @@ export default async function handler(req, res) {
       .from("assessment_sessions")
       .update({
         answered_questions: count || 0,
-        updated_at: new Date().toISOString(),
-        total_time_spent: metadata?.time_spent_seconds || 0,
-        last_activity: new Date().toISOString()
+        updated_at: now,
+        total_time_spent: parseInt(metadata?.time_spent_seconds, 10) || 0,
+        last_activity: now
       })
       .eq("id", sessionId);
 
     return res.status(200).json({
       success: true,
-      data: result,
+      data: upsertData,
       isNewResponse: isNew,
       isAnswerChange: isAnswerChange,
       timesChanged: newChangeCount,
@@ -205,7 +210,7 @@ export default async function handler(req, res) {
     });
 
   } catch (error) {
-    console.error("Error saving response:", error);
+    console.error("[SaveResponse] Unhandled error:", error);
     return res.status(500).json({ success: false, error: error.message });
   }
 }
