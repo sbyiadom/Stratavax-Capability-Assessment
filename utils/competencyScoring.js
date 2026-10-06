@@ -137,13 +137,24 @@ export const calculateCompetencyScores = (
   const results = {};
 
   safeResponses.forEach((response) => {
-    const question = getQuestionFromResponse(response);
-    const questionId = question?.id || response?.question_id;
-    const scored = scoreQuestionResponse(
-      response,
-      scoringMode === "baseline",
-      scoringMode
-    );
+  const question = getQuestionFromResponse(response);
+  const questionId = question?.id || response?.question_id;
+
+  // v2: respect the per-question scoring_mode when present. The
+  // assessment-level mode is only used as a fallback for questions
+  // that don't carry their own mode. Without this, mixed-mode
+  // assessments (e.g. Performance) scored every forced-choice
+  // question as single_select, using the stale `answer.score`
+  // column and inflating competency percentages to 300%.
+  const questionMode = question?.scoring_mode || scoringMode;
+
+  const scored = scoreQuestionResponse(
+    response,
+    questionMode === "baseline",
+    questionMode
+  );
+  ...
+});
 
     const score = toNumber(scored.score, 0);
     const maxScore = toNumber(scored.maxScore, 0);
