@@ -1,18 +1,22 @@
 // utils/competencyScoring.js
-
-/**
- * COMPETENCY SCORING
- *
- * Phase 5 update:
- * - Reads assessmentType scoring mode ('single_select' or 'forced_choice')
- *   via the assessmentType parameter, which can now be an object:
- *     { code: 'leadership', scoring_mode: 'forced_choice' }
- *   or a plain code string (legacy callers).
- * - Passes mode through to scoreQuestionResponse so forced-choice responses
- *   are scored correctly.
- * - Only questions with a real mapping in question_competencies contribute
- *   to competency scores. Unmapped questions are ignored (per Phase 5 fix).
- */
+//
+// Phase 5 update:
+// - Reads assessmentType scoring mode ('single_select' or 'forced_choice')
+//   via the assessmentType parameter, which can now be an object:
+//     { code: 'leadership', scoring_mode: 'forced_choice' }
+//   or a plain code string (legacy callers).
+// - Passes mode through to scoreQuestionResponse so forced-choice responses
+//   are scored correctly.
+// - Only questions with a real mapping in question_competencies contribute
+//   to competency scores. Unmapped questions are ignored (per Phase 5 fix).
+//
+// Phase 5.1 (2026-10-06):
+// - Respect per-question scoring_mode when it is present. The assessment-
+//   level mode is now only a fallback for questions that don't carry their
+//   own mode. This fixes mixed-mode assessments (e.g. Performance), where
+//   the previous code scored every forced-choice question as single_select,
+//   reading the stale `unique_answers.score` column and inflating the
+//   competency percentage (e.g. 15/5 = 300%).
 
 import {
   calculatePercentage,
@@ -133,28 +137,23 @@ export const calculateCompetencyScores = (
   const safeResponses = safeArray(responses);
   const mappings = safeArray(questionCompetencies);
   const mappingLookup = getCompetencyMappingLookup(mappings);
-  const scoringMode = resolveScoringMode(assessmentType);
+  const assessmentMode = resolveScoringMode(assessmentType);
   const results = {};
 
   safeResponses.forEach((response) => {
-  const question = getQuestionFromResponse(response);
-  const questionId = question?.id || response?.question_id;
+    const question = getQuestionFromResponse(response);
+    const questionId = question?.id || response?.question_id;
 
-  // v2: respect the per-question scoring_mode when present. The
-  // assessment-level mode is only used as a fallback for questions
-  // that don't carry their own mode. Without this, mixed-mode
-  // assessments (e.g. Performance) scored every forced-choice
-  // question as single_select, using the stale `answer.score`
-  // column and inflating competency percentages to 300%.
-  const questionMode = question?.scoring_mode || scoringMode;
+    // v2: respect the per-question scoring_mode when present. The
+    // assessment-level mode is only used as a fallback for questions
+    // that don't carry their own mode.
+    const questionMode = question?.scoring_mode || assessmentMode;
 
-  const scored = scoreQuestionResponse(
-    response,
-    questionMode === "baseline",
-    questionMode
-  );
-  ...
-});
+    const scored = scoreQuestionResponse(
+      response,
+      questionMode === "baseline",
+      questionMode
+    );
 
     const score = toNumber(scored.score, 0);
     const maxScore = toNumber(scored.maxScore, 0);
