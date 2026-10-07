@@ -8,6 +8,11 @@
 //   utils/resolveRiskLevel — no hardcoded 'Medium' fallback anywhere.
 // Phase 8 (2026-10-03): safeNumber/roundScore now delegate to
 //   utils/scoring (toNumber/roundNumber). No behaviour change.
+// Phase 8.1 (2026-10-07): extractBehavioralMatrix now reads the
+//   client-supplied session duration from report_data.proctoring instead
+//   of computing "now - completedAt". The old approach showed inflated
+//   time (or 00:00:00) when the report was viewed hours or days after
+//   completion, and disagreed with the supervisor report.
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -32,6 +37,14 @@ function roundScore(value) {
   return Math.round(toNumber(value, 0));
 }
 
+function formatTime(seconds) {
+  if (!seconds || seconds <= 0) return '00:00:00';
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = seconds % 60;
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+}
+
 function getReportDataObject(rawReportData) {
   if (!rawReportData) return {};
 
@@ -53,53 +66,49 @@ function getReportDataObject(rawReportData) {
 }
 
 // ============================================================
-// 🟢 BEHAVIORAL MATRIX EXTRACTOR
+// 🟢 BEHAVIORAL MATRIX EXTRACTOR (Phase 8.1 fix)
+//
+// Reads the client-supplied session duration from
+// report_data.proctoring. The submit handler stored the actual
+// seconds elapsed during the assessment, which does not depend on
+// when this report is viewed. The old implementation computed
+// "now - completedAt", which grew unbounded over time and disagreed
+// with the supervisor report view.
 // ============================================================
 function extractBehavioralMatrix(reportData) {
-  if (!reportData) {
-    return null;
-  }
+  if (!reportData) return null;
 
   const proctoring = reportData.proctoring ||
                      reportData.behavioral ||
                      reportData.behavioralMatrix ||
                      {};
 
-  if (Object.keys(proctoring).length === 0) {
-    return null;
-  }
+  if (Object.keys(proctoring).length === 0) return null;
 
-  let totalTime = '00:00:00';
-  if (reportData.completedAt) {
-    try {
-      const startTime = new Date(reportData.completedAt);
-      const now = new Date();
-      const diffMs = now - startTime;
-      if (diffMs > 0 && diffMs < 24 * 60 * 60 * 1000) {
-        const diffSeconds = Math.floor(diffMs / 1000);
-        const hours = Math.floor(diffSeconds / 3600);
-        const minutes = Math.floor((diffSeconds % 3600) / 60);
-        const seconds = diffSeconds % 60;
-        totalTime = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-      }
-    } catch (e) {}
-  }
+  // Prefer the client-supplied session duration. It is a fixed value
+  // captured at submit time.
+  const totalSeconds = Number(proctoring.totalTime) || 0;
 
-  let avgTimePerQuestion = 0;
-  if (reportData.totalMax && reportData.totalMax > 0 && reportData.completedAt) {
-    try {
-      const startTime = new Date(reportData.completedAt);
-      const now = new Date();
-      const diffMs = now - startTime;
-      if (diffMs > 0 && reportData.totalMax > 0) {
-        avgTimePerQuestion = Math.round(diffMs / reportData.totalMax / 1000);
-      }
-    } catch (e) {}
-  }
+  const totalTimeFormatted =
+    proctoring.totalTimeFormatted ||
+    proctoring.durationFormatted ||
+    (totalSeconds > 0 ? formatTime(totalSeconds) : '00:00:00');
+
+  // Average time per question — prefer the string the client already
+  // formatted (e.g. "48s" or "1m 12s"). Fall back to a computed value.
+  const totalQuestions = Number(reportData.totalQuestions) ||
+                         Number(reportData.totalMax) ||
+                         0;
+  const avgSeconds = totalQuestions > 0
+    ? Math.round(totalSeconds / totalQuestions)
+    : 0;
+  const avgTimePerQuestion = typeof proctoring.avgTimePerQuestion === 'string'
+    ? proctoring.avgTimePerQuestion
+    : (avgSeconds > 0 ? `${avgSeconds}s` : '0s');
 
   const matrix = {
-    totalTime: totalTime,
-    avgTimePerQuestion: avgTimePerQuestion || proctoring.avgTimePerQuestion || 0,
+    totalTime: totalTimeFormatted,
+    avgTimePerQuestion,
     answerChanges: proctoring.answerChanges || proctoring.answer_changes || 0,
     tabSwitches: proctoring.tabSwitches || proctoring.tab_switches || 0,
     violations: proctoring.totalViolations || proctoring.violations || 0,
