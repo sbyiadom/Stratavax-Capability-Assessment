@@ -10,6 +10,12 @@
 //   - persistAnswer now sends PER-QUESTION deltas (events since the last
 //     save), not cumulative counters. Cumulative totals still go to the
 //     submit endpoint via proctoringData.summary.
+// Phase 8.2 (2026-10-07): inactivity auto-submit.
+//   - After 15 minutes without mouse, keyboard, touch, or scroll
+//     activity, the assessment auto-submits. This prevents abandoned
+//     sessions from recording artificially inflated durations (we found
+//     sessions running 85+ hours because candidates walked away and
+//     returned days later).
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
@@ -19,6 +25,7 @@ import { supabase } from "../../supabase/client";
 const AssessmentPage = dynamic(() => Promise.resolve(AssessmentContent), { ssr: false });
 
 const PROCTORING_GRACE_MS = 2000;
+const INACTIVITY_LIMIT_MS = 15 * 60 * 1000; // 15 minutes
 
 function safeArray(value) {
   return Array.isArray(value) ? value : [];
@@ -196,7 +203,6 @@ function AssessmentContent() {
   const autoSubmitRef = useRef(false);
   const urlCheckIntervalRef = useRef(null);
 
-  // Per-question delta tracking (see persistAnswer).
   const deltaRef = useRef({
     tab_switches: 0,
     violations: 0,
@@ -205,7 +211,6 @@ function AssessmentContent() {
     right_click_attempts: 0
   });
 
-  // Suppresses spurious visibility events fired during page load.
   const proctoringReadyAtRef = useRef(0);
 
   const primaryColor = "#0b2a4e";
@@ -296,11 +301,7 @@ function AssessmentContent() {
 
   async function logViolation(violationType, opts = {}) {
     if (!sessionIdRef.current || alreadySubmitted || isAutoSubmitting || isTimeExpired) return;
-
-    // Suppress spurious events during page-load grace window.
-    if (Date.now() < proctoringReadyAtRef.current) {
-      return;
-    }
+    if (Date.now() < proctoringReadyAtRef.current) return;
 
     const newCount = violationCount + 1;
     setViolationCount(newCount);
@@ -351,8 +352,6 @@ function AssessmentContent() {
         const timeSpentSeconds = Math.floor((Date.now() - questionStartTime) / 1000);
         const timeOnQuestion = Math.floor((Date.now() - (questionStartTimes[qId] || questionStartTime)) / 1000);
 
-        // Auto-submit writes zero deltas per row; the cumulative totals
-        // are sent via proctoringData.summary below.
         if (qForcedChoice && typeof answer === "object" && !Array.isArray(answer)) {
           if (answer.most == null) return null;
           return saveAnswer(sessionIdRef.current, qId, String(answer.most), answer.least != null ? String(answer.least) : undefined, {
@@ -427,7 +426,6 @@ function AssessmentContent() {
     const timeSpentSeconds = Math.floor((Date.now() - questionStartTime) / 1000);
     const timeOnQuestion = Math.floor((Date.now() - (questionStartTimes[questionId] || questionStartTime)) / 1000);
 
-    // Snapshot per-question deltas, then reset.
     const deltas = { ...deltaRef.current };
     deltaRef.current = {
       tab_switches: 0,
@@ -589,6 +587,37 @@ function AssessmentContent() {
     document.addEventListener("contextmenu", handleContextMenu);
     return () => document.removeEventListener("contextmenu", handleContextMenu);
   }, [loading, alreadySubmitted, accessDenied, session, isTimeExpired]);
+
+  // ============================================================
+  // INACTIVITY AUTO-SUBMIT (Phase 8.2)
+  //
+  // After 15 minutes without mouse, keyboard, touch, or scroll
+  // activity, auto-submit. Prevents abandoned sessions from being
+  // recorded as 85-hour durations and preserves fairness across
+  // candidates.
+  // ============================================================
+  useEffect(() => {
+    if (loading || alreadySubmitted || accessDenied || !session || isTimeExpired || isAutoSubmitting) return;
+
+    let inactivityTimer = null;
+
+    const resetInactivity = () => {
+      if (inactivityTimer) clearTimeout(inactivityTimer);
+      inactivityTimer = setTimeout(() => {
+        console.warn('[Assessment] Auto-submitting after 15 minutes of inactivity');
+        handleAutoSubmit("Auto-submitted after 15 minutes of inactivity.");
+      }, INACTIVITY_LIMIT_MS);
+    };
+
+    const events = ['mousedown', 'keydown', 'touchstart', 'scroll'];
+    events.forEach(evt => document.addEventListener(evt, resetInactivity, { passive: true }));
+    resetInactivity();
+
+    return () => {
+      if (inactivityTimer) clearTimeout(inactivityTimer);
+      events.forEach(evt => document.removeEventListener(evt, resetInactivity));
+    };
+  }, [loading, alreadySubmitted, accessDenied, session, isTimeExpired, isAutoSubmitting]);
 
   useEffect(() => {
     if (currentQuestion.id && !questionStartTimes[currentQuestion.id]) {
