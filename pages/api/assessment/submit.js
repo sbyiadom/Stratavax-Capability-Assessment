@@ -1,47 +1,21 @@
 // pages/api/assessment/submit.js
-// Version: submit-per-question-mode-v16
+// Version: submit-per-question-mode-v17
 //
-// v16 (2026-10-04):
-//   • Removed the fallback that summed metadata.violations across every
-//     response row and overwrote the client-supplied totalViolations.
-//     Response metadata now records PER-QUESTION deltas, so summing them
-//     was both unnecessary and wrong. This block was the direct cause of
-//     the "80 violations" false alarm on the Cultural & Attitudinal Fit
-//     report (80 rows × violations: 1 = 80).
-//   • Kept a diagnostic warning in non-production when the summed per-
-//     question violations far exceed the summary total — a signal that a
-//     client regression has started sending cumulative counts again.
+// v17 (2026-10-07):
+//   • Reduced MAX_REASONABLE_SECONDS from 8 hours to 3 hours, and now
+//     ACTUALLY CAPS totalSeconds when it exceeds the limit. Previously
+//     the limit was only logged — the raw value was still stored, which
+//     is why abandoned sessions showed durations like 85 hours (308,335
+//     seconds) in reports.
+//   • The client-side inactivity auto-submit (Phase 8.2 in
+//     pages/assessment/[id].js) prevents this from occurring going
+//     forward, and this cap is the server-side defence in depth.
 //
-// v15 (2026-10-04):
-//   • Fixed falsy-zero reset in the category accumulation loop. The old
-//     check `if (!categoryEarnedMap[section])` reset categoryMaxMap back to
-//     0 every time a section's accumulated earned score was still 0 — so
-//     every section ended up with max: 1 instead of max: 10. Replaced with
-//     `if (!(section in categoryEarnedMap))`, which tests key existence.
-//   • loadFrozenQuestions SELECT now includes most_score and least_score
-//     from unique_answers, and both answer-assembly branches carry them
-//     through to the scorer. Required because scoreForcedChoiceResponse
-//     reads those columns (see utils/scoring.js Phase 8.1).
-//   • Removed the `|| 1` fallback on categoryMaxMap[category] in the
-//     categoryScores mapper.
-//
-// v14 (2026-10-03):
-//   • Scoring is decided per question, not per assessment. The handler
-//     reads scoring_mode from unique_questions alongside section and
-//     subsection, and passes it to scoreQuestionResponse for each question.
-//     Assessment-level scoring_mode (from assessment_types) is used only as
-//     a fallback when a question's mode is null.
-//   • Why: Performance Assessment has 40 forced_choice and 40 single_select
-//     questions in the same assessment. Under the old assessment-level
-//     resolution, all 80 were scored as single_select, which produced a
-//     spurious 100% for every candidate. Per-question mode fixes this.
-//
-// v13 (2026-10-02):
-//   • Competency scoring performs a DELETE of candidate_competency_scores
-//     for this candidate+assessment before upserting, to clear stale rows.
-// v12 (Phase 7E):
-//   • Session must have a frozen question set in session_questions.
-//   • Post-submit drift check against recompute_session_score.
+// v16 (2026-10-04): removed per-response metadata.violations summation.
+// v15 (2026-10-04): fixed falsy-zero category accumulation.
+// v14 (2026-10-03): per-question scoring mode.
+// v13 (2026-10-02): clear stale candidate_competency_scores.
+// v12 (Phase 7E): frozen question set + post-submit drift check.
 // v11: competency scoring at end of submission (non-fatal).
 // v10: unified scoring engine in utils/scoring.js.
 
@@ -52,7 +26,7 @@ import {
 } from "../../../utils/scoring";
 import { calculateCompetencyScores } from "../../../utils/competencyScoring";
 
-const SUBMIT_BUILD = "submit-per-question-mode-v16";
+const SUBMIT_BUILD = "submit-per-question-mode-v17";
 
 const PRACTICAL_ASSESSMENT_IDS = [
   'c2bc4994-1c4a-4094-a763-8d9d560b759e',
@@ -61,7 +35,11 @@ const PRACTICAL_ASSESSMENT_IDS = [
   '928f81fc-35ea-40ac-83cb-7c3a0c1c18dc'
 ];
 const NATIONAL_SERVICE_ASSESSMENT_ID = 'bdb9d46e-9fac-4d00-8478-1f649e7ac600';
-const MAX_REASONABLE_SECONDS = 8 * 60 * 60;
+
+// v17: reduced from 8 hours to 3 hours and now enforced (not just logged).
+// Any assessment open for more than 3 hours is treated as abandoned; the
+// stored duration is capped so reports don't show 85-hour sessions.
+const MAX_REASONABLE_SECONDS = 3 * 60 * 60;
 
 function formatDuration(seconds) {
   if (!seconds || seconds <= 0) return '00:00:00';
@@ -92,8 +70,6 @@ function safeArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
-// v15: also selects most_score and least_score from unique_answers so the
-// forced-choice scorer has the columns it needs.
 async function loadFrozenQuestions(serviceClient, sessionId) {
   const { data: frozen, error: frozenErr } = await serviceClient
     .from("session_questions")
@@ -383,7 +359,6 @@ export default async function handler(req, res) {
     let totalEarned = 0;
     let totalMax = 0;
 
-    // v15: use `in` to test key existence.
     questions.forEach(q => {
       const response = responseLookup[q.id];
       const section = q.section || "General";
@@ -470,9 +445,8 @@ export default async function handler(req, res) {
     let totalTabSwitches = Number(summary.tabSwitches) || 0;
     const externalUrlsVisited = Array.isArray(proctoring.externalUrls) ? proctoring.externalUrls.length : 0;
 
-    // v16: diagnostic only. Response metadata records PER-QUESTION deltas,
-    // so summing is not authoritative. Log a warning in non-prod if the
-    // sum looks suspiciously high.
+    // v16: trust summary; log a warning only in non-prod if per-question sums
+    // look suspicious.
     if (process.env.NODE_ENV !== "production" && responses && responses.length > 0) {
       const responseMetadata = responses.map(r => r.metadata || {});
       const summedPerQuestion = responseMetadata.reduce(
@@ -523,8 +497,11 @@ export default async function handler(req, res) {
       totalSeconds = Math.floor((new Date(completedAt) - new Date(session.created_at)) / 1000);
     }
 
+    // v17: enforce the cap. The client-side inactivity auto-submit prevents
+    // abandoned sessions going forward; this is defence in depth.
     if (totalSeconds > MAX_REASONABLE_SECONDS) {
-      console.warn(`[Submit] Total time ${totalSeconds}s exceeds reasonable limit, capping for display`);
+      console.warn(`[Submit] Capping total time from ${totalSeconds}s to ${MAX_REASONABLE_SECONDS}s (session likely abandoned)`);
+      totalSeconds = MAX_REASONABLE_SECONDS;
     }
     if (totalSeconds < 0) totalSeconds = 0;
     const totalDurationFormatted = formatDuration(totalSeconds);
@@ -664,7 +641,6 @@ export default async function handler(req, res) {
     const resultId = rpcResult;
     console.log(`[Submit] Result saved (transactional): ${resultId}`);
 
-    // Phase 7E: post-submit drift check.
     try {
       const { data: recomputed, error: recomputeErr } = await serviceClient
         .rpc('recompute_session_score', { p_session_id: sessionId });
@@ -688,9 +664,7 @@ export default async function handler(req, res) {
       console.warn('[Submit] Drift check errored (non-fatal):', driftErr?.message || driftErr);
     }
 
-    // ============================================================
     // STEP 19: COMPETENCY SCORING (NON-FATAL)
-    // ============================================================
     try {
       const validQuestionIds = questions
         .map(q => q.id)
