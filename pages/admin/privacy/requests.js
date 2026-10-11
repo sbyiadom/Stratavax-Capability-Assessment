@@ -11,7 +11,7 @@
 //   POST /api/admin/privacy/requests/[id]/reject  — reject
 //   GET  /api/admin/privacy/export/[candidateId]  — export file (with ?download=1)
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Fragment } from 'react';
 import { useRouter } from 'next/router';
 import { supabase } from '../../../supabase/client';
 import { useRequireAuth } from '../../../utils/requireAuth';
@@ -20,16 +20,13 @@ import AppLayout from '../../../components/AppLayout';
 // Valid status values that map to filter tabs
 const VALID_STATUSES = ['all', 'pending', 'in_review', 'approved', 'rejected', 'completed'];
 
-// Valid request types
-const VALID_TYPES = ['access', 'correction', 'deletion'];
-
 // Status → badge color
 const STATUS_COLORS = {
-  pending:      { bg: '#fef3c7', fg: '#92400e' },
-  in_review:    { bg: '#dbeafe', fg: '#1e40af' },
-  approved:     { bg: '#d1fae5', fg: '#065f46' },
-  rejected:     { bg: '#fee2e2', fg: '#991b1b' },
-  completed:    { bg: '#dcfce7', fg: '#166534' },
+  pending:   { bg: '#fef3c7', fg: '#92400e' },
+  in_review: { bg: '#dbeafe', fg: '#1e40af' },
+  approved:  { bg: '#d1fae5', fg: '#065f46' },
+  rejected:  { bg: '#fee2e2', fg: '#991b1b' },
+  completed: { bg: '#dcfce7', fg: '#166534' },
 };
 
 // Request type → label
@@ -64,7 +61,7 @@ export default function AdminPrivacyRequests() {
   const [requests, setRequests] = useState([]);
   const [error, setError] = useState(null);
   const [statusFilter, setStatusFilter] = useState('pending');
-  const [busyId, setBusyId] = useState(null);   // currently processing request id
+  const [busyId, setBusyId] = useState(null);
   const [expandedId, setExpandedId] = useState(null);
   const [rejectingId, setRejectingId] = useState(null);
   const [rejectionReason, setRejectionReason] = useState('');
@@ -167,7 +164,6 @@ export default function AdminPrivacyRequests() {
         throw new Error(data.error || 'Failed to approve request');
       }
 
-      // Refresh the list
       await fetchRequests();
       setBusyId(null);
     } catch (err) {
