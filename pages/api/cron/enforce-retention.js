@@ -18,11 +18,9 @@
 //   - Authenticated: requires RETENTION_CRON_SECRET (falls back to
 //     CRON_SECRET) via Authorization header.
 //
-// To go live after dry-run validation:
-//   1. Set env var RETENTION_DRY_RUN = 'false' in Vercel
-//   2. Redeploy
-//   3. Run once manually to verify
-//   4. Let the daily cron handle it thereafter
+// Phase 7H: anonymized candidate_profiles rows are now flagged with
+//   is_system_record = true so they are excluded from admin dashboards
+//   and reports.
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -42,8 +40,6 @@ function getSentinelId() {
 }
 
 // Whether we're in dry-run mode. Defaults to true unless explicitly disabled.
-// This is a defense-in-depth default: forgetting to set the env var means
-// we do NOT delete anything, which is the safer failure mode.
 function isDryRun() {
   const value = String(process.env.RETENTION_DRY_RUN ?? 'true').toLowerCase();
   return value !== 'false';
@@ -59,8 +55,6 @@ function isAuthorized(req) {
     process.env.RETENTION_CRON_SECRET || process.env.CRON_SECRET;
 
   if (!secret) {
-    // If neither secret is configured, allow only in non-production
-    // to avoid accidental exposure in prod.
     return process.env.NODE_ENV !== 'production';
   }
 
@@ -80,11 +74,14 @@ function computeCutoff(retentionMonths) {
 // ------------------------------------------------------------
 
 async function processCandidateProfiles(client, cutoff, action, dryRun) {
+  const sentinelId = process.env.ANONYMIZATION_SENTINEL_ID;
+
   const { data: rows, error } = await client
     .from('candidate_profiles')
     .select('id, updated_at')
     .lt('updated_at', cutoff)
-    .neq('id', process.env.ANONYMIZATION_SENTINEL_ID)
+    .neq('id', sentinelId)
+    .eq('is_system_record', false)
     .limit(MAX_ROWS_PER_TABLE);
 
   if (error) throw new Error(`candidate_profiles fetch failed: ${error.message}`);
@@ -105,6 +102,7 @@ async function processCandidateProfiles(client, cutoff, action, dryRun) {
         graduation_year: null,
         preferred_department: null,
         supervisor_id: null,
+        is_system_record: true,
         updated_at: new Date().toISOString(),
       })
       .in('id', ids);
@@ -333,7 +331,6 @@ export default async function handler(req, res) {
   const results = [];
 
   try {
-    // Sanity check: sentinel must exist before we anonymize anything
     if (!dryRun) {
       const sentinelId = getSentinelId();
       const { data: sentinel, error: sentinelErr } = await client
@@ -349,7 +346,6 @@ export default async function handler(req, res) {
       }
     }
 
-    // Load all active policies
     const { data: policies, error: policiesErr } = await client
       .from('retention_policies')
       .select('id, table_name, retention_months, action, description')
@@ -370,7 +366,6 @@ export default async function handler(req, res) {
       });
     }
 
-    // Process each policy
     for (const policy of policies) {
       const { table_name, retention_months, action, description } = policy;
       const handler = TABLE_HANDLERS[table_name];
