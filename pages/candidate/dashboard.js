@@ -1,10 +1,10 @@
 // pages/candidate/dashboard.js
 // Redesigned candidate dashboard.
 // - Left sidebar navigation (CandidateSidebar)
-// - Layered background overlay (image preserved, tuned for legibility)
+// - Layered background: blurred image + navy vignette overlay (image visible, cards readable)
 // - 5-KPI stats row (total, completed, ready, inProgress, blocked)
-// - Assessment table list (replaces compact card grid)
-// - Detail panel below (preserved from previous version)
+// - Assessment table list
+// - Detail panel below (preserved)
 // - Assessment guidelines (preserved)
 // - Info note + footer (preserved)
 
@@ -618,7 +618,7 @@ export default function CandidateDashboard() {
                   </div>
                 )}
 
-                {/* Detail panel — preserved from previous version */}
+                {/* Detail panel — preserved */}
                 {selectedAssessment && (
                   <div style={styles.detailSection}>
                     <div style={styles.detailHeader}>
@@ -1020,8 +1020,11 @@ const styles = {
     backgroundImage: "url(/images/dashboard1-bg.jpg)",
     backgroundSize: "cover",
     backgroundPosition: "center",
+    backgroundAttachment: "fixed",
     zIndex: 0,
     pointerEvents: "none",
+    filter: "blur(2px) saturate(1.05)",
+    transform: "scale(1.03)",
   },
   pageOverlay: {
     position: "fixed",
@@ -1030,7 +1033,7 @@ const styles = {
     right: 0,
     bottom: 0,
     background:
-      "linear-gradient(180deg, rgba(248,250,252,0.86) 0%, rgba(248,250,252,0.92) 45%, rgba(241,245,249,0.96) 100%)",
+      "linear-gradient(180deg, rgba(10, 25, 41, 0.28) 0%, rgba(10, 25, 41, 0.14) 35%, rgba(10, 25, 41, 0.32) 100%)",
     zIndex: 0,
     pointerEvents: "none",
   },
@@ -1104,12 +1107,12 @@ const styles = {
     alignItems: "center",
     gap: 16,
     padding: "16px 20px",
-    background: "rgba(255,255,255,0.7)",
+    background: "rgba(255,255,255,0.82)",
     backdropFilter: "blur(20px)",
     WebkitBackdropFilter: "blur(20px)",
     borderRadius: 16,
-    border: "1px solid rgba(10, 25, 41, 0.06)",
-    boxShadow: "0 1px 3px rgba(10, 25, 41, 0.04)",
+    border: "1px solid rgba(255, 255, 255, 0.5)",
+    boxShadow: "0 1px 3px rgba(10, 25, 41, 0.08)",
     marginBottom: 20,
     flexWrap: "wrap",
   },
@@ -1180,12 +1183,12 @@ const styles = {
     justifyContent: "space-between",
     gap: 24,
     padding: "28px 32px",
-    background: "rgba(255,255,255,0.94)",
+    background: "rgba(255,255,255,0.92)",
     backdropFilter: "blur(20px)",
     WebkitBackdropFilter: "blur(20px)",
     borderRadius: 18,
-    border: "1px solid rgba(10, 25, 41, 0.06)",
-    boxShadow: "0 4px 24px rgba(10, 25, 41, 0.04)",
+    border: "1px solid rgba(255, 255, 255, 0.5)",
+    boxShadow: "0 4px 24px rgba(10, 25, 41, 0.08)",
     marginBottom: 20,
     flexWrap: "wrap",
   },
@@ -1251,12 +1254,12 @@ const styles = {
     alignItems: "center",
     gap: 14,
     padding: "16px 18px",
-    background: "rgba(255,255,255,0.94)",
+    background: "rgba(255,255,255,0.92)",
     backdropFilter: "blur(20px)",
     WebkitBackdropFilter: "blur(20px)",
     borderRadius: 14,
-    border: "1px solid rgba(10, 25, 41, 0.06)",
-    boxShadow: "0 1px 3px rgba(10, 25, 41, 0.04)",
+    border: "1px solid rgba(255, 255, 255, 0.5)",
+    boxShadow: "0 1px 3px rgba(10, 25, 41, 0.08)",
     transition: "transform 200ms ease, box-shadow 200ms ease",
   },
   kpiIconBox: {
@@ -1305,7 +1308,7 @@ const styles = {
   },
   sectionSubtitle: {
     fontSize: 13,
-    color: "#64748b",
+    color: "#475569",
     margin: "3px 0 0 0",
   },
   sectionCount: {
@@ -1313,10 +1316,10 @@ const styles = {
     fontWeight: 600,
     color: "#334155",
     padding: "6px 14px",
-    background: "rgba(255,255,255,0.94)",
+    background: "rgba(255,255,255,0.9)",
     backdropFilter: "blur(20px)",
     borderRadius: 50,
-    border: "1px solid rgba(10, 25, 41, 0.06)",
+    border: "1px solid rgba(255, 255, 255, 0.5)",
     whiteSpace: "nowrap",
   },
 
@@ -1326,8 +1329,8 @@ const styles = {
     backdropFilter: "blur(20px)",
     WebkitBackdropFilter: "blur(20px)",
     borderRadius: 14,
-    border: "1px solid rgba(10, 25, 41, 0.06)",
-    boxShadow: "0 4px 24px rgba(10, 25, 41, 0.04)",
+    border: "1px solid rgba(255, 255, 255, 0.6)",
+    boxShadow: "0 4px 24px rgba(10, 25, 41, 0.08)",
     overflow: "hidden",
     marginBottom: 20,
   },
@@ -1344,7 +1347,7 @@ const styles = {
     color: "#64748b",
     textTransform: "uppercase",
     letterSpacing: "0.06em",
-    background: "rgba(248, 250, 252, 0.8)",
+    background: "rgba(248, 250, 252, 0.9)",
     borderBottom: "1px solid rgba(10, 25, 41, 0.06)",
     whiteSpace: "nowrap",
   },
@@ -1455,8 +1458,8 @@ const styles = {
     background: "rgba(255,255,255,0.96)",
     backdropFilter: "blur(20px)",
     borderRadius: 12,
-    border: "1px solid rgba(10, 25, 41, 0.06)",
-    boxShadow: "0 1px 3px rgba(10, 25, 41, 0.04)",
+    border: "1px solid rgba(255, 255, 255, 0.6)",
+    boxShadow: "0 1px 3px rgba(10, 25, 41, 0.08)",
     cursor: "pointer",
   },
   mobileCardHeader: {
@@ -1506,10 +1509,10 @@ const styles = {
   emptyState: {
     textAlign: "center",
     padding: "60px 40px",
-    background: "rgba(255,255,255,0.94)",
+    background: "rgba(255,255,255,0.92)",
     backdropFilter: "blur(20px)",
     borderRadius: 16,
-    border: "1px solid rgba(10, 25, 41, 0.06)",
+    border: "1px solid rgba(255, 255, 255, 0.5)",
     marginBottom: 20,
   },
   emptyIcon: {
@@ -1557,13 +1560,13 @@ const styles = {
 
   // ---------- Detail ----------
   detailSection: {
-    background: "rgba(255,255,255,0.98)",
+    background: "rgba(255,255,255,0.97)",
     backdropFilter: "blur(20px)",
     WebkitBackdropFilter: "blur(20px)",
     borderRadius: 16,
     padding: "24px 28px",
-    boxShadow: "0 4px 24px rgba(10, 25, 41, 0.06)",
-    border: "1px solid rgba(10, 25, 41, 0.06)",
+    boxShadow: "0 4px 24px rgba(10, 25, 41, 0.08)",
+    border: "1px solid rgba(255, 255, 255, 0.6)",
     animation: "fadeIn 0.4s ease",
   },
   detailHeader: {
@@ -1748,13 +1751,13 @@ const styles = {
   // ---------- Guidelines ----------
   guidelinesSection: {
     marginBottom: 20,
-    background: "rgba(255,255,255,0.94)",
+    background: "rgba(255,255,255,0.92)",
     backdropFilter: "blur(20px)",
     WebkitBackdropFilter: "blur(20px)",
     borderRadius: 16,
     padding: "24px 28px",
-    border: "1px solid rgba(10, 25, 41, 0.06)",
-    boxShadow: "0 1px 3px rgba(10, 25, 41, 0.04)",
+    border: "1px solid rgba(255, 255, 255, 0.5)",
+    boxShadow: "0 1px 3px rgba(10, 25, 41, 0.08)",
   },
   guidelinesTitle: {
     fontSize: 16,
@@ -1800,7 +1803,7 @@ const styles = {
   // ---------- Info note ----------
   infoNote: {
     padding: "14px 20px",
-    background: "rgba(59, 130, 246, 0.08)",
+    background: "rgba(219, 234, 254, 0.75)",
     backdropFilter: "blur(10px)",
     borderRadius: 12,
     display: "flex",
@@ -1808,7 +1811,7 @@ const styles = {
     gap: 12,
     color: "#1e40af",
     fontSize: 13,
-    border: "1px solid rgba(59, 130, 246, 0.15)",
+    border: "1px solid rgba(59, 130, 246, 0.2)",
     lineHeight: 1.6,
     marginBottom: 20,
   },
@@ -1845,12 +1848,12 @@ const styles = {
   footerLeft: { display: "flex", alignItems: "center", gap: 8 },
   footerBrand: { fontSize: 13, fontWeight: 700, color: "#0a1929" },
   footerDivider: { color: "#cbd5e1" },
-  footerText: { fontSize: 12, color: "#94a3b8" },
+  footerText: { fontSize: 12, color: "#64748b" },
   footerCenter: { display: "flex", alignItems: "center", gap: 8 },
   footerRight: { display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" },
   footerLink: {
     fontSize: 12,
-    color: "#64748b",
+    color: "#475569",
     textDecoration: "none",
     transition: "color 0.2s",
   },
