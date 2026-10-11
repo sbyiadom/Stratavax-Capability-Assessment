@@ -14,13 +14,10 @@
 // The export contains:
 //   - metadata (generation date, retention statement)
 //   - candidate profile
-//   - assessment results (scores, categories, classifications)
+//   - assessment results (scores, categories, recommendations)
 //   - competency scores
 //   - responses (item-level answers, if retained)
 //   - audit summary (who accessed what)
-//
-// Fields are excluded if they would expose other users' data (e.g. we
-// do NOT include supervisor names verbatim — only roles and timestamps).
 
 import { authorizeRequest } from '../../../../../utils/apiAuth';
 
@@ -35,7 +32,7 @@ function isoNow() {
 }
 
 // ------------------------------------------------------------
-// Handlers for each section of the export
+// Section loaders
 // ------------------------------------------------------------
 
 async function loadProfile(serviceClient, candidateId) {
@@ -62,6 +59,8 @@ async function loadProfile(serviceClient, candidateId) {
 }
 
 async function loadAssessmentResults(serviceClient, candidateId) {
+  // NOTE: assessment_results has no `classification` column. It has
+  // `recommendation` and `risk_level` instead.
   const { data, error } = await serviceClient
     .from('assessment_results')
     .select(`
@@ -70,7 +69,6 @@ async function loadAssessmentResults(serviceClient, candidateId) {
       total_score,
       max_score,
       percentage_score,
-      classification,
       category_scores,
       total_questions,
       answered_questions,
@@ -122,9 +120,6 @@ async function loadCompetencyScores(serviceClient, candidateId) {
 }
 
 async function loadResponses(serviceClient, candidateId) {
-  // Note: responses.user_id is the candidate's auth user id. Responses may
-  // have been deleted by retention before the export runs — that's expected
-  // and reflected in the retention statement at the top of the export.
   const { data, error } = await serviceClient
     .from('responses')
     .select(`
@@ -203,21 +198,18 @@ export default async function handler(req, res) {
   }
 
   // Optional: allow ?download=1 to trigger Content-Disposition attachment.
-  // Without it, the response is JSON for admin preview.
   const download = req.query.download === '1';
 
   try {
-    // Load profile first — if no profile, no export is possible
     const profile = await loadProfile(serviceClient, candidateId);
 
     if (!profile) {
       return res.status(404).json({ success: false, error: 'Candidate not found' });
     }
 
-    // Warn (but proceed) if candidate appears anonymized
     const isAnonymized = (profile.email || '').startsWith('anonymized');
 
-    // Load all sections
+    // Load all sections in parallel
     const [results, competencies, responses, auditSummary] = await Promise.all([
       loadAssessmentResults(serviceClient, candidateId),
       loadCompetencyScores(serviceClient, candidateId),
