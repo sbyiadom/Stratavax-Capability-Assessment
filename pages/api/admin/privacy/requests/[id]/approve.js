@@ -11,7 +11,7 @@
 //                 The corrections come in the request body as { corrections: {...} }.
 //
 //   access      → in this session, returns a placeholder. Full export
-//                 generation is in Session 5 (GET /api/admin/privacy/export/[candidateId]).
+//                 generation is in GET /api/admin/privacy/export/[candidateId].
 //
 // The endpoint marks the request as completed, records the reviewer, and
 // logs the action to anonymization_log.
@@ -23,8 +23,6 @@ import { authorizeRequest } from '../../../../../../utils/apiAuth';
 const LOG_TAG = '[Privacy Approve]';
 
 // Fields in candidate_profiles that can be corrected by admins.
-// Restrict to identity/education fields. Do not allow changes to role,
-// id, email (auth-managed), or supervisor assignment through this path.
 const ALLOWED_CORRECTION_FIELDS = new Set([
   'full_name',
   'phone',
@@ -42,9 +40,6 @@ function cleanText(value, fallback = '') {
 
 // ------------------------------------------------------------
 // Deletion action — anonymize the candidate using the sentinel.
-//
-// This mirrors the retention cron's logic but scoped to a single candidate.
-// After this runs, the candidate's data becomes aggregate-only.
 // ------------------------------------------------------------
 async function executeDeletion(serviceClient, request, reviewerId) {
   const sentinelId = process.env.ANONYMIZATION_SENTINEL_ID;
@@ -54,15 +49,13 @@ async function executeDeletion(serviceClient, request, reviewerId) {
 
   const candidateId = request.candidate_id;
 
-  // Guard: never anonymize the sentinel itself
   if (candidateId === sentinelId) {
     throw new Error('Cannot anonymize the sentinel candidate');
   }
 
-  // Verify the candidate exists and isn't already anonymized
   const { data: profile, error: profileErr } = await serviceClient
     .from('candidate_profiles')
-    .select('id, full_name, email')
+    .select('id, full_name, email, is_system_record')
     .eq('id', candidateId)
     .maybeSingle();
 
@@ -72,8 +65,7 @@ async function executeDeletion(serviceClient, request, reviewerId) {
   if (!profile) {
     throw new Error('Candidate profile not found');
   }
-  if (profile.email?.startsWith('anonymized')) {
-    // Already anonymized — idempotent success
+  if (profile.is_system_record === true || (profile.email || '').startsWith('anonymized')) {
     return {
       action: 'deletion',
       status: 'already_anonymized',
@@ -81,7 +73,7 @@ async function executeDeletion(serviceClient, request, reviewerId) {
     };
   }
 
-  // 1. Anonymize candidate_profiles
+  // 1. Anonymize candidate_profiles (and mark as system record)
   const anonymizedEmail = `anonymized+${candidateId.slice(0, 8)}@stratavax.internal`;
 
   const { error: profileUpdateErr } = await serviceClient
@@ -96,6 +88,7 @@ async function executeDeletion(serviceClient, request, reviewerId) {
       graduation_year: null,
       preferred_department: null,
       supervisor_id: null,
+      is_system_record: true,
       updated_at: new Date().toISOString(),
     })
     .eq('id', candidateId);
@@ -130,7 +123,7 @@ async function executeDeletion(serviceClient, request, reviewerId) {
     console.error(`${LOG_TAG} Competency scores anonymization warning:`, scoresErr.message);
   }
 
-  // 4. Hard delete responses (item-level data)
+  // 4. Hard delete responses
   const { error: responsesErr, count: responsesCount } = await serviceClient
     .from('responses')
     .delete({ count: 'exact' })
@@ -185,9 +178,6 @@ async function executeDeletion(serviceClient, request, reviewerId) {
 
 // ------------------------------------------------------------
 // Correction action — apply admin-provided field corrections.
-//
-// The request body must contain { corrections: { field: value, ... } }.
-// Only ALLOWED_CORRECTION_FIELDS are accepted.
 // ------------------------------------------------------------
 async function executeCorrection(serviceClient, request, reviewerId, corrections) {
   if (!corrections || typeof corrections !== 'object' || Array.isArray(corrections)) {
@@ -201,19 +191,16 @@ async function executeCorrection(serviceClient, request, reviewerId, corrections
     throw new Error('No correction fields provided');
   }
 
-  // Filter to allowed fields
   const rejected = fields.filter(f => !ALLOWED_CORRECTION_FIELDS.has(f));
   if (rejected.length > 0) {
     throw new Error(`Cannot correct these fields: ${rejected.join(', ')}`);
   }
 
-  // Build the update payload (strip undefined, keep null to clear)
   const updatePayload = { updated_at: new Date().toISOString() };
   fields.forEach(f => {
     updatePayload[f] = corrections[f];
   });
 
-  // Fetch current values for the audit log
   const { data: before, error: beforeErr } = await serviceClient
     .from('candidate_profiles')
     .select(fields.join(', '))
@@ -227,7 +214,6 @@ async function executeCorrection(serviceClient, request, reviewerId, corrections
     throw new Error('Candidate profile not found');
   }
 
-  // Apply the correction
   const { error: updateErr } = await serviceClient
     .from('candidate_profiles')
     .update(updatePayload)
@@ -237,13 +223,12 @@ async function executeCorrection(serviceClient, request, reviewerId, corrections
     throw new Error(`Failed to apply correction: ${updateErr.message}`);
   }
 
-  // Log the change in anonymization_log (using it as a general privacy-action log)
   const { error: logErr } = await serviceClient
     .from('anonymization_log')
     .insert({
       table_name: 'candidate_profiles',
       row_id: candidateId,
-      action: 'anonymized', // schema doesn't have 'corrected'; we note reason
+      action: 'anonymized',
       reason: `Correction applied via privacy request ${request.id}: ${fields.join(', ')}`,
       triggered_by: 'privacy_request',
       privacy_request_id: request.id,
@@ -265,10 +250,7 @@ async function executeCorrection(serviceClient, request, reviewerId, corrections
 }
 
 // ------------------------------------------------------------
-// Access action — placeholder for now.
-//
-// Session 5 will build the actual export. For this session, we mark the
-// request as completed and return a pointer to the export endpoint.
+// Access action — placeholder until export is requested
 // ------------------------------------------------------------
 async function executeAccess(serviceClient, request, reviewerId) {
   return {
@@ -288,7 +270,6 @@ export default async function handler(req, res) {
     return res.status(405).json({ success: false, error: 'Method not allowed' });
   }
 
-  // Admin-only auth
   const auth = await authorizeRequest(req, ['admin']);
   if (auth.error) {
     return res.status(auth.status).json({ success: false, error: auth.error });
@@ -302,7 +283,6 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Load the request
     const { data: request, error: requestErr } = await serviceClient
       .from('privacy_requests')
       .select('*')
@@ -318,7 +298,6 @@ export default async function handler(req, res) {
       return res.status(404).json({ success: false, error: 'Request not found' });
     }
 
-    // Guard: only pending or in_review requests can be approved
     if (!['pending', 'in_review'].includes(request.status)) {
       return res.status(409).json({
         success: false,
@@ -330,7 +309,6 @@ export default async function handler(req, res) {
     const reviewerId = caller.userId;
     let actionResult;
 
-    // Execute the appropriate action
     if (request.request_type === 'deletion') {
       actionResult = await executeDeletion(serviceClient, request, reviewerId);
     } else if (request.request_type === 'correction') {
@@ -345,7 +323,6 @@ export default async function handler(req, res) {
       });
     }
 
-    // Mark the request completed
     const notes = cleanText(req.body?.notes) || null;
 
     const { data: updated, error: updateErr } = await serviceClient
