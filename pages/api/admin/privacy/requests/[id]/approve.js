@@ -18,7 +18,7 @@
 //
 // Auth: admin only.
 
-import { authorizeRequest } from '../../../../../utils/apiAuth';
+import { authorizeRequest } from '../../../../../../utils/apiAuth';
 
 const LOG_TAG = '[Privacy Approve]';
 
