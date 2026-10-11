@@ -102,16 +102,15 @@ const NAV_SECTIONS = [
   {
     label: "MAIN",
     items: [
-      { key: "dashboard", label: "Dashboard",      href: "/candidate/dashboard", icon: "Grid",      exact: true  },
-      { key: "assessments", label: "My Assessments", href: "/assessment",          icon: "Clipboard", exact: false },
-      { key: "results",     label: "Results",        href: "/candidate/results",   icon: "Chart",     exact: false, disabled: true, disabledNote: "Coming soon" },
+      { key: "dashboard", label: "Dashboard", href: "/candidate/dashboard", icon: "Grid",  exact: true  },
+      { key: "results",   label: "Results",   href: "/candidate/results",   icon: "Chart", exact: false, disabled: true, disabledNote: "Coming soon" },
     ],
   },
   {
     label: "ACCOUNT",
     items: [
-      { key: "profile", label: "Profile",         href: "/candidate/profile", icon: "User",   exact: false },
-      { key: "privacy", label: "Privacy & Data",  href: "/candidate/privacy", icon: "Shield", exact: false },
+      { key: "profile", label: "Profile",        href: "/candidate/profile", icon: "User",   exact: false },
+      { key: "privacy", label: "Privacy & Data", href: "/candidate/privacy", icon: "Shield", exact: false },
     ],
   },
   {
