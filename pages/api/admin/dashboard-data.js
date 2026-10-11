@@ -87,9 +87,10 @@ export default async function handler(req, res) {
     // DATA — same shape as the previous four client-side reads
     // ============================================================
     const [candidatesResponse, resultsResponse, assignmentsResponse] = await Promise.all([
-      serviceClient
+            serviceClient
         .from('candidate_profiles')
         .select('id, full_name, email, university, programme, created_at')
+        .eq('is_system_record', false)
         .order('created_at', { ascending: false }),
       serviceClient
         .from('assessment_results')
