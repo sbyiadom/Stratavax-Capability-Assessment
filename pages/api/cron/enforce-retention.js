@@ -15,7 +15,8 @@
 //   - Rate limit: MAX_ROWS_PER_TABLE rows per table per run. Prevents
 //     runaway deletions if a misconfigured policy would nuke a table.
 //   - Only active policies are enforced. Set is_active = false to disable.
-//   - Authenticated: requires CRON_SECRET via Authorization header.
+//   - Authenticated: requires RETENTION_CRON_SECRET (falls back to
+//     CRON_SECRET) via Authorization header.
 //
 // To go live after dry-run validation:
 //   1. Set env var RETENTION_DRY_RUN = 'false' in Vercel
@@ -48,15 +49,21 @@ function isDryRun() {
   return value !== 'false';
 }
 
-// Authenticate the caller. Vercel Cron sends the CRON_SECRET in the
-// Authorization header. External triggers must do the same.
+// Authenticate the caller.
+//
+// Preference order:
+//   1. RETENTION_CRON_SECRET — dedicated to this endpoint
+//   2. CRON_SECRET — legacy fallback, shared with other crons
 function isAuthorized(req) {
-  const secret = process.env.CRON_SECRET;
+  const secret =
+    process.env.RETENTION_CRON_SECRET || process.env.CRON_SECRET;
+
   if (!secret) {
-    // If CRON_SECRET isn't configured, allow only in non-production
+    // If neither secret is configured, allow only in non-production
     // to avoid accidental exposure in prod.
     return process.env.NODE_ENV !== 'production';
   }
+
   const authHeader = req.headers.authorization || '';
   return authHeader === `Bearer ${secret}`;
 }
@@ -70,13 +77,6 @@ function computeCutoff(retentionMonths) {
 
 // ------------------------------------------------------------
 // Per-table handlers
-//
-// Each handler:
-//   1. Reads the rows that exceed the retention window (up to MAX_ROWS).
-//   2. Applies the action (anonymize or delete).
-//   3. Returns { processed, ids }.
-//
-// Return shape: { processed: number, rowIds: string[] }
 // ------------------------------------------------------------
 
 async function processCandidateProfiles(client, cutoff, action, dryRun) {
@@ -84,7 +84,7 @@ async function processCandidateProfiles(client, cutoff, action, dryRun) {
     .from('candidate_profiles')
     .select('id, updated_at')
     .lt('updated_at', cutoff)
-    .neq('id', process.env.ANONYMIZATION_SENTINEL_ID) // never touch the sentinel
+    .neq('id', process.env.ANONYMIZATION_SENTINEL_ID)
     .limit(MAX_ROWS_PER_TABLE);
 
   if (error) throw new Error(`candidate_profiles fetch failed: ${error.message}`);
@@ -120,7 +120,7 @@ async function processAssessmentResults(client, cutoff, action, dryRun) {
     .from('assessment_results')
     .select('id, completed_at')
     .lt('completed_at', cutoff)
-    .neq('user_id', process.env.ANONYMIZATION_SENTINEL_ID) // already anonymized
+    .neq('user_id', process.env.ANONYMIZATION_SENTINEL_ID)
     .limit(MAX_ROWS_PER_TABLE);
 
   if (error) throw new Error(`assessment_results fetch failed: ${error.message}`);
@@ -129,10 +129,6 @@ async function processAssessmentResults(client, cutoff, action, dryRun) {
   const ids = rows.map(r => r.id);
 
   if (!dryRun) {
-    // Note: user_id is replaced with the sentinel. answered_questions and
-    // report_data are preserved because they contain scores, not identity.
-    // If report_data contains identifying subfields, add targeted jsonb_set
-    // operations here in a future iteration.
     const { error: updateErr } = await client
       .from('assessment_results')
       .update({
@@ -271,7 +267,7 @@ async function processAuditLogs(client, cutoff, action, dryRun) {
 }
 
 // ------------------------------------------------------------
-// Dispatcher: route a policy to its handler.
+// Dispatcher
 // ------------------------------------------------------------
 const TABLE_HANDLERS = {
   candidate_profiles: processCandidateProfiles,
@@ -284,7 +280,7 @@ const TABLE_HANDLERS = {
 };
 
 // ------------------------------------------------------------
-// Log each processed row into anonymization_log.
+// Log actions to anonymization_log
 // ------------------------------------------------------------
 async function logActions(client, tableName, action, rowIds, triggeredBy, reason) {
   if (!rowIds || rowIds.length === 0) return;
@@ -307,12 +303,10 @@ async function logActions(client, tableName, action, rowIds, triggeredBy, reason
 // Main handler
 // ------------------------------------------------------------
 export default async function handler(req, res) {
-  // Only GET (Vercel Cron) or POST (external trigger) allowed
   if (req.method !== 'GET' && req.method !== 'POST') {
     return res.status(405).json({ success: false, error: 'Method not allowed' });
   }
 
-  // Auth check
   if (!isAuthorized(req)) {
     console.warn(`${LOG_TAG} Unauthorized request`);
     return res.status(401).json({ success: false, error: 'Unauthorized' });
@@ -339,7 +333,7 @@ export default async function handler(req, res) {
   const results = [];
 
   try {
-    // Sanity check: sentinel must exist
+    // Sanity check: sentinel must exist before we anonymize anything
     if (!dryRun) {
       const sentinelId = getSentinelId();
       const { data: sentinel, error: sentinelErr } = await client
@@ -396,7 +390,6 @@ export default async function handler(req, res) {
       try {
         const { processed, rowIds } = await handler(client, cutoff, action, dryRun);
 
-        // Log actions (even in dry-run, we log what would happen for audit review)
         if (processed > 0) {
           await logActions(
             client,
