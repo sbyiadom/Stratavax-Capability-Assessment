@@ -2,6 +2,8 @@
 // Phase 6.5 — real dashboard metrics with time-window deltas.
 // Every number is computed from the database. No hardcoded deltas, no
 // percentage-of-total multipliers.
+//
+// Phase 7H: excludes the anonymization sentinel from candidate counts.
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -63,10 +65,10 @@ async function countRows(serviceClient, table, applyFilters) {
 function pctDelta(current, previous) {
   if (previous === 0) {
     if (current === 0) return { delta: 0, deltaPct: 0 };
-    return { delta: current, deltaPct: null }; // undefined-from-zero
+    return { delta: current, deltaPct: null };
   }
   const delta = current - previous;
-  const deltaPct = Math.round((delta / previous) * 1000) / 10; // one decimal
+  const deltaPct = Math.round((delta / previous) * 1000) / 10;
   return { delta, deltaPct };
 }
 
@@ -106,9 +108,9 @@ export default async function handler(req, res) {
     }
 
     // ============================================================
-    // CANDIDATES — 30-day windows
+    // CANDIDATES — 30-day windows (excluding system records)
     // ============================================================
-        const [
+    const [
       totalCandidates,
       candidatesLast30,
       candidatesPrev30,
@@ -126,6 +128,8 @@ export default async function handler(req, res) {
           .lt('created_at', new Date(Date.now() - 30 * 86400000).toISOString())
       ),
     ]);
+
+    const candidateDelta = pctDelta(candidatesLast30, candidatesPrev30);
 
     // ============================================================
     // RESULTS — 7-day and 30-day windows
