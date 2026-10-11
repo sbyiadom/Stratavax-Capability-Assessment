@@ -108,23 +108,24 @@ export default async function handler(req, res) {
     // ============================================================
     // CANDIDATES — 30-day windows
     // ============================================================
-    const [
+        const [
       totalCandidates,
       candidatesLast30,
       candidatesPrev30,
     ] = await Promise.all([
-      countRows(serviceClient, 'candidate_profiles', (q) => q),
+      countRows(serviceClient, 'candidate_profiles', (q) => q.eq('is_system_record', false)),
       countRows(serviceClient, 'candidate_profiles', (q) =>
-        q.gte('created_at', new Date(Date.now() - 30 * 86400000).toISOString())
+        q
+          .eq('is_system_record', false)
+          .gte('created_at', new Date(Date.now() - 30 * 86400000).toISOString())
       ),
       countRows(serviceClient, 'candidate_profiles', (q) =>
         q
+          .eq('is_system_record', false)
           .gte('created_at', new Date(Date.now() - 60 * 86400000).toISOString())
           .lt('created_at', new Date(Date.now() - 30 * 86400000).toISOString())
       ),
     ]);
-
-    const candidateDelta = pctDelta(candidatesLast30, candidatesPrev30);
 
     // ============================================================
     // RESULTS — 7-day and 30-day windows
