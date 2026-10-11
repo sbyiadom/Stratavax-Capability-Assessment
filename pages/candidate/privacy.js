@@ -1,23 +1,25 @@
 // pages/candidate/privacy.js
-// Phase 7H — Candidate-facing privacy request page.
+// Candidate-facing privacy page — redesigned to match dashboard/profile.
 //
-// Candidates can:
-//   - Submit privacy requests (access, correction, deletion)
-//   - View their own past requests with status and admin response
-//   - Read what each request type does and how it's handled
-//
-// Uses:
-//   - supabase auth session (client-side)
-//   - privacy_requests table directly via RLS (auth.uid() = candidate_id)
-//   - POST /api/privacy/request to submit
+// - Left sidebar navigation (CandidateSidebar)
+// - Layered background: blurred image + navy vignette overlay
+// - Three request type cards (Access / Correction / Deletion)
+// - Submission via POST /api/privacy/request
+// - History list via GET /api/privacy/requests (server-side, RLS-safe)
+// - Pending request banner
+// - Retention policy info note
+// - Top bar, footer, mobile responsive
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
-import Image from "next/image";
 import Link from "next/link";
 import { useRequireAuth } from "../../utils/requireAuth";
 import { supabase } from "../../supabase/client";
+import CandidateSidebar, { MobileMenuButton } from "../../components/CandidateSidebar";
 
+// ============================================================
+// CONFIG
+// ============================================================
 const REQUEST_TYPES = [
   {
     value: "access",
@@ -46,11 +48,11 @@ const REQUEST_TYPES = [
 ];
 
 const STATUS_LABELS = {
-  pending:    { label: "Pending Review",   bg: "rgba(245, 158, 11, 0.15)", fg: "#d97706" },
-  in_review:  { label: "In Review",        bg: "rgba(59, 130, 246, 0.15)",  fg: "#2563eb" },
-  approved:   { label: "Approved",         bg: "rgba(34, 197, 94, 0.15)",   fg: "#16a34a" },
-  completed:  { label: "Completed",        bg: "rgba(34, 197, 94, 0.15)",   fg: "#16a34a" },
-  rejected:   { label: "Rejected",         bg: "rgba(220, 38, 38, 0.15)",   fg: "#dc2626" },
+  pending:   { label: "Pending Review", bg: "rgba(245, 158, 11, 0.15)", fg: "#d97706" },
+  in_review: { label: "In Review",      bg: "rgba(59, 130, 246, 0.15)", fg: "#2563eb" },
+  approved:  { label: "Approved",       bg: "rgba(34, 197, 94, 0.15)",  fg: "#16a34a" },
+  completed: { label: "Completed",      bg: "rgba(34, 197, 94, 0.15)",  fg: "#16a34a" },
+  rejected:  { label: "Rejected",       bg: "rgba(220, 38, 38, 0.15)",  fg: "#dc2626" },
 };
 
 function formatDate(value) {
@@ -66,6 +68,9 @@ function formatDate(value) {
   }
 }
 
+// ============================================================
+// COMPONENT
+// ============================================================
 export default function CandidatePrivacyPage() {
   const router = useRouter();
   const { session, loading: authLoading } = useRequireAuth();
@@ -83,10 +88,22 @@ export default function CandidatePrivacyPage() {
 
   const [expandedId, setExpandedId] = useState(null);
   const [currentYear] = useState(new Date().getFullYear());
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [viewport, setViewport] = useState({ isMobile: false, isTablet: false });
 
-  // ============================================================
-  // Load candidate's own requests
-  // ============================================================
+  // ---------- Responsive ----------
+  useEffect(() => {
+    function update() {
+      if (typeof window === "undefined") return;
+      const w = window.innerWidth;
+      setViewport({ isMobile: w < 768, isTablet: w >= 768 && w < 1024 });
+    }
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
+
+  // ---------- Load data ----------
   useEffect(() => {
     if (!session?.user) return;
     loadData();
@@ -98,30 +115,34 @@ export default function CandidatePrivacyPage() {
       setLoading(true);
       setError(null);
 
-      // Load candidate name from profile
-      const { data: profile } = await supabase
-        .from("candidate_profiles")
-        .select("full_name")
-        .eq("id", session.user.id)
-        .maybeSingle();
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
+      if (!token) throw new Error("Not authenticated");
 
-      if (profile?.full_name) {
-        setUserName(profile.full_name);
+      // ---- 1. Load candidate name from profile API ----
+      try {
+        const profileRes = await fetch("/api/candidate/profile", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const profileData = await profileRes.json();
+        if (profileData?.success && profileData.profile?.full_name) {
+          setUserName(profileData.profile.full_name);
+        }
+      } catch {
+        // Non-fatal — fall back to "Candidate"
       }
 
-      // Load candidate's own requests (RLS enforces auth.uid() = candidate_id)
-      const { data: reqs, error: reqError } = await supabase
-        .from("privacy_requests")
-        .select(
-          "id, request_type, status, details, requested_at, reviewed_at, completed_at, rejection_reason, notes"
-        )
-        .order("requested_at", { ascending: false });
+      // ---- 2. Load privacy requests via new API route ----
+      const reqRes = await fetch("/api/privacy/requests", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const reqData = await reqRes.json();
 
-      if (reqError) {
-        throw new Error(reqError.message || "Failed to load your requests");
+      if (!reqRes.ok || !reqData.success) {
+        throw new Error(reqData.error || "Failed to load your requests");
       }
 
-      setRequests(reqs || []);
+      setRequests(reqData.requests || []);
       setLoading(false);
     } catch (err) {
       console.error("[Privacy Page] Load failed:", err);
@@ -130,22 +151,17 @@ export default function CandidatePrivacyPage() {
     }
   }
 
-  // ============================================================
-  // Check if candidate has a pending request
-  // ============================================================
+  // ---------- Pending request check ----------
   const pendingRequest = requests.find(
     (r) => r.status === "pending" || r.status === "in_review"
   );
 
-  // ============================================================
-  // Submit a request
-  // ============================================================
+  // ---------- Submit ----------
   async function handleSubmit() {
     if (!selectedType) {
       setSubmitError("Please choose a request type.");
       return;
     }
-
     if (selectedType === "correction" && details.trim().length < 10) {
       setSubmitError(
         "Please describe what needs to be corrected (at least 10 characters)."
@@ -159,7 +175,6 @@ export default function CandidatePrivacyPage() {
 
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData?.session?.access_token;
-
       if (!token) throw new Error("Not authenticated");
 
       const body = {
@@ -182,7 +197,6 @@ export default function CandidatePrivacyPage() {
         throw new Error(data.error || "Failed to submit request");
       }
 
-      // Success — reset form, reload list
       setSubmitSuccess(true);
       setSelectedType(null);
       setDetails("");
@@ -197,18 +211,19 @@ export default function CandidatePrivacyPage() {
     }
   }
 
-  // ============================================================
-  // Render helpers
-  // ============================================================
   async function handleSignOut() {
     await supabase.auth.signOut();
     router.push("/login");
   }
 
+  const sidebarWidth = viewport.isMobile ? 0 : viewport.isTablet ? 72 : 260;
+
+  // ---------- Loading ----------
   if (authLoading || loading) {
     return (
       <div style={styles.loadingContainer}>
         <div style={styles.loadingBackground} />
+        <div style={styles.loadingOverlay} />
         <div style={styles.loadingContent}>
           <div style={styles.loadingLogo}>Stratavax</div>
           <div style={styles.loadingSpinner} />
@@ -220,72 +235,79 @@ export default function CandidatePrivacyPage() {
 
   if (!session) return null;
 
+  // ---------- Render ----------
   return (
     <div style={styles.pageContainer}>
-      <div style={styles.pageBackground} />
+      {/* Sidebar */}
+      <CandidateSidebar
+        userName={userName}
+        userEmail={session?.user?.email || ""}
+        onSignOut={handleSignOut}
+        activePath="/candidate/privacy"
+        mobileOpen={mobileNavOpen}
+        onCloseMobile={() => setMobileNavOpen(false)}
+      />
 
-      <div style={styles.content}>
-        {/* Header */}
-        <header style={styles.header}>
-          <div style={styles.headerContent}>
-            <div style={styles.headerLeft}>
-              <div style={styles.logoWrapper}>
-                <Image
-                  src="/images/stratavax-logo.png"
-                  alt="Stratavax"
-                  width={40}
-                  height={40}
-                  priority
+      {/* Main column */}
+      <div style={{ ...styles.mainColumn, marginLeft: sidebarWidth }}>
+        <div style={styles.pageBackground} />
+        <div style={styles.pageOverlay} />
+
+        <div style={styles.content}>
+          {/* Top bar */}
+          <header style={styles.topBar}>
+            <div style={styles.topBarLeft}>
+              {viewport.isMobile && (
+                <MobileMenuButton
+                  onClick={() => setMobileNavOpen(true)}
+                  visible={true}
                 />
-                <span style={styles.headerTitle}>STRATAVAX</span>
+              )}
+              <div>
+                <h1 style={styles.pageTitle}>Privacy &amp; Data</h1>
+                <div style={styles.breadcrumb}>
+                  <span>Candidate Portal</span>
+                  <span style={styles.breadcrumbSep}>/</span>
+                  <span style={styles.breadcrumbActive}>Privacy &amp; Data</span>
+                </div>
               </div>
-              <span style={styles.headerDivider}>|</span>
-              <span style={styles.headerSubtitle}>Assessment Portal</span>
             </div>
-            <div style={styles.headerRight}>
-              <Link href="/candidate/dashboard" style={styles.profileButton}>
-                <span style={styles.profileAvatar}>
+            <div style={styles.topBarRight}>
+              <Link href="/candidate/profile" style={styles.profileChip}>
+                <span style={styles.profileChipAvatar}>
                   {userName.charAt(0).toUpperCase()}
                 </span>
-                <span>{userName}</span>
+                <span style={styles.profileChipName}>{userName}</span>
               </Link>
-              <button onClick={handleSignOut} style={styles.logoutButton}>
-                Sign Out
-              </button>
             </div>
-          </div>
-        </header>
+          </header>
 
-        {/* Welcome / heading */}
-        <div style={styles.welcomeSection}>
-          <div style={styles.welcomeContent}>
+          {/* Welcome / intro */}
+          <section style={styles.welcomeCard}>
             <div>
+              <div style={styles.welcomeEyebrow}>YOUR DATA, YOUR RIGHTS</div>
               <h2 style={styles.welcomeTitle}>
-                Privacy & Data <span style={styles.welcomeName}>Requests</span>
+                Manage your <span style={styles.welcomeAccent}>privacy requests</span>
               </h2>
               <p style={styles.welcomeText}>
                 You can request a copy of your data, ask for a correction, or
-                request deletion. Every request is reviewed by an administrator.
+                request deletion. Every request is reviewed by an administrator
+                and handled within the stated turnaround.
               </p>
             </div>
-            <Link href="/candidate/dashboard" style={styles.backLink}>
-              ← Back to Dashboard
-            </Link>
-          </div>
-        </div>
+          </section>
 
-        {/* Main content */}
-        <div style={styles.mainContent}>
+          {/* Error */}
           {error && (
             <div style={styles.errorBox}>
-              {error}
+              <span>{error}</span>
               <button onClick={loadData} style={styles.retryButton}>
                 Retry
               </button>
             </div>
           )}
 
-          {/* ============ Pending request banner ============ */}
+          {/* Pending banner */}
           {pendingRequest && (
             <div style={styles.pendingBanner}>
               <span style={styles.pendingIcon}>⏳</span>
@@ -301,24 +323,32 @@ export default function CandidatePrivacyPage() {
             </div>
           )}
 
-          {/* ============ Submission form ============ */}
+          {/* Submission form */}
           {!pendingRequest && (
-            <div style={styles.formCard}>
-              <h3 style={styles.formTitle}>Submit a New Request</h3>
-              <p style={styles.formSubtitle}>
-                Choose the type of request you want to make. An administrator
-                will review it and respond within the stated turnaround.
-              </p>
+            <section style={styles.formCard}>
+              <div style={styles.formHeader}>
+                <h3 style={styles.formTitle}>Submit a New Request</h3>
+                <p style={styles.formSubtitle}>
+                  Choose the type of request you want to make. An administrator
+                  will review it and respond within the stated turnaround.
+                </p>
+              </div>
 
               {submitSuccess && (
                 <div style={styles.successBox}>
-                  ✓ Your request has been submitted. You will receive a
-                  response from the assessment team.
+                  <span style={styles.successIcon}>✓</span>
+                  <span>
+                    Your request has been submitted. You will receive a response
+                    from the assessment team.
+                  </span>
                 </div>
               )}
 
               {submitError && (
-                <div style={styles.submitErrorBox}>{submitError}</div>
+                <div style={styles.submitErrorBox}>
+                  <span style={styles.errorIcon}>!</span>
+                  <span>{submitError}</span>
+                </div>
               )}
 
               <div style={styles.typeGrid}>
@@ -334,14 +364,24 @@ export default function CandidatePrivacyPage() {
                       }}
                       style={{
                         ...styles.typeCard,
-                        borderColor: isSelected ? "#6366f1" : "#e2e8f0",
+                        borderColor: isSelected ? "#6366f1" : "rgba(226, 232, 240, 0.8)",
                         background: isSelected ? "rgba(99, 102, 241, 0.06)" : "white",
                         boxShadow: isSelected
                           ? "0 8px 24px rgba(99, 102, 241, 0.18)"
                           : "0 1px 3px rgba(0,0,0,0.04)",
                       }}
                     >
-                      <div style={styles.typeIcon}>{type.icon}</div>
+                      <div
+                        style={{
+                          ...styles.typeIconBox,
+                          background: isSelected
+                            ? "rgba(99, 102, 241, 0.15)"
+                            : "rgba(148, 163, 184, 0.12)",
+                          color: isSelected ? "#4f46e5" : "#64748b",
+                        }}
+                      >
+                        {type.icon}
+                      </div>
                       <div style={styles.typeBody}>
                         <div
                           style={{
@@ -413,24 +453,33 @@ export default function CandidatePrivacyPage() {
                   style={{
                     ...styles.submitButton,
                     opacity: !selectedType || submitting ? 0.5 : 1,
-                    cursor: !selectedType || submitting ? "not-allowed" : "pointer",
+                    cursor:
+                      !selectedType || submitting ? "not-allowed" : "pointer",
                   }}
                 >
                   {submitting ? "Submitting..." : "Submit Request"}
                 </button>
               </div>
-            </div>
+            </section>
           )}
 
-          {/* ============ History ============ */}
-          <div style={styles.historySection}>
-            <h3 style={styles.historyTitle}>
-              Your Requests ({requests.length})
-            </h3>
+          {/* History */}
+          <section style={styles.historySection}>
+            <div style={styles.historyHeader}>
+              <h3 style={styles.historyTitle}>Your Requests</h3>
+              <span style={styles.historyCount}>
+                {requests.length} {requests.length === 1 ? "request" : "requests"}
+              </span>
+            </div>
 
             {requests.length === 0 ? (
               <div style={styles.emptyState}>
-                You haven't submitted any privacy requests yet.
+                <div style={styles.emptyIcon}>◇</div>
+                <p style={styles.emptyTitle}>No requests yet</p>
+                <p style={styles.emptySub}>
+                  You haven't submitted any privacy requests. Use the form
+                  above whenever you need to.
+                </p>
               </div>
             ) : (
               <div style={styles.requestList}>
@@ -473,7 +522,9 @@ export default function CandidatePrivacyPage() {
                         <span
                           style={{
                             ...styles.expandArrow,
-                            transform: isExpanded ? "rotate(180deg)" : "rotate(0)",
+                            transform: isExpanded
+                              ? "rotate(180deg)"
+                              : "rotate(0)",
                           }}
                         >
                           ▾
@@ -482,7 +533,7 @@ export default function CandidatePrivacyPage() {
 
                       {isExpanded && (
                         <div style={styles.requestDetails}>
-                          {req.details && req.details.description && (
+                          {req.details?.description && (
                             <div style={styles.detailRow}>
                               <span style={styles.detailLabel}>
                                 Your description
@@ -546,9 +597,9 @@ export default function CandidatePrivacyPage() {
                 })}
               </div>
             )}
-          </div>
+          </section>
 
-          {/* ============ Policy note ============ */}
+          {/* Retention info */}
           <div style={styles.infoNote}>
             <span style={styles.infoIcon}>i</span>
             <span>
@@ -559,28 +610,40 @@ export default function CandidatePrivacyPage() {
               form above.
             </span>
           </div>
-        </div>
 
-        <footer style={styles.footer}>
-          <div style={styles.footerContent}>
-            <div style={styles.footerLeft}>
-              <span style={styles.footerBrand}>Stratavax</span>
-              <span style={styles.footerDivider}>|</span>
-              <span style={styles.footerText}>Talent Assessment Platform</span>
+          {/* Footer */}
+          <footer style={styles.footer}>
+            <div style={styles.footerContent}>
+              <div style={styles.footerLeft}>
+                <span style={styles.footerBrand}>Stratavax</span>
+                <span style={styles.footerDivider}>|</span>
+                <span style={styles.footerText}>Talent Assessment Platform</span>
+              </div>
+              <div style={styles.footerCenter}>
+                <span style={styles.footerText}>
+                  © {currentYear} Stratavax. All rights reserved.
+                </span>
+              </div>
+              <div style={styles.footerRight}>
+                <Link href="/privacy" style={styles.footerLink}>Privacy Policy</Link>
+                <span style={styles.footerDot}>•</span>
+                <Link href="/terms" style={styles.footerLink}>Terms of Service</Link>
+                <span style={styles.footerDot}>•</span>
+                <Link href="/support" style={styles.footerLink}>Support</Link>
+              </div>
             </div>
-            <div style={styles.footerCenter}>
-              <span style={styles.footerText}>
-                © {currentYear} Stratavax. All rights reserved.
-              </span>
-            </div>
-          </div>
-        </footer>
+          </footer>
+        </div>
       </div>
 
       <style jsx>{`
         @keyframes spin {
           0% { transform: rotate(0deg); }
           100% { transform: rotate(360deg); }
+        }
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(10px); }
+          to { opacity: 1; transform: translateY(0); }
         }
       `}</style>
     </div>
@@ -591,22 +654,38 @@ export default function CandidatePrivacyPage() {
 // STYLES
 // ============================================================
 const styles = {
+  // ---------- Page ----------
   pageContainer: {
     position: "relative",
     minHeight: "100vh",
     width: "100%",
+    background: "#f8fafc",
+  },
+  mainColumn: {
+    position: "relative",
+    minHeight: "100vh",
+    transition: "margin-left 200ms ease",
     overflow: "hidden",
   },
   pageBackground: {
     position: "fixed",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
+    top: 0, left: 0, right: 0, bottom: 0,
     backgroundImage: "url(/images/dashboard1-bg.jpg)",
     backgroundSize: "cover",
     backgroundPosition: "center",
-    zIndex: -1,
+    backgroundAttachment: "fixed",
+    zIndex: 0,
+    pointerEvents: "none",
+    filter: "blur(2px) saturate(1.05)",
+    transform: "scale(1.03)",
+  },
+  pageOverlay: {
+    position: "fixed",
+    top: 0, left: 0, right: 0, bottom: 0,
+    background:
+      "linear-gradient(180deg, rgba(10, 25, 41, 0.28) 0%, rgba(10, 25, 41, 0.14) 35%, rgba(10, 25, 41, 0.32) 100%)",
+    zIndex: 0,
+    pointerEvents: "none",
   },
   content: {
     position: "relative",
@@ -615,8 +694,13 @@ const styles = {
     width: "100%",
     display: "flex",
     flexDirection: "column",
+    padding: "24px 32px 0",
+    boxSizing: "border-box",
+    maxWidth: 1440,
+    margin: "0 auto",
   },
 
+  // ---------- Loading ----------
   loadingContainer: {
     minHeight: "100vh",
     display: "flex",
@@ -624,14 +708,19 @@ const styles = {
     justifyContent: "center",
     position: "relative",
     overflow: "hidden",
+    background: "#0a1929",
   },
   loadingBackground: {
-    position: "absolute",
-    top: 0, left: 0, right: 0, bottom: 0,
+    position: "absolute", inset: 0,
     backgroundImage: "url(/images/loading-bg.jpg)",
     backgroundSize: "cover",
     backgroundPosition: "center",
     filter: "brightness(0.7)",
+    zIndex: 0,
+  },
+  loadingOverlay: {
+    position: "absolute", inset: 0,
+    background: "linear-gradient(180deg, rgba(10,25,41,0.6), rgba(10,25,41,0.85))",
     zIndex: 0,
   },
   loadingContent: {
@@ -642,442 +731,372 @@ const styles = {
     textShadow: "2px 2px 4px rgba(0,0,0,0.5)",
   },
   loadingLogo: {
-    fontSize: "32px",
-    fontWeight: "700",
-    marginBottom: "20px",
-    letterSpacing: "2px",
-    color: "white",
+    fontSize: 32, fontWeight: 700, marginBottom: 20,
+    letterSpacing: 2, color: "white",
   },
   loadingSpinner: {
-    width: "50px",
-    height: "50px",
+    width: 50, height: 50,
     border: "4px solid rgba(255,255,255,0.2)",
     borderTop: "4px solid white",
     borderRadius: "50%",
     animation: "spin 1s linear infinite",
     margin: "0 auto 20px",
   },
-  loadingText: { fontSize: "16px", opacity: 0.9 },
+  loadingText: { fontSize: 16, opacity: 0.9 },
 
-  header: {
-    padding: "16px 32px",
-    background: "rgba(255,255,255,0.08)",
+  // ---------- Top bar ----------
+  topBar: {
+    display: "flex", justifyContent: "space-between", alignItems: "center",
+    gap: 16, padding: "16px 20px",
+    background: "rgba(255,255,255,0.82)",
     backdropFilter: "blur(20px)",
-    borderBottom: "1px solid rgba(255,255,255,0.1)",
+    WebkitBackdropFilter: "blur(20px)",
+    borderRadius: 16,
+    border: "1px solid rgba(255, 255, 255, 0.5)",
+    boxShadow: "0 1px 3px rgba(10, 25, 41, 0.08)",
+    marginBottom: 20, flexWrap: "wrap",
   },
-  headerContent: {
-    maxWidth: "1280px",
-    margin: "0 auto",
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: "16px",
-    flexWrap: "wrap",
+  topBarLeft: { display: "flex", alignItems: "center", gap: 14 },
+  topBarRight: { display: "flex", alignItems: "center", gap: 10 },
+  pageTitle: {
+    fontSize: 22, fontWeight: 700, color: "#0a1929",
+    margin: 0, letterSpacing: "-0.01em",
   },
-  headerLeft: { display: "flex", alignItems: "center", gap: "12px" },
-  logoWrapper: { display: "flex", alignItems: "center", gap: "10px" },
-  headerTitle: {
-    fontSize: "20px",
-    fontWeight: "700",
-    color: "white",
-    letterSpacing: "1px",
-    textShadow: "0 2px 4px rgba(0,0,0,0.2)",
+  breadcrumb: {
+    display: "flex", alignItems: "center", gap: 6,
+    fontSize: 12, color: "#94a3b8", marginTop: 2,
   },
-  headerDivider: {
-    color: "rgba(255,255,255,0.4)",
-    fontSize: "18px",
-    fontWeight: "300",
+  breadcrumbSep: { color: "#cbd5e1" },
+  breadcrumbActive: { color: "#334155", fontWeight: 500 },
+  profileChip: {
+    display: "flex", alignItems: "center", gap: 8,
+    padding: "6px 14px 6px 6px",
+    background: "rgba(10, 25, 41, 0.04)",
+    border: "1px solid rgba(10, 25, 41, 0.06)",
+    borderRadius: 50, textDecoration: "none",
+    color: "#0a1929", fontSize: 13, fontWeight: 500,
   },
-  headerSubtitle: {
-    fontSize: "15px",
-    color: "rgba(255,255,255,0.8)",
-    fontWeight: "400",
-  },
-  headerRight: { display: "flex", alignItems: "center", gap: "12px" },
-  profileButton: {
-    display: "flex",
-    alignItems: "center",
-    gap: "10px",
-    padding: "6px 16px 6px 6px",
-    background: "rgba(255,255,255,0.1)",
-    border: "1px solid rgba(255,255,255,0.2)",
-    borderRadius: "50px",
-    cursor: "pointer",
-    fontSize: "14px",
-    fontWeight: "500",
-    color: "white",
-    backdropFilter: "blur(10px)",
-    textDecoration: "none",
-  },
-  profileAvatar: {
-    width: "32px",
-    height: "32px",
-    borderRadius: "50%",
+  profileChipAvatar: {
+    width: 28, height: 28, borderRadius: "50%",
     background: "linear-gradient(135deg, #6366f1, #4f46e5)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontSize: "14px",
-    fontWeight: "600",
-    color: "white",
+    color: "white", fontWeight: 700, fontSize: 12,
+    display: "flex", alignItems: "center", justifyContent: "center",
   },
-  logoutButton: {
-    padding: "8px 20px",
-    background: "rgba(255,255,255,0.08)",
-    color: "white",
-    border: "1px solid rgba(255,255,255,0.15)",
-    borderRadius: "50px",
-    cursor: "pointer",
-    fontSize: "13px",
-    fontWeight: "500",
-    backdropFilter: "blur(10px)",
+  profileChipName: {
+    maxWidth: 140, overflow: "hidden",
+    textOverflow: "ellipsis", whiteSpace: "nowrap",
   },
 
-  welcomeSection: {
-    maxWidth: "1280px",
-    margin: "32px auto 20px",
-    padding: "0 32px",
-  },
-  welcomeContent: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: "20px",
-    flexWrap: "wrap",
-    background: "rgba(255,255,255,0.06)",
+  // ---------- Welcome card ----------
+  welcomeCard: {
+    padding: "24px 28px",
+    background: "rgba(255,255,255,0.92)",
     backdropFilter: "blur(20px)",
-    padding: "20px 28px",
-    borderRadius: "16px",
-    border: "1px solid rgba(255,255,255,0.08)",
+    WebkitBackdropFilter: "blur(20px)",
+    borderRadius: 16,
+    border: "1px solid rgba(255, 255, 255, 0.5)",
+    boxShadow: "0 4px 24px rgba(10, 25, 41, 0.08)",
+    marginBottom: 20,
+  },
+  welcomeEyebrow: {
+    fontSize: 11, fontWeight: 700, letterSpacing: "0.12em",
+    color: "#6366f1", marginBottom: 8,
   },
   welcomeTitle: {
-    fontSize: "24px",
-    fontWeight: "600",
-    margin: "0 0 4px 0",
-    color: "white",
-    textShadow: "0 2px 4px rgba(0,0,0,0.2)",
+    fontSize: 22, fontWeight: 700, color: "#0a1929",
+    margin: "0 0 8px 0", lineHeight: 1.3, letterSpacing: "-0.01em",
   },
-  welcomeName: { color: "#ffd700" },
+  welcomeAccent: { color: "#6366f1" },
   welcomeText: {
-    fontSize: "14px",
-    color: "rgba(255,255,255,0.8)",
-    margin: 0,
-    maxWidth: "600px",
-  },
-  backLink: {
-    fontSize: "13px",
-    color: "rgba(255,255,255,0.85)",
-    textDecoration: "none",
-    padding: "8px 16px",
-    background: "rgba(255,255,255,0.08)",
-    borderRadius: "50px",
-    border: "1px solid rgba(255,255,255,0.12)",
-    whiteSpace: "nowrap",
+    fontSize: 14, color: "#64748b", margin: 0, lineHeight: 1.6,
+    maxWidth: 720,
   },
 
-  mainContent: {
-    maxWidth: "1280px",
-    margin: "0 auto",
-    padding: "0 32px 40px",
-    flex: 1,
-    display: "flex",
-    flexDirection: "column",
-    gap: "20px",
-  },
-
+  // ---------- Error ----------
   errorBox: {
-    padding: "12px 16px",
-    borderRadius: "12px",
+    marginBottom: 16, padding: "12px 16px",
+    borderRadius: 12,
     background: "rgba(239, 68, 68, 0.1)",
-    border: "1px solid rgba(239, 68, 68, 0.2)",
-    color: "#fecaca",
-    display: "flex",
-    alignItems: "center",
+    border: "1px solid rgba(239, 68, 68, 0.25)",
+    color: "#b91c1c",
+    display: "flex", alignItems: "center",
     justifyContent: "space-between",
-    fontSize: "14px",
+    fontSize: 13.5, gap: 12,
   },
   retryButton: {
-    padding: "4px 16px",
-    background: "#ef4444",
-    color: "white",
-    border: "none",
-    borderRadius: "6px",
-    cursor: "pointer",
-    fontSize: "12px",
+    padding: "6px 16px", background: "#ef4444",
+    color: "white", border: "none", borderRadius: 6,
+    cursor: "pointer", fontSize: 12, fontWeight: 600,
+    fontFamily: "inherit",
   },
 
+  // ---------- Pending banner ----------
   pendingBanner: {
-    display: "flex",
-    gap: "16px",
-    alignItems: "flex-start",
+    display: "flex", gap: 16, alignItems: "flex-start",
     padding: "20px 24px",
     background: "rgba(245, 158, 11, 0.12)",
     border: "1px solid rgba(245, 158, 11, 0.3)",
-    borderRadius: "14px",
-    color: "#fef3c7",
+    borderRadius: 14, marginBottom: 20,
+    color: "#92400e",
   },
-  pendingIcon: { fontSize: "28px", lineHeight: "1" },
-  pendingText: { display: "flex", flexDirection: "column", gap: "4px" },
+  pendingIcon: { fontSize: 26, lineHeight: 1 },
+  pendingText: { display: "flex", flexDirection: "column", gap: 4 },
   pendingSub: {
-    fontSize: "13px",
-    color: "rgba(255,255,255,0.75)",
-    lineHeight: "1.5",
+    fontSize: 13, color: "#78350f", lineHeight: 1.5,
   },
 
+  // ---------- Form card ----------
   formCard: {
-    background: "rgba(255,255,255,0.97)",
+    background: "rgba(255,255,255,0.96)",
     backdropFilter: "blur(20px)",
-    borderRadius: "16px",
+    WebkitBackdropFilter: "blur(20px)",
+    borderRadius: 16,
     padding: "28px 32px",
-    boxShadow: "0 20px 60px rgba(0,0,0,0.15)",
-    border: "1px solid rgba(255,255,255,0.2)",
+    boxShadow: "0 4px 24px rgba(10, 25, 41, 0.08)",
+    border: "1px solid rgba(255, 255, 255, 0.6)",
+    marginBottom: 20,
   },
+  formHeader: { marginBottom: 20 },
   formTitle: {
-    fontSize: "20px",
-    fontWeight: "600",
-    color: "#0a1929",
-    margin: "0 0 6px 0",
+    fontSize: 18, fontWeight: 700, color: "#0a1929",
+    margin: "0 0 6px 0", letterSpacing: "-0.01em",
   },
   formSubtitle: {
-    fontSize: "14px",
-    color: "#64748b",
-    margin: "0 0 20px 0",
-    lineHeight: "1.5",
+    fontSize: 13.5, color: "#64748b", margin: 0, lineHeight: 1.5,
   },
 
   successBox: {
-    padding: "12px 16px",
-    borderRadius: "10px",
+    display: "flex", alignItems: "center", gap: 10,
+    padding: "12px 16px", borderRadius: 10,
     background: "rgba(34, 197, 94, 0.1)",
     border: "1px solid rgba(34, 197, 94, 0.3)",
-    color: "#166534",
-    fontSize: "14px",
-    marginBottom: "16px",
+    color: "#166534", fontSize: 13.5, marginBottom: 16,
+  },
+  successIcon: {
+    width: 20, height: 20, borderRadius: "50%",
+    background: "#16a34a", color: "white",
+    display: "flex", alignItems: "center", justifyContent: "center",
+    fontSize: 12, fontWeight: 800, flexShrink: 0,
   },
   submitErrorBox: {
-    padding: "12px 16px",
-    borderRadius: "10px",
+    display: "flex", alignItems: "center", gap: 10,
+    padding: "12px 16px", borderRadius: 10,
     background: "rgba(220, 38, 38, 0.08)",
     border: "1px solid rgba(220, 38, 38, 0.25)",
-    color: "#991b1b",
-    fontSize: "14px",
-    marginBottom: "16px",
+    color: "#991b1b", fontSize: 13.5, marginBottom: 16,
+  },
+  errorIcon: {
+    width: 20, height: 20, borderRadius: "50%",
+    background: "#dc2626", color: "white",
+    display: "flex", alignItems: "center", justifyContent: "center",
+    fontSize: 12, fontWeight: 800, flexShrink: 0,
   },
 
+  // ---------- Request type cards ----------
   typeGrid: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
-    gap: "12px",
-    marginBottom: "20px",
+    gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+    gap: 12,
+    marginBottom: 20,
   },
   typeCard: {
     position: "relative",
     display: "flex",
     alignItems: "flex-start",
-    gap: "12px",
+    gap: 12,
     padding: "16px 18px",
     border: "2px solid",
-    borderRadius: "12px",
+    borderRadius: 12,
     cursor: "pointer",
     textAlign: "left",
     transition: "all 0.2s",
     fontFamily: "inherit",
     background: "white",
   },
-  typeIcon: { fontSize: "24px", lineHeight: "1", flexShrink: 0 },
+  typeIconBox: {
+    width: 40, height: 40, borderRadius: 10,
+    display: "flex", alignItems: "center", justifyContent: "center",
+    fontSize: 20, flexShrink: 0,
+    transition: "background 150ms ease, color 150ms ease",
+  },
   typeBody: { flex: 1, minWidth: 0 },
   typeTitle: {
-    fontSize: "14px",
-    fontWeight: "600",
-    marginBottom: "4px",
+    fontSize: 14, fontWeight: 700, marginBottom: 4,
+    transition: "color 150ms ease",
   },
   typeDescription: {
-    fontSize: "12.5px",
-    color: "#64748b",
-    lineHeight: "1.5",
-    marginBottom: "6px",
+    fontSize: 12.5, color: "#64748b", lineHeight: 1.5,
+    marginBottom: 8,
   },
   typeTurnaround: {
-    fontSize: "11px",
-    fontWeight: "600",
-    color: "#6366f1",
-    textTransform: "uppercase",
-    letterSpacing: "0.04em",
+    fontSize: 10.5, fontWeight: 700,
+    color: "#6366f1", textTransform: "uppercase",
+    letterSpacing: "0.06em",
   },
   typeRadio: {
-    width: "20px",
-    height: "20px",
-    borderRadius: "50%",
-    border: "2px solid",
-    flexShrink: 0,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: "2px",
+    width: 20, height: 20, borderRadius: "50%",
+    border: "2px solid", flexShrink: 0,
+    display: "flex", alignItems: "center", justifyContent: "center",
+    marginTop: 2,
   },
   typeRadioInner: {
-    width: "10px",
-    height: "10px",
-    borderRadius: "50%",
+    width: 10, height: 10, borderRadius: "50%",
     background: "#6366f1",
   },
 
-  detailsField: { marginBottom: "16px" },
+  // ---------- Details field ----------
+  detailsField: { marginBottom: 16 },
   detailsLabel: {
-    display: "block",
-    fontSize: "13px",
-    fontWeight: "600",
-    color: "#334155",
-    marginBottom: "6px",
+    display: "block", fontSize: 12.5, fontWeight: 700,
+    color: "#334155", marginBottom: 6,
   },
   detailsTextarea: {
-    width: "100%",
-    padding: "12px 14px",
-    borderRadius: "10px",
-    border: "1px solid #e2e8f0",
-    fontSize: "14px",
-    fontFamily: "inherit",
-    resize: "vertical",
-    outline: "none",
-    boxSizing: "border-box",
-    background: "#f8fafc",
+    width: "100%", padding: "12px 14px",
+    borderRadius: 10, border: "1px solid #e2e8f0",
+    fontSize: 13.5, fontFamily: "inherit",
+    resize: "vertical", outline: "none",
+    boxSizing: "border-box", background: "#f8fafc",
+    color: "#0a1929",
   },
   detailsHint: {
-    fontSize: "12px",
-    color: "#94a3b8",
-    marginTop: "4px",
+    fontSize: 11.5, color: "#94a3b8", marginTop: 4,
   },
 
+  // ---------- Form actions ----------
   formActions: {
-    display: "flex",
-    justifyContent: "flex-end",
-    marginTop: "8px",
+    display: "flex", justifyContent: "flex-end", marginTop: 8,
   },
   submitButton: {
     padding: "12px 32px",
     background: "linear-gradient(135deg, #1a237e, #4f46e5)",
-    color: "white",
-    border: "none",
-    borderRadius: "10px",
-    fontSize: "14px",
-    fontWeight: "600",
-    fontFamily: "inherit",
-    boxShadow: "0 4px 12px rgba(26, 35, 126, 0.2)",
-    transition: "all 0.2s",
+    color: "white", border: "none", borderRadius: 10,
+    fontSize: 14, fontWeight: 700, fontFamily: "inherit",
+    boxShadow: "0 4px 14px rgba(26, 35, 126, 0.25)",
+    transition: "transform 150ms ease, box-shadow 150ms ease",
   },
 
+  // ---------- History ----------
   historySection: {
-    background: "rgba(255,255,255,0.06)",
+    background: "rgba(255,255,255,0.92)",
     backdropFilter: "blur(20px)",
-    borderRadius: "16px",
-    padding: "24px",
-    border: "1px solid rgba(255,255,255,0.06)",
+    WebkitBackdropFilter: "blur(20px)",
+    borderRadius: 16,
+    padding: "24px 28px",
+    boxShadow: "0 4px 24px rgba(10, 25, 41, 0.08)",
+    border: "1px solid rgba(255, 255, 255, 0.5)",
+    marginBottom: 20,
+  },
+  historyHeader: {
+    display: "flex", justifyContent: "space-between",
+    alignItems: "center", gap: 12, marginBottom: 16,
+    flexWrap: "wrap",
   },
   historyTitle: {
-    fontSize: "16px",
-    fontWeight: "600",
-    color: "white",
-    margin: "0 0 16px 0",
-    textShadow: "0 2px 4px rgba(0,0,0,0.2)",
+    fontSize: 16, fontWeight: 700, color: "#0a1929",
+    margin: 0, letterSpacing: "-0.01em",
+  },
+  historyCount: {
+    fontSize: 12, fontWeight: 600, color: "#334155",
+    padding: "6px 14px",
+    background: "rgba(248, 250, 252, 0.9)",
+    borderRadius: 50,
+    border: "1px solid rgba(10, 25, 41, 0.06)",
   },
   emptyState: {
-    padding: "30px",
-    textAlign: "center",
-    color: "rgba(255,255,255,0.55)",
-    fontSize: "14px",
+    padding: "40px 20px", textAlign: "center",
+  },
+  emptyIcon: {
+    fontSize: 32, color: "#cbd5e1", marginBottom: 12,
+  },
+  emptyTitle: {
+    fontSize: 15, fontWeight: 700, color: "#0a1929",
+    margin: "0 0 6px 0",
+  },
+  emptySub: {
+    fontSize: 13, color: "#64748b", margin: 0,
   },
   requestList: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "8px",
+    display: "flex", flexDirection: "column", gap: 8,
   },
   requestRow: {
-    background: "rgba(255,255,255,0.97)",
-    borderRadius: "12px",
+    background: "white",
+    borderRadius: 12,
     overflow: "hidden",
-    border: "1px solid rgba(226,232,240,0.6)",
+    border: "1px solid rgba(226, 232, 240, 0.8)",
   },
   requestHeader: {
-    display: "flex",
-    alignItems: "center",
-    gap: "14px",
-    padding: "14px 18px",
-    cursor: "pointer",
-    transition: "background 0.15s",
+    display: "flex", alignItems: "center",
+    gap: 14, padding: "14px 18px",
+    cursor: "pointer", transition: "background 150ms ease",
   },
-  requestIcon: { fontSize: "20px", flexShrink: 0 },
+  requestIcon: { fontSize: 20, flexShrink: 0 },
   requestHeaderBody: { flex: 1, minWidth: 0 },
   requestType: {
-    fontSize: "14px",
-    fontWeight: "600",
-    color: "#0a1929",
-    marginBottom: "2px",
+    fontSize: 14, fontWeight: 700, color: "#0a1929",
+    marginBottom: 2,
   },
-  requestMeta: { fontSize: "12px", color: "#94a3b8" },
+  requestMeta: { fontSize: 12, color: "#94a3b8" },
   statusBadge: {
-    padding: "4px 12px",
-    borderRadius: "50px",
-    fontSize: "11px",
-    fontWeight: "700",
-    whiteSpace: "nowrap",
+    padding: "4px 12px", borderRadius: 50,
+    fontSize: 11, fontWeight: 700, whiteSpace: "nowrap",
   },
   expandArrow: {
-    fontSize: "12px",
-    color: "#94a3b8",
-    transition: "transform 0.2s",
+    fontSize: 12, color: "#94a3b8",
+    transition: "transform 200ms ease",
   },
   requestDetails: {
     padding: "16px 20px",
     background: "#f8fafc",
     borderTop: "1px solid #e2e8f0",
-    display: "flex",
-    flexDirection: "column",
-    gap: "12px",
+    display: "flex", flexDirection: "column", gap: 12,
   },
-  detailRow: { display: "flex", flexDirection: "column", gap: "2px" },
+  detailRow: { display: "flex", flexDirection: "column", gap: 3 },
   detailLabel: {
-    fontSize: "11px",
-    fontWeight: "700",
-    color: "#94a3b8",
-    textTransform: "uppercase",
-    letterSpacing: "0.04em",
+    fontSize: 10.5, fontWeight: 700, color: "#94a3b8",
+    textTransform: "uppercase", letterSpacing: "0.06em",
   },
-  detailValue: { fontSize: "13.5px", color: "#1e293b", lineHeight: "1.5" },
+  detailValue: {
+    fontSize: 13.5, color: "#1e293b", lineHeight: 1.5,
+  },
 
+  // ---------- Info note ----------
   infoNote: {
     padding: "14px 20px",
-    background: "rgba(59, 130, 246, 0.1)",
+    background: "rgba(219, 234, 254, 0.75)",
     backdropFilter: "blur(10px)",
-    borderRadius: "12px",
-    display: "flex",
-    alignItems: "flex-start",
-    gap: "12px",
-    color: "#bfdbfe",
-    fontSize: "13px",
-    border: "1px solid rgba(59, 130, 246, 0.15)",
-    lineHeight: "1.6",
+    borderRadius: 12,
+    display: "flex", alignItems: "flex-start", gap: 12,
+    color: "#1e40af", fontSize: 13,
+    border: "1px solid rgba(59, 130, 246, 0.2)",
+    lineHeight: 1.6, marginBottom: 20,
   },
-  infoIcon: { fontSize: "18px", flexShrink: 0, marginTop: "1px" },
+  infoIcon: {
+    fontSize: 15, fontWeight: 700, flexShrink: 0, marginTop: 1,
+    width: 18, height: 18, borderRadius: "50%",
+    background: "#3b82f6", color: "white",
+    display: "flex", alignItems: "center", justifyContent: "center",
+    fontStyle: "italic", fontFamily: "Georgia, serif",
+  },
 
+  // ---------- Footer ----------
   footer: {
-    marginTop: "auto",
-    padding: "16px 32px",
-    background: "rgba(10,22,40,0.8)",
-    backdropFilter: "blur(20px)",
-    borderTop: "1px solid rgba(255,255,255,0.05)",
+    marginTop: "auto", padding: "20px 0 24px",
+    borderTop: "1px solid rgba(10, 25, 41, 0.06)",
   },
   footerContent: {
-    maxWidth: "1280px",
-    margin: "0 auto",
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: "12px",
-    flexWrap: "wrap",
+    display: "flex", justifyContent: "space-between",
+    alignItems: "center", gap: 12, flexWrap: "wrap",
   },
-  footerLeft: { display: "flex", alignItems: "center", gap: "8px" },
-  footerBrand: { fontSize: "13px", fontWeight: "600", color: "white" },
-  footerDivider: { color: "rgba(255,255,255,0.2)" },
-  footerText: { fontSize: "12px", color: "rgba(255,255,255,0.4)" },
-  footerCenter: { display: "flex", alignItems: "center", gap: "8px" },
+  footerLeft: { display: "flex", alignItems: "center", gap: 8 },
+  footerBrand: { fontSize: 13, fontWeight: 700, color: "#0a1929" },
+  footerDivider: { color: "#cbd5e1" },
+  footerText: { fontSize: 12, color: "#64748b" },
+  footerCenter: { display: "flex", alignItems: "center", gap: 8 },
+  footerRight: {
+    display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap",
+  },
+  footerLink: {
+    fontSize: 12, color: "#475569", textDecoration: "none",
+  },
+  footerDot: { fontSize: 12, color: "#cbd5e1" },
 };
