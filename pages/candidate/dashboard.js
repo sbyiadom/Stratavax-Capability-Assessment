@@ -1,14 +1,16 @@
 // pages/candidate/dashboard.js
 // Redesigned candidate dashboard.
 // - Left sidebar navigation (CandidateSidebar)
-// - Layered background: blurred image + navy vignette overlay (image visible, cards readable)
-// - 5-KPI stats row (total, completed, ready, inProgress, blocked)
-// - Assessment table list
-// - Detail panel below (preserved)
-// - Assessment guidelines (preserved)
-// - Info note + footer (preserved)
+// - Layered background: blurred image + navy vignette overlay
+// - 5-KPI stats row
+// - Filter chips above assessment table (All / Ready / In Progress / Completed / Blocked)
+// - Right-side drawer for assessment detail (slides in on row click)
+// - Assessment guidelines + info note + footer
+//
+// International-standard pattern: filter chips + side drawer for detail
+// (not modal — modals are UX anti-pattern for browsable content)
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import { useRequireAuth } from "../../utils/requireAuth";
@@ -16,7 +18,7 @@ import { supabase } from "../../supabase/client";
 import CandidateSidebar, { MobileMenuButton } from "../../components/CandidateSidebar";
 
 // ============================================================
-// PRESERVED HELPERS — do not modify without testing
+// PRESERVED HELPERS
 // ============================================================
 
 const ASSESSMENT_COLORS = {
@@ -119,6 +121,24 @@ function formatDate(value) {
 }
 
 // ============================================================
+// FILTER CONFIG
+// ============================================================
+const FILTERS = [
+  { key: "all",         label: "All",         statuses: null,                                                    color: "#6366f1" },
+  { key: "ready",       label: "Ready",       statuses: ["unblocked"],                                           color: "#16a34a" },
+  { key: "in_progress", label: "In Progress", statuses: ["in_progress"],                                         color: "#d97706" },
+  { key: "completed",   label: "Completed",   statuses: ["completed"],                                           color: "#2563eb" },
+  { key: "blocked",     label: "Blocked",     statuses: ["blocked", "locked", null, undefined],                 color: "#64748b" },
+];
+
+function matchesFilter(assessment, filterKey) {
+  if (filterKey === "all") return true;
+  const filter = FILTERS.find((f) => f.key === filterKey);
+  if (!filter || !filter.statuses) return true;
+  return filter.statuses.includes(assessment.status);
+}
+
+// ============================================================
 // COMPONENT
 // ============================================================
 export default function CandidateDashboard() {
@@ -132,6 +152,10 @@ export default function CandidateDashboard() {
   const [error, setError] = useState(null);
   const [stats, setStats] = useState({ total: 0, completed: 0, ready: 0, inProgress: 0, blocked: 0 });
   const [currentYear] = useState(new Date().getFullYear());
+
+  // Filter + drawer state
+  const [activeFilter, setActiveFilter] = useState("all");
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   // Responsive + mobile drawer
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -153,6 +177,26 @@ export default function CandidateDashboard() {
     fetchDashboardData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session]);
+
+  // Esc closes drawer
+  useEffect(() => {
+    if (!drawerOpen) return;
+    function onKey(e) {
+      if (e.key === "Escape") setDrawerOpen(false);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [drawerOpen]);
+
+  // Body scroll lock when drawer open
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    if (drawerOpen) {
+      const prev = document.body.style.overflow;
+      document.body.style.overflow = "hidden";
+      return () => { document.body.style.overflow = prev; };
+    }
+  }, [drawerOpen]);
 
   async function fetchDashboardData() {
     try {
@@ -184,10 +228,6 @@ export default function CandidateDashboard() {
       setAssessments(data.assessmentCards || []);
       setStats(data.stats || { total: 0, completed: 0, ready: 0, inProgress: 0, blocked: 0 });
 
-      if (data.assessmentCards && data.assessmentCards.length > 0) {
-        setSelectedAssessment(data.assessmentCards[0]);
-      }
-
       setLoading(false);
     } catch (err) {
       console.error("Error:", err);
@@ -205,17 +245,35 @@ export default function CandidateDashboard() {
     router.push("/login");
   }
 
-  function handleSelectAssessment(assessment) {
+  const handleOpenDetail = useCallback((assessment) => {
     setSelectedAssessment(assessment);
-  }
+    setDrawerOpen(true);
+  }, []);
 
-  // ------------------------------------------------------------
-  // Layout offsets based on viewport
-  // ------------------------------------------------------------
+  const handleCloseDrawer = useCallback(() => {
+    setDrawerOpen(false);
+  }, []);
+
+  // Filtered list (client-side)
+  const filteredAssessments = useMemo(() => {
+    return assessments.filter((a) => matchesFilter(a, activeFilter));
+  }, [assessments, activeFilter]);
+
+  // Filter counts
+  const filterCounts = useMemo(() => {
+    const counts = { all: assessments.length };
+    for (const f of FILTERS) {
+      if (f.key === "all") continue;
+      counts[f.key] = assessments.filter((a) => matchesFilter(a, f.key)).length;
+    }
+    return counts;
+  }, [assessments]);
+
+  // Layout offsets
   const sidebarWidth = viewport.isMobile ? 0 : viewport.isTablet ? 72 : 260;
 
   // ------------------------------------------------------------
-  // Render
+  // Loading
   // ------------------------------------------------------------
   if (authLoading || loading) {
     return (
@@ -233,6 +291,9 @@ export default function CandidateDashboard() {
 
   if (!session) return null;
 
+  // ------------------------------------------------------------
+  // Render
+  // ------------------------------------------------------------
   return (
     <div style={styles.pageContainer}>
       {/* Sidebar */}
@@ -246,13 +307,7 @@ export default function CandidateDashboard() {
       />
 
       {/* Main column */}
-      <div
-        style={{
-          ...styles.mainColumn,
-          marginLeft: sidebarWidth,
-        }}
-      >
-        {/* Background layer (only over main content, not sidebar) */}
+      <div style={{ ...styles.mainColumn, marginLeft: sidebarWidth }}>
         <div style={styles.pageBackground} />
         <div style={styles.pageOverlay} />
 
@@ -350,7 +405,7 @@ export default function CandidateDashboard() {
             </div>
           )}
 
-          {/* Assessment table + detail */}
+          {/* Assessment section */}
           <section style={styles.section}>
             <div style={styles.sectionHeader}>
               <div>
@@ -360,8 +415,48 @@ export default function CandidateDashboard() {
                 </p>
               </div>
               <span style={styles.sectionCount}>
-                {assessments.length} {assessments.length === 1 ? "assessment" : "assessments"}
+                {filteredAssessments.length} of {assessments.length}
               </span>
+            </div>
+
+            {/* Filter chips */}
+            <div style={styles.filterChips}>
+              {FILTERS.map((filter) => {
+                const isActive = activeFilter === filter.key;
+                const count = filterCounts[filter.key] ?? 0;
+                return (
+                  <button
+                    key={filter.key}
+                    type="button"
+                    onClick={() => setActiveFilter(filter.key)}
+                    style={{
+                      ...styles.filterChip,
+                      background: isActive ? filter.color + "18" : "rgba(255,255,255,0.9)",
+                      borderColor: isActive ? filter.color : "rgba(255, 255, 255, 0.5)",
+                      color: isActive ? filter.color : "#64748b",
+                      fontWeight: isActive ? 700 : 600,
+                    }}
+                  >
+                    <span
+                      style={{
+                        ...styles.filterChipDot,
+                        background: filter.color,
+                        opacity: isActive ? 1 : 0.5,
+                      }}
+                    />
+                    <span>{filter.label}</span>
+                    <span
+                      style={{
+                        ...styles.filterChipCount,
+                        background: isActive ? filter.color : "rgba(10, 25, 41, 0.08)",
+                        color: isActive ? "white" : "#64748b",
+                      }}
+                    >
+                      {count}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
 
             {assessments.length === 0 ? (
@@ -371,6 +466,22 @@ export default function CandidateDashboard() {
                 <p style={styles.emptySub}>
                   Contact your supervisor to get assessments assigned to you.
                 </p>
+              </div>
+            ) : filteredAssessments.length === 0 ? (
+              <div style={styles.emptyState}>
+                <div style={styles.emptyIcon}>◇</div>
+                <p style={styles.emptyTitle}>
+                  No assessments in this category
+                </p>
+                <p style={styles.emptySub}>
+                  Try a different filter or click "All" to see everything.
+                </p>
+                <button
+                  onClick={() => setActiveFilter("all")}
+                  style={styles.emptyResetBtn}
+                >
+                  Show all
+                </button>
               </div>
             ) : (
               <>
@@ -390,9 +501,9 @@ export default function CandidateDashboard() {
                         </tr>
                       </thead>
                       <tbody>
-                        {assessments.map((assessment) => {
+                        {filteredAssessments.map((assessment) => {
                           const colors = getAssessmentColor(assessment.typeCode);
-                          const isSelected = selectedAssessment?.id === assessment.id;
+                          const isSelected = selectedAssessment?.id === assessment.id && drawerOpen;
                           const ns = isNationalServiceAssessment(assessment);
                           const displayName = getShortName(assessment.title, ns);
                           const expiry = getExpirationStatus(assessment.expires_at);
@@ -402,7 +513,7 @@ export default function CandidateDashboard() {
                           return (
                             <tr
                               key={assessment.id}
-                              onClick={() => !isExpired && handleSelectAssessment(assessment)}
+                              onClick={() => !isExpired && handleOpenDetail(assessment)}
                               style={{
                                 ...styles.tr,
                                 background: isSelected ? colors.light : "transparent",
@@ -525,9 +636,9 @@ export default function CandidateDashboard() {
                 {/* Mobile stacked rows */}
                 {viewport.isMobile && (
                   <div style={styles.mobileList}>
-                    {assessments.map((assessment) => {
+                    {filteredAssessments.map((assessment) => {
                       const colors = getAssessmentColor(assessment.typeCode);
-                      const isSelected = selectedAssessment?.id === assessment.id;
+                      const isSelected = selectedAssessment?.id === assessment.id && drawerOpen;
                       const ns = isNationalServiceAssessment(assessment);
                       const displayName = getShortName(assessment.title, ns);
                       const expiry = getExpirationStatus(assessment.expires_at);
@@ -537,7 +648,7 @@ export default function CandidateDashboard() {
                       return (
                         <div
                           key={assessment.id}
-                          onClick={() => !isExpired && handleSelectAssessment(assessment)}
+                          onClick={() => !isExpired && handleOpenDetail(assessment)}
                           style={{
                             ...styles.mobileCard,
                             borderLeft: `4px solid ${colors.border}`,
@@ -617,276 +728,6 @@ export default function CandidateDashboard() {
                     })}
                   </div>
                 )}
-
-                {/* Detail panel — preserved */}
-                {selectedAssessment && (
-                  <div style={styles.detailSection}>
-                    <div style={styles.detailHeader}>
-                      <div style={styles.detailHeaderLeft}>
-                        <h3 style={styles.detailTitle}>{selectedAssessment.title}</h3>
-                        <span style={styles.detailType}>{selectedAssessment.typeName}</span>
-                      </div>
-                      <div style={styles.detailActions}>
-                        {selectedAssessment.status === "unblocked" ||
-                        selectedAssessment.status === "in_progress" ? (
-                          <button
-                            onClick={() => handleStartAssessment(selectedAssessment.id)}
-                            style={styles.detailStartButton}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.transform = "translateY(-2px)";
-                              e.currentTarget.style.boxShadow =
-                                "0 8px 25px rgba(26, 35, 126, 0.25)";
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.transform = "translateY(0)";
-                              e.currentTarget.style.boxShadow =
-                                "0 4px 12px rgba(26, 35, 126, 0.2)";
-                            }}
-                          >
-                            {selectedAssessment.status === "in_progress"
-                              ? "Continue Assessment"
-                              : "Start Assessment"}
-                          </button>
-                        ) : selectedAssessment.status === "completed" ? (
-                          <span style={styles.detailCompleted}>Completed</span>
-                        ) : (
-                          <span style={styles.detailBlocked}>
-                            {selectedAssessment.isNationalService
-                              ? "Contact support"
-                              : "Contact supervisor to unlock"}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    <div style={styles.detailStatusRow}>
-                      {(() => {
-                        const status = getStatusInfo(selectedAssessment.status);
-                        return (
-                          <span
-                            style={{
-                              ...styles.detailStatusBadge,
-                              background: status.bg,
-                              color: status.color,
-                            }}
-                          >
-                            {status.label}
-                          </span>
-                        );
-                      })()}
-                      {selectedAssessment.isNationalService && (
-                        <span style={styles.detailNsBadge}>
-                          National Service (Always Available)
-                        </span>
-                      )}
-                      {selectedAssessment.expires_at &&
-                        (() => {
-                          const expiryStatus = getExpirationStatus(
-                            selectedAssessment.expires_at
-                          );
-                          if (expiryStatus.status === "expired") {
-                            return (
-                              <span style={styles.detailExpiredBadge}>
-                                EXPIRED - Assessment No Longer Available
-                              </span>
-                            );
-                          }
-                          if (expiryStatus.status !== "no_expiry") {
-                            const isUrgent =
-                              expiryStatus.status === "soon" ||
-                              expiryStatus.status === "today";
-                            return (
-                              <span
-                                style={{
-                                  ...styles.detailExpiryBadge,
-                                  background: isUrgent
-                                    ? "rgba(220, 38, 38, 0.12)"
-                                    : "rgba(22, 163, 74, 0.12)",
-                                  color: isUrgent ? "#dc2626" : "#16a34a",
-                                  border: isUrgent
-                                    ? "1px solid #dc2626"
-                                    : "1px solid #16a34a",
-                                }}
-                              >
-                                {expiryStatus.status === "today"
-                                  ? "Expires Today"
-                                  : `${expiryStatus.days} days remaining`}
-                                {isUrgent && (
-                                  <span style={styles.urgentTag}>URGENT</span>
-                                )}
-                              </span>
-                            );
-                          }
-                          return null;
-                        })()}
-                    </div>
-
-                    <p style={styles.detailDescription}>
-                      {selectedAssessment.description}
-                    </p>
-
-                    {selectedAssessment.isNationalService &&
-                      selectedAssessment.expires_at &&
-                      (() => {
-                        const expiryStatus = getExpirationStatus(
-                          selectedAssessment.expires_at
-                        );
-                        if (
-                          expiryStatus.status === "expired" ||
-                          expiryStatus.status === "no_expiry"
-                        )
-                          return null;
-                        const isUrgent =
-                          expiryStatus.status === "soon" ||
-                          expiryStatus.status === "today";
-                        return (
-                          <div
-                            style={{
-                              ...styles.deadlineNotice,
-                              background: isUrgent
-                                ? "rgba(220, 38, 38, 0.08)"
-                                : "rgba(59, 130, 246, 0.08)",
-                              border: isUrgent
-                                ? "2px solid #dc2626"
-                                : "2px solid #3b82f6",
-                            }}
-                          >
-                            <div style={styles.deadlineIcon}>
-                              {isUrgent ? "⚠️" : "📅"}
-                            </div>
-                            <div style={{ flex: 1 }}>
-                              <div
-                                style={{
-                                  ...styles.deadlineTitle,
-                                  color: isUrgent ? "#dc2626" : "#1e40af",
-                                }}
-                              >
-                                {isUrgent
-                                  ? "IMPORTANT: Assessment Deadline Approaching"
-                                  : "Assessment Available Until"}
-                              </div>
-                              <div
-                                style={{
-                                  ...styles.deadlineBody,
-                                  color: isUrgent ? "#991b1b" : "#475569",
-                                }}
-                              >
-                                {expiryStatus.status === "today"
-                                  ? "This assessment expires TODAY. Please complete it now."
-                                  : `You have ${expiryStatus.days} days remaining to complete this assessment.`}
-                              </div>
-                              <div style={styles.deadlineDate}>
-                                Deadline: {formatDate(selectedAssessment.expires_at)}
-                              </div>
-                            </div>
-                            {isUrgent && (
-                              <button
-                                onClick={() =>
-                                  handleStartAssessment(selectedAssessment.id)
-                                }
-                                style={styles.deadlineAction}
-                              >
-                                Take Now
-                              </button>
-                            )}
-                          </div>
-                        );
-                      })()}
-
-                    {/* Assessment Areas */}
-                    <div style={styles.detailAreas}>
-                      <h4 style={styles.detailAreasTitle}>Assessment Areas</h4>
-                      <div style={styles.detailAreasGrid}>
-                        {selectedAssessment.sections &&
-                        selectedAssessment.sections.length > 0 ? (
-                          selectedAssessment.sections.map((section, index) => (
-                            <div key={index} style={styles.detailAreaItem}>
-                              <span style={styles.detailAreaBullet}>•</span>
-                              <span style={styles.detailAreaText}>
-                                {section.name}
-                                {section.questionCount ? (
-                                  <span style={styles.detailAreaCount}>
-                                    ({section.questionCount})
-                                  </span>
-                                ) : null}
-                              </span>
-                            </div>
-                          ))
-                        ) : (
-                          <div style={styles.detailAreaItem}>
-                            <span style={styles.detailAreaText}>
-                              Sections will appear once configured.
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Info grid */}
-                    <div style={styles.detailInfo}>
-                      <div style={styles.detailInfoItem}>
-                        <span style={styles.detailInfoLabel}>Time Limit</span>
-                        <span style={styles.detailInfoValue}>
-                          {getDisplayTimeLimitMinutes(selectedAssessment)} minutes
-                        </span>
-                      </div>
-                      <div style={styles.detailInfoItem}>
-                        <span style={styles.detailInfoLabel}>Questions</span>
-                        <span style={styles.detailInfoValue}>
-                          {getDisplayQuestionCount(selectedAssessment)}
-                        </span>
-                      </div>
-                      <div style={styles.detailInfoItem}>
-                        <span style={styles.detailInfoLabel}>Attempts</span>
-                        <span style={styles.detailInfoValue}>
-                          {selectedAssessment.attemptsAllowed === 1
-                            ? "Single attempt"
-                            : `${selectedAssessment.attemptsAllowed} attempts`}
-                        </span>
-                      </div>
-                      <div style={styles.detailInfoItem}>
-                        <span style={styles.detailInfoLabel}>Type</span>
-                        <span style={styles.detailInfoValue}>
-                          {selectedAssessment.typeName}
-                        </span>
-                      </div>
-                      {selectedAssessment.expires_at &&
-                        (() => {
-                          const expiryStatus = getExpirationStatus(
-                            selectedAssessment.expires_at
-                          );
-                          if (expiryStatus.status === "no_expiry") return null;
-                          return (
-                            <div style={styles.detailInfoItem}>
-                              <span style={styles.detailInfoLabel}>Expires</span>
-                              <span
-                                style={{
-                                  ...styles.detailInfoValue,
-                                  color:
-                                    expiryStatus.status === "expired"
-                                      ? "#dc2626"
-                                      : expiryStatus.status === "soon"
-                                      ? "#d97706"
-                                      : "#0a1929",
-                                  fontWeight:
-                                    expiryStatus.status === "expired" ||
-                                    expiryStatus.status === "soon"
-                                      ? "700"
-                                      : "500",
-                                }}
-                              >
-                                {expiryStatus.status === "expired"
-                                  ? "EXPIRED"
-                                  : expiryStatus.status === "today"
-                                  ? "Today"
-                                  : `${expiryStatus.days} days remaining`}
-                              </span>
-                            </div>
-                          );
-                        })()}
-                    </div>
-                  </div>
-                )}
               </>
             )}
           </section>
@@ -941,6 +782,16 @@ export default function CandidateDashboard() {
         </div>
       </div>
 
+      {/* ============== DRAWER ============== */}
+      {drawerOpen && selectedAssessment && (
+        <AssessmentDrawer
+          assessment={selectedAssessment}
+          isMobile={viewport.isMobile}
+          onClose={handleCloseDrawer}
+          onStart={handleStartAssessment}
+        />
+      )}
+
       <style jsx>{`
         @keyframes spin {
           0% { transform: rotate(0deg); }
@@ -949,6 +800,10 @@ export default function CandidateDashboard() {
         @keyframes fadeIn {
           from { opacity: 0; transform: translateY(10px); }
           to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes slideInRight {
+          from { transform: translateX(100%); opacity: 0; }
+          to { transform: translateX(0); opacity: 1; }
         }
         @keyframes fadeInBackdrop {
           from { opacity: 0; }
@@ -960,11 +815,260 @@ export default function CandidateDashboard() {
 }
 
 // ============================================================
+// DRAWER COMPONENT
+// ============================================================
+function AssessmentDrawer({ assessment, isMobile, onClose, onStart }) {
+  const colors = getAssessmentColor(assessment.typeCode);
+  const ns = isNationalServiceAssessment(assessment);
+  const expiry = getExpirationStatus(assessment.expires_at);
+  const statusInfo = getStatusInfo(assessment.status);
+  const canStart = assessment.status === "unblocked" || assessment.status === "in_progress";
+  const isCompleted = assessment.status === "completed";
+  const isExpired = expiry.status === "expired";
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div
+        onClick={onClose}
+        style={styles.drawerBackdrop}
+        aria-hidden="true"
+      />
+
+      {/* Drawer */}
+      <aside
+        role="dialog"
+        aria-modal="true"
+        aria-label={`${assessment.title} details`}
+        style={{
+          ...styles.drawer,
+          width: isMobile ? "100%" : 520,
+        }}
+      >
+        {/* Header */}
+        <div style={styles.drawerHeader}>
+          <div style={styles.drawerHeaderLeft}>
+            <span
+              style={{
+                ...styles.drawerColorDot,
+                background: colors.gradient,
+              }}
+            />
+            <div style={styles.drawerHeaderText}>
+              <div style={styles.drawerEyebrow}>ASSESSMENT DETAIL</div>
+              <h2 style={styles.drawerTitle}>{assessment.title}</h2>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close details"
+            style={styles.drawerCloseBtn}
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* Body */}
+        <div style={styles.drawerBody}>
+          {/* Type + status */}
+          <div style={styles.drawerStatusRow}>
+            <span style={styles.drawerTypePill}>{assessment.typeName}</span>
+            <span
+              style={{
+                ...styles.drawerStatusBadge,
+                background: statusInfo.bg,
+                color: statusInfo.color,
+              }}
+            >
+              <span style={{ ...styles.statusDot, background: statusInfo.dot }} />
+              {statusInfo.label}
+            </span>
+            {ns && (
+              <span style={styles.drawerNsBadge}>National Service</span>
+            )}
+          </div>
+
+          {/* Expiry alert */}
+          {assessment.expires_at && expiry.status !== "no_expiry" && (
+            <div
+              style={{
+                ...styles.drawerAlert,
+                background:
+                  expiry.status === "expired"
+                    ? "rgba(220, 38, 38, 0.08)"
+                    : expiry.status === "soon" || expiry.status === "today"
+                    ? "rgba(245, 158, 11, 0.1)"
+                    : "rgba(34, 197, 94, 0.08)",
+                borderColor:
+                  expiry.status === "expired"
+                    ? "rgba(220, 38, 38, 0.25)"
+                    : expiry.status === "soon" || expiry.status === "today"
+                    ? "rgba(245, 158, 11, 0.25)"
+                    : "rgba(34, 197, 94, 0.25)",
+                color:
+                  expiry.status === "expired"
+                    ? "#991b1b"
+                    : expiry.status === "soon" || expiry.status === "today"
+                    ? "#92400e"
+                    : "#166534",
+              }}
+            >
+              <span style={styles.drawerAlertIcon}>
+                {expiry.status === "expired" ? "✕" : expiry.status === "soon" || expiry.status === "today" ? "⚠️" : "📅"}
+              </span>
+              <div>
+                <div style={styles.drawerAlertTitle}>
+                  {expiry.status === "expired"
+                    ? "This assessment has expired"
+                    : expiry.status === "today"
+                    ? "Expires today"
+                    : expiry.status === "soon"
+                    ? `${expiry.days} days remaining — act soon`
+                    : `${expiry.days} days remaining`}
+                </div>
+                <div style={styles.drawerAlertSub}>
+                  Deadline: {formatDate(assessment.expires_at)}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Description */}
+          {assessment.description && (
+            <div style={styles.drawerSection}>
+              <div style={styles.drawerSectionLabel}>About this assessment</div>
+              <p style={styles.drawerDescription}>{assessment.description}</p>
+            </div>
+          )}
+
+          {/* Areas */}
+          <div style={styles.drawerSection}>
+            <div style={styles.drawerSectionLabel}>Assessment Areas</div>
+            {assessment.sections && assessment.sections.length > 0 ? (
+              <div style={styles.drawerAreasGrid}>
+                {assessment.sections.map((section, i) => (
+                  <div key={i} style={styles.drawerAreaItem}>
+                    <span style={styles.drawerAreaBullet}>•</span>
+                    <span style={styles.drawerAreaText}>
+                      {section.name}
+                      {section.questionCount ? (
+                        <span style={styles.drawerAreaCount}>
+                          ({section.questionCount})
+                        </span>
+                      ) : null}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={styles.drawerAreaItem}>
+                <span style={styles.drawerAreaText}>
+                  Sections will appear once configured.
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* Metadata */}
+          <div style={styles.drawerSection}>
+            <div style={styles.drawerSectionLabel}>Details</div>
+            <div style={styles.drawerMetaGrid}>
+              <div style={styles.drawerMetaItem}>
+                <div style={styles.drawerMetaLabel}>Time Limit</div>
+                <div style={styles.drawerMetaValue}>
+                  {getDisplayTimeLimitMinutes(assessment)} minutes
+                </div>
+              </div>
+              <div style={styles.drawerMetaItem}>
+                <div style={styles.drawerMetaLabel}>Questions</div>
+                <div style={styles.drawerMetaValue}>
+                  {getDisplayQuestionCount(assessment)}
+                </div>
+              </div>
+              <div style={styles.drawerMetaItem}>
+                <div style={styles.drawerMetaLabel}>Attempts</div>
+                <div style={styles.drawerMetaValue}>
+                  {assessment.attemptsAllowed === 1
+                    ? "Single attempt"
+                    : `${assessment.attemptsAllowed} attempts`}
+                </div>
+              </div>
+              <div style={styles.drawerMetaItem}>
+                <div style={styles.drawerMetaLabel}>Type</div>
+                <div style={styles.drawerMetaValue}>{assessment.typeName}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer actions */}
+        <div style={styles.drawerFooter}>
+          {canStart ? (
+            <>
+              <button
+                type="button"
+                onClick={onClose}
+                style={styles.drawerSecondaryBtn}
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                onClick={() => onStart(assessment.id)}
+                style={{
+                  ...styles.drawerPrimaryBtn,
+                  background: colors.gradient,
+                }}
+              >
+                {assessment.status === "in_progress"
+                  ? "Continue Assessment"
+                  : "Start Assessment"}
+              </button>
+            </>
+          ) : isCompleted ? (
+            <>
+              <button
+                type="button"
+                onClick={onClose}
+                style={styles.drawerSecondaryBtn}
+              >
+                Close
+              </button>
+              <span style={styles.drawerCompletedTag}>
+                ✓ Completed
+              </span>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={onClose}
+                style={styles.drawerSecondaryBtn}
+              >
+                Close
+              </button>
+              <span style={styles.drawerLockedTag}>
+                {isExpired
+                  ? "Expired"
+                  : assessment.isNationalService
+                  ? "Contact support"
+                  : "Awaiting supervisor unlock"}
+              </span>
+            </>
+          )}
+        </div>
+      </aside>
+    </>
+  );
+}
+
+// ============================================================
 // SUBCOMPONENTS
 // ============================================================
 function KpiCard({ label, value, color, accent, icon }) {
   return (
-    <div style={{ ...styles.kpiCard }}>
+    <div style={styles.kpiCard}>
       <div
         style={{
           ...styles.kpiIconBox,
@@ -998,7 +1102,7 @@ function GuidelineCard({ icon, title, text }) {
 // STYLES
 // ============================================================
 const styles = {
-  // ---------- Page & main column ----------
+  // ---------- Page ----------
   pageContainer: {
     position: "relative",
     minHeight: "100vh",
@@ -1013,10 +1117,7 @@ const styles = {
   },
   pageBackground: {
     position: "fixed",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
+    top: 0, left: 0, right: 0, bottom: 0,
     backgroundImage: "url(/images/dashboard1-bg.jpg)",
     backgroundSize: "cover",
     backgroundPosition: "center",
@@ -1028,10 +1129,7 @@ const styles = {
   },
   pageOverlay: {
     position: "fixed",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
+    top: 0, left: 0, right: 0, bottom: 0,
     background:
       "linear-gradient(180deg, rgba(10, 25, 41, 0.28) 0%, rgba(10, 25, 41, 0.14) 35%, rgba(10, 25, 41, 0.32) 100%)",
     zIndex: 0,
@@ -1061,8 +1159,7 @@ const styles = {
     background: "#0a1929",
   },
   loadingBackground: {
-    position: "absolute",
-    inset: 0,
+    position: "absolute", inset: 0,
     backgroundImage: "url(/images/loading-bg.jpg)",
     backgroundSize: "cover",
     backgroundPosition: "center",
@@ -1070,8 +1167,7 @@ const styles = {
     zIndex: 0,
   },
   loadingOverlay: {
-    position: "absolute",
-    inset: 0,
+    position: "absolute", inset: 0,
     background: "linear-gradient(180deg, rgba(10,25,41,0.6), rgba(10,25,41,0.85))",
     zIndex: 0,
   },
@@ -1083,15 +1179,11 @@ const styles = {
     textShadow: "2px 2px 4px rgba(0,0,0,0.5)",
   },
   loadingLogo: {
-    fontSize: 32,
-    fontWeight: 700,
-    marginBottom: 20,
-    letterSpacing: 2,
-    color: "white",
+    fontSize: 32, fontWeight: 700, marginBottom: 20,
+    letterSpacing: 2, color: "white",
   },
   loadingSpinner: {
-    width: 50,
-    height: 50,
+    width: 50, height: 50,
     border: "4px solid rgba(255,255,255,0.2)",
     borderTop: "4px solid white",
     borderRadius: "50%",
@@ -1102,157 +1194,92 @@ const styles = {
 
   // ---------- Top bar ----------
   topBar: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: 16,
-    padding: "16px 20px",
+    display: "flex", justifyContent: "space-between", alignItems: "center",
+    gap: 16, padding: "16px 20px",
     background: "rgba(255,255,255,0.82)",
     backdropFilter: "blur(20px)",
     WebkitBackdropFilter: "blur(20px)",
     borderRadius: 16,
     border: "1px solid rgba(255, 255, 255, 0.5)",
     boxShadow: "0 1px 3px rgba(10, 25, 41, 0.08)",
-    marginBottom: 20,
-    flexWrap: "wrap",
+    marginBottom: 20, flexWrap: "wrap",
   },
-  topBarLeft: {
-    display: "flex",
-    alignItems: "center",
-    gap: 14,
-  },
-  topBarRight: {
-    display: "flex",
-    alignItems: "center",
-    gap: 10,
-  },
+  topBarLeft: { display: "flex", alignItems: "center", gap: 14 },
+  topBarRight: { display: "flex", alignItems: "center", gap: 10 },
   pageTitle: {
-    fontSize: 22,
-    fontWeight: 700,
-    color: "#0a1929",
-    margin: 0,
-    letterSpacing: "-0.01em",
+    fontSize: 22, fontWeight: 700, color: "#0a1929",
+    margin: 0, letterSpacing: "-0.01em",
   },
   breadcrumb: {
-    display: "flex",
-    alignItems: "center",
-    gap: 6,
-    fontSize: 12,
-    color: "#94a3b8",
-    marginTop: 2,
+    display: "flex", alignItems: "center", gap: 6,
+    fontSize: 12, color: "#94a3b8", marginTop: 2,
   },
   breadcrumbSep: { color: "#cbd5e1" },
   breadcrumbActive: { color: "#334155", fontWeight: 500 },
   profileChip: {
-    display: "flex",
-    alignItems: "center",
-    gap: 8,
+    display: "flex", alignItems: "center", gap: 8,
     padding: "6px 14px 6px 6px",
     background: "rgba(10, 25, 41, 0.04)",
     border: "1px solid rgba(10, 25, 41, 0.06)",
-    borderRadius: 50,
-    textDecoration: "none",
-    color: "#0a1929",
-    fontSize: 13,
-    fontWeight: 500,
+    borderRadius: 50, textDecoration: "none",
+    color: "#0a1929", fontSize: 13, fontWeight: 500,
     transition: "background 150ms ease",
   },
   profileChipAvatar: {
-    width: 28,
-    height: 28,
-    borderRadius: "50%",
+    width: 28, height: 28, borderRadius: "50%",
     background: "linear-gradient(135deg, #6366f1, #4f46e5)",
-    color: "white",
-    fontWeight: 700,
-    fontSize: 12,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
+    color: "white", fontWeight: 700, fontSize: 12,
+    display: "flex", alignItems: "center", justifyContent: "center",
   },
   profileChipName: {
-    maxWidth: 140,
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
+    maxWidth: 140, overflow: "hidden",
+    textOverflow: "ellipsis", whiteSpace: "nowrap",
   },
 
-  // ---------- Welcome card ----------
+  // ---------- Welcome ----------
   welcomeCard: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 24,
-    padding: "28px 32px",
+    display: "flex", alignItems: "center", justifyContent: "space-between",
+    gap: 24, padding: "28px 32px",
     background: "rgba(255,255,255,0.92)",
     backdropFilter: "blur(20px)",
     WebkitBackdropFilter: "blur(20px)",
     borderRadius: 18,
     border: "1px solid rgba(255, 255, 255, 0.5)",
     boxShadow: "0 4px 24px rgba(10, 25, 41, 0.08)",
-    marginBottom: 20,
-    flexWrap: "wrap",
+    marginBottom: 20, flexWrap: "wrap",
   },
   welcomeLeft: { flex: "1 1 320px", minWidth: 0 },
   welcomeEyebrow: {
-    fontSize: 11,
-    fontWeight: 700,
-    letterSpacing: "0.12em",
-    color: "#6366f1",
-    marginBottom: 8,
+    fontSize: 11, fontWeight: 700, letterSpacing: "0.12em",
+    color: "#6366f1", marginBottom: 8,
   },
   welcomeTitle: {
-    fontSize: 24,
-    fontWeight: 700,
-    color: "#0a1929",
-    margin: "0 0 6px 0",
-    lineHeight: 1.3,
-    letterSpacing: "-0.01em",
+    fontSize: 24, fontWeight: 700, color: "#0a1929",
+    margin: "0 0 6px 0", lineHeight: 1.3, letterSpacing: "-0.01em",
   },
   welcomeAccent: { color: "#6366f1" },
-  welcomeText: {
-    fontSize: 14,
-    color: "#64748b",
-    margin: 0,
-    lineHeight: 1.5,
-  },
-  progressRing: {
-    position: "relative",
-    width: 120,
-    height: 120,
-    flexShrink: 0,
-  },
+  welcomeText: { fontSize: 14, color: "#64748b", margin: 0, lineHeight: 1.5 },
+  progressRing: { position: "relative", width: 120, height: 120, flexShrink: 0 },
   progressRingInner: {
-    position: "absolute",
-    inset: 0,
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    justifyContent: "center",
+    position: "absolute", inset: 0,
+    display: "flex", flexDirection: "column",
+    alignItems: "center", justifyContent: "center",
   },
   progressRingNumber: {
-    fontSize: 22,
-    fontWeight: 800,
-    color: "#0a1929",
-    lineHeight: 1,
+    fontSize: 22, fontWeight: 800, color: "#0a1929", lineHeight: 1,
   },
   progressRingLabel: {
-    fontSize: 11,
-    color: "#64748b",
-    fontWeight: 600,
-    marginTop: 2,
+    fontSize: 11, color: "#64748b", fontWeight: 600, marginTop: 2,
   },
 
-  // ---------- KPI grid ----------
+  // ---------- KPI ----------
   kpiGrid: {
     display: "grid",
     gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
-    gap: 12,
-    marginBottom: 24,
+    gap: 12, marginBottom: 24,
   },
   kpiCard: {
-    display: "flex",
-    alignItems: "center",
-    gap: 14,
+    display: "flex", alignItems: "center", gap: 14,
     padding: "16px 18px",
     background: "rgba(255,255,255,0.92)",
     backdropFilter: "blur(20px)",
@@ -1263,64 +1290,70 @@ const styles = {
     transition: "transform 200ms ease, box-shadow 200ms ease",
   },
   kpiIconBox: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontSize: 18,
-    fontWeight: 700,
-    flexShrink: 0,
+    width: 40, height: 40, borderRadius: 10,
+    display: "flex", alignItems: "center", justifyContent: "center",
+    fontSize: 18, fontWeight: 700, flexShrink: 0,
   },
   kpiBody: { display: "flex", flexDirection: "column", minWidth: 0 },
   kpiValue: {
-    fontSize: 24,
-    fontWeight: 800,
-    lineHeight: 1,
+    fontSize: 24, fontWeight: 800, lineHeight: 1,
     letterSpacing: "-0.02em",
   },
   kpiLabel: {
-    fontSize: 11.5,
-    color: "#64748b",
-    fontWeight: 600,
-    marginTop: 4,
-    textTransform: "uppercase",
-    letterSpacing: "0.05em",
+    fontSize: 11.5, color: "#64748b", fontWeight: 600,
+    marginTop: 4, textTransform: "uppercase", letterSpacing: "0.05em",
   },
 
   // ---------- Section ----------
   section: { marginBottom: 24 },
   sectionHeader: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "flex-end",
-    marginBottom: 14,
-    flexWrap: "wrap",
-    gap: 12,
+    display: "flex", justifyContent: "space-between", alignItems: "flex-end",
+    marginBottom: 14, flexWrap: "wrap", gap: 12,
   },
   sectionTitle: {
-    fontSize: 18,
-    fontWeight: 700,
-    color: "#0a1929",
-    margin: 0,
-    letterSpacing: "-0.01em",
+    fontSize: 18, fontWeight: 700, color: "#0a1929",
+    margin: 0, letterSpacing: "-0.01em",
   },
-  sectionSubtitle: {
-    fontSize: 13,
-    color: "#475569",
-    margin: "3px 0 0 0",
-  },
+  sectionSubtitle: { fontSize: 13, color: "#475569", margin: "3px 0 0 0" },
   sectionCount: {
-    fontSize: 12,
-    fontWeight: 600,
-    color: "#334155",
+    fontSize: 12, fontWeight: 600, color: "#334155",
     padding: "6px 14px",
     background: "rgba(255,255,255,0.9)",
     backdropFilter: "blur(20px)",
     borderRadius: 50,
     border: "1px solid rgba(255, 255, 255, 0.5)",
     whiteSpace: "nowrap",
+  },
+
+  // ---------- Filter chips ----------
+  filterChips: {
+    display: "flex",
+    gap: 8,
+    marginBottom: 14,
+    flexWrap: "wrap",
+  },
+  filterChip: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 8,
+    padding: "8px 14px",
+    border: "1px solid",
+    borderRadius: 50,
+    cursor: "pointer",
+    fontFamily: "inherit",
+    fontSize: 13,
+    transition: "all 150ms ease",
+    backdropFilter: "blur(20px)",
+    WebkitBackdropFilter: "blur(20px)",
+  },
+  filterChipDot: {
+    width: 8, height: 8, borderRadius: "50%",
+    transition: "opacity 150ms ease",
+  },
+  filterChipCount: {
+    fontSize: 11, fontWeight: 700,
+    padding: "1px 7px", borderRadius: 50,
+    minWidth: 20, textAlign: "center",
   },
 
   // ---------- Table ----------
@@ -1334,19 +1367,11 @@ const styles = {
     overflow: "hidden",
     marginBottom: 20,
   },
-  table: {
-    width: "100%",
-    borderCollapse: "collapse",
-    fontSize: 13.5,
-  },
+  table: { width: "100%", borderCollapse: "collapse", fontSize: 13.5 },
   th: {
-    padding: "12px 16px",
-    textAlign: "left",
-    fontSize: 11,
-    fontWeight: 700,
-    color: "#64748b",
-    textTransform: "uppercase",
-    letterSpacing: "0.06em",
+    padding: "12px 16px", textAlign: "left",
+    fontSize: 11, fontWeight: 700, color: "#64748b",
+    textTransform: "uppercase", letterSpacing: "0.06em",
     background: "rgba(248, 250, 252, 0.9)",
     borderBottom: "1px solid rgba(10, 25, 41, 0.06)",
     whiteSpace: "nowrap",
@@ -1357,101 +1382,53 @@ const styles = {
   },
   td: {
     padding: "14px 16px",
-    color: "#334155",
-    verticalAlign: "middle",
+    color: "#334155", verticalAlign: "middle",
   },
-  tdName: {
-    display: "flex",
-    alignItems: "center",
-    gap: 10,
-    minWidth: 0,
-  },
+  tdName: { display: "flex", alignItems: "center", gap: 10, minWidth: 0 },
   tdColorDot: {
-    width: 8,
-    height: 8,
-    borderRadius: "50%",
-    flexShrink: 0,
+    width: 8, height: 8, borderRadius: "50%", flexShrink: 0,
     boxShadow: "0 0 0 3px rgba(255,255,255,0.6)",
   },
   tdNameStack: {
-    display: "flex",
-    alignItems: "center",
-    gap: 8,
-    minWidth: 0,
+    display: "flex", alignItems: "center", gap: 8, minWidth: 0,
   },
   tdNameText: {
-    fontSize: 14,
-    fontWeight: 600,
-    whiteSpace: "nowrap",
-    overflow: "hidden",
-    textOverflow: "ellipsis",
+    fontSize: 14, fontWeight: 600,
+    whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
   },
   tdNsTag: {
-    fontSize: 9,
-    fontWeight: 800,
-    padding: "2px 6px",
+    fontSize: 9, fontWeight: 800, padding: "2px 6px",
     background: "rgba(29, 78, 216, 0.12)",
-    color: "#1d4ed8",
-    borderRadius: 4,
-    letterSpacing: "0.04em",
-    flexShrink: 0,
+    color: "#1d4ed8", borderRadius: 4,
+    letterSpacing: "0.04em", flexShrink: 0,
   },
-  tdType: {
-    fontSize: 12.5,
-    color: "#64748b",
-  },
-  tdMuted: {
-    fontSize: 12.5,
-    color: "#94a3b8",
-  },
-  tdCompleted: {
-    fontSize: 12,
-    fontWeight: 600,
-    color: "#16a34a",
-  },
+  tdType: { fontSize: 12.5, color: "#64748b" },
+  tdMuted: { fontSize: 12.5, color: "#94a3b8" },
+  tdCompleted: { fontSize: 12, fontWeight: 600, color: "#16a34a" },
   statusPill: {
-    display: "inline-flex",
-    alignItems: "center",
-    gap: 6,
-    padding: "4px 10px",
-    borderRadius: 50,
-    fontSize: 11.5,
-    fontWeight: 600,
-    whiteSpace: "nowrap",
+    display: "inline-flex", alignItems: "center", gap: 6,
+    padding: "4px 10px", borderRadius: 50,
+    fontSize: 11.5, fontWeight: 600, whiteSpace: "nowrap",
   },
   statusDot: {
-    width: 6,
-    height: 6,
-    borderRadius: "50%",
-    flexShrink: 0,
+    width: 6, height: 6, borderRadius: "50%", flexShrink: 0,
   },
   expiryPill: {
-    display: "inline-block",
-    padding: "4px 10px",
-    borderRadius: 6,
-    fontSize: 11.5,
-    fontWeight: 700,
-    whiteSpace: "nowrap",
+    display: "inline-block", padding: "4px 10px", borderRadius: 6,
+    fontSize: 11.5, fontWeight: 700, whiteSpace: "nowrap",
   },
   rowAction: {
-    padding: "7px 16px",
-    color: "white",
-    border: "none",
-    borderRadius: 8,
-    fontSize: 12,
-    fontWeight: 600,
-    cursor: "pointer",
-    fontFamily: "inherit",
+    padding: "7px 16px", color: "white",
+    border: "none", borderRadius: 8,
+    fontSize: 12, fontWeight: 600,
+    cursor: "pointer", fontFamily: "inherit",
     transition: "transform 150ms ease, box-shadow 150ms ease",
     boxShadow: "0 2px 8px rgba(10, 25, 41, 0.15)",
   },
 
   // ---------- Mobile list ----------
   mobileList: {
-    display: "flex",
-    flexDirection: "column",
-    gap: 10,
-    marginBottom: 20,
+    display: "flex", flexDirection: "column", gap: 10, marginBottom: 20,
   },
   mobileCard: {
     padding: "16px",
@@ -1463,290 +1440,67 @@ const styles = {
     cursor: "pointer",
   },
   mobileCardHeader: {
-    display: "flex",
-    alignItems: "center",
-    gap: 8,
-    marginBottom: 10,
+    display: "flex", alignItems: "center", gap: 8, marginBottom: 10,
   },
   mobileCardName: {
-    fontSize: 15,
-    fontWeight: 700,
-    flex: 1,
-    minWidth: 0,
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
+    fontSize: 15, fontWeight: 700, flex: 1, minWidth: 0,
+    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
   },
   mobileCardMeta: {
-    display: "flex",
-    alignItems: "center",
-    gap: 8,
-    marginBottom: 8,
-    flexWrap: "wrap",
+    display: "flex", alignItems: "center", gap: 8,
+    marginBottom: 8, flexWrap: "wrap",
   },
   mobileCardStats: {
-    display: "flex",
-    alignItems: "center",
-    gap: 6,
-    fontSize: 12,
-    color: "#94a3b8",
-    marginBottom: 12,
+    display: "flex", alignItems: "center", gap: 6,
+    fontSize: 12, color: "#94a3b8", marginBottom: 12,
   },
   mobileDot: { color: "#cbd5e1" },
   mobileAction: {
-    width: "100%",
-    padding: "10px 16px",
-    color: "white",
-    border: "none",
-    borderRadius: 8,
-    fontSize: 13,
-    fontWeight: 600,
-    cursor: "pointer",
-    fontFamily: "inherit",
+    width: "100%", padding: "10px 16px",
+    color: "white", border: "none", borderRadius: 8,
+    fontSize: 13, fontWeight: 600,
+    cursor: "pointer", fontFamily: "inherit",
   },
 
   // ---------- Empty ----------
   emptyState: {
-    textAlign: "center",
-    padding: "60px 40px",
+    textAlign: "center", padding: "60px 40px",
     background: "rgba(255,255,255,0.92)",
     backdropFilter: "blur(20px)",
     borderRadius: 16,
     border: "1px solid rgba(255, 255, 255, 0.5)",
     marginBottom: 20,
   },
-  emptyIcon: {
-    fontSize: 42,
-    color: "#cbd5e1",
-    marginBottom: 12,
-  },
+  emptyIcon: { fontSize: 42, color: "#cbd5e1", marginBottom: 12 },
   emptyTitle: {
-    fontSize: 17,
-    fontWeight: 700,
-    color: "#0a1929",
-    margin: "0 0 6px 0",
+    fontSize: 17, fontWeight: 700, color: "#0a1929", margin: "0 0 6px 0",
   },
-  emptySub: {
-    fontSize: 13.5,
-    color: "#64748b",
-    margin: 0,
+  emptySub: { fontSize: 13.5, color: "#64748b", margin: 0 },
+  emptyResetBtn: {
+    marginTop: 16, padding: "8px 20px",
+    background: "linear-gradient(135deg, #1a237e, #4f46e5)",
+    color: "white", border: "none", borderRadius: 8,
+    fontSize: 13, fontWeight: 600,
+    cursor: "pointer", fontFamily: "inherit",
   },
 
   // ---------- Error ----------
   errorBox: {
-    marginBottom: 16,
-    padding: "12px 16px",
+    marginBottom: 16, padding: "12px 16px",
     borderRadius: 12,
     background: "rgba(239, 68, 68, 0.08)",
     border: "1px solid rgba(239, 68, 68, 0.2)",
     color: "#b91c1c",
-    display: "flex",
-    alignItems: "center",
+    display: "flex", alignItems: "center",
     justifyContent: "space-between",
-    fontSize: 13.5,
-    gap: 12,
+    fontSize: 13.5, gap: 12,
   },
   retryButton: {
-    padding: "6px 16px",
-    background: "#ef4444",
-    color: "white",
-    border: "none",
-    borderRadius: 6,
-    cursor: "pointer",
-    fontSize: 12,
-    fontWeight: 600,
+    padding: "6px 16px", background: "#ef4444",
+    color: "white", border: "none", borderRadius: 6,
+    cursor: "pointer", fontSize: 12, fontWeight: 600,
     fontFamily: "inherit",
   },
-
-  // ---------- Detail ----------
-  detailSection: {
-    background: "rgba(255,255,255,0.97)",
-    backdropFilter: "blur(20px)",
-    WebkitBackdropFilter: "blur(20px)",
-    borderRadius: 16,
-    padding: "24px 28px",
-    boxShadow: "0 4px 24px rgba(10, 25, 41, 0.08)",
-    border: "1px solid rgba(255, 255, 255, 0.6)",
-    animation: "fadeIn 0.4s ease",
-  },
-  detailHeader: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    flexWrap: "wrap",
-    gap: 12,
-    marginBottom: 12,
-    paddingBottom: 12,
-    borderBottom: "1px solid #f1f5f9",
-  },
-  detailHeaderLeft: {
-    display: "flex",
-    alignItems: "center",
-    gap: 12,
-    flexWrap: "wrap",
-  },
-  detailTitle: {
-    fontSize: 19,
-    fontWeight: 700,
-    color: "#0a1929",
-    margin: 0,
-    letterSpacing: "-0.01em",
-  },
-  detailType: {
-    fontSize: 11.5,
-    color: "#64748b",
-    padding: "3px 12px",
-    background: "#f1f5f9",
-    borderRadius: 50,
-    fontWeight: 600,
-  },
-  detailActions: { display: "flex", alignItems: "center", gap: 12 },
-  detailStartButton: {
-    padding: "10px 28px",
-    background: "linear-gradient(135deg, #1a237e, #4f46e5)",
-    color: "white",
-    border: "none",
-    borderRadius: 10,
-    cursor: "pointer",
-    fontSize: 13.5,
-    fontWeight: 600,
-    fontFamily: "inherit",
-    transition: "all 0.3s",
-    boxShadow: "0 4px 12px rgba(26, 35, 126, 0.2)",
-  },
-  detailBlocked: { fontSize: 13, color: "#94a3b8", fontWeight: 500 },
-  detailCompleted: { fontSize: 13, color: "#16a34a", fontWeight: 700 },
-
-  detailStatusRow: {
-    display: "flex",
-    alignItems: "center",
-    gap: 10,
-    marginBottom: 10,
-    flexWrap: "wrap",
-  },
-  detailStatusBadge: {
-    padding: "4px 14px",
-    borderRadius: 50,
-    fontSize: 12,
-    fontWeight: 700,
-  },
-  detailNsBadge: {
-    fontSize: 11,
-    fontWeight: 700,
-    padding: "3px 12px",
-    background: "#dbeafe",
-    color: "#1e40af",
-    borderRadius: 50,
-  },
-  detailExpiryBadge: {
-    padding: "6px 16px",
-    borderRadius: 8,
-    fontSize: 12.5,
-    fontWeight: 700,
-    display: "inline-flex",
-    alignItems: "center",
-    gap: 8,
-  },
-  detailExpiredBadge: {
-    padding: "4px 14px",
-    borderRadius: 50,
-    fontSize: 12,
-    fontWeight: 700,
-    background: "rgba(220, 38, 38, 0.15)",
-    color: "#dc2626",
-  },
-  urgentTag: {
-    background: "#dc2626",
-    color: "white",
-    padding: "2px 8px",
-    borderRadius: 4,
-    fontSize: 10,
-    fontWeight: 800,
-    letterSpacing: "0.04em",
-  },
-  detailDescription: {
-    fontSize: 13.5,
-    color: "#64748b",
-    margin: "0 0 16px 0",
-    lineHeight: 1.6,
-  },
-
-  deadlineNotice: {
-    padding: "16px 20px",
-    borderRadius: 12,
-    marginBottom: 16,
-    display: "flex",
-    alignItems: "center",
-    gap: 12,
-    flexWrap: "wrap",
-  },
-  deadlineIcon: { fontSize: 26, lineHeight: 1 },
-  deadlineTitle: {
-    fontSize: 14.5,
-    fontWeight: 700,
-    marginBottom: 2,
-  },
-  deadlineBody: { fontSize: 13, lineHeight: 1.5 },
-  deadlineDate: {
-    fontSize: 12,
-    color: "#64748b",
-    marginTop: 4,
-  },
-  deadlineAction: {
-    padding: "8px 20px",
-    background: "#dc2626",
-    color: "white",
-    border: "none",
-    borderRadius: 8,
-    fontSize: 13,
-    fontWeight: 700,
-    cursor: "pointer",
-    fontFamily: "inherit",
-  },
-
-  detailAreas: { marginBottom: 16 },
-  detailAreasTitle: {
-    fontSize: 13,
-    fontWeight: 700,
-    color: "#0a1929",
-    margin: "0 0 10px 0",
-    textTransform: "uppercase",
-    letterSpacing: "0.05em",
-  },
-  detailAreasGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))",
-    gap: 6,
-  },
-  detailAreaItem: {
-    display: "flex",
-    alignItems: "center",
-    gap: 8,
-    padding: "6px 12px",
-    background: "#f8fafc",
-    borderRadius: 8,
-    border: "1px solid #f1f5f9",
-  },
-  detailAreaBullet: { color: "#6366f1", fontSize: 14, fontWeight: "bold" },
-  detailAreaText: { fontSize: 12.5, color: "#334155" },
-  detailAreaCount: { color: "#94a3b8", marginLeft: 6, fontSize: 11 },
-
-  detailInfo: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))",
-    gap: 12,
-    paddingTop: 14,
-    borderTop: "1px solid #f1f5f9",
-  },
-  detailInfoItem: { display: "flex", flexDirection: "column", gap: 2 },
-  detailInfoLabel: {
-    fontSize: 11,
-    color: "#94a3b8",
-    fontWeight: 600,
-    textTransform: "uppercase",
-    letterSpacing: "0.04em",
-  },
-  detailInfoValue: { fontSize: 13.5, fontWeight: 600, color: "#0a1929" },
 
   // ---------- Guidelines ----------
   guidelinesSection: {
@@ -1760,11 +1514,8 @@ const styles = {
     boxShadow: "0 1px 3px rgba(10, 25, 41, 0.08)",
   },
   guidelinesTitle: {
-    fontSize: 16,
-    fontWeight: 700,
-    color: "#0a1929",
-    margin: "0 0 16px 0",
-    letterSpacing: "-0.01em",
+    fontSize: 16, fontWeight: 700, color: "#0a1929",
+    margin: "0 0 16px 0", letterSpacing: "-0.01em",
   },
   guidelinesGrid: {
     display: "grid",
@@ -1772,32 +1523,20 @@ const styles = {
     gap: 12,
   },
   guidelineCard: {
-    display: "flex",
-    alignItems: "flex-start",
-    gap: 12,
+    display: "flex", alignItems: "flex-start", gap: 12,
     padding: "14px 16px",
-    background: "#f8fafc",
-    borderRadius: 10,
+    background: "#f8fafc", borderRadius: 10,
     border: "1px solid #f1f5f9",
   },
   guidelineIcon: {
-    fontSize: 20,
-    flexShrink: 0,
-    color: "#6366f1",
-    fontWeight: 700,
-    lineHeight: 1.2,
+    fontSize: 20, flexShrink: 0,
+    color: "#6366f1", fontWeight: 700, lineHeight: 1.2,
   },
   guidelineCardTitle: {
-    fontSize: 13,
-    fontWeight: 700,
-    color: "#0a1929",
-    margin: "0 0 3px 0",
+    fontSize: 13, fontWeight: 700, color: "#0a1929", margin: "0 0 3px 0",
   },
   guidelineCardText: {
-    fontSize: 12,
-    color: "#64748b",
-    margin: 0,
-    lineHeight: 1.5,
+    fontSize: 12, color: "#64748b", margin: 0, lineHeight: 1.5,
   },
 
   // ---------- Info note ----------
@@ -1806,56 +1545,277 @@ const styles = {
     background: "rgba(219, 234, 254, 0.75)",
     backdropFilter: "blur(10px)",
     borderRadius: 12,
-    display: "flex",
-    alignItems: "flex-start",
-    gap: 12,
-    color: "#1e40af",
-    fontSize: 13,
+    display: "flex", alignItems: "flex-start", gap: 12,
+    color: "#1e40af", fontSize: 13,
     border: "1px solid rgba(59, 130, 246, 0.2)",
-    lineHeight: 1.6,
-    marginBottom: 20,
+    lineHeight: 1.6, marginBottom: 20,
   },
   infoIcon: {
-    fontSize: 15,
-    fontWeight: 700,
-    flexShrink: 0,
-    marginTop: 1,
-    width: 18,
-    height: 18,
-    borderRadius: "50%",
-    background: "#3b82f6",
-    color: "white",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontStyle: "italic",
-    fontFamily: "Georgia, serif",
+    fontSize: 15, fontWeight: 700, flexShrink: 0, marginTop: 1,
+    width: 18, height: 18, borderRadius: "50%",
+    background: "#3b82f6", color: "white",
+    display: "flex", alignItems: "center", justifyContent: "center",
+    fontStyle: "italic", fontFamily: "Georgia, serif",
   },
 
   // ---------- Footer ----------
   footer: {
-    marginTop: "auto",
-    padding: "20px 0 24px",
+    marginTop: "auto", padding: "20px 0 24px",
     borderTop: "1px solid rgba(10, 25, 41, 0.06)",
   },
   footerContent: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: 12,
-    flexWrap: "wrap",
+    display: "flex", justifyContent: "space-between",
+    alignItems: "center", gap: 12, flexWrap: "wrap",
   },
   footerLeft: { display: "flex", alignItems: "center", gap: 8 },
   footerBrand: { fontSize: 13, fontWeight: 700, color: "#0a1929" },
   footerDivider: { color: "#cbd5e1" },
   footerText: { fontSize: 12, color: "#64748b" },
   footerCenter: { display: "flex", alignItems: "center", gap: 8 },
-  footerRight: { display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" },
+  footerRight: {
+    display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap",
+  },
   footerLink: {
-    fontSize: 12,
-    color: "#475569",
-    textDecoration: "none",
+    fontSize: 12, color: "#475569", textDecoration: "none",
     transition: "color 0.2s",
   },
   footerDot: { fontSize: 12, color: "#cbd5e1" },
+
+  // ---------- Drawer ----------
+  drawerBackdrop: {
+    position: "fixed",
+    inset: 0,
+    background: "rgba(10, 25, 41, 0.45)",
+    backdropFilter: "blur(4px)",
+    WebkitBackdropFilter: "blur(4px)",
+    zIndex: 60,
+    animation: "fadeInBackdrop 200ms ease",
+  },
+  drawer: {
+    position: "fixed",
+    top: 0,
+    right: 0,
+    bottom: 0,
+    background: "white",
+    zIndex: 61,
+    display: "flex",
+    flexDirection: "column",
+    boxShadow: "-8px 0 40px rgba(10, 25, 41, 0.18)",
+    animation: "slideInRight 240ms cubic-bezier(0.4, 0, 0.2, 1)",
+    overflow: "hidden",
+  },
+  drawerHeader: {
+    display: "flex",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 12,
+    padding: "20px 24px",
+    borderBottom: "1px solid rgba(10, 25, 41, 0.06)",
+    background: "linear-gradient(180deg, #f8fafc 0%, #ffffff 100%)",
+    flexShrink: 0,
+  },
+  drawerHeaderLeft: {
+    display: "flex",
+    alignItems: "flex-start",
+    gap: 12,
+    flex: 1,
+    minWidth: 0,
+  },
+  drawerColorDot: {
+    width: 12,
+    height: 12,
+    borderRadius: "50%",
+    flexShrink: 0,
+    marginTop: 6,
+    boxShadow: "0 0 0 4px rgba(255,255,255,0.8)",
+  },
+  drawerHeaderText: { flex: 1, minWidth: 0 },
+  drawerEyebrow: {
+    fontSize: 10,
+    fontWeight: 700,
+    letterSpacing: "0.14em",
+    color: "#94a3b8",
+    marginBottom: 4,
+  },
+  drawerTitle: {
+    fontSize: 18,
+    fontWeight: 700,
+    color: "#0a1929",
+    margin: 0,
+    lineHeight: 1.3,
+    letterSpacing: "-0.01em",
+  },
+  drawerCloseBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 8,
+    background: "rgba(10, 25, 41, 0.04)",
+    border: "1px solid rgba(10, 25, 41, 0.06)",
+    color: "#64748b",
+    fontSize: 14,
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+    fontFamily: "inherit",
+    transition: "all 150ms ease",
+  },
+  drawerBody: {
+    flex: 1,
+    overflowY: "auto",
+    padding: "20px 24px",
+    display: "flex",
+    flexDirection: "column",
+    gap: 20,
+  },
+  drawerStatusRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    flexWrap: "wrap",
+  },
+  drawerTypePill: {
+    fontSize: 11.5,
+    color: "#64748b",
+    padding: "4px 12px",
+    background: "#f1f5f9",
+    borderRadius: 50,
+    fontWeight: 600,
+  },
+  drawerStatusBadge: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 6,
+    padding: "4px 12px",
+    borderRadius: 50,
+    fontSize: 12,
+    fontWeight: 700,
+  },
+  drawerNsBadge: {
+    fontSize: 11,
+    fontWeight: 700,
+    padding: "4px 12px",
+    background: "#dbeafe",
+    color: "#1e40af",
+    borderRadius: 50,
+  },
+  drawerAlert: {
+    display: "flex",
+    alignItems: "flex-start",
+    gap: 12,
+    padding: "14px 16px",
+    borderRadius: 12,
+    border: "1px solid",
+  },
+  drawerAlertIcon: { fontSize: 20, lineHeight: 1, flexShrink: 0 },
+  drawerAlertTitle: { fontSize: 13.5, fontWeight: 700, marginBottom: 2 },
+  drawerAlertSub: { fontSize: 12, opacity: 0.8 },
+  drawerSection: { display: "flex", flexDirection: "column", gap: 8 },
+  drawerSectionLabel: {
+    fontSize: 11,
+    fontWeight: 700,
+    color: "#94a3b8",
+    letterSpacing: "0.06em",
+    textTransform: "uppercase",
+  },
+  drawerDescription: {
+    fontSize: 13.5,
+    color: "#334155",
+    lineHeight: 1.6,
+    margin: 0,
+  },
+  drawerAreasGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))",
+    gap: 6,
+  },
+  drawerAreaItem: {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    padding: "8px 12px",
+    background: "#f8fafc",
+    borderRadius: 8,
+    border: "1px solid #f1f5f9",
+  },
+  drawerAreaBullet: {
+    color: "#6366f1",
+    fontSize: 14,
+    fontWeight: "bold",
+    lineHeight: 1,
+  },
+  drawerAreaText: { fontSize: 12.5, color: "#334155" },
+  drawerAreaCount: { color: "#94a3b8", marginLeft: 6, fontSize: 11 },
+  drawerMetaGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+    gap: 12,
+  },
+  drawerMetaItem: {
+    padding: "12px 14px",
+    background: "#f8fafc",
+    borderRadius: 10,
+    border: "1px solid #f1f5f9",
+  },
+  drawerMetaLabel: {
+    fontSize: 10.5,
+    color: "#94a3b8",
+    fontWeight: 700,
+    textTransform: "uppercase",
+    letterSpacing: "0.05em",
+    marginBottom: 4,
+  },
+  drawerMetaValue: {
+    fontSize: 14,
+    fontWeight: 700,
+    color: "#0a1929",
+  },
+  drawerFooter: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    gap: 10,
+    padding: "16px 24px",
+    borderTop: "1px solid rgba(10, 25, 41, 0.06)",
+    background: "#f8fafc",
+    flexShrink: 0,
+    flexWrap: "wrap",
+  },
+  drawerSecondaryBtn: {
+    padding: "10px 20px",
+    background: "white",
+    color: "#334155",
+    border: "1px solid rgba(10, 25, 41, 0.12)",
+    borderRadius: 10,
+    fontSize: 13,
+    fontWeight: 600,
+    cursor: "pointer",
+    fontFamily: "inherit",
+    transition: "all 150ms ease",
+  },
+  drawerPrimaryBtn: {
+    padding: "10px 24px",
+    color: "white",
+    border: "none",
+    borderRadius: 10,
+    fontSize: 13.5,
+    fontWeight: 700,
+    cursor: "pointer",
+    fontFamily: "inherit",
+    boxShadow: "0 4px 14px rgba(10, 25, 41, 0.2)",
+    transition: "all 150ms ease",
+  },
+  drawerCompletedTag: {
+    fontSize: 13,
+    fontWeight: 700,
+    color: "#16a34a",
+    padding: "10px 16px",
+  },
+  drawerLockedTag: {
+    fontSize: 13,
+    fontWeight: 600,
+    color: "#94a3b8",
+    padding: "10px 16px",
+  },
 };
