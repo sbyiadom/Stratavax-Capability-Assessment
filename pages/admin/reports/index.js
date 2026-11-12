@@ -1,11 +1,4 @@
-// pages/admin/reports/index.js - COMPLETE WITH URL-DRIVEN FILTERS
-// Phase 6: reads ?type= from URL to preselect the correct tab.
-// Phase 8 (2026-10-03): recommendation now sourced from
-//   utils/scoring.calculateRecommendation. The local
-//   calculateNationalServiceRecommendation used 85/75/65 while
-//   api/supervisor/reports.js used 85/75/65/50, producing different
-//   labels for the same candidate on different pages. Removed.
-
+// pages/admin/reports/index.js
 import { useState, useEffect, Fragment } from 'react';
 import { useRouter } from 'next/router';
 import { supabase } from '../../../supabase/client';
@@ -100,8 +93,142 @@ function calculateNationalServiceScores(reportData, categoryScores, result) {
   return { workplaceReadiness, intellectualCapability, overallScore };
 }
 
-// Valid type values that map to tabs
 const VALID_TYPES = ['all', 'national_service', 'stratavax'];
+
+// ============================================================
+// SHARE REPORT MODAL
+// ============================================================
+function ShareReportModal({ report, onClose }) {
+  const [expiresInDays, setExpiresInDays] = useState(7);
+  const [recipientEmail, setRecipientEmail] = useState("");
+  const [generating, setGenerating] = useState(false);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState(null);
+
+  const handleGenerate = async () => {
+    setGenerating(true);
+    setError(null);
+    try {
+      const token = JSON.parse(localStorage.getItem("stratavax-auth-session")).access_token;
+      const res = await fetch(`/api/admin/reports/${report.id}/share`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          expires_in_days: parseInt(expiresInDays, 10),
+          recipient_email: recipientEmail.trim() || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || "Failed to generate link");
+      setResult(data);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const handleCopy = () => {
+    if (result?.share_url) {
+      navigator.clipboard.writeText(result.share_url);
+    }
+  };
+
+  return (
+    <div style={styles.modalBackdrop}>
+      <div style={styles.modalContent}>
+        <div style={styles.modalHeader}>
+          <h2 style={styles.modalTitle}>Share Report</h2>
+          <button onClick={onClose} style={styles.modalCloseBtn}>✕</button>
+        </div>
+        
+        {!result ? (
+          <>
+            <p style={styles.modalSub}>
+              Generate a secure, read-only link for <strong>{report.candidate_name}</strong>. 
+              Recipients will not need a Stratavax account to view it.
+            </p>
+
+            {error && <div style={{ color: '#dc2626', fontSize: '13px', marginBottom: '16px', padding: '10px', background: '#fef2f2', borderRadius: '6px' }}>{error}</div>}
+
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#334155', marginBottom: '6px' }}>Link Expiration</label>
+              <select 
+                value={expiresInDays} 
+                onChange={(e) => setExpiresInDays(e.target.value)}
+                style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '14px' }}
+              >
+                <option value={1}>24 Hours</option>
+                <option value={7}>7 Days</option>
+                <option value={30}>30 Days</option>
+                <option value={90}>90 Days</option>
+              </select>
+            </div>
+
+            <div style={{ marginBottom: '24px' }}>
+              <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#334155', marginBottom: '6px' }}>Email Recipient (Optional)</label>
+              <input 
+                type="email" 
+                value={recipientEmail}
+                onChange={(e) => setRecipientEmail(e.target.value)}
+                placeholder="hr@example.com"
+                style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '14px', boxSizing: 'border-box' }}
+              />
+              <p style={{ fontSize: '11px', color: '#94a3b8', marginTop: '4px', margin: '4px 0 0 0' }}>Leave blank if you just want to copy the link yourself.</p>
+            </div>
+
+            <button 
+              onClick={handleGenerate} 
+              disabled={generating}
+              style={{ width: '100%', padding: '12px', background: 'linear-gradient(135deg, #1a237e, #4f46e5)', color: 'white', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: generating ? 'not-allowed' : 'pointer', opacity: generating ? 0.7 : 1 }}
+            >
+              {generating ? 'Generating...' : 'Generate Secure Link'}
+            </button>
+          </>
+        ) : (
+          <>
+            <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+              <div style={{ width: '48px', height: '48px', background: '#dcfce7', color: '#16a34a', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px', margin: '0 auto 12px auto' }}>✓</div>
+              <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#0a1929', margin: '0 0 4px 0' }}>Link Generated</h3>
+              <p style={{ fontSize: '13px', color: '#64748b', margin: 0 }}>Expires on {new Date(result.expires_at).toLocaleDateString()}</p>
+            </div>
+
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+              <input 
+                type="text" 
+                readOnly 
+                value={result.share_url}
+                style={{ flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '13px', color: '#334155', background: '#f8fafc' }}
+              />
+              <button 
+                onClick={handleCopy}
+                style={{ padding: '10px 16px', background: '#f1f5f9', color: '#0a1929', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}
+              >
+                Copy
+              </button>
+            </div>
+
+            {result.email_sent && (
+              <p style={{ fontSize: '12px', color: '#16a34a', textAlign: 'center', marginBottom: '16px', fontWeight: '500' }}>
+                ✓ Email sent to {result.email_target}
+              </p>
+            )}
+
+            <button 
+              onClick={onClose} 
+              style={{ width: '100%', padding: '12px', background: 'white', color: '#334155', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}
+            >
+              Done
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export default function AdminReportsList() {
   const router = useRouter();
@@ -116,10 +243,10 @@ export default function AdminReportsList() {
   const [exporting, setExporting] = useState(false);
   const [expandedCandidates, setExpandedCandidates] = useState({});
   const [candidates, setCandidates] = useState([]);
+  
+  // 👇 NEW STATE FOR SHARING
+  const [sharingReport, setSharingReport] = useState(null);
 
-  // ============================================================
-  // 🟢 PHASE 6: Sync filter with URL query param on mount and on change
-  // ============================================================
   useEffect(() => {
     if (!router.isReady) return;
     const qType = typeof router.query.type === 'string' ? router.query.type : 'all';
@@ -160,7 +287,6 @@ export default function AdminReportsList() {
         throw new Error(data.error || 'Failed to load reports');
       }
 
-      // Process reports
       const processedReports = (data.reports || []).map(report => {
         const isNationalService = report.isNationalService ||
           report.assessment_id === 'bdb9d46e-9fac-4d00-8478-1f649e7ac600' ||
@@ -195,7 +321,6 @@ export default function AdminReportsList() {
       setReports(processedReports);
       setStats(data.stats || { total: 0, nationalService: 0, stratavax: 0 });
 
-      // Build candidate map
       const candidateMap = {};
       processedReports.forEach(report => {
         const key = report.user_id || report.candidate_email;
@@ -227,18 +352,14 @@ export default function AdminReportsList() {
       const { data: session } = await supabase.auth.getSession();
       const token = session?.session?.access_token;
 
-      if (!token) {
-        throw new Error('Not authenticated');
-      }
+      if (!token) throw new Error('Not authenticated');
 
       let exportType = 'all';
       if (filter === 'national_service') exportType = 'national_service';
       else if (filter === 'stratavax') exportType = 'stratavax';
 
       const response = await fetch(`/api/admin/export-reports?type=${exportType}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
+        headers: { 'Authorization': `Bearer ${token}` }
       });
 
       if (!response.ok) {
@@ -271,10 +392,6 @@ export default function AdminReportsList() {
     }));
   };
 
-  // ============================================================
-  // 🟢 PHASE 6: Filter change also updates the URL so the sidebar
-  //    active state and browser back/forward stay in sync.
-  // ============================================================
   const handleFilterChange = (nextFilter) => {
     setFilter(nextFilter);
     const query = nextFilter === 'all' ? {} : { type: nextFilter };
@@ -430,12 +547,20 @@ export default function AdminReportsList() {
                       {report.completed_at ? new Date(report.completed_at).toLocaleDateString() : 'N/A'}
                     </td>
                     <td style={styles.td}>
-                      <button
-                        onClick={() => handleViewReport(report.id)}
-                        style={styles.viewButton}
-                      >
-                        View Report
-                      </button>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button
+                          onClick={() => handleViewReport(report.id)}
+                          style={styles.viewButton}
+                        >
+                          View Report
+                        </button>
+                        <button
+                          onClick={() => setSharingReport(report)}
+                          style={styles.shareButton}
+                        >
+                          Share
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -548,15 +673,26 @@ export default function AdminReportsList() {
                                   <span style={styles.assessmentRecommendation}>
                                     {recommendation}
                                   </span>
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleViewReport(assessment.id);
-                                    }}
-                                    style={styles.viewButton}
-                                  >
-                                    View Report
-                                  </button>
+                                  <div style={{ display: 'flex', gap: '8px' }}>
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleViewReport(assessment.id);
+                                      }}
+                                      style={styles.viewButton}
+                                    >
+                                      View Report
+                                    </button>
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setSharingReport(assessment);
+                                      }}
+                                      style={styles.shareButton}
+                                    >
+                                      Share
+                                    </button>
+                                  </div>
                                 </div>
                               );
                             })}
@@ -663,12 +799,20 @@ export default function AdminReportsList() {
                       </span>
                     </td>
                     <td style={styles.td}>
-                      <button
-                        onClick={() => handleViewReport(report.id)}
-                        style={styles.viewButton}
-                      >
-                        View Report
-                      </button>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button
+                          onClick={() => handleViewReport(report.id)}
+                          style={styles.viewButton}
+                        >
+                          View Report
+                        </button>
+                        <button
+                          onClick={() => setSharingReport(report)}
+                          style={styles.shareButton}
+                        >
+                          Share
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -773,13 +917,24 @@ export default function AdminReportsList() {
         {filter === 'national_service' && renderNationalServiceView()}
         {filter === 'stratavax' && renderStratavaxView()}
         {filter === 'all' && renderAllView()}
+
+        {/* Share Modal */}
+        {sharingReport && (
+          <ShareReportModal 
+            report={sharingReport} 
+            onClose={() => setSharingReport(null)} 
+          />
+        )}
       </div>
     </AppLayout>
   );
 }
 
+// ============================================================
+// STYLES
+// ============================================================
 const styles = {
-  loadingContainer: {
+    loadingContainer: {
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
@@ -983,6 +1138,16 @@ const styles = {
     fontSize: '12px',
     fontWeight: '500'
   },
+  shareButton: {
+    padding: '4px 12px',
+    background: '#f8fafc',
+    color: '#475569',
+    border: '1px solid #e2e8f0',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontSize: '12px',
+    fontWeight: '500'
+  },
   emptyState: {
     textAlign: 'center',
     padding: '40px',
@@ -1046,7 +1211,57 @@ const styles = {
   assessmentRecommendation: {
     fontSize: '12px',
     color: '#64748b'
-  }
+  },
+  
+  // ============================================================
+  // SHARE MODAL STYLES
+  // ============================================================
+  modalBackdrop: {
+    position: 'fixed',
+    inset: 0,
+    background: 'rgba(10, 25, 41, 0.45)',
+    backdropFilter: 'blur(4px)',
+    zIndex: 60,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '20px',
+  },
+  modalContent: {
+    background: 'white',
+    borderRadius: '16px',
+    padding: '24px',
+    width: '100%',
+    maxWidth: '480px',
+    boxShadow: '0 20px 60px rgba(10, 25, 41, 0.2)',
+    animation: 'fadeIn 0.2s ease',
+  },
+  modalHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '16px',
+  },
+  modalTitle: {
+    fontSize: '20px',
+    fontWeight: '700',
+    color: '#0a1929',
+    margin: 0,
+  },
+  modalCloseBtn: {
+    background: 'transparent',
+    border: 'none',
+    fontSize: '18px',
+    color: '#94a3b8',
+    cursor: 'pointer',
+    padding: '4px',
+  },
+  modalSub: {
+    fontSize: '14px',
+    color: '#64748b',
+    margin: '0 0 20px 0',
+    lineHeight: 1.5,
+  },
 };
 
 // Add keyframe animation
@@ -1056,6 +1271,10 @@ if (typeof document !== 'undefined') {
     @keyframes spin {
       0% { transform: rotate(0deg); }
       100% { transform: rotate(360deg); }
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
     }
   `;
   document.head.appendChild(style);
