@@ -1,10 +1,12 @@
 // pages/shared/[token].js
 // Public read-only report page for external sharing.
+// Renders the full StratavaxReport component.
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
 import Image from "next/image";
 import Head from "next/head";
+import StratavaxReport from "../../components/reports/StratavaxReport";
 
 function formatDate(value) {
   if (!value) return "N/A";
@@ -23,7 +25,7 @@ export default function SharedReportPage() {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [report, setReport] = useState(null);
+  const [reportData, setReportData] = useState(null);
   const [expiresAt, setExpiresAt] = useState(null);
 
   useEffect(() => {
@@ -38,7 +40,30 @@ export default function SharedReportPage() {
           throw new Error(data.error || "Failed to load report");
         }
 
-        setReport(data.report);
+        // Reconstruct the data shape expected by StratavaxReport
+        const apiReport = data.report;
+        
+        const resultShape = {
+          id: apiReport.id,
+          percentage_score: apiReport.percentage_score,
+          classification: apiReport.recommendation || 'Standard Profile',
+          category_scores: apiReport.category_scores,
+          completed_at: apiReport.completed_at,
+          candidate_profiles: {
+            full_name: apiReport.candidate_name,
+            email: apiReport.candidate_email,
+            university: apiReport.university,
+            programme: apiReport.programme,
+            graduation_year: apiReport.graduation_year,
+            preferred_department: apiReport.preferred_department,
+          },
+          assessments: {
+            title: apiReport.assessment_title,
+            assessment_type: { name: apiReport.assessment_type_name }
+          }
+        };
+
+        setReportData({ report: apiReport, result: resultShape });
         setExpiresAt(data.expires_at);
       } catch (err) {
         console.error("Shared report error:", err);
@@ -71,7 +96,7 @@ export default function SharedReportPage() {
     );
   }
 
-  if (!report) return null;
+  if (!reportData) return null;
 
   return (
     <div style={styles.pageContainer}>
@@ -80,7 +105,7 @@ export default function SharedReportPage() {
         <meta name="robots" content="noindex, nofollow" />
       </Head>
 
-      {/* Top Banner */}
+      {/* Top Header */}
       <header style={styles.header}>
         <div style={styles.headerContent}>
           <div style={styles.brand}>
@@ -93,111 +118,25 @@ export default function SharedReportPage() {
         </div>
       </header>
 
-      <main style={styles.main}>
-        {/* Expiry notice */}
-        {expiresAt && (
+      {/* Expiry Notice */}
+      {expiresAt && (
+        <div style={styles.expiryWrapper}>
           <div style={styles.expiryNotice}>
             <span style={styles.expiryIcon}>⏳</span>
             <span>This secure link expires on <strong>{formatDate(expiresAt)}</strong>.</span>
           </div>
-        )}
-
-        {/* Report Header */}
-        <div style={styles.reportHeader}>
-          <div>
-            <h1 style={styles.reportTitle}>Assessment Report</h1>
-            <p style={styles.reportSubtitle}>Confidential Candidate Evaluation</p>
-          </div>
-          <div style={styles.scoreCircle}>
-            <div style={styles.scoreValue}>{Math.round(report.overallScore)}%</div>
-            <div style={styles.scoreLabel}>Overall</div>
-          </div>
         </div>
+      )}
 
-        {/* Candidate Info */}
-        <div style={styles.card}>
-          <h2 style={styles.sectionTitle}>Candidate Details</h2>
-          <div style={styles.grid2}>
-            <div style={styles.dataPoint}>
-              <span style={styles.dataLabel}>Name</span>
-              <span style={styles.dataValue}>{report.candidate_name}</span>
-            </div>
-            <div style={styles.dataPoint}>
-              <span style={styles.dataLabel}>Email</span>
-              <span style={styles.dataValue}>{report.candidate_email}</span>
-            </div>
-            <div style={styles.dataPoint}>
-              <span style={styles.dataLabel}>University</span>
-              <span style={styles.dataValue}>{report.university || "N/A"}</span>
-            </div>
-            <div style={styles.dataPoint}>
-              <span style={styles.dataLabel}>Programme</span>
-              <span style={styles.dataValue}>{report.programme || "N/A"}</span>
-            </div>
-            <div style={styles.dataPoint}>
-              <span style={styles.dataLabel}>Preferred Department</span>
-              <span style={styles.dataValue}>{report.preferred_department || "N/A"}</span>
-            </div>
-            <div style={styles.dataPoint}>
-              <span style={styles.dataLabel}>Completed On</span>
-              <span style={styles.dataValue}>{formatDate(report.completed_at)}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Assessment Details */}
-        <div style={styles.card}>
-          <h2 style={styles.sectionTitle}>Assessment Details</h2>
-          <div style={styles.grid2}>
-            <div style={styles.dataPoint}>
-              <span style={styles.dataLabel}>Assessment</span>
-              <span style={styles.dataValue}>{report.assessment_title}</span>
-            </div>
-            <div style={styles.dataPoint}>
-              <span style={styles.dataLabel}>Type</span>
-              <span style={styles.dataValue}>{report.assessment_type_name}</span>
-            </div>
-            <div style={styles.dataPoint}>
-              <span style={styles.dataLabel}>Workplace Readiness</span>
-              <span style={styles.dataValue}>{Math.round(report.workplace_readiness)}%</span>
-            </div>
-            <div style={styles.dataPoint}>
-              <span style={styles.dataLabel}>Intellectual Capability</span>
-              <span style={styles.dataValue}>{Math.round(report.intellectual_capability)}%</span>
-            </div>
-            <div style={styles.dataPoint}>
-              <span style={styles.dataLabel}>Recommendation</span>
-              <span style={{ 
-                ...styles.dataValue, 
-                color: report.recommendation?.includes('Recommended') ? '#16a34a' : 
-                       report.recommendation === 'Reserve Pool' ? '#d97706' : '#64748b' 
-              }}>
-                {report.recommendation || "N/A"}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* Category Breakdown */}
-        {report.category_scores && report.category_scores.length > 0 && (
-          <div style={styles.card}>
-            <h2 style={styles.sectionTitle}>Category Breakdown</h2>
-            <div style={styles.categoryList}>
-              {report.category_scores.map((cat, idx) => {
-                const score = Math.round(cat.percentage || cat.score || 0);
-                return (
-                  <div key={idx} style={styles.categoryRow}>
-                    <div style={styles.categoryName}>{cat.category || cat.name}</div>
-                    <div style={styles.progressBarContainer}>
-                      <div style={{ ...styles.progressBarFill, width: `${score}%` }} />
-                    </div>
-                    <div style={styles.categoryValue}>{score}%</div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
+      {/* Full Report Render */}
+      <main style={styles.main}>
+        <StratavaxReport
+          result={reportData.result}
+          candidate={reportData.result.candidate_profiles}
+          assessment={reportData.result.assessments}
+          behavioralMatrix={reportData.report.report_data?.behavioralMatrix || null}
+          onBack={null}
+        />
       </main>
 
       <footer style={styles.footer}>
@@ -218,9 +157,8 @@ export default function SharedReportPage() {
         }
         @media print {
           body { background: white; }
-          header, footer, .expiryNotice { display: none !important; }
+          header, footer, div[style*="expiryNotice"] { display: none !important; }
           main { padding: 0 !important; max-width: 100% !important; }
-          div[style*="box-shadow"] { box-shadow: none !important; border: 1px solid #e2e8f0; }
         }
       `}</style>
     </div>
@@ -230,38 +168,17 @@ export default function SharedReportPage() {
 const styles = {
   pageContainer: { minHeight: "100vh", display: "flex", flexDirection: "column" },
   
-  header: { background: "#0a1929", padding: "16px 24px" },
-  headerContent: { maxWidth: 900, margin: "0 auto", display: "flex", justifyContent: "space-between", alignItems: "center" },
+  header: { background: "#0a1929", padding: "16px 24px", WebkitPrintColorAdjust: "exact", printColorAdjust: "exact" },
+  headerContent: { maxWidth: 1200, margin: "0 auto", display: "flex", justifyContent: "space-between", alignItems: "center" },
   brand: { display: "flex", alignItems: "center", gap: 12 },
   brandName: { color: "white", fontSize: 18, fontWeight: 700, letterSpacing: 1 },
   badge: { background: "rgba(255,255,255,0.1)", color: "#ffd700", padding: "6px 12px", borderRadius: 20, fontSize: 12, fontWeight: 600, border: "1px solid rgba(255,215,0,0.3)" },
 
-  main: { flex: 1, maxWidth: 900, margin: "0 auto", padding: "32px 24px", width: "100%", boxSizing: "border-box" },
-
-  expiryNotice: { display: "flex", alignItems: "center", gap: 12, background: "rgba(59, 130, 246, 0.1)", color: "#1e40af", padding: "12px 16px", borderRadius: 8, fontSize: 14, marginBottom: 24, border: "1px solid rgba(59, 130, 246, 0.2)" },
+  expiryWrapper: { maxWidth: 1200, margin: "0 auto", width: "100%", padding: "16px 24px 0" },
+  expiryNotice: { display: "flex", alignItems: "center", gap: 12, background: "rgba(59, 130, 246, 0.1)", color: "#1e40af", padding: "12px 16px", borderRadius: 8, fontSize: 14, border: "1px solid rgba(59, 130, 246, 0.2)" },
   expiryIcon: { fontSize: 18 },
 
-  reportHeader: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 32 },
-  reportTitle: { fontSize: 28, fontWeight: 800, color: "#0a1929", margin: "0 0 8px 0" },
-  reportSubtitle: { fontSize: 14, color: "#64748b", margin: 0 },
-  scoreCircle: { width: 90, height: 90, borderRadius: "50%", background: "white", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", boxShadow: "0 4px 12px rgba(10,25,41,0.08)", border: "4px solid #6366f1" },
-  scoreValue: { fontSize: 24, fontWeight: 800, color: "#0a1929", lineHeight: 1 },
-  scoreLabel: { fontSize: 10, textTransform: "uppercase", fontWeight: 700, color: "#64748b", marginTop: 4 },
-
-  card: { background: "white", borderRadius: 16, padding: "24px", boxShadow: "0 2px 8px rgba(10,25,41,0.04)", border: "1px solid #f1f5f9", marginBottom: 24 },
-  sectionTitle: { fontSize: 16, fontWeight: 700, color: "#0a1929", margin: "0 0 20px 0", paddingBottom: 12, borderBottom: "1px solid #f1f5f9" },
-
-  grid2: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 20 },
-  dataPoint: { display: "flex", flexDirection: "column", gap: 4 },
-  dataLabel: { fontSize: 11, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em" },
-  dataValue: { fontSize: 15, color: "#1e293b", fontWeight: 500 },
-
-  categoryList: { display: "flex", flexDirection: "column", gap: 16 },
-  categoryRow: { display: "flex", alignItems: "center", gap: 16 },
-  categoryName: { width: 180, fontSize: 14, fontWeight: 500, color: "#334155" },
-  progressBarContainer: { flex: 1, height: 8, background: "#e2e8f0", borderRadius: 4, overflow: "hidden" },
-  progressBarFill: { height: "100%", background: "#6366f1", borderRadius: 4 },
-  categoryValue: { width: 40, textAlign: "right", fontSize: 14, fontWeight: 700, color: "#0a1929" },
+  main: { flex: 1, width: "100%" },
 
   centeredContainer: { minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "#f8fafc", padding: 20, textAlign: "center" },
   spinner: { width: 40, height: 40, border: "4px solid #e2e8f0", borderTop: "4px solid #6366f1", borderRadius: "50%", animation: "spin 1s linear infinite", marginBottom: 20 },
