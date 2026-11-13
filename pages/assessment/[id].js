@@ -4,18 +4,8 @@
 // Phase 7F-7I: layout and per-question scoring mode.
 // Phase 8 (2026-10-03): question card clipping fix.
 // Phase 8.1 (2026-10-04): proctoring fix.
-//   - Spurious visibilitychange events that fire on initial page load no
-//     longer count as tab switches. A 2-second grace window suppresses
-//     them.
-//   - persistAnswer now sends PER-QUESTION deltas (events since the last
-//     save), not cumulative counters. Cumulative totals still go to the
-//     submit endpoint via proctoringData.summary.
 // Phase 8.2 (2026-10-07): inactivity auto-submit.
-//   - After 15 minutes without mouse, keyboard, touch, or scroll
-//     activity, the assessment auto-submits. This prevents abandoned
-//     sessions from recording artificially inflated durations (we found
-//     sessions running 85+ hours because candidates walked away and
-//     returned days later).
+// Phase 8.3 (2026-11-13): Enterprise Autosave. Added background retry queue.
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
@@ -188,6 +178,12 @@ function AssessmentContent() {
   const [previousUrl, setPreviousUrl] = useState(null);
 
   const [tabSwitchDetails, setTabSwitchDetails] = useState([]);
+
+  // ============================================================
+  // ENTERPRISE AUTOSAVE: Retry Queue State
+  // ============================================================
+  const [retryQueue, setRetryQueue] = useState({});
+  const [isRetrying, setIsRetrying] = useState(false);
 
   const [accessDenied, setAccessDenied] = useState(false);
   const [alreadySubmitted, setAlreadySubmitted] = useState(false);
@@ -418,10 +414,14 @@ function AssessmentContent() {
     }
   }
 
+  // ============================================================
+  // AUTOSAVE WITH RETRY QUEUE
+  // ============================================================
   async function persistAnswer(questionId, answerValue, leastValue, isChange) {
     const currentChangeCount = safeNumber(answerChangeCount[questionId], 0);
     const nextChangeCount = isChange ? currentChangeCount + 1 : currentChangeCount;
     if (isChange) setAnswerChangeCount(prev => ({ ...prev, [questionId]: nextChangeCount }));
+    
     setSaveStatus(prev => ({ ...prev, [questionId]: "saving" }));
     const timeSpentSeconds = Math.floor((Date.now() - questionStartTime) / 1000);
     const timeOnQuestion = Math.floor((Date.now() - (questionStartTimes[questionId] || questionStartTime)) / 1000);
@@ -435,8 +435,12 @@ function AssessmentContent() {
       right_click_attempts: 0
     };
 
-    try {
-      await saveAnswer(sessionIdRef.current, questionId, answerValue, leastValue, {
+    const payload = {
+      sessionId: sessionIdRef.current,
+      questionId,
+      answer: answerValue,
+      leastAnswer: leastValue,
+      metadata: {
         time_spent_seconds: timeSpentSeconds,
         time_on_question: timeOnQuestion,
         times_changed: nextChangeCount,
@@ -448,17 +452,79 @@ function AssessmentContent() {
         right_click_attempts: deltas.right_click_attempts,
         violations: deltas.violations,
         previous_question: currentIndex
-      });
+      }
+    };
+
+    try {
+      await saveAnswer(payload.sessionId, payload.questionId, payload.answer, payload.leastAnswer, payload.metadata);
       setSaveStatus(prev => ({ ...prev, [questionId]: "saved" }));
+      setRetryQueue(prev => {
+        const next = { ...prev };
+        delete next[questionId];
+        return next;
+      });
     } catch (err) {
-      console.error("Answer save error:", err);
+      console.error("Answer save error, queuing for retry:", err);
       setSaveStatus(prev => ({ ...prev, [questionId]: "error" }));
+      setRetryQueue(prev => ({ ...prev, [questionId]: payload }));
     }
+    
     setTimeout(() => {
-      setSaveStatus(prev => { const n = { ...prev }; delete n[questionId]; return n; });
+      setSaveStatus(prev => {
+        if (prev[questionId] === "error") return prev;
+        const n = { ...prev }; 
+        delete n[questionId]; 
+        return n; 
+      });
     }, 900);
     setQuestionStartTime(Date.now());
   }
+
+  // ============================================================
+  // BACKGROUND RETRY LOOP
+  // ============================================================
+  useEffect(() => {
+    const queueIds = Object.keys(retryQueue);
+    if (queueIds.length === 0 || isRetrying) return;
+
+    const interval = setInterval(async () => {
+      setIsRetrying(true);
+      const currentQueue = { ...retryQueue };
+      let successCount = 0;
+
+      for (const qId of Object.keys(currentQueue)) {
+        const payload = currentQueue[qId];
+        try {
+          await saveAnswer(payload.sessionId, payload.questionId, payload.answer, payload.leastAnswer, payload.metadata);
+          setSaveStatus(prev => ({ ...prev, [qId]: "saved" }));
+          setRetryQueue(prev => {
+            const next = { ...prev };
+            delete next[qId];
+            return next;
+          });
+          successCount++;
+        } catch (err) {
+          console.warn(`Retry failed for question ${qId}`);
+        }
+      }
+      
+      setIsRetrying(false);
+
+      if (successCount > 0) {
+        setTimeout(() => {
+          setSaveStatus(prev => {
+            const n = { ...prev };
+            Object.keys(currentQueue).forEach(qId => {
+              if (n[qId] === "saved") delete n[qId];
+            });
+            return n;
+          });
+        }, 2000);
+      }
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [retryQueue, isRetrying]);
 
   async function handleAnswerSelect(questionId, answerId, multipleCorrect) {
     if (isTimeExpired || elapsedSeconds >= timeLimitSeconds) {
@@ -590,11 +656,6 @@ function AssessmentContent() {
 
   // ============================================================
   // INACTIVITY AUTO-SUBMIT (Phase 8.2)
-  //
-  // After 15 minutes without mouse, keyboard, touch, or scroll
-  // activity, auto-submit. Prevents abandoned sessions from being
-  // recorded as 85-hour durations and preserves fairness across
-  // candidates.
   // ============================================================
   useEffect(() => {
     if (loading || alreadySubmitted || accessDenied || !session || isTimeExpired || isAutoSubmitting) return;
@@ -824,6 +885,12 @@ function AssessmentContent() {
   }
 
   async function handleSubmit() {
+    // If answers are pending retry, warn the user to wait.
+    if (Object.keys(retryQueue).length > 0) {
+      alert("Please wait. We are currently reconnecting to save your last answers. Check your internet connection.");
+      return;
+    }
+
     if (!session || !session.id) { alert('Unable to submit: No active session found. Please refresh the page and try again.'); return; }
     if (alreadySubmitted) { alert('This assessment has already been submitted.'); return; }
     if (accessDenied) { alert('Access denied for this assessment.'); return; }
@@ -891,6 +958,14 @@ function AssessmentContent() {
         <div style={styles.violationBanner}>
           <span>⚠️</span>
           <span>{violationMessage}</span>
+        </div>
+      )}
+
+      {/* Reconnecting Banner for Failed Saves */}
+      {Object.keys(retryQueue).length > 0 && (
+        <div style={{ position: "fixed", top: "70px", left: "50%", transform: "translateX(-50%)", background: "#f59e0b", color: "white", padding: "10px 20px", borderRadius: "8px", fontWeight: "bold", zIndex: 10001, fontSize: "14px", boxShadow: "0 4px 12px rgba(0,0,0,0.2)", display: "flex", alignItems: "center", gap: "10px" }}>
+          <span>⚠️</span>
+          <span>Reconnecting... {Object.keys(retryQueue).length} answer(s) pending save.</span>
         </div>
       )}
 
