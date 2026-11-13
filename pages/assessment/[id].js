@@ -5,7 +5,7 @@
 // Phase 8 (2026-10-03): question card clipping fix.
 // Phase 8.1 (2026-10-04): proctoring fix.
 // Phase 8.2 (2026-10-07): inactivity auto-submit.
-// Phase 8.3 (2026-11-13): Enterprise Autosave. Added background retry queue.
+// Phase 8.3 (2026-11-13): Enterprise Autosave (retry queue) + Session Recovery.
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
@@ -768,14 +768,24 @@ function AssessmentContent() {
         setQuestions(questionData || []);
 
         if (sessionData && sessionData.id) {
+          // 1. Restore Timer
           const savedTimer = localStorage.getItem(`timer_${sessionData.id}`);
           if (savedTimer) {
             const elapsed = parseInt(savedTimer, 10);
             if (elapsed > 0 && elapsed < durationSeconds) { setElapsedSeconds(elapsed); }
+          } else if (sessionData.time_spent_seconds > 0) {
+            // Fallback to DB if localStorage is wiped
+            setElapsedSeconds(sessionData.time_spent_seconds);
           }
+
+          // 2. Restore Question Index
           const savedIndex = localStorage.getItem(`current_index_${sessionData.id}`);
           if (savedIndex !== null && questionData && questionData.length > 0) {
             const idx = parseInt(savedIndex, 10);
+            if (Number.isFinite(idx) && idx > 0 && idx < questionData.length) { setCurrentIndex(idx); }
+          } else if (sessionData.current_question_index > 0 && questionData && questionData.length > 0) {
+            // Fallback to DB if localStorage is wiped
+            const idx = sessionData.current_question_index;
             if (Number.isFinite(idx) && idx > 0 && idx < questionData.length) { setCurrentIndex(idx); }
           }
         }
@@ -878,10 +888,24 @@ function AssessmentContent() {
       alert("Time has expired! The assessment is being submitted automatically."); return;
     }
     if (isAutoSubmitting || nextIndex < 0 || nextIndex >= questions.length) return;
+    
     setCurrentIndex(nextIndex);
     setQuestionStartTime(Date.now());
     setShowMobileNavigator(false);
     if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
+
+    // 👇 SAVE TO DB: Ensures cross-device resume works
+    try {
+      await apiCall('/api/assessment/session', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          sessionId: sessionIdRef.current,
+          currentQuestionIndex: nextIndex,
+        }),
+      });
+    } catch (err) {
+      console.error("Failed to sync question index to DB:", err);
+    }
   }
 
   async function handleSubmit() {
