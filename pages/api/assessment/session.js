@@ -1,8 +1,9 @@
-// pages/api/assessment/session.js - FULLY CORRECTED + DB duration override
+// pages/api/assessment/session.js - FULLY CORRECTED + DB duration override + Progress Sync
 // (unchanged header)
 // 2026-10-01: STEP 3 now selects assessments.duration_minutes. STEP 5 and
 //             STEP 7 prefer that value when present; fall back to the
 //             count-based rule otherwise.
+// 2026-11-13: Added currentQuestionIndex to PATCH for session recovery.
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -55,11 +56,11 @@ export default async function handler(req, res) {
   }
 
   // ============================================================
-  // PATCH — (unchanged) caller-owned session updates.
+  // PATCH — (UPDATED) caller-owned session updates.
   // ============================================================
   if (req.method === 'PATCH') {
     try {
-      const { sessionId, violationCount } = req.body || {};
+      const { sessionId, violationCount, currentQuestionIndex } = req.body || {};
       if (!sessionId) {
         return res.status(400).json({ success: false, error: 'Missing sessionId' });
       }
@@ -98,8 +99,14 @@ export default async function handler(req, res) {
       }
 
       const patch = { updated_at: new Date().toISOString() };
+      
       if (typeof violationCount === 'number' && Number.isFinite(violationCount) && violationCount >= 0) {
         patch.violation_count = Math.floor(violationCount);
+      }
+
+      // 👇 NEW: Save progress for cross-device resume
+      if (typeof currentQuestionIndex === 'number' && Number.isFinite(currentQuestionIndex) && currentQuestionIndex >= 0) {
+        patch.current_question_index = Math.floor(currentQuestionIndex);
       }
 
       const { error: updateError } = await serviceClient
