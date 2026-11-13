@@ -3,16 +3,15 @@
 // - Left sidebar navigation (CandidateSidebar)
 // - Layered background: blurred image + navy vignette overlay
 // - 5-KPI stats row
-// - Filter chips above assessment table (All / Ready / In Progress / Completed / Blocked)
-// - Right-side drawer for assessment detail (slides in on row click)
+// - Filter chips above assessment table
+// - Right-side drawer for assessment detail
 // - Assessment guidelines + info note + footer
-//
-// International-standard pattern: filter chips + side drawer for detail
-// (not modal — modals are UX anti-pattern for browsable content)
+// - WCAG 2.1 AA Accessibility fixes (WAVE compliant)
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
+import Head from "next/head";
 import { useRequireAuth } from "../../utils/requireAuth";
 import { supabase } from "../../supabase/client";
 import CandidateSidebar, { MobileMenuButton } from "../../components/CandidateSidebar";
@@ -296,6 +295,8 @@ export default function CandidateDashboard() {
   // ------------------------------------------------------------
   return (
     <div style={styles.pageContainer}>
+      <Head><title>Dashboard | Stratavax</title></Head>
+
       {/* Sidebar */}
       <CandidateSidebar
         userName={userName}
@@ -331,8 +332,8 @@ export default function CandidateDashboard() {
               </div>
             </div>
             <div style={styles.topBarRight}>
-              <Link href="/candidate/profile" style={styles.profileChip}>
-                <span style={styles.profileChipAvatar}>
+              <Link href="/candidate/profile" style={styles.profileChip} aria-label="View your profile">
+                <span style={styles.profileChipAvatar} aria-hidden="true">
                   {userName.charAt(0).toUpperCase()}
                 </span>
                 <span style={styles.profileChipName}>{userName}</span>
@@ -358,7 +359,7 @@ export default function CandidateDashboard() {
               </p>
             </div>
             <div style={styles.progressRing}>
-              <svg width="120" height="120" viewBox="0 0 120 120">
+              <svg width="120" height="120" viewBox="0 0 120 120" aria-hidden="true">
                 <circle cx="60" cy="60" r="52" fill="none" stroke="rgba(10,25,41,0.08)" strokeWidth="10" />
                 <circle
                   cx="60" cy="60" r="52" fill="none"
@@ -433,7 +434,7 @@ export default function CandidateDashboard() {
                       ...styles.filterChip,
                       background: isActive ? filter.color + "18" : "rgba(255,255,255,0.9)",
                       borderColor: isActive ? filter.color : "rgba(255, 255, 255, 0.5)",
-                      color: isActive ? filter.color : "#64748b",
+                      color: isActive ? filter.color : "#475569",
                       fontWeight: isActive ? 700 : 600,
                     }}
                   >
@@ -514,6 +515,15 @@ export default function CandidateDashboard() {
                             <tr
                               key={assessment.id}
                               onClick={() => !isExpired && handleOpenDetail(assessment)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault();
+                                  if (!isExpired) handleOpenDetail(assessment);
+                                }
+                              }}
+                              tabIndex={isExpired ? -1 : 0}
+                              role="button"
+                              aria-label={`View details for ${displayName}`}
                               style={{
                                 ...styles.tr,
                                 background: isSelected ? colors.light : "transparent",
@@ -649,6 +659,15 @@ export default function CandidateDashboard() {
                         <div
                           key={assessment.id}
                           onClick={() => !isExpired && handleOpenDetail(assessment)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              if (!isExpired) handleOpenDetail(assessment);
+                            }
+                          }}
+                          tabIndex={isExpired ? -1 : 0}
+                          role="button"
+                          aria-label={`View details for ${displayName}`}
                           style={{
                             ...styles.mobileCard,
                             borderLeft: `4px solid ${colors.border}`,
@@ -1075,6 +1094,7 @@ function KpiCard({ label, value, color, accent, icon }) {
           background: accent,
           color: color,
         }}
+        aria-hidden="true"
       >
         {icon}
       </div>
