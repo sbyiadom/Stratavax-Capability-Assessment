@@ -1,13 +1,34 @@
 // pages/admin/analytics/index.js
-// Phase 6: Recruitment Analytics Dashboard.
-// Displays aggregate KPIs for admin oversight.
+// Phase 6: Recruitment Analytics Dashboard with Chart.js.
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/router";
 import { supabase } from "../../../supabase/client";
 import { useRequireAuth } from "../../../utils/requireAuth";
 import AppLayout from "../../../components/AppLayout";
 import Head from "next/head";
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  ArcElement,
+  Title,
+  Tooltip,
+  Legend,
+} from 'chart.js';
+import { Bar, Doughnut } from 'react-chartjs-2';
+
+// Register Chart.js components
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  ArcElement,
+  Title,
+  Tooltip,
+  Legend
+);
 
 export default function AdminAnalytics() {
   const router = useRouter();
@@ -24,6 +45,8 @@ export default function AdminAnalytics() {
     lowestScore: 0,
     recommendationRate: 0,
     activeSharedLinks: 0,
+    chartData: [],
+    recommendationData: [],
   });
 
   useEffect(() => {
@@ -67,6 +90,80 @@ export default function AdminAnalytics() {
     router.push("/admin");
   };
 
+  // ---------- Prepare Chart.js Data ----------
+  const barChartData = useMemo(() => ({
+    labels: (kpis.chartData || []).map(d => d.range),
+    datasets: [
+      {
+        label: 'Number of Candidates',
+        data: (kpis.chartData || []).map(d => d.count),
+        backgroundColor: '#6366f1',
+        borderRadius: 6,
+        maxBarThickness: 60,
+      }
+    ]
+  }), [kpis.chartData]);
+
+  const barChartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        backgroundColor: 'rgba(10, 25, 41, 0.9)',
+        titleFont: { size: 13 },
+        bodyFont: { size: 12 },
+        padding: 10,
+        cornerRadius: 8,
+      }
+    },
+    scales: {
+      x: {
+        grid: { display: false },
+        ticks: { color: '#64748b', font: { size: 12 } }
+      },
+      y: {
+        beginAtZero: true,
+        grid: { color: '#f1f5f9' },
+        ticks: { color: '#64748b', font: { size: 12 }, precision: 0 }
+      }
+    }
+  };
+
+  const doughnutData = useMemo(() => ({
+    labels: (kpis.recommendationData || []).map(d => d.name),
+    datasets: [
+      {
+        data: (kpis.recommendationData || []).map(d => d.value),
+        backgroundColor: (kpis.recommendationData || []).map(d => d.color),
+        borderWidth: 0,
+        hoverOffset: 8,
+      }
+    ]
+  }), [kpis.recommendationData]);
+
+  const doughnutOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    cutout: '65%',
+    plugins: {
+      legend: {
+        position: 'bottom',
+        labels: {
+          padding: 16,
+          usePointStyle: true,
+          pointStyle: 'circle',
+          font: { size: 12 }
+        }
+      },
+      tooltip: {
+        backgroundColor: 'rgba(10, 25, 41, 0.9)',
+        padding: 10,
+        cornerRadius: 8,
+      }
+    }
+  };
+
   if (authLoading || loading) {
     return (
       <AppLayout background="/images/admin-bg.jpg">
@@ -87,7 +184,6 @@ export default function AdminAnalytics() {
           ← Back to Dashboard
         </button>
 
-        {/* Header Card (Fixed Contrast) */}
         <div style={styles.headerCard}>
           <h1 style={styles.title}>Recruitment Analytics</h1>
           <p style={styles.subtitle}>
@@ -102,16 +198,14 @@ export default function AdminAnalytics() {
           </div>
         )}
 
-        {/* KPI Grid */}
+        {/* KPI Grid - Row 1 */}
         <div style={styles.kpiGrid}>
-          {/* Card 1: Total Candidates */}
           <div style={styles.kpiCard}>
             <div style={styles.kpiLabel}>Total Candidates</div>
             <div style={styles.kpiValue}>{kpis.totalCandidates.toLocaleString()}</div>
             <div style={styles.kpiSub}>Registered on platform</div>
           </div>
 
-          {/* Card 2: New Candidates (30d) */}
           <div style={styles.kpiCard}>
             <div style={styles.kpiLabel}>New Candidates (30d)</div>
             <div style={styles.kpiValue}>
@@ -120,14 +214,12 @@ export default function AdminAnalytics() {
             <div style={styles.kpiSub}>Growth in the last 30 days</div>
           </div>
 
-          {/* Card 3: Total Assessments */}
           <div style={styles.kpiCard}>
             <div style={styles.kpiLabel}>Assessments Completed</div>
             <div style={styles.kpiValue}>{kpis.totalAssessments.toLocaleString()}</div>
             <div style={styles.kpiSub}>Total results generated</div>
           </div>
 
-          {/* Card 4: Active Shared Links */}
           <div style={styles.kpiCard}>
             <div style={styles.kpiLabel}>Active Shared Links</div>
             <div style={styles.kpiValue}>{kpis.activeSharedLinks}</div>
@@ -135,8 +227,8 @@ export default function AdminAnalytics() {
           </div>
         </div>
 
+        {/* KPI Grid - Row 2 */}
         <div style={styles.kpiGrid}>
-          {/* Card 5: Average Score */}
           <div style={styles.kpiCard}>
             <div style={styles.kpiLabel}>Average Score</div>
             <div style={styles.kpiValue}>{kpis.averageScore}%</div>
@@ -146,7 +238,6 @@ export default function AdminAnalytics() {
             </div>
           </div>
 
-          {/* Card 6: Recommendation Rate */}
           <div style={styles.kpiCard}>
             <div style={styles.kpiLabel}>Recommendation Rate</div>
             <div style={styles.kpiValue}>{kpis.recommendationRate}%</div>
@@ -156,14 +247,12 @@ export default function AdminAnalytics() {
             </div>
           </div>
 
-          {/* Card 7: Highest Score */}
           <div style={styles.kpiCard}>
             <div style={styles.kpiLabel}>Highest Score</div>
             <div style={styles.kpiValue}>{kpis.highestScore}%</div>
             <div style={styles.kpiSub}>Top performing candidate</div>
           </div>
 
-          {/* Card 8: Lowest Score */}
           <div style={styles.kpiCard}>
             <div style={styles.kpiLabel}>Lowest Score</div>
             <div style={styles.kpiValue}>{kpis.lowestScore}%</div>
@@ -171,11 +260,33 @@ export default function AdminAnalytics() {
           </div>
         </div>
 
-        {/* Placeholder for future charts */}
-        <div style={styles.chartPlaceholder}>
-          <div style={styles.chartIcon}>📈</div>
-          <h3 style={styles.chartTitle}>Score Distribution</h3>
-          <p style={styles.chartSub}>A histogram of candidate scores will appear here in a future update.</p>
+        {/* 📊 Charts Section */}
+        <div style={styles.chartsGrid}>
+          {/* Score Distribution Bar Chart */}
+          <div style={styles.chartCard}>
+            <h3 style={styles.chartTitle}>Score Distribution</h3>
+            <p style={styles.chartSub}>How candidate scores are spread across ranges.</p>
+            <div style={styles.chartWrapper}>
+              {kpis.chartData && kpis.chartData.length > 0 ? (
+                <Bar data={barChartData} options={barChartOptions} />
+              ) : (
+                <div style={styles.chartEmpty}>No data yet</div>
+              )}
+            </div>
+          </div>
+
+          {/* Recommendation Breakdown Doughnut Chart */}
+          <div style={styles.chartCard}>
+            <h3 style={styles.chartTitle}>Recommendation Breakdown</h3>
+            <p style={styles.chartSub}>How candidates were classified by the scoring engine.</p>
+            <div style={styles.chartWrapper}>
+              {kpis.recommendationData && kpis.recommendationData.some(d => d.value > 0) ? (
+                <Doughnut data={doughnutData} options={doughnutOptions} />
+              ) : (
+                <div style={styles.chartEmpty}>No data yet</div>
+              )}
+            </div>
+          </div>
         </div>
 
       </div>
@@ -215,7 +326,6 @@ const styles = {
     color: '#475569',
     marginBottom: '20px'
   },
-  // NEW FIXED HEADER CARD
   headerCard: {
     marginBottom: '30px',
     background: 'rgba(255, 255, 255, 0.95)',
@@ -304,28 +414,44 @@ const styles = {
     borderRadius: '4px',
     transition: 'width 0.5s ease'
   },
-  chartPlaceholder: {
+  chartsGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))',
+    gap: '24px',
+    marginBottom: '24px'
+  },
+  chartCard: {
     background: 'white',
     borderRadius: '12px',
-    padding: '60px 20px',
-    textAlign: 'center',
-    border: '1px dashed #cbd5e1',
-    marginBottom: '20px'
-  },
-  chartIcon: {
-    fontSize: '48px',
-    marginBottom: '16px'
+    padding: '24px',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+    border: '1px solid #e2e8f0',
   },
   chartTitle: {
     fontSize: '18px',
     fontWeight: '700',
     color: '#0a1929',
-    marginBottom: '8px'
+    margin: '0 0 4px 0'
   },
   chartSub: {
     fontSize: '14px',
     color: '#64748b',
     margin: 0
+  },
+  chartWrapper: {
+    width: '100%',
+    height: '320px',
+    marginTop: '20px',
+    position: 'relative',
+  },
+  chartEmpty: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: '100%',
+    color: '#94a3b8',
+    fontSize: '14px',
+    fontStyle: 'italic',
   }
 };
 
