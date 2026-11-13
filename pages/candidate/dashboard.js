@@ -389,11 +389,11 @@ export default function CandidateDashboard() {
 
           {/* KPI row */}
           <section style={styles.kpiGrid}>
-            <KpiCard label="Total Assigned" value={stats.total}      color="#6366f1" accent="rgba(99, 102, 241, 0.12)"  icon="◈" />
-            <KpiCard label="Completed"      value={stats.completed}  color="#16a34a" accent="rgba(34, 197, 94, 0.12)"   icon="✔" />
-            <KpiCard label="Ready"          value={stats.ready}      color="#2563eb" accent="rgba(59, 130, 246, 0.12)"  icon="▢" />
-            <KpiCard label="In Progress"    value={stats.inProgress} color="#d97706" accent="rgba(251, 191, 36, 0.12)"  icon="◉" />
-            <KpiCard label="Blocked"        value={stats.blocked}    color="#64748b" accent="rgba(148, 163, 184, 0.12)" icon="●" />
+            <KpiCard label="Total Assigned" value={stats.total}      color="#4338ca" accent="rgba(99, 102, 241, 0.12)"  icon="◈" />
+            <KpiCard label="Completed"      value={stats.completed}  color="#166534" accent="rgba(34, 197, 94, 0.12)"   icon="✔" />
+            <KpiCard label="Ready"          value={stats.ready}      color="#1e40af" accent="rgba(59, 130, 246, 0.12)"  icon="▢" />
+            <KpiCard label="In Progress"    value={stats.inProgress} color="#92400e" accent="rgba(251, 191, 36, 0.12)"  icon="◉" />
+            <KpiCard label="Blocked"        value={stats.blocked}    color="#334155" accent="rgba(148, 163, 184, 0.12)" icon="●" />
           </section>
 
           {/* Error */}
@@ -1320,7 +1320,7 @@ const styles = {
     letterSpacing: "-0.02em",
   },
   kpiLabel: {
-    fontSize: 11.5, color: "#64748b", fontWeight: 600,
+    fontSize: 13, color: "#475569", fontWeight: 600,
     marginTop: 4, textTransform: "uppercase", letterSpacing: "0.05em",
   },
 
