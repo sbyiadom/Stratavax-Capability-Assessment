@@ -389,11 +389,11 @@ export default function CandidateDashboard() {
 
           {/* KPI row */}
           <section style={styles.kpiGrid}>
-            <KpiCard label="Total Assigned" value={stats.total}      color="#4338ca" accent="rgba(99, 102, 241, 0.12)"  icon="◈" />
-            <KpiCard label="Completed"      value={stats.completed}  color="#166534" accent="rgba(34, 197, 94, 0.12)"   icon="✔" />
-            <KpiCard label="Ready"          value={stats.ready}      color="#1e40af" accent="rgba(59, 130, 246, 0.12)"  icon="▢" />
-            <KpiCard label="In Progress"    value={stats.inProgress} color="#92400e" accent="rgba(251, 191, 36, 0.12)"  icon="◉" />
-            <KpiCard label="Blocked"        value={stats.blocked}    color="#334155" accent="rgba(148, 163, 184, 0.12)" icon="●" />
+            <KpiCard label="Total Assigned" value={stats.total}      accent="rgba(99, 102, 241, 0.12)"  icon="◈" />
+            <KpiCard label="Completed"      value={stats.completed}  accent="rgba(34, 197, 94, 0.12)"   icon="✔" />
+            <KpiCard label="Ready"          value={stats.ready}      accent="rgba(59, 130, 246, 0.12)"  icon="▢" />
+            <KpiCard label="In Progress"    value={stats.inProgress} accent="rgba(251, 191, 36, 0.12)"  icon="◉" />
+            <KpiCard label="Blocked"        value={stats.blocked}    accent="rgba(148, 163, 184, 0.12)" icon="●" />
           </section>
 
           {/* Error */}
@@ -1085,21 +1085,21 @@ function AssessmentDrawer({ assessment, isMobile, onClose, onStart }) {
 // ============================================================
 // SUBCOMPONENTS
 // ============================================================
-function KpiCard({ label, value, color, accent, icon }) {
+function KpiCard({ label, value, accent, icon }) {
   return (
     <div style={styles.kpiCard}>
       <div
         style={{
           ...styles.kpiIconBox,
           background: accent,
-          color: color,
+          color: "#0a1929",
         }}
         aria-hidden="true"
       >
         {icon}
       </div>
       <div style={styles.kpiBody}>
-        <div style={{ ...styles.kpiValue, color }}>{value}</div>
+        <div style={{ ...styles.kpiValue, color: "#0a1929" }}>{value}</div>
         <div style={styles.kpiLabel}>{label}</div>
       </div>
     </div>
@@ -1371,7 +1371,7 @@ const styles = {
     transition: "opacity 150ms ease",
   },
   filterChipCount: {
-    fontSize: 11, fontWeight: 700,
+    fontSize: 12, fontWeight: 700,
     padding: "1px 7px", borderRadius: 50,
     minWidth: 20, textAlign: "center",
   },
@@ -1390,7 +1390,7 @@ const styles = {
   table: { width: "100%", borderCollapse: "collapse", fontSize: 13.5 },
   th: {
     padding: "12px 16px", textAlign: "left",
-    fontSize: 11, fontWeight: 700, color: "#64748b",
+    fontSize: 12, fontWeight: 700, color: "#64748b",
     textTransform: "uppercase", letterSpacing: "0.06em",
     background: "rgba(248, 250, 252, 0.9)",
     borderBottom: "1px solid rgba(10, 25, 41, 0.06)",
@@ -1423,24 +1423,24 @@ const styles = {
     letterSpacing: "0.04em", flexShrink: 0,
   },
   tdType: { fontSize: 12.5, color: "#64748b" },
-  tdMuted: { fontSize: 12.5, color: "#94a3b8" },
-  tdCompleted: { fontSize: 12, fontWeight: 600, color: "#16a34a" },
+  tdMuted: { fontSize: 13, color: "#64748b" },
+  tdCompleted: { fontSize: 13, fontWeight: 600, color: "#16a34a" },
   statusPill: {
     display: "inline-flex", alignItems: "center", gap: 6,
     padding: "4px 10px", borderRadius: 50,
-    fontSize: 11.5, fontWeight: 600, whiteSpace: "nowrap",
+    fontSize: 12, fontWeight: 600, whiteSpace: "nowrap",
   },
   statusDot: {
     width: 6, height: 6, borderRadius: "50%", flexShrink: 0,
   },
   expiryPill: {
     display: "inline-block", padding: "4px 10px", borderRadius: 6,
-    fontSize: 11.5, fontWeight: 700, whiteSpace: "nowrap",
+    fontSize: 12, fontWeight: 700, whiteSpace: "nowrap",
   },
   rowAction: {
     padding: "7px 16px", color: "white",
     border: "none", borderRadius: 8,
-    fontSize: 12, fontWeight: 600,
+    fontSize: 13, fontWeight: 600,
     cursor: "pointer", fontFamily: "inherit",
     transition: "transform 150ms ease, box-shadow 150ms ease",
     boxShadow: "0 2px 8px rgba(10, 25, 41, 0.15)",
@@ -1472,7 +1472,7 @@ const styles = {
   },
   mobileCardStats: {
     display: "flex", alignItems: "center", gap: 6,
-    fontSize: 12, color: "#94a3b8", marginBottom: 12,
+    fontSize: 13, color: "#64748b", marginBottom: 12,
   },
   mobileDot: { color: "#cbd5e1" },
   mobileAction: {
@@ -1556,7 +1556,7 @@ const styles = {
     fontSize: 13, fontWeight: 700, color: "#0a1929", margin: "0 0 3px 0",
   },
   guidelineCardText: {
-    fontSize: 12, color: "#64748b", margin: 0, lineHeight: 1.5,
+    fontSize: 12.5, color: "#475569", margin: 0, lineHeight: 1.5,
   },
 
   // ---------- Info note ----------
@@ -1835,7 +1835,7 @@ const styles = {
   drawerLockedTag: {
     fontSize: 13,
     fontWeight: 600,
-    color: "#94a3b8",
+    color: "#64748b",
     padding: "10px 16px",
   },
 };
