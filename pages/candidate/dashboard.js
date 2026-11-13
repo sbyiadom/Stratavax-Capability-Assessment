@@ -2,7 +2,7 @@
 // Redesigned candidate dashboard.
 // - Left sidebar navigation (CandidateSidebar)
 // - Layered background: blurred image + navy vignette overlay
-// - 5-KPI stats row
+// - 5-KPI stats row (Solid white for WCAG compliance)
 // - Filter chips above assessment table
 // - Right-side drawer for assessment detail
 // - Assessment guidelines + info note + footer
@@ -432,9 +432,9 @@ export default function CandidateDashboard() {
                     onClick={() => setActiveFilter(filter.key)}
                     style={{
                       ...styles.filterChip,
-                      background: isActive ? filter.color + "18" : "rgba(255,255,255,0.9)",
-                      borderColor: isActive ? filter.color : "rgba(255, 255, 255, 0.5)",
-                      color: isActive ? filter.color : "#475569",
+                      background: isActive ? filter.color + "18" : "#ffffff",
+                      borderColor: isActive ? filter.color : "rgba(226, 232, 240, 1)",
+                      color: isActive ? filter.color : "#1e293b",
                       fontWeight: isActive ? 700 : 600,
                     }}
                   >
@@ -442,15 +442,15 @@ export default function CandidateDashboard() {
                       style={{
                         ...styles.filterChipDot,
                         background: filter.color,
-                        opacity: isActive ? 1 : 0.5,
+                        opacity: isActive ? 1 : 0.8,
                       }}
                     />
                     <span>{filter.label}</span>
                     <span
                       style={{
                         ...styles.filterChipCount,
-                        background: isActive ? filter.color : "rgba(10, 25, 41, 0.08)",
-                        color: isActive ? "white" : "#64748b",
+                        background: isActive ? filter.color : "rgba(241, 245, 249, 1)",
+                        color: isActive ? "white" : "#475569",
                       }}
                     >
                       {count}
@@ -1301,11 +1301,9 @@ const styles = {
   kpiCard: {
     display: "flex", alignItems: "center", gap: 14,
     padding: "16px 18px",
-    background: "rgba(255,255,255,0.92)",
-    backdropFilter: "blur(20px)",
-    WebkitBackdropFilter: "blur(20px)",
+    background: "#ffffff", // SOLID WHITE FOR ACCESSIBILITY
     borderRadius: 14,
-    border: "1px solid rgba(255, 255, 255, 0.5)",
+    border: "1px solid rgba(10, 25, 41, 0.06)", // solid border
     boxShadow: "0 1px 3px rgba(10, 25, 41, 0.08)",
     transition: "transform 200ms ease, box-shadow 200ms ease",
   },
@@ -1320,7 +1318,7 @@ const styles = {
     letterSpacing: "-0.02em",
   },
   kpiLabel: {
-    fontSize: 13, color: "#475569", fontWeight: 600,
+    fontSize: 13, color: "#1e293b", fontWeight: 600,
     marginTop: 4, textTransform: "uppercase", letterSpacing: "0.05em",
   },
 
