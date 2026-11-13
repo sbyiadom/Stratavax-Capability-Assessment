@@ -1,5 +1,5 @@
 // pages/api/admin/analytics/kpis.js
-// Phase 6: Recruitment KPIs for Admin Dashboard.
+// Phase 6: Recruitment KPIs for Admin Dashboard (with chart data).
 
 import { createClient } from "@supabase/supabase-js";
 
@@ -61,7 +61,17 @@ export default async function handler(req, res) {
     let highestScore = 0;
     let lowestScore = 100;
     let recommendedCount = 0;
+    let maybeCount = 0;
     let rejectedCount = 0;
+
+    // 👇 NEW: Data structures for charts
+    const scoreDistribution = {
+      "0-20": 0,
+      "21-40": 0,
+      "41-60": 0,
+      "61-80": 0,
+      "81-100": 0,
+    };
 
     (results || []).forEach(r => {
       const score = Number(r.percentage_score) || 0;
@@ -69,15 +79,41 @@ export default async function handler(req, res) {
       if (score > highestScore) highestScore = score;
       if (score < lowestScore) lowestScore = score;
 
+      // Fill distribution buckets
+      if (score <= 20) scoreDistribution["0-20"]++;
+      else if (score <= 40) scoreDistribution["21-40"]++;
+      else if (score <= 60) scoreDistribution["41-60"]++;
+      else if (score <= 80) scoreDistribution["61-80"]++;
+      else scoreDistribution["81-100"]++;
+
+      // Recommendation breakdown
       if (r.recommendation === "Highly Recommended" || r.recommendation === "Recommended") {
         recommendedCount++;
-      } else if (r.recommendation === "Not Recommended") {
+      } else if (r.recommendation === "Reserve Pool") {
+        maybeCount++;
+      } else {
         rejectedCount++;
       }
     });
 
+    // Handle case where there are no results at all
+    if (lowestScore === 100 && (results || []).length === 0) lowestScore = 0;
+
     const averageScore = results?.length > 0 ? (totalScore / results.length).toFixed(1) : 0;
     const recommendationRate = results?.length > 0 ? ((recommendedCount / results.length) * 100).toFixed(1) : 0;
+
+    // Format distribution for Chart.js (bar chart)
+    const chartData = Object.keys(scoreDistribution).map(key => ({
+      range: `${key}%`,
+      count: scoreDistribution[key]
+    }));
+
+    // Format recommendation breakdown for Chart.js (doughnut chart)
+    const recommendationData = [
+      { name: "Recommended", value: recommendedCount, color: "#16a34a" },
+      { name: "Reserve", value: maybeCount, color: "#d97706" },
+      { name: "Not Recommended", value: rejectedCount, color: "#dc2626" }
+    ];
 
     // Count active shared links (expires_at > now)
     const activeLinks = (sharedLinks || []).filter(link => new Date(link.expires_at) > new Date()).length;
@@ -99,6 +135,8 @@ export default async function handler(req, res) {
         lowestScore,
         recommendationRate,
         activeSharedLinks: activeLinks,
+        chartData,
+        recommendationData,
       }
     });
 
