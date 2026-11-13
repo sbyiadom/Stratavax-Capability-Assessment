@@ -87,7 +87,8 @@ export default function AdminAnalytics() {
           ← Back to Dashboard
         </button>
 
-        <div style={styles.header}>
+        {/* Header Card (Fixed Contrast) */}
+        <div style={styles.headerCard}>
           <h1 style={styles.title}>Recruitment Analytics</h1>
           <p style={styles.subtitle}>
             High-level KPIs and aggregate statistics across the entire Stratavax pipeline.
@@ -214,8 +215,15 @@ const styles = {
     color: '#475569',
     marginBottom: '20px'
   },
-  header: {
-    marginBottom: '30px'
+  // NEW FIXED HEADER CARD
+  headerCard: {
+    marginBottom: '30px',
+    background: 'rgba(255, 255, 255, 0.95)',
+    backdropFilter: 'blur(10px)',
+    padding: '24px 32px',
+    borderRadius: '12px',
+    border: '1px solid rgba(255, 255, 255, 0.8)',
+    boxShadow: '0 4px 12px rgba(10, 25, 41, 0.05)',
   },
   title: {
     fontSize: '28px',
@@ -226,7 +234,7 @@ const styles = {
   subtitle: {
     fontSize: '16px',
     color: '#64748b',
-    margin: '0 0 16px 0'
+    margin: '0'
   },
   errorBox: {
     background: '#fee2e2',
