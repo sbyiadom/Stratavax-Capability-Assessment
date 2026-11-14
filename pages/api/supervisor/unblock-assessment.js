@@ -1,20 +1,10 @@
 // pages/api/supervisor/unblock-assessment.js
 //
 // SUPERVISOR UNBLOCK ASSESSMENT API
-//
-// Purpose:
-// - Unblock an assessment without deleting candidate responses.
-// - Preserve existing progress and in-progress sessions.
-// - Extend time or reset time where requested.
-// - Create a safe in-progress session only when needed.
-// - Record audit information where the audit table exists.
-//
-// Phase 7A: added auth + role check. Previously had no token verification —
-// performedBy was taken from the request body, which is client-controlled.
-// Now: token → verified user → supervisor/admin role check → performedBy
-// derived from the verified user id.
+// Phase 9: sends "Ready to Start" email after successful unblock.
 
 import { createClient } from "@supabase/supabase-js";
+import { sendEmail } from "../../../utils/email";
 
 // ======================================================
 // BASIC HELPERS
@@ -85,7 +75,7 @@ async function resolveCaller(serviceClient, anonClient, token) {
 
   const { data: profile, error: profileError } = await serviceClient
     .from("supervisor_profiles")
-    .select("id, role, is_active")
+    .select("id, role, is_active, full_name")
     .eq("id", userData.user.id)
     .maybeSingle();
 
@@ -105,7 +95,7 @@ async function resolveCaller(serviceClient, anonClient, token) {
     return { error: "Supervisor or admin access required", status: 403 };
   }
 
-  return { userId: userData.user.id, role: resolvedRole };
+  return { userId: userData.user.id, role: resolvedRole, name: profile?.full_name || null };
 }
 
 async function safeSelectSingle(supabase, tableName, configureQuery, selectText) {
@@ -407,6 +397,79 @@ function buildMessage(hasExistingProgress, timeExtensionApplied, resetTime) {
 }
 
 // ======================================================
+// EMAIL DISPATCH
+// ======================================================
+async function sendUnblockEmail(supabase, userId, assessmentId, callerName) {
+  try {
+    const { data: candidate } = await supabase
+      .from("candidate_profiles")
+      .select("full_name, email")
+      .eq("id", userId)
+      .maybeSingle();
+
+    const { data: assessment } = await supabase
+      .from("assessments")
+      .select("title")
+      .eq("id", assessmentId)
+      .maybeSingle();
+
+    if (!candidate?.email || !assessment?.title) {
+      console.log("[unblock-assessment] Skipping email — missing candidate email or assessment title");
+      return { sent: false };
+    }
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <body style="margin:0;padding:20px;background:#f0f2f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;line-height:1.6;color:#1a202c;">
+        <div style="max-width:550px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 8px 20px rgba(0,0,0,0.1);">
+          <div style="background:linear-gradient(135deg,#0A1929 0%,#1E3A5F 100%);padding:32px 24px;text-align:center;">
+            <div style="font-size:28px;font-weight:700;color:white;letter-spacing:2px;margin-bottom:8px;">STRATAVAX</div>
+            <div style="color:rgba(255,255,255,0.8);font-size:14px;">Talent Assessment Platform</div>
+          </div>
+          <div style="padding:32px;">
+            <div style="font-size:20px;font-weight:600;margin-bottom:16px;color:#0A1929;">Hello, ${candidate.full_name}</div>
+            <p>Your assessment is now unlocked and ready to start.</p>
+            <div style="background:#F5F7FA;border-radius:12px;padding:20px;margin:24px 0;border-left:4px solid #16A34A;">
+              <div style="color:#0A1929;font-weight:600;font-size:16px;">${assessment.title}</div>
+            </div>
+            <p>Log in to the portal to begin. Remember, you can only take this assessment once.</p>
+            <div style="text-align:center;margin:24px 0;">
+              <a href="https://stratavax-capability-assessment.vercel.app/login" style="display:inline-block;background:linear-gradient(135deg,#0A1929 0%,#1E3A5F 100%);color:white;text-decoration:none;padding:12px 32px;border-radius:8px;font-weight:500;">Start Assessment</a>
+            </div>
+            <p style="margin-top: 24px; font-size: 13px; color: #64748B; text-align: center;">
+              Best regards,<br><strong>${callerName || "Your Supervisor"}</strong>
+            </p>
+          </div>
+          <div style="background:#F8FAFC;padding:20px;text-align:center;font-size:12px;color:#94A3B8;border-top:1px solid #E2E8F0;">
+            <p style="margin:4px 0;">© 2026 Stratavax - Talent Assessment Platform</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+
+    const result = await sendEmail({
+      to: candidate.email,
+      toName: candidate.full_name,
+      subject: `🔓 Your Assessment Is Ready: ${assessment.title}`,
+      html,
+    });
+
+    if (result.success) {
+      console.log(`[unblock-assessment] Email sent → ${candidate.email}`);
+      return { sent: true };
+    } else {
+      console.error("[unblock-assessment] Email failed:", result.error);
+      return { sent: false, error: result.error };
+    }
+  } catch (err) {
+    console.error("[unblock-assessment] Email dispatch error:", err);
+    return { sent: false, error: err.message };
+  }
+}
+
+// ======================================================
 // API HANDLER
 // ======================================================
 
@@ -436,9 +499,6 @@ export default async function handler(req, res) {
   }
 
   try {
-    // ======================================================
-    // AUTH — verify token and role before doing anything else
-    // ======================================================
     token = (req.headers.authorization || "").replace("Bearer ", "").trim();
     if (!token) {
       return res.status(401).json({ success: false, error: "Unauthorized: No token provided" });
@@ -457,7 +517,6 @@ export default async function handler(req, res) {
     assessmentId = cleanText(body.assessmentId || body.assessment_id, "");
     extendMinutes = toNumber(body.extendMinutes || body.extend_minutes, 0);
     resetTime = body.resetTime === true || body.reset_time === true;
-    // performedBy is derived from the VERIFIED caller, not from the request body.
     performedBy = caller.userId;
 
     if (!userId || !assessmentId) {
@@ -512,6 +571,9 @@ export default async function handler(req, res) {
     auditResult = await writeAuditLog(supabase, auditPayload);
     if (!auditResult.success) warnings.push("Audit log warning: " + auditResult.warning);
 
+    // ---- Send email AFTER successful unblock (non-blocking) ----
+    const emailResult = await sendUnblockEmail(supabase, userId, assessmentId, caller.name);
+
     return res.status(200).json({
       success: true,
       userId: userId,
@@ -532,6 +594,8 @@ export default async function handler(req, res) {
       resetTime: resetTime,
       reset_time: resetTime,
       warnings: warnings,
+      emailSent: emailResult.sent,
+      email_sent: emailResult.sent,
       message: buildMessage(progressInfo.hasExistingProgress, sessionAction.timeExtensionApplied, resetTime)
     });
   } catch (error) {
