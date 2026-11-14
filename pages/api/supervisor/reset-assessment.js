@@ -1,37 +1,8 @@
 // pages/api/supervisor/reset-assessment.js
+// Phase 9: Sends "Assessment Reset" email to candidate after successful reset.
 
 import { createClient } from "@supabase/supabase-js";
-
-/*
-  PLATFORM-WIDE SUPERVISOR RESET (SINGLE) - HOTFIXED
-  --------------------------------------------------
-  Purpose:
-  - Reset ONE candidate assessment for a clean retake.
-  - Delete all attempt-related data for the selected candidate + assessment.
-  - Clear behavioral metrics and session-linked behavioral tracking.
-  - Reset candidate_assessments to a clean retake state.
-
-  Hotfix reason:
-  - Your candidate_assessments table DOES NOT have session_status.
-  - Any update payload containing session_status fails completely in Supabase/PostgREST.
-  - This file updates only confirmed existing columns in the required reset step.
-  - Optional columns are updated separately and safely.
-
-  Required candidate_assessments reset columns used here:
-  - status
-  - session_id
-  - result_id
-  - completed_at
-  - unblocked_at
-  - updated_at
-  - started_at
-  - score
-
-  Security:
-  - Requires Authorization: Bearer <Supabase access token>
-  - User must have role supervisor/admin in user_metadata or app_metadata.
-  - Uses SUPABASE_SERVICE_ROLE_KEY server-side for cleanup.
-*/
+import { sendEmail } from "../../../utils/email";
 
 function nowIso() {
   return new Date().toISOString();
@@ -221,7 +192,6 @@ async function resetCandidateAssessmentRow(serviceClient, summary, userId, asses
     return false;
   }
 
-  // If no row exists, create a clean assignment row.
   const insertResponse = await serviceClient
     .from("candidate_assessments")
     .insert({
@@ -281,6 +251,79 @@ async function createAuditLog(serviceClient, summary, userId, assessmentId, perf
   }
 }
 
+// ============================================================
+// EMAIL DISPATCH
+// ============================================================
+async function sendResetEmail(serviceClient, userId, assessmentId, performedBy) {
+  try {
+    const { data: candidate } = await serviceClient
+      .from("candidate_profiles")
+      .select("full_name, email")
+      .eq("id", userId)
+      .maybeSingle();
+
+    const { data: assessment } = await serviceClient
+      .from("assessments")
+      .select("title")
+      .eq("id", assessmentId)
+      .maybeSingle();
+
+    if (!candidate?.email || !assessment?.title) {
+      console.log("[reset-assessment] Skipping email — missing candidate email or assessment title");
+      return { sent: false };
+    }
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <body style="margin:0;padding:20px;background:#f0f2f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;line-height:1.6;color:#1a202c;">
+        <div style="max-width:550px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 8px 20px rgba(0,0,0,0.1);">
+          <div style="background:linear-gradient(135deg,#0A1929 0%,#1E3A5F 100%);padding:32px 24px;text-align:center;">
+            <div style="font-size:28px;font-weight:700;color:white;letter-spacing:2px;margin-bottom:8px;">STRATAVAX</div>
+            <div style="color:rgba(255,255,255,0.8);font-size:14px;">Talent Assessment Platform</div>
+          </div>
+          <div style="padding:32px;">
+            <div style="font-size:20px;font-weight:600;margin-bottom:16px;color:#0A1929;">Hello, ${candidate.full_name}</div>
+            <p>Your assessment has been reset by your supervisor. You can now retake it.</p>
+            <div style="background:#F5F7FA;border-radius:12px;padding:20px;margin:24px 0;border-left:4px solid #6366f1;">
+              <div style="color:#0A1929;font-weight:600;font-size:16px;">${assessment.title}</div>
+            </div>
+            <p>Log in to the portal to begin your fresh attempt. Remember, you can only take this assessment once per reset.</p>
+            <div style="text-align:center;margin:24px 0;">
+              <a href="https://stratavax-capability-assessment.vercel.app/login" style="display:inline-block;background:linear-gradient(135deg,#0A1929 0%,#1E3A5F 100%);color:white;text-decoration:none;padding:12px 32px;border-radius:8px;font-weight:500;">Go to Portal</a>
+            </div>
+            <p style="margin-top: 24px; font-size: 13px; color: #64748B; text-align: center;">
+              Best regards,<br><strong>${performedBy || "Your Supervisor"}</strong>
+            </p>
+          </div>
+          <div style="background:#F8FAFC;padding:20px;text-align:center;font-size:12px;color:#94A3B8;border-top:1px solid #E2E8F0;">
+            <p style="margin:4px 0;">© 2026 Stratavax - Talent Assessment Platform</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+
+    const result = await sendEmail({
+      to: candidate.email,
+      toName: candidate.full_name,
+      subject: `🔄 Your Assessment Has Been Reset: ${assessment.title}`,
+      html,
+    });
+
+    if (result.success) {
+      console.log(`[reset-assessment] Email sent → ${candidate.email}`);
+      return { sent: true };
+    } else {
+      console.error("[reset-assessment] Email failed:", result.error);
+      return { sent: false, error: result.error };
+    }
+  } catch (err) {
+    console.error("[reset-assessment] Email dispatch error:", err);
+    return { sent: false, error: err.message };
+  }
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ success: false, error: "method_not_allowed", message: "Method not allowed" });
@@ -310,7 +353,6 @@ export default async function handler(req, res) {
 
     const sessionIds = await fetchSessionIds(serviceClient, resetSummary, userId, assessmentId);
 
-    // Session-linked cleanup first.
     if (sessionIds.length > 0) {
       await safeDelete(serviceClient, resetSummary, "answer_history", [{ column: "session_id", op: "in", value: sessionIds }], "Answer history cleared");
       await safeDelete(serviceClient, resetSummary, "question_timing", [{ column: "session_id", op: "in", value: sessionIds }], "Question timing cleared");
@@ -318,7 +360,6 @@ export default async function handler(req, res) {
       await safeDelete(serviceClient, resetSummary, "assessment_results", [{ column: "session_id", op: "in", value: sessionIds }], "Assessment results cleared by session_id");
     }
 
-    // Candidate + assessment cleanup.
     const responsesOk = await safeDelete(
       serviceClient,
       resetSummary,
@@ -382,7 +423,6 @@ export default async function handler(req, res) {
 
     const assignmentOk = await resetCandidateAssessmentRow(serviceClient, resetSummary, userId, assessmentId);
 
-    // Optional confirmed schema fields only. These are safe based on your column list.
     await updateOptionalCandidateField(serviceClient, resetSummary, userId, assessmentId, "time_extension_minutes", null);
     await updateOptionalCandidateField(serviceClient, resetSummary, userId, assessmentId, "original_time_limit", null);
     await updateOptionalCandidateField(serviceClient, resetSummary, userId, assessmentId, "extended_until", null);
@@ -403,11 +443,16 @@ export default async function handler(req, res) {
       });
     }
 
+    // 👇 Send email after all resets succeed
+    const performedBy = authCheck.user?.user_metadata?.full_name || authCheck.user?.email || "Your Supervisor";
+    const emailResult = await sendResetEmail(serviceClient, userId, assessmentId, performedBy);
+
     return res.status(200).json({
       success: true,
       message: "Assessment reset successfully. Candidate can retake the assessment.",
       userId,
       assessmentId,
+      emailSent: emailResult.sent,
       resetSummary
     });
   } catch (error) {
