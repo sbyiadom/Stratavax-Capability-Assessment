@@ -175,7 +175,7 @@ export default function AdminAnalytics() {
         )}
 
         {/* ============ FUNNEL SECTION ============ */}
-        <div style={styles.sectionHeader}>
+        <div style={styles.sectionCard}>
           <h2 style={styles.sectionTitle}>Assessment Completion Funnel</h2>
           <p style={styles.sectionSub}>
             Sessions started after {new Date(funnel.cutoffDate).toLocaleDateString()}.
@@ -226,7 +226,7 @@ export default function AdminAnalytics() {
         )}
 
         {/* ============ KPI SECTION ============ */}
-        <div style={styles.sectionHeader}>
+        <div style={styles.sectionCard}>
           <h2 style={styles.sectionTitle}>Platform KPIs</h2>
         </div>
 
@@ -330,9 +330,19 @@ const styles = {
   },
   title: { fontSize: '28px', fontWeight: '700', color: '#1a237e', margin: '0 0 8px 0' },
   subtitle: { fontSize: '16px', color: '#64748b', margin: '0' },
-  sectionHeader: { marginTop: '32px', marginBottom: '16px' },
+  
+  // Fixed Section Headers
+  sectionCard: {
+    marginTop: '32px', 
+    marginBottom: '16px',
+    background: 'rgba(255, 255, 255, 0.95)',
+    padding: '16px 24px',
+    borderRadius: '12px',
+    border: '1px solid rgba(255, 255, 255, 0.8)',
+  },
   sectionTitle: { fontSize: '20px', fontWeight: '700', color: '#0a1929', margin: '0 0 4px 0' },
   sectionSub: { fontSize: '13px', color: '#64748b', margin: 0 },
+  
   warningBanner: {
     background: 'rgba(245, 158, 11, 0.1)',
     border: '1px solid rgba(245, 158, 11, 0.3)',
