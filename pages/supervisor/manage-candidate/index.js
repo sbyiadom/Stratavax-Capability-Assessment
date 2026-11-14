@@ -430,7 +430,7 @@ const styles = {
   clearButton: { padding: '4px 8px', background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '16px', color: '#94a3b8' },
   searchCount: { fontSize: '13px', color: '#94a3b8', whiteSpace: 'nowrap' },
   tableContainer: { background: 'white', borderRadius: '12px', overflow: 'auto', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', border: '1px solid #e2e8f0' },
-  table: { width: '100%', borderCollapse: 'collapse', fontSize: '14px', minWidth: '900px' },
+  table: { width: '100%', borderCollapse: 'collapse', fontSize: '14px', minWidth: '1150px' }, // 👈 Wider table
   tableHeadRow: { background: '#F8FAFC' },
   tableHeadCell: { padding: '12px 16px', textAlign: 'left', borderBottom: '2px solid #E2E8F0', fontSize: '13px', fontWeight: '600', color: '#4A5568', whiteSpace: 'nowrap' },
   tableRow: { transition: 'background 0.2s ease' },
@@ -441,10 +441,10 @@ const styles = {
   naText: { color: '#94a3b8', fontStyle: 'italic' },
   assessmentCount: { fontWeight: '600', color: '#0A1929' },
   statusBadge: { display: 'inline-block', padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: '600' },
-  actionButtons: { display: 'flex', gap: '8px', flexWrap: 'wrap' },
-  viewButton: { padding: '4px 12px', background: '#4299e1', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' },
-  emailButton: { padding: '4px 12px', background: '#EFF6FF', color: '#2563EB', border: '1px solid #BFDBFE', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: '600' },
-  deleteButton: { padding: '4px 12px', background: '#fc8181', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' },
+  actionButtons: { display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'nowrap' }, // 👈 Buttons stay on one line
+  viewButton: { padding: '5px 10px', background: '#4299e1', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '11px', fontWeight: '600', whiteSpace: 'nowrap' }, // 👈 Smaller
+  emailButton: { padding: '5px 10px', background: '#EFF6FF', color: '#2563EB', border: '1px solid #BFDBFE', borderRadius: '6px', cursor: 'pointer', fontSize: '11px', fontWeight: '600', whiteSpace: 'nowrap' }, // 👈 Smaller
+  deleteButton: { padding: '5px 10px', background: '#fc8181', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '11px', fontWeight: '600', whiteSpace: 'nowrap' }, // 👈 Smaller
   emptyState: { textAlign: 'center', padding: '60px 20px', background: 'white', borderRadius: '12px', border: '1px solid #e2e8f0' },
   emptyIcon: { fontSize: '48px', display: 'block', marginBottom: '16px' },
   emptyTitle: { fontSize: '18px', fontWeight: '600', color: '#0A1929', margin: '0 0 8px 0' },
