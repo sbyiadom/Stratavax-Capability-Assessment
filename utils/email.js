@@ -1,6 +1,6 @@
 // utils/email.js
-// Low-level Brevo wrapper. Used by pages/api/send-email.js and any
-// endpoint that needs to dispatch a branded email.
+// Low-level Brevo wrapper. Used by pages/api/send-email.js, /api/admin/send-candidate-email,
+// /api/supervisor/send-candidate-email, /api/supervisor/unblock-assessment, etc.
 //
 // ⚠️ SECURITY NOTE: BREVO_API_KEY was shared in chat during development.
 // Rotate before going live with real candidates.
@@ -17,9 +17,10 @@ const BREVO_API_URL = "https://api.brevo.com/v3/smtp/email";
  * @param {string} options.subject - Subject line
  * @param {string} options.html - HTML body
  * @param {string} options.text - Plain text body (optional)
+ * @param {Array<{filename: string, content: Buffer|string}>} options.attachments - Optional attachments
  * @returns {Promise<{success: boolean, messageId?: string, error?: string}>}
  */
-export async function sendEmail({ to, toName, subject, html, text }) {
+export async function sendEmail({ to, toName, subject, html, text, attachments }) {
   const apiKey = process.env.BREVO_API_KEY;
   const senderEmail = process.env.BREVO_SENDER_EMAIL || "stratavaxadmin@gmail.com";
   const senderName = "Stratavax Assessment Team";
@@ -33,6 +34,27 @@ export async function sendEmail({ to, toName, subject, html, text }) {
   }
 
   try {
+    const payload = {
+      sender: { name: senderName, email: senderEmail },
+      to: [{ email: to, ...(toName && { name: toName }) }],
+      subject,
+      htmlContent: html,
+      ...(text && { textContent: text }),
+    };
+
+    // ---- Attachments ----
+    // Brevo expects each attachment as: { name: string, content: base64-string }
+    if (Array.isArray(attachments) && attachments.length > 0) {
+      payload.attachment = attachments
+        .filter((att) => att && att.filename && att.content)
+        .map((att) => ({
+          name: att.filename,
+          content: Buffer.isBuffer(att.content)
+            ? att.content.toString("base64")
+            : String(att.content), // assume caller already base64-encoded if string
+        }));
+    }
+
     const res = await fetch(BREVO_API_URL, {
       method: "POST",
       headers: {
@@ -40,13 +62,7 @@ export async function sendEmail({ to, toName, subject, html, text }) {
         "api-key": apiKey,
         "content-type": "application/json",
       },
-      body: JSON.stringify({
-        sender: { name: senderName, email: senderEmail },
-        to: [{ email: to, ...(toName && { name: toName }) }],
-        subject,
-        htmlContent: html,
-        ...(text && { textContent: text }),
-      }),
+      body: JSON.stringify(payload),
     });
 
     const data = await res.json().catch(() => ({}));
