@@ -1,19 +1,15 @@
 // pages/api/admin/assign-assessments.js
 // Phase 7A — server-side endpoint for the admin assign-assessments page.
-//
-// Replaces five client-side Supabase operations in
-// pages/admin/assign-assessments.js with one authenticated endpoint.
-//
-// Three actions, all admin-gated:
-//   GET  ?action=load                            → candidates + assessments + supervisors
-//   GET  ?action=status&assessmentId=<uuid>      → candidate_assessments status for one assessment
-//   POST ?action=assign                          → batch upsert candidate_assessments
-//
-// Uses service role, so RLS won't affect it. The endpoint enforces admin
-// at the API layer.
+// Phase 9 (2026-11-14): Added email dispatch after successful upsert.
+//   Emails fire only when targetStatus is 'unblocked' or 'scheduled'.
+//   Failures are logged but do NOT roll back the assignment.
 
 import { createClient } from '@supabase/supabase-js';
 import { authorizeRequest } from '../../../utils/apiAuth';
+import {
+  sendAssignmentNotification,
+  sendScheduleNotification,
+} from '../../../utils/emailService';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const VALID_STATUSES = ['blocked', 'unblocked', 'scheduled', 'completed', 'in_progress'];
@@ -104,7 +100,92 @@ async function handleStatus(serviceClient, assessmentId) {
 }
 
 // ============================================================
-// ACTION: assign (batch upsert)
+// EMAIL DISPATCH — after successful upsert
+// ============================================================
+async function dispatchAssignmentEmails(serviceClient, {
+  candidateIds,
+  assessmentId,
+  targetStatus,
+  scheduleFields,
+  supervisorName,
+}) {
+  // Only fire emails for active assignments
+  if (targetStatus !== 'unblocked' && targetStatus !== 'scheduled') {
+    console.log(`[assign-assessments] Skipping emails — targetStatus is "${targetStatus}"`);
+    return { sent: 0, failed: 0, skipped: true };
+  }
+
+  // Fetch candidate details
+  const { data: candidates, error: candErr } = await serviceClient
+    .from('candidate_profiles')
+    .select('id, full_name, email')
+    .in('id', candidateIds);
+
+  if (candErr || !candidates) {
+    console.error('[assign-assessments] Failed to fetch candidates for email:', candErr);
+    return { sent: 0, failed: candidateIds.length };
+  }
+
+  // Fetch assessment title
+  const { data: assessment, error: assErr } = await serviceClient
+    .from('assessments')
+    .select('title')
+    .eq('id', assessmentId)
+    .maybeSingle();
+
+  if (assErr || !assessment) {
+    console.error('[assign-assessments] Failed to fetch assessment for email:', assErr);
+    return { sent: 0, failed: candidates.length };
+  }
+
+  const isScheduled = scheduleFields?.is_scheduled === true;
+
+  // Dispatch one email per candidate
+  const results = await Promise.allSettled(
+    candidates.map((candidate) => {
+      if (!candidate.email) {
+        return Promise.resolve({ success: false, error: 'No email on file' });
+      }
+
+      if (isScheduled) {
+        return sendScheduleNotification({
+          candidateEmail: candidate.email,
+          candidateName: candidate.full_name,
+          assessmentTitle: assessment.title,
+          scheduledStart: scheduleFields.scheduled_start,
+          scheduledEnd: scheduleFields.scheduled_end,
+          supervisorName,
+        });
+      }
+
+      return sendAssignmentNotification({
+        candidateEmail: candidate.email,
+        candidateName: candidate.full_name,
+        assessmentTitle: assessment.title,
+        supervisorName,
+      });
+    })
+  );
+
+  let sent = 0;
+  let failed = 0;
+  results.forEach((r, idx) => {
+    const email = candidates[idx]?.email || 'unknown';
+    if (r.status === 'fulfilled' && r.value?.success) {
+      sent++;
+      console.log(`[assign-assessments] Email sent → ${email}`);
+    } else {
+      failed++;
+      const err = r.status === 'fulfilled' ? r.value?.error : r.reason;
+      console.error(`[assign-assessments] Email failed → ${email}:`, err);
+    }
+  });
+
+  return { sent, failed };
+}
+
+// ============================================================
+// ACTION: assign (batch upsert + email dispatch)
 // ============================================================
 async function handleAssign(serviceClient, callerUserId, body) {
   const {
@@ -176,9 +257,35 @@ async function handleAssign(serviceClient, callerUserId, body) {
     return { error: error.message, status: 500 };
   }
 
+  // ============================================================
+  // EMAIL DISPATCH — non-blocking, runs after successful upsert.
+  // Failures are logged but never roll back the assignment.
+  // ============================================================
+  let emailResult = { sent: 0, failed: 0 };
+  try {
+    // Get supervisor name (the caller) for personalization
+    const { data: supervisor } = await serviceClient
+      .from('supervisor_profiles')
+      .select('full_name')
+      .eq('id', callerUserId)
+      .maybeSingle();
+
+    emailResult = await dispatchAssignmentEmails(serviceClient, {
+      candidateIds,
+      assessmentId,
+      targetStatus,
+      scheduleFields: schedule,
+      supervisorName: supervisor?.full_name || null,
+    });
+  } catch (emailError) {
+    console.error('[assign-assessments] Email dispatch failed (non-fatal):', emailError);
+  }
+
   return {
     written: Array.isArray(data) ? data.length : 0,
     rowIds: (data || []).map((r) => r.id),
+    emailsSent: emailResult.sent,
+    emailsFailed: emailResult.failed,
   };
 }
 
@@ -191,9 +298,6 @@ export default async function handler(req, res) {
   }
 
   try {
-    // ============================================================
-    // AUTH — admin only
-    // ============================================================
     const auth = await authorizeRequest(req, ['admin']);
     if (auth.error) {
       return res.status(auth.status).json({ success: false, error: auth.error });
@@ -231,6 +335,8 @@ export default async function handler(req, res) {
         success: true,
         written: result.written,
         rowIds: result.rowIds,
+        emailsSent: result.emailsSent,
+        emailsFailed: result.emailsFailed,
       });
     }
 
