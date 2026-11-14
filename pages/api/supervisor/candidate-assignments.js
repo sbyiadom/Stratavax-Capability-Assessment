@@ -1,28 +1,13 @@
 // pages/api/supervisor/candidate-assignments.js
 // Phase 7B — load / save assignments for a single candidate.
-//
-// Serves pages/supervisor/assign-assessment/[id].js.
+// Phase 9: sends "New Assessment Assigned" email after successful insert.
 //
 // Usage:
-//   GET  /api/supervisor/candidate-assignments?action=load&candidateId=<uuid>
-//        → { success, candidate, assigned[], assessments[] }
-//
-//   POST /api/supervisor/candidate-assignments?action=save&candidateId=<uuid>
-//        body: { toAdd: [assessmentId], toRemove: [assessmentId] }
-//        → { success }
-//
-// SCOPE:
-//   Admin may load/save any candidate.
-//   Supervisor may only load/save candidates in their scope, verified via
-//   get_scoped_candidate_ids (the same primitive used by every other
-//   supervisor endpoint).
-//
-// WRITES:
-//   toAdd / toRemove are applied atomically through the existing
-//   assign_candidate_assessments(candidateId, toAdd, toRemove) RPC.
-//   No direct INSERT/DELETE on candidate_assessments.
+//   GET  ?action=load&candidateId=<uuid>
+//   POST ?action=save&candidateId=<uuid>  body: { toAdd, toRemove }
 
 import { authorizeRequest } from '../../../utils/apiAuth';
+import { sendAssignmentNotification } from '../../../utils/emailService';
 
 const LOG_TAG = '[Supervisor Candidate Assignments]';
 const CHUNK_SIZE = 100;
@@ -53,8 +38,6 @@ function isValidUUID(value) {
 // ============================================================
 // Scope check
 // ============================================================
-// Returns true if the caller is allowed to see/act on this candidate.
-
 async function isCandidateInScope(serviceClient, caller, candidateId) {
   if (caller.isAdmin) return true;
 
@@ -83,17 +66,7 @@ async function isCandidateInScope(serviceClient, caller, candidateId) {
 // ============================================================
 // LOAD
 // ============================================================
-// Returns:
-//   { candidate, assigned[], assessments[] }
-//
-// - candidate     : row from candidate_profiles
-// - assigned[]    : rows from candidate_assessments for this candidate
-//                   (id, assessment_id, status, result_id)
-// - assessments[] : all active assessments, each with an embedded
-//                   assessment_type (code, name, icon, gradient_*)
-
 async function handleLoad(serviceClient, caller, candidateId, res) {
-  // ---- Candidate ----
   const { data: candidate, error: candidateError } = await serviceClient
     .from('candidate_profiles')
     .select('id, full_name, email, university, programme, created_at, supervisor_id')
@@ -109,7 +82,6 @@ async function handleLoad(serviceClient, caller, candidateId, res) {
     return res.status(404).json({ success: false, error: 'Candidate not found.' });
   }
 
-  // ---- Assigned (candidate_assessments for this candidate) ----
   const { data: assigned, error: assignedError } = await serviceClient
     .from('candidate_assessments')
     .select('id, assessment_id, status, result_id')
@@ -120,10 +92,6 @@ async function handleLoad(serviceClient, caller, candidateId, res) {
     return res.status(500).json({ success: false, error: 'Failed to load assignments.' });
   }
 
-  // ---- Active assessments (list to select from) ----
-  // Fetch assessments with embedded assessment_type.
-  // The FK relationship is assessments.assessment_type_id → assessment_types.id,
-  // so PostgREST can embed it directly.
   const { data: assessments, error: assessmentsError } = await serviceClient
     .from('assessments')
     .select(`
@@ -148,10 +116,6 @@ async function handleLoad(serviceClient, caller, candidateId, res) {
     return res.status(500).json({ success: false, error: 'Failed to load assessments.' });
   }
 
-  // Normalize the embedded join: PostgREST returns assessment_types as
-  // either an object or an array depending on FK cardinality. The page
-  // expects assessment.assessment_type to be an object with code/name/icon/
-  // gradient_start/gradient_end.
   const normalized = (assessments || []).map((a) => {
     const rawType = a.assessment_types;
     const typeObj = Array.isArray(rawType) ? rawType[0] || null : rawType || null;
@@ -199,11 +163,69 @@ async function handleLoad(serviceClient, caller, candidateId, res) {
 }
 
 // ============================================================
+// EMAIL DISPATCH — after successful insert
+// ============================================================
+async function dispatchAssignmentEmails(serviceClient, { candidate, newlyAddedAssessmentIds, caller }) {
+  if (!candidate.email) {
+    console.log(`[${LOG_TAG}] Skipping emails — candidate has no email on file`);
+    return { sent: 0, failed: 0 };
+  }
+
+  if (!Array.isArray(newlyAddedAssessmentIds) || newlyAddedAssessmentIds.length === 0) {
+    return { sent: 0, failed: 0 };
+  }
+
+  // Fetch titles for the newly added assessments
+  const { data: assessments, error } = await serviceClient
+    .from('assessments')
+    .select('id, title')
+    .in('id', newlyAddedAssessmentIds);
+
+  if (error || !assessments) {
+    logError('assessment title lookup for email', error, { ids: newlyAddedAssessmentIds });
+    return { sent: 0, failed: newlyAddedAssessmentIds.length };
+  }
+
+  // Fetch caller's full name for personalization
+  const { data: supervisor } = await serviceClient
+    .from('supervisor_profiles')
+    .select('full_name')
+    .eq('id', caller.userId)
+    .maybeSingle();
+
+  const supervisorName = supervisor?.full_name || null;
+
+  const results = await Promise.allSettled(
+    assessments.map((a) =>
+      sendAssignmentNotification({
+        candidateEmail: candidate.email,
+        candidateName: candidate.full_name,
+        assessmentTitle: a.title,
+        supervisorName,
+      })
+    )
+  );
+
+  let sent = 0;
+  let failed = 0;
+  results.forEach((r, idx) => {
+    const title = assessments[idx]?.title || 'unknown';
+    if (r.status === 'fulfilled' && r.value?.success) {
+      sent++;
+      console.log(`[${LOG_TAG}] Email sent → ${candidate.email} (${title})`);
+    } else {
+      failed++;
+      const err = r.status === 'fulfilled' ? r.value?.error : r.reason;
+      console.error(`[${LOG_TAG}] Email failed → ${candidate.email} (${title}):`, err);
+    }
+  });
+
+  return { sent, failed };
+}
+
+// ============================================================
 // SAVE
 // ============================================================
-// Body: { toAdd: [assessmentId], toRemove: [assessmentId] }
-// Uses assign_candidate_assessments(candidateId, toAdd, toRemove) RPC.
-
 async function handleSave(serviceClient, caller, candidateId, req, res) {
   const body = req.body || {};
   const toAdd = Array.isArray(body.toAdd) ? body.toAdd.filter(isValidUUID) : [];
@@ -213,6 +235,19 @@ async function handleSave(serviceClient, caller, candidateId, req, res) {
     return res.status(200).json({ success: true, added: 0, removed: 0 });
   }
 
+  // ---- Fetch candidate info BEFORE the RPC so we have email/name available ----
+  const { data: candidate, error: candErr } = await serviceClient
+    .from('candidate_profiles')
+    .select('id, full_name, email')
+    .eq('id', candidateId)
+    .maybeSingle();
+
+  if (candErr || !candidate) {
+    logError('candidate lookup before save', candErr, { candidateId });
+    return res.status(500).json({ success: false, error: 'Failed to load candidate.' });
+  }
+
+  // ---- Do the atomic assignment via RPC ----
   const { data, error } = await serviceClient.rpc('assign_candidate_assessments', {
     p_candidate_id: candidateId,
     p_to_add: toAdd,
@@ -240,10 +275,26 @@ async function handleSave(serviceClient, caller, candidateId, req, res) {
     rpcResult: data,
   });
 
+  // ---- Send emails (non-blocking) ----
+  let emailResult = { sent: 0, failed: 0 };
+  if (toAdd.length > 0) {
+    try {
+      emailResult = await dispatchAssignmentEmails(serviceClient, {
+        candidate,
+        newlyAddedAssessmentIds: toAdd,
+        caller,
+      });
+    } catch (emailError) {
+      console.error(`[${LOG_TAG}] Email dispatch failed (non-fatal):`, emailError);
+    }
+  }
+
   return res.status(200).json({
     success: true,
     added: toAdd.length,
     removed: toRemove.length,
+    emailsSent: emailResult.sent,
+    emailsFailed: emailResult.failed,
     result: data || null,
   });
 }
@@ -251,13 +302,11 @@ async function handleSave(serviceClient, caller, candidateId, req, res) {
 // ============================================================
 // HANDLER
 // ============================================================
-
 export default async function handler(req, res) {
   if (req.method !== 'GET' && req.method !== 'POST') {
     return res.status(405).json({ success: false, error: 'Method not allowed' });
   }
 
-  // ---- Auth ----
   const auth = await authorizeRequest(req, ['admin', 'supervisor']);
   if (auth.error) {
     return res.status(auth.status).json({ success: false, error: auth.error });
@@ -285,7 +334,6 @@ export default async function handler(req, res) {
       return res.status(405).json({ success: false, error: 'load requires GET.' });
     }
 
-    // ---- Scope check ----
     const inScope = await isCandidateInScope(serviceClient, caller, candidateId);
     if (!inScope) {
       logError('scope check rejected', { message: 'candidate out of scope' }, {
