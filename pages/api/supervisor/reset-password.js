@@ -1,23 +1,8 @@
 // pages/api/supervisor/reset-password.js
-// Phase 7B — supervisor-side password reset endpoint.
-//
-// AUTH:   authorizeRequest(req, ['admin','supervisor']) — same pattern as
-//         every other Phase 7B endpoint. Rejects unauthenticated callers;
-//         verifies role from the DB, not from user_metadata.
-//
-// SCOPE:  A supervisor may only reset passwords for candidates in their scope.
-//         Scope is derived from get_scoped_candidate_ids (primary + junction
-//         union) — the same primitive used by the candidate list endpoints.
-//         An admin may reset anyone.
-//
-// MECHANISM: Uses the Supabase Admin API to update the password directly.
-//            No email is sent. The candidate can sign in immediately.
-//
-// Request body: { email: string, newPassword: string }
-// Response:     { success: true, userId, email }
-//            or { success: false, error }
+// Phase 9: Sends "Your Password Was Reset" email after successful password update.
 
 import { authorizeRequest } from '../../../utils/apiAuth';
+import { sendEmail } from '../../../utils/email';
 
 const LOG_TAG = '[Supervisor Reset Password]';
 
@@ -31,12 +16,81 @@ function logError(stage, error, extra = {}) {
   });
 }
 
+// ============================================================
+// EMAIL DISPATCH
+// ============================================================
+async function sendPasswordResetEmail(candidate, newPassword, callerName) {
+  if (!candidate?.email) {
+    console.log('[reset-password] Skipping email — no candidate email');
+    return { sent: false };
+  }
+
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <body style="margin:0;padding:20px;background:#f0f2f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;line-height:1.6;color:#1a202c;">
+      <div style="max-width:550px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 8px 20px rgba(0,0,0,0.1);">
+        <div style="background:linear-gradient(135deg,#0A1929 0%,#1E3A5F 100%);padding:32px 24px;text-align:center;">
+          <div style="font-size:28px;font-weight:700;color:white;letter-spacing:2px;margin-bottom:8px;">STRATAVAX</div>
+          <div style="color:rgba(255,255,255,0.8);font-size:14px;">Talent Assessment Platform</div>
+        </div>
+        <div style="padding:32px;">
+          <div style="font-size:20px;font-weight:600;margin-bottom:16px;color:#0A1929;">Hello, ${candidate.full_name}</div>
+          <p>Your password has been reset by your supervisor. Please use the temporary password below to sign in.</p>
+
+          <div style="background:#F5F7FA;border-radius:12px;padding:20px;margin:24px 0;border-left:4px solid #6366f1;">
+            <div style="font-size:12px;color:#64748B;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Temporary Password</div>
+            <div style="font-size:18px;font-weight:700;color:#0A1929;font-family:'Courier New',monospace;letter-spacing:0.1em;">${newPassword}</div>
+          </div>
+
+          <div style="background:#FEF3C7;border-radius:12px;padding:16px;margin:24px 0;border-left:4px solid #f59e0b;">
+            <div style="font-size:14px;color:#92400E;font-weight:600;margin-bottom:4px;">⚠️ Security Notice</div>
+            <div style="font-size:13px;color:#92400E;line-height:1.5;">You must change this password after your first login. Do not share this email with anyone.</div>
+          </div>
+
+          <div style="text-align:center;margin:24px 0;">
+            <a href="https://stratavax-capability-assessment.vercel.app/login" style="display:inline-block;background:linear-gradient(135deg,#0A1929 0%,#1E3A5F 100%);color:white;text-decoration:none;padding:12px 32px;border-radius:8px;font-weight:500;">Log In Now</a>
+          </div>
+
+          <p style="margin-top: 24px; font-size: 13px; color: #64748B; text-align: center;">
+            If you did not request this password reset, please contact your supervisor immediately.<br>
+            <strong>${callerName || "Your Supervisor"}</strong>
+          </p>
+        </div>
+        <div style="background:#F8FAFC;padding:20px;text-align:center;font-size:12px;color:#94A3B8;border-top:1px solid #E2E8F0;">
+          <p style="margin:4px 0;">© 2026 Stratavax - Talent Assessment Platform</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+
+  try {
+    const result = await sendEmail({
+      to: candidate.email,
+      toName: candidate.full_name,
+      subject: `🔑 Your Password Has Been Reset — Stratavax`,
+      html,
+    });
+
+    if (result.success) {
+      console.log(`[reset-password] Email sent → ${candidate.email}`);
+      return { sent: true };
+    } else {
+      console.error('[reset-password] Email failed:', result.error);
+      return { sent: false, error: result.error };
+    }
+  } catch (err) {
+    console.error('[reset-password] Email dispatch error:', err);
+    return { sent: false, error: err.message };
+  }
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ success: false, error: 'Method not allowed' });
   }
 
-  // ---- Auth ----
   const auth = await authorizeRequest(req, ['admin', 'supervisor']);
   if (auth.error) {
     return res.status(auth.status).json({ success: false, error: auth.error });
@@ -56,7 +110,7 @@ export default async function handler(req, res) {
 
     const normalizedEmail = String(email).toLowerCase().trim();
 
-    // ---- Scope check: is this email a candidate the caller can act on? ----
+    // ---- Scope check ----
     const { data: candidate, error: candidateError } = await serviceClient
       .from('candidate_profiles')
       .select('id, email, full_name')
@@ -64,22 +118,17 @@ export default async function handler(req, res) {
       .maybeSingle();
 
     if (candidateError) {
-      logError('candidate_profiles lookup', candidateError, {
-        role: caller.role,
-        email: normalizedEmail,
-      });
+      logError('candidate_profiles lookup', candidateError, { role: caller.role, email: normalizedEmail });
       return res.status(500).json({ success: false, error: 'Failed to look up candidate' });
     }
 
     if (!candidate) {
-      // Do not reveal whether an unknown email exists elsewhere in the system.
       return res.status(404).json({
         success: false,
         error: 'No candidate in your scope matches that email.',
       });
     }
 
-    // Admin: any candidate is fair game. Supervisor: must be in scope.
     if (!caller.isAdmin) {
       const { data: scopedRows, error: scopedError } = await serviceClient.rpc(
         'get_scoped_candidate_ids',
@@ -87,17 +136,12 @@ export default async function handler(req, res) {
       );
 
       if (scopedError) {
-        logError('rpc get_scoped_candidate_ids', scopedError, {
-          role: caller.role,
-          userId: caller.userId,
-        });
+        logError('rpc get_scoped_candidate_ids', scopedError, { role: caller.role, userId: caller.userId });
         return res.status(500).json({ success: false, error: 'Failed to verify scope' });
       }
 
       const scopedIds = Array.isArray(scopedRows)
-        ? scopedRows
-            .map((row) => (typeof row === 'string' ? row : row?.get_scoped_candidate_ids))
-            .filter(Boolean)
+        ? scopedRows.map((row) => (typeof row === 'string' ? row : row?.get_scoped_candidate_ids)).filter(Boolean)
         : [];
 
       if (!scopedIds.includes(candidate.id)) {
@@ -106,25 +150,17 @@ export default async function handler(req, res) {
           userId: caller.userId,
           candidateId: candidate.id,
         });
-        return res.status(403).json({
-          success: false,
-          error: 'This candidate is not in your scope.',
-        });
+        return res.status(403).json({ success: false, error: 'This candidate is not in your scope.' });
       }
     }
 
-    // ---- Locate the auth user by email (paginated) ----
-    // Supabase Admin API has no "get user by email" method; listing is the
-    // only way. We cap the scan and stop as soon as the target email is found.
+    // ---- Locate auth user ----
     let targetUser = null;
     let page = 1;
     const perPage = 1000;
-    const maxPages = 20; // safety cap: 20k users
+    const maxPages = 20;
     while (page <= maxPages && !targetUser) {
-      const { data: usersPage, error: listError } = await serviceClient.auth.admin.listUsers({
-        page,
-        perPage,
-      });
+      const { data: usersPage, error: listError } = await serviceClient.auth.admin.listUsers({ page, perPage });
 
       if (listError) {
         logError('auth.admin.listUsers', listError, { page, perPage });
@@ -134,9 +170,7 @@ export default async function handler(req, res) {
       const users = usersPage?.users || [];
       if (users.length === 0) break;
 
-      targetUser = users.find(
-        (u) => (u.email || '').toLowerCase().trim() === normalizedEmail
-      );
+      targetUser = users.find((u) => (u.email || '').toLowerCase().trim() === normalizedEmail);
 
       if (users.length < perPage) break;
       page++;
@@ -149,32 +183,23 @@ export default async function handler(req, res) {
       });
     }
 
-    // Defence in depth: the auth user id must match the candidate_profiles id.
-    // candidate_profiles.id and auth.users.id are the same UUID by design.
     if (targetUser.id !== candidate.id) {
-      logError('identity mismatch', {
-        message: 'auth user id does not match candidate_profiles id',
-      }, {
+      logError('identity mismatch', { message: 'auth user id does not match candidate_profiles id' }, {
         candidateId: candidate.id,
         authUserId: targetUser.id,
         email: normalizedEmail,
       });
-      return res.status(500).json({
-        success: false,
-        error: 'Identity mismatch. Contact support.',
-      });
+      return res.status(500).json({ success: false, error: 'Identity mismatch. Contact support.' });
     }
 
-    // ---- Update password via Admin API ----
+    // ---- Update password ----
     const { error: updateError } = await serviceClient.auth.admin.updateUserById(
       targetUser.id,
       { password: newPassword }
     );
 
     if (updateError) {
-      logError('auth.admin.updateUserById', updateError, {
-        candidateId: candidate.id,
-      });
+      logError('auth.admin.updateUserById', updateError, { candidateId: candidate.id });
       return res.status(500).json({ success: false, error: updateError.message });
     }
 
@@ -185,11 +210,22 @@ export default async function handler(req, res) {
       email: normalizedEmail,
     });
 
+    // ---- Send email (non-blocking) ----
+    let emailSent = false;
+    try {
+      const callerName = caller.name || caller.email || null;
+      const emailResult = await sendPasswordResetEmail(candidate, newPassword, callerName);
+      emailSent = emailResult.sent;
+    } catch (emailErr) {
+      console.error('[reset-password] Non-fatal email error:', emailErr);
+    }
+
     return res.status(200).json({
       success: true,
       message: 'Password reset successfully',
       userId: targetUser.id,
       email: targetUser.email,
+      emailSent,
     });
   } catch (error) {
     console.error(`${LOG_TAG} Unhandled error:`, error);
