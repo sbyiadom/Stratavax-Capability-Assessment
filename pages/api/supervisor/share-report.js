@@ -1,5 +1,6 @@
 // pages/api/supervisor/share-report.js
 // Generates a PDF of the candidate report and emails it to them.
+// Uses Puppeteer + @sparticuz/chromium (both already in package.json).
 
 import { authorizeRequest } from '../../../utils/apiAuth';
 import { sendEmail } from '../../../utils/email';
@@ -39,9 +40,7 @@ export default async function handler(req, res) {
       return res.status(400).json({ success: false, error: 'Candidate has no email address.' });
     }
 
-    // 2. Fetch the Report Data
-    // In a real scenario, you would fetch the actual generated report data here.
-    // For the PDF, we'll generate a clean HTML summary.
+    // 2. Fetch Report Summary
     const { data: result } = await serviceClient
       .from('assessment_results')
       .select('percentage_score, classification, completed_at')
@@ -119,16 +118,25 @@ export default async function handler(req, res) {
     }
 
     // 5. Send Email with Attachment
-    // Note: You will need to update your utils/email.js sendEmail function to support attachments.
-    // I will provide that update in the next step.
     const emailResult = await sendEmail({
       to: candidate.email,
       toName: candidate.full_name,
       subject: `📄 Your Assessment Report: ${assessment.title}`,
       html: `
-        <p>Hello ${candidate.full_name},</p>
-        <p>Please find attached the report for your recent <strong>${assessment.title}</strong>.</p>
-        <p>If you have any questions, please reach out to your supervisor.</p>
+        <div style="font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 550px; margin: 0 auto; color: #1a202c;">
+          <div style="background: linear-gradient(135deg,#0A1929 0%,#1E3A5F 100%); padding: 24px; border-radius: 12px 12px 0 0; text-align: center;">
+            <h2 style="color: white; margin: 0; letter-spacing: 2px;">STRATAVAX</h2>
+          </div>
+          <div style="padding: 24px; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 12px 12px;">
+            <p>Hello <strong>${candidate.full_name}</strong>,</p>
+            <p>Please find attached the report for your recent <strong>${assessment.title}</strong>.</p>
+            <div style="background: #f8fafc; padding: 16px; border-radius: 8px; margin: 20px 0;">
+              <div style="font-size: 12px; color: #64748b; text-transform: uppercase;">Overall Score</div>
+              <div style="font-size: 24px; font-weight: bold; color: #0A1929;">${score}%</div>
+            </div>
+            <p>If you have any questions, please reach out to your supervisor.</p>
+          </div>
+        </div>
       `,
       attachments: [
         {
