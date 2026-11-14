@@ -1,26 +1,11 @@
-// pages/api/assessment/save-response.js - WITH FORCED-CHOICE SUPPORT
-//
-// Phase 5:
-// - Accepts leastAnswerId from the request body for forced-choice assessments.
-// - Writes it to responses.least_answer_id.
-// - Single-select responses leave leastAnswerId undefined; the column
-//   stays null and behavior is unchanged.
-//
-// Phase 5.1 (2026-10-04):
-// - Fixed metadata spread order. The previous version spread existing
-//   metadata LAST, which meant every save preserved old values and ignored
-//   new ones from the client. Now the incoming values take precedence.
-// - Clarified that metadata.violations / tab_switches are PER-QUESTION
-//   deltas, not running totals. The client is responsible for sending the
-//   per-question delta. submit.js no longer sums these.
-//
-// Phase 5.2 (2026-10-04):
-// - Replaced the SELECT-then-INSERT/UPDATE pattern with a single
-//   .upsert() call. The old pattern had a race condition: two concurrent
-//   saves for the same (session_id, question_id) could both see "no row"
-//   and both attempt to insert, producing a duplicate key error. The
-//   upsert uses the unique constraint responses_session_id_question_id_key
-//   as the conflict target, so concurrent calls are safe.
+// pages/api/assessment/save-response.js
+// Phase 5: Forced-choice support
+// Phase 5.1: Metadata spread order fixed
+// Phase 5.2: Upsert to prevent race conditions
+// Phase 9 (2026-11-14): ACCUMULATE total_time_spent instead of overwriting.
+//   Previously set total_time_spent to the CURRENT question's time,
+//   which meant after 100 questions it showed only ~2 minutes.
+//   Now accumulates properly and mirrors into time_spent_seconds.
 
 import { createClient } from "@supabase/supabase-js";
 
@@ -61,7 +46,7 @@ export default async function handler(req, res) {
 
     const { data: session, error: sessionError } = await serviceClient
       .from("assessment_sessions")
-      .select("assessment_id, user_id")
+      .select("assessment_id, user_id, total_time_spent, time_spent_seconds")
       .eq("id", sessionId)
       .single();
 
@@ -107,15 +92,7 @@ export default async function handler(req, res) {
       : normalizedLeastAnswerId;
 
     // ============================================================
-    // METADATA
-    // Field semantics (per-question deltas, NOT cumulative totals):
-    //   tab_switches, copy_attempts, paste_attempts,
-    //   right_click_attempts, violations, previous_question,
-    //   time_on_question
-    //
-    // SPREAD ORDER: existing first, incoming second. Incoming overrides
-    // preserved. The old order (incoming first, existing last) discarded
-    // new values on update.
+    // METADATA — per-question deltas, not cumulative totals
     // ============================================================
     const metadataColumn = {
       ...(existing?.metadata || {}),
@@ -170,12 +147,30 @@ export default async function handler(req, res) {
       .select("id", { count: "exact", head: true })
       .eq("session_id", sessionId);
 
+    // ============================================================
+    // BUGFIX (Phase 9): ACCUMULATE time instead of overwriting.
+    //
+    // Old behavior: `total_time_spent` was set to the CURRENT
+    // question's time, so after 100 questions it showed the time
+    // spent on the last question only (~2 minutes).
+    //
+    // New behavior: read the current accumulated total and add the
+    // new delta. Also mirror into `time_spent_seconds` — that column
+    // was never being set, which caused the funnel analytics to show
+    // null or near-zero averages.
+    // ============================================================
+    const newDeltaSeconds = parseInt(metadata?.time_spent_seconds, 10) || 0;
+    const previousTotal = Number(session.total_time_spent) || 0;
+    const previousTracked = Number(session.time_spent_seconds) || 0;
+    const accumulatedTotal = previousTotal + newDeltaSeconds;
+
     await serviceClient
       .from("assessment_sessions")
       .update({
         answered_questions: count || 0,
         updated_at: now,
-        total_time_spent: parseInt(metadata?.time_spent_seconds, 10) || 0,
+        total_time_spent: accumulatedTotal,
+        time_spent_seconds: Math.max(previousTracked, accumulatedTotal),
         last_activity: now
       })
       .eq("id", sessionId);
