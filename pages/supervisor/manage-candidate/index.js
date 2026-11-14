@@ -1,6 +1,6 @@
 // pages/supervisor/manage-candidate/index.js
 // Phase 7A: fetches candidates from /api/supervisor/manage-candidates/list
-// instead of reading Supabase directly. Prepares for RLS enforcement.
+// Phase 9: Added "Email Candidate" feature (scoped to supervisor's candidates).
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -14,6 +14,13 @@ export default function ManageCandidateIndex() {
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [currentSupervisor, setCurrentSupervisor] = useState(null);
+
+  // Email modal state
+  const [emailModalOpen, setEmailModalOpen] = useState(false);
+  const [emailCandidate, setEmailCandidate] = useState(null);
+  const [emailSubject, setEmailSubject] = useState('');
+  const [emailMessage, setEmailMessage] = useState('');
+  const [sendingEmail, setSendingEmail] = useState(false);
 
   useEffect(() => {
     loadCandidates();
@@ -82,6 +89,43 @@ export default function ManageCandidateIndex() {
       setError(error.message || 'Failed to load candidates.');
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleSendEmail() {
+    if (!emailSubject.trim() || !emailMessage.trim()) {
+      alert('Subject and message are required.');
+      return;
+    }
+    setSendingEmail(true);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
+
+      const res = await fetch('/api/supervisor/send-candidate-email', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          candidateId: emailCandidate.id,
+          subject: emailSubject,
+          message: emailMessage,
+        }),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error);
+
+      alert(`Email sent to ${emailCandidate.full_name} successfully!`);
+      setEmailModalOpen(false);
+      setEmailSubject('');
+      setEmailMessage('');
+      setEmailCandidate(null);
+    } catch (err) {
+      alert('Failed to send email: ' + err.message);
+    } finally {
+      setSendingEmail(false);
     }
   }
 
@@ -282,6 +326,15 @@ export default function ManageCandidateIndex() {
                           <button onClick={() => handleView(candidate.id)} style={styles.viewButton}>
                             View
                           </button>
+                          <button
+                            onClick={() => {
+                              setEmailCandidate(candidate);
+                              setEmailModalOpen(true);
+                            }}
+                            style={styles.emailButton}
+                          >
+                            ✉️ Email
+                          </button>
                           <button onClick={() => handleDelete(candidate.id)} style={styles.deleteButton}>
                             Delete
                           </button>
@@ -292,6 +345,60 @@ export default function ManageCandidateIndex() {
                 })}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {/* ===== EMAIL MODAL ===== */}
+        {emailModalOpen && emailCandidate && (
+          <div style={styles.modalBackdrop} onClick={() => setEmailModalOpen(false)}>
+            <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
+              <h2 style={styles.modalTitle}>Email Candidate</h2>
+              <p style={styles.modalSub}>
+                To: <strong>{emailCandidate.full_name}</strong> ({emailCandidate.email})
+              </p>
+
+              <div style={{ marginBottom: '16px' }}>
+                <label style={styles.inputLabel}>Subject</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Interview Invitation - Stratavax"
+                  value={emailSubject}
+                  onChange={(e) => setEmailSubject(e.target.value)}
+                  style={styles.textInput}
+                />
+              </div>
+
+              <div style={{ marginBottom: '20px' }}>
+                <label style={styles.inputLabel}>Message</label>
+                <textarea
+                  placeholder="Dear candidate..."
+                  value={emailMessage}
+                  onChange={(e) => setEmailMessage(e.target.value)}
+                  rows={7}
+                  style={styles.textArea}
+                />
+              </div>
+
+              <div style={styles.modalActions}>
+                <button
+                  onClick={() => setEmailModalOpen(false)}
+                  style={styles.cancelButton}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSendEmail}
+                  disabled={sendingEmail}
+                  style={{
+                    ...styles.sendButton,
+                    opacity: sendingEmail ? 0.6 : 1,
+                    cursor: sendingEmail ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  {sendingEmail ? 'Sending...' : 'Send Email'}
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>
@@ -323,7 +430,7 @@ const styles = {
   clearButton: { padding: '4px 8px', background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '16px', color: '#94a3b8' },
   searchCount: { fontSize: '13px', color: '#94a3b8', whiteSpace: 'nowrap' },
   tableContainer: { background: 'white', borderRadius: '12px', overflow: 'auto', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', border: '1px solid #e2e8f0' },
-  table: { width: '100%', borderCollapse: 'collapse', fontSize: '14px', minWidth: '800px' },
+  table: { width: '100%', borderCollapse: 'collapse', fontSize: '14px', minWidth: '900px' },
   tableHeadRow: { background: '#F8FAFC' },
   tableHeadCell: { padding: '12px 16px', textAlign: 'left', borderBottom: '2px solid #E2E8F0', fontSize: '13px', fontWeight: '600', color: '#4A5568', whiteSpace: 'nowrap' },
   tableRow: { transition: 'background 0.2s ease' },
@@ -334,12 +441,25 @@ const styles = {
   naText: { color: '#94a3b8', fontStyle: 'italic' },
   assessmentCount: { fontWeight: '600', color: '#0A1929' },
   statusBadge: { display: 'inline-block', padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: '600' },
-  actionButtons: { display: 'flex', gap: '8px' },
+  actionButtons: { display: 'flex', gap: '8px', flexWrap: 'wrap' },
   viewButton: { padding: '4px 12px', background: '#4299e1', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' },
+  emailButton: { padding: '4px 12px', background: '#EFF6FF', color: '#2563EB', border: '1px solid #BFDBFE', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: '600' },
   deleteButton: { padding: '4px 12px', background: '#fc8181', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' },
   emptyState: { textAlign: 'center', padding: '60px 20px', background: 'white', borderRadius: '12px', border: '1px solid #e2e8f0' },
   emptyIcon: { fontSize: '48px', display: 'block', marginBottom: '16px' },
   emptyTitle: { fontSize: '18px', fontWeight: '600', color: '#0A1929', margin: '0 0 8px 0' },
   emptyText: { fontSize: '14px', color: '#94a3b8', margin: '0 0 16px 0' },
-  emptyButton: { padding: '10px 24px', background: '#0A1929', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', fontWeight: '500' }
+  emptyButton: { padding: '10px 24px', background: '#0A1929', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', fontWeight: '500' },
+
+  // ===== Modal styles =====
+  modalBackdrop: { position: 'fixed', inset: 0, background: 'rgba(10, 25, 41, 0.6)', backdropFilter: 'blur(4px)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' },
+  modalContent: { background: 'white', borderRadius: '16px', padding: '32px', maxWidth: '560px', width: '100%', boxShadow: '0 24px 64px rgba(0,0,0,0.3)' },
+  modalTitle: { fontSize: '22px', fontWeight: '700', color: '#0A1929', margin: '0 0 8px 0' },
+  modalSub: { fontSize: '14px', color: '#64748B', margin: '0 0 24px 0' },
+  inputLabel: { display: 'block', fontSize: '13px', fontWeight: '600', color: '#334155', marginBottom: '6px' },
+  textInput: { width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '14px', boxSizing: 'border-box', outline: 'none' },
+  textArea: { width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '14px', boxSizing: 'border-box', fontFamily: 'inherit', resize: 'vertical', outline: 'none' },
+  modalActions: { display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '8px' },
+  cancelButton: { padding: '12px 24px', background: '#F1F5F9', color: '#475569', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer' },
+  sendButton: { padding: '12px 32px', background: '#2563EB', color: 'white', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer', boxShadow: '0 4px 12px rgba(37, 99, 235, 0.25)' },
 };
