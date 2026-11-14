@@ -1,11 +1,5 @@
 // pages/supervisor/reports/[resultId].js - COMPLETE FIXED
-// Phase 6: Passes competencySummary from the API response into StratavaxReport
-// Phase 7L (2026-10-02): Risk level resolution delegated to
-//   utils/resolveRiskLevel — no hardcoded 'Medium' fallback.
-// Phase 8 (2026-10-03): local calculateScore removed. Now calls
-//   utils/scoring.calculateResultScore — the same function the admin
-//   pages use. Previously this file had its own five-path fallback that
-//   disagreed with the admin list page for the same candidate.
+// Phase 9: Added "Email Report to Candidate" button.
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -81,6 +75,9 @@ export default function SupervisorReportView() {
   const [reportData, setReportData] = useState(null);
   const [isNationalService, setIsNationalService] = useState(false);
   const [behavioralMatrix, setBehavioralMatrix] = useState(null);
+  
+  // Email State
+  const [sharing, setSharing] = useState(false);
 
   useEffect(() => {
     if (!router.isReady || !resultId) return;
@@ -154,7 +151,6 @@ export default function SupervisorReportView() {
       const recommendations = ensureArray(result?.recommendations || report?.recommendations);
       const riskFactors = ensureArray(result?.risk_factors || report?.riskFactors);
 
-      // Phase 8: shared score resolver — same function the admin pages use.
       const scoreInfo = calculateResultScore(result);
       const displayScore = scoreInfo.percentage;
 
@@ -220,8 +216,6 @@ export default function SupervisorReportView() {
         completed_at: result?.completed_at,
         candidateName: candidateInfo.fullName,
         behavioralMatrix: matrix,
-
-        // Phase 6 — competency summary flows through from the API response
         competencySummary: data.competencySummary || null
       };
 
@@ -239,6 +233,45 @@ export default function SupervisorReportView() {
       console.error('[Report View] Error:', err);
       setError(err.message || 'Failed to load report');
       setLoading(false);
+    }
+  };
+
+  const handleEmailReport = async () => {
+    if (!reportData?.result) return;
+    
+    // Extract IDs from the fetched data
+    const candidateId = reportData.result.user_id || reportData.result.candidate_profiles?.id;
+    const assessmentId = reportData.result.assessment_id || reportData.result.assessments?.id;
+
+    if (!candidateId || !assessmentId) {
+      alert("Could not find candidate or assessment ID. Cannot share report.");
+      return;
+    }
+
+    if (!window.confirm("Email this report to the candidate?")) return;
+
+    setSharing(true);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
+
+      const res = await fetch('/api/supervisor/share-report', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ candidateId, assessmentId })
+      });
+
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error);
+
+      alert("Report emailed to candidate successfully!");
+    } catch (err) {
+      alert("Failed to share report: " + err.message);
+    } finally {
+      setSharing(false);
     }
   };
 
@@ -288,6 +321,16 @@ export default function SupervisorReportView() {
           <button onClick={handleBack} style={styles.breadcrumbButton}>← Back to Reports</button>
           <span style={styles.breadcrumbSeparator}>|</span>
           <span style={styles.breadcrumbText}>National Service Report</span>
+          
+          <div style={{ marginLeft: 'auto' }}>
+            <button 
+              onClick={handleEmailReport} 
+              disabled={sharing} 
+              style={sharing ? styles.disabledButton : styles.emailButton}
+            >
+              {sharing ? 'Sending...' : '✉️ Email Report to Candidate'}
+            </button>
+          </div>
         </div>
         <NationalServiceReport
           report={{ ...reportData.report, proctoring: reportData.report.proctoring, behavioralMatrix: behavioralMatrix }}
@@ -306,6 +349,16 @@ export default function SupervisorReportView() {
           <button onClick={handleBack} style={styles.breadcrumbButton}>← Back to Reports</button>
           <span style={styles.breadcrumbSeparator}>|</span>
           <span style={styles.breadcrumbText}>Assessment Report</span>
+          
+          <div style={{ marginLeft: 'auto' }}>
+            <button 
+              onClick={handleEmailReport} 
+              disabled={sharing} 
+              style={sharing ? styles.disabledButton : styles.emailButton}
+            >
+              {sharing ? 'Sending...' : '✉️ Email Report to Candidate'}
+            </button>
+          </div>
         </div>
         <StratavaxReport
           result={reportData.result}
@@ -362,10 +415,34 @@ const styles = {
   errorButtonGroup: { display: 'flex', gap: '8px', justifyContent: 'center', marginTop: '16px' },
   errorButton: { padding: '10px 24px', background: '#1a237e', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', fontWeight: '500' },
   retryButton: { padding: '10px 24px', background: '#e2e8f0', color: '#1a202c', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', fontWeight: '500' },
+  
   breadcrumb: { display: 'flex', alignItems: 'center', gap: '12px', padding: '16px 24px', background: 'white', borderBottom: '1px solid #e2e8f0', maxWidth: '1200px', margin: '0 auto', flexWrap: 'wrap' },
   breadcrumbButton: { padding: '8px 16px', background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '14px', color: '#1a237e', fontWeight: '500' },
   breadcrumbSeparator: { color: '#94a3b8' },
   breadcrumbText: { fontSize: '14px', color: '#475569' },
+  
+  emailButton: { 
+    padding: '8px 20px', 
+    background: '#2563EB', 
+    color: 'white', 
+    border: 'none', 
+    borderRadius: '8px', 
+    cursor: 'pointer', 
+    fontSize: '13px', 
+    fontWeight: '600',
+    boxShadow: '0 2px 8px rgba(37, 99, 235, 0.25)'
+  },
+  disabledButton: {
+    padding: '8px 20px', 
+    background: '#94a3b8', 
+    color: 'white', 
+    border: 'none', 
+    borderRadius: '8px', 
+    cursor: 'not-allowed', 
+    fontSize: '13px', 
+    fontWeight: '600',
+  },
+
   fallbackContainer: { maxWidth: '1200px', margin: '0 auto', padding: '20px' },
   backButton: { padding: '8px 16px', background: 'transparent', border: '1px solid #e2e8f0', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', color: '#475569', marginBottom: '20px' },
   fallbackContent: { background: 'white', padding: '24px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }
