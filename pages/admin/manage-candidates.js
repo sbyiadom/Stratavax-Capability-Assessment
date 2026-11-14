@@ -1,12 +1,14 @@
 // pages/admin/manage-candidates.js
 // COMPLETE WITH PROGRAM NORMALIZATION AND FILTERS + RESET BUTTON
-// FIXED: Table now scrolls horizontally, all columns visible
 // Phase 7A: data loaded via /api/admin/manage-candidates?action=load
+// Phase 9: Added Email Candidate feature
 
 import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/router";
+import { Fragment } from "react"; // Added for the row mapping
 import AppLayout from "../../components/AppLayout";
 import { fetchWithAuth } from "../../utils/fetchWithAuth";
+import { supabase } from "../../supabase/client";
 import ResetAssessmentButton from "../../components/ResetAssessmentButton";
 
 function formatDate(value) {
@@ -433,6 +435,13 @@ export default function ManageCandidates() {
   const [expandedCandidate, setExpandedCandidate] = useState(null);
   const [error, setError] = useState("");
 
+  // Email Modal State
+  const [emailModalOpen, setEmailModalOpen] = useState(false);
+  const [emailCandidate, setEmailCandidate] = useState(null);
+  const [emailSubject, setEmailSubject] = useState("");
+  const [emailMessage, setEmailMessage] = useState("");
+  const [sendingEmail, setSendingEmail] = useState(false);
+
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedUniversity, setSelectedUniversity] = useState("");
   const [selectedProgram, setSelectedProgram] = useState("");
@@ -461,6 +470,40 @@ export default function ManageCandidates() {
       setError(err.message || "Failed to load candidates");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleSendEmail() {
+    if (!emailSubject.trim() || !emailMessage.trim()) {
+      alert("Subject and message are required.");
+      return;
+    }
+    setSendingEmail(true);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
+      
+      const res = await fetch("/api/admin/send-candidate-email", {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          candidateId: emailCandidate.id,
+          subject: emailSubject,
+          message: emailMessage
+        })
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error);
+      
+      alert(`Email sent to ${emailCandidate.full_name} successfully!`);
+      setEmailModalOpen(false);
+      setEmailSubject("");
+      setEmailMessage("");
+      setEmailCandidate(null);
+    } catch (err) {
+      alert("Failed to send email: " + err.message);
+    } finally {
+      setSendingEmail(false);
     }
   }
 
@@ -625,21 +668,214 @@ export default function ManageCandidates() {
                         }
 
                         return (
-                          <FragmentRow
-                            key={candidate.id}
-                            candidate={candidate}
-                            latest={latest}
-                            latestScore={latestScore}
-                            scoreStyle={scoreStyle}
-                            isExpanded={isExpanded}
-                            statusText={statusText}
-                            statusBg={statusBg}
-                            statusColor={statusColor}
-                            onToggleExpand={() => toggleExpand(candidate.id)}
-                            onOpenLatest={() => openLatestReport(candidate)}
-                            onOpenSpecific={openSpecificReport}
-                            onRefresh={fetchCandidates}
-                          />
+                          <Fragment key={candidate.id}>
+                            <tr
+                              style={{
+                                ...styles.dataRow,
+                                background: isExpanded ? "#f8fafc" : "#ffffff"
+                              }}
+                              onClick={() => toggleExpand(candidate.id)}
+                            >
+                              <td style={styles.td}>
+                                <div style={styles.candidateInfo}>
+                                  <div style={styles.avatar}>
+                                    {candidate.full_name?.charAt(0)?.toUpperCase() || "C"}
+                                  </div>
+                                  <div>
+                                    <div style={styles.candidateName}>
+                                      {candidate.full_name || "Unnamed Candidate"}
+                                    </div>
+                                    <div style={styles.candidateMeta}>ID: {candidate.id}</div>
+                                  </div>
+                                </div>
+                              </td>
+
+                              <td style={styles.td}>{candidate.email || "No email"}</td>
+
+                              <td style={styles.td}>{candidate.university || "—"}</td>
+
+                              <td style={styles.td}>{candidate.programme || "—"}</td>
+
+                              <td style={{ ...styles.td, textAlign: 'center' }}>
+                                <span style={styles.countBadge}>{candidate.results.length}</span>
+                              </td>
+
+                              <td style={styles.td}>
+                                {latest ? (
+                                  <div>
+                                    <span
+                                      style={{
+                                        ...styles.scoreBadge,
+                                        background: scoreStyle.bg,
+                                        color: scoreStyle.color
+                                      }}
+                                    >
+                                      {latestScore}%
+                                    </span>
+                                    <div style={styles.progressTrack}>
+                                      <div
+                                        style={{
+                                          ...styles.progressFill,
+                                          width: `${latestScore}%`,
+                                          background: scoreStyle.color
+                                        }}
+                                      />
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <span style={styles.noValue}>—</span>
+                                )}
+                              </td>
+
+                              <td style={styles.td}>
+                                <span
+                                  style={{
+                                    ...styles.statusBadge,
+                                    background: statusBg,
+                                    color: statusColor
+                                  }}
+                                >
+                                  {statusText}
+                                </span>
+                              </td>
+
+                              <td
+                                style={styles.td}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                }}
+                              >
+                                <div style={styles.actionGroup}>
+                                  {latest ? (
+                                    <button style={styles.actionButtonPrimary} onClick={() => openLatestReport(candidate)}>
+                                      View Latest
+                                    </button>
+                                  ) : (
+                                    <button style={styles.actionButtonMuted} disabled>
+                                      No Report
+                                    </button>
+                                  )}
+
+                                  {candidate.results.length > 0 && (
+                                    <button style={styles.expandButton} onClick={() => toggleExpand(candidate.id)}>
+                                      {isExpanded ? "Hide" : "Reports"}
+                                    </button>
+                                  )}
+
+                                  {latest && latest.completed_at && (
+                                    <ResetAssessmentButton
+                                      candidateId={candidate.id}
+                                      assessmentId={latest.assessment_id}
+                                      assessmentName={latest.assessment_title || 'Assessment'}
+                                      candidateName={candidate.full_name}
+                                      onReset={fetchCandidates}
+                                      variant="inline"
+                                    />
+                                  )}
+
+                                  {/* NEW EMAIL BUTTON */}
+                                  <button 
+                                    style={styles.emailButton} 
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setEmailCandidate(candidate);
+                                      setEmailModalOpen(true);
+                                    }}
+                                  >
+                                    ✉️ Email
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+
+                            {isExpanded && (
+                              <tr>
+                                <td colSpan="8" style={styles.expandCell}>
+                                  <div style={styles.expandPanel}>
+                                    <div style={styles.expandHeader}>
+                                      <h3 style={styles.expandTitle}>Assessment Reports</h3>
+                                      <span style={styles.expandSubtext}>
+                                        {candidate.results.length} report{candidate.results.length === 1 ? "" : "s"} found
+                                      </span>
+                                    </div>
+
+                                    {candidate.results.length === 0 ? (
+                                      <div style={styles.emptyExpand}>
+                                        This candidate has no completed assessment reports yet.
+                                      </div>
+                                    ) : (
+                                      <div style={styles.reportList}>
+                                        {candidate.results.map((result) => {
+                                          const score = Math.round(toNumber(result.percentage_score, 0));
+                                          const itemStyle = getScoreStyle(score);
+
+                                          return (
+                                            <div key={result.id} style={styles.reportCard}>
+                                              <div style={styles.reportCardTop}>
+                                                <div>
+                                                  <div style={styles.reportTitle}>
+                                                    {result.assessment_title || "Unnamed Assessment"}
+                                                  </div>
+                                                  <div style={styles.reportDate}>
+                                                    Completed: {formatDate(result.completed_at)}
+                                                  </div>
+                                                </div>
+
+                                                <span
+                                                  style={{
+                                                    ...styles.scoreBadge,
+                                                    background: itemStyle.bg,
+                                                    color: itemStyle.color
+                                                  }}
+                                                >
+                                                  {score}%
+                                                </span>
+                                              </div>
+
+                                              <div style={styles.reportMetaRow}>
+                                                <span>Result ID: {result.id}</span>
+                                                <span>Total Score: {toNumber(result.total_score, 0)}</span>
+                                                <span>Max Score: {toNumber(result.max_score, 0)}</span>
+                                              </div>
+
+                                              <div style={styles.progressTrack}>
+                                                <div
+                                                  style={{
+                                                    ...styles.progressFill,
+                                                    width: `${score}%`,
+                                                    background: itemStyle.color
+                                                  }}
+                                                />
+                                              </div>
+
+                                              <div style={styles.reportActions}>
+                                                <button
+                                                  style={styles.actionButtonPrimary}
+                                                  onClick={() => openSpecificReport(candidate.id, result.assessment_id)}
+                                                >
+                                                  Open Report
+                                                </button>
+                                                {result.completed_at && (
+                                                  <ResetAssessmentButton
+                                                    candidateId={candidate.id}
+                                                    assessmentId={result.assessment_id}
+                                                    assessmentName={result.assessment_title || 'Assessment'}
+                                                    candidateName={candidate.full_name}
+                                                    onReset={fetchCandidates}
+                                                    variant="inline"
+                                                  />
+                                                )}
+                                              </div>
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </Fragment>
                         );
                       })
                     )}
@@ -649,222 +885,49 @@ export default function ManageCandidates() {
             </div>
           </>
         )}
-      </div>
-    </AppLayout>
-  );
-}
 
-function FragmentRow({
-  candidate,
-  latest,
-  latestScore,
-  scoreStyle,
-  isExpanded,
-  statusText,
-  statusBg,
-  statusColor,
-  onToggleExpand,
-  onOpenLatest,
-  onOpenSpecific,
-  onRefresh
-}) {
-  return (
-    <>
-      <tr
-        style={{
-          ...styles.dataRow,
-          background: isExpanded ? "#f8fafc" : "#ffffff"
-        }}
-        onClick={onToggleExpand}
-      >
-        <td style={styles.td}>
-          <div style={styles.candidateInfo}>
-            <div style={styles.avatar}>
-              {candidate.full_name?.charAt(0)?.toUpperCase() || "C"}
-            </div>
-            <div>
-              <div style={styles.candidateName}>
-                {candidate.full_name || "Unnamed Candidate"}
-              </div>
-              <div style={styles.candidateMeta}>ID: {candidate.id}</div>
-            </div>
-          </div>
-        </td>
-
-        <td style={styles.td}>{candidate.email || "No email"}</td>
-
-        <td style={styles.td}>{candidate.university || "—"}</td>
-
-        <td style={styles.td}>{candidate.programme || "—"}</td>
-
-        <td style={{ ...styles.td, textAlign: 'center' }}>
-          <span style={styles.countBadge}>{candidate.results.length}</span>
-        </td>
-
-        <td style={styles.td}>
-          {latest ? (
-            <div>
-              <span
-                style={{
-                  ...styles.scoreBadge,
-                  background: scoreStyle.bg,
-                  color: scoreStyle.color
-                }}
-              >
-                {latestScore}%
-              </span>
-              <div style={styles.progressTrack}>
-                <div
-                  style={{
-                    ...styles.progressFill,
-                    width: `${latestScore}%`,
-                    background: scoreStyle.color
-                  }}
+        {/* ============== EMAIL MODAL ============== */}
+        {emailModalOpen && emailCandidate && (
+          <div style={styles.modalBackdrop} onClick={() => setEmailModalOpen(false)}>
+            <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
+              <h2 style={styles.modalTitle}>Email Candidate</h2>
+              <p style={styles.modalSub}>
+                Sending to: <strong>{emailCandidate.full_name}</strong> ({emailCandidate.email})
+              </p>
+              
+              <div style={{ marginBottom: '16px' }}>
+                <label style={styles.inputLabel}>Subject</label>
+                <input 
+                  type="text" 
+                  placeholder="e.g. Interview Invitation - Stratavax"
+                  value={emailSubject} 
+                  onChange={e => setEmailSubject(e.target.value)}
+                  style={styles.textInput}
                 />
               </div>
-            </div>
-          ) : (
-            <span style={styles.noValue}>—</span>
-          )}
-        </td>
-
-        <td style={styles.td}>
-          <span
-            style={{
-              ...styles.statusBadge,
-              background: statusBg,
-              color: statusColor
-            }}
-          >
-            {statusText}
-          </span>
-        </td>
-
-        <td
-          style={styles.td}
-          onClick={(e) => {
-            e.stopPropagation();
-          }}
-        >
-          <div style={styles.actionGroup}>
-            {latest ? (
-              <button style={styles.actionButtonPrimary} onClick={onOpenLatest}>
-                View Latest
-              </button>
-            ) : (
-              <button style={styles.actionButtonMuted} disabled>
-                No Report
-              </button>
-            )}
-
-            {candidate.results.length > 0 && (
-              <button style={styles.expandButton} onClick={onToggleExpand}>
-                {isExpanded ? "Hide Reports" : "Show Reports"}
-              </button>
-            )}
-
-            {latest && latest.completed_at && (
-              <ResetAssessmentButton
-                candidateId={candidate.id}
-                assessmentId={latest.assessment_id}
-                assessmentName={latest.assessment_title || 'Assessment'}
-                candidateName={candidate.full_name}
-                onReset={onRefresh}
-                variant="inline"
-              />
-            )}
-          </div>
-        </td>
-      </tr>
-
-      {isExpanded && (
-        <tr>
-          <td colSpan="8" style={styles.expandCell}>
-            <div style={styles.expandPanel}>
-              <div style={styles.expandHeader}>
-                <h3 style={styles.expandTitle}>Assessment Reports</h3>
-                <span style={styles.expandSubtext}>
-                  {candidate.results.length} report{candidate.results.length === 1 ? "" : "s"} found
-                </span>
+              
+              <div style={{ marginBottom: '20px' }}>
+                <label style={styles.inputLabel}>Message</label>
+                <textarea 
+                  placeholder="Dear candidate..."
+                  value={emailMessage} 
+                  onChange={e => setEmailMessage(e.target.value)}
+                  rows={7}
+                  style={styles.textArea}
+                />
               </div>
-
-              {candidate.results.length === 0 ? (
-                <div style={styles.emptyExpand}>
-                  This candidate has no completed assessment reports yet.
-                </div>
-              ) : (
-                <div style={styles.reportList}>
-                  {candidate.results.map((result) => {
-                    const score = Math.round(toNumber(result.percentage_score, 0));
-                    const itemStyle = getScoreStyle(score);
-
-                    return (
-                      <div key={result.id} style={styles.reportCard}>
-                        <div style={styles.reportCardTop}>
-                          <div>
-                            <div style={styles.reportTitle}>
-                              {result.assessment_title || "Unnamed Assessment"}
-                            </div>
-                            <div style={styles.reportDate}>
-                              Completed: {formatDate(result.completed_at)}
-                            </div>
-                          </div>
-
-                          <span
-                            style={{
-                              ...styles.scoreBadge,
-                              background: itemStyle.bg,
-                              color: itemStyle.color
-                            }}
-                          >
-                            {score}%
-                          </span>
-                        </div>
-
-                        <div style={styles.reportMetaRow}>
-                          <span>Result ID: {result.id}</span>
-                          <span>Total Score: {toNumber(result.total_score, 0)}</span>
-                          <span>Max Score: {toNumber(result.max_score, 0)}</span>
-                        </div>
-
-                        <div style={styles.progressTrack}>
-                          <div
-                            style={{
-                              ...styles.progressFill,
-                              width: `${score}%`,
-                              background: itemStyle.color
-                            }}
-                          />
-                        </div>
-
-                        <div style={styles.reportActions}>
-                          <button
-                            style={styles.actionButtonPrimary}
-                            onClick={() => onOpenSpecific(candidate.id, result.assessment_id)}
-                          >
-                            Open Report
-                          </button>
-                          {result.completed_at && (
-                            <ResetAssessmentButton
-                              candidateId={candidate.id}
-                              assessmentId={result.assessment_id}
-                              assessmentName={result.assessment_title || 'Assessment'}
-                              candidateName={candidate.full_name}
-                              onReset={onRefresh}
-                              variant="inline"
-                            />
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+              
+              <div style={styles.modalActions}>
+                <button onClick={() => setEmailModalOpen(false)} style={styles.cancelButton}>Cancel</button>
+                <button onClick={handleSendEmail} disabled={sendingEmail} style={styles.sendButton}>
+                  {sendingEmail ? 'Sending...' : 'Send Email'}
+                </button>
+              </div>
             </div>
-          </td>
-        </tr>
-      )}
-    </>
+          </div>
+        )}
+      </div>
+    </AppLayout>
   );
 }
 
@@ -897,6 +960,7 @@ const styles = {
   actionButtonPrimary: { padding: "5px 10px", border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "11px", fontWeight: 600, color: "white", background: "#0A1929", whiteSpace: "nowrap" },
   actionButtonMuted: { padding: "5px 10px", border: "none", borderRadius: "6px", fontSize: "11px", fontWeight: 600, color: "#98A2B3", background: "#F2F4F7", cursor: "not-allowed", whiteSpace: "nowrap" },
   expandButton: { padding: "5px 10px", border: "1px solid #CBD5E1", borderRadius: "6px", cursor: "pointer", fontSize: "11px", fontWeight: 600, background: "white", color: "#334155", whiteSpace: "nowrap" },
+  emailButton: { padding: "5px 10px", border: "1px solid #2563EB", borderRadius: "6px", cursor: "pointer", fontSize: "11px", fontWeight: 600, background: "#EFF6FF", color: "#2563EB", whiteSpace: "nowrap" },
   expandCell: { padding: "0", background: "#F8FAFC" },
   expandPanel: { padding: "20px" },
   expandHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px", flexWrap: "wrap", gap: "8px" },
@@ -910,4 +974,16 @@ const styles = {
   reportDate: { fontSize: "12px", color: "#667085" },
   reportMetaRow: { display: "flex", gap: "16px", flexWrap: "wrap", fontSize: "12px", color: "#475467", marginTop: "8px" },
   reportActions: { marginTop: "12px", display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" },
+  
+  // Modal Styles
+  modalBackdrop: { position: "fixed", inset: 0, background: "rgba(10, 25, 41, 0.6)", backdropFilter: "blur(4px)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: "20px" },
+  modalContent: { background: "white", borderRadius: "16px", padding: "32px", maxWidth: "560px", width: "100%", boxShadow: "0 24px 64px rgba(0,0,0,0.3)" },
+  modalTitle: { fontSize: "22px", fontWeight: "700", color: "#0A1929", margin: "0 0 8px 0" },
+  modalSub: { fontSize: "14px", color: "#64748B", margin: "0 0 24px 0" },
+  inputLabel: { display: "block", fontSize: "13px", fontWeight: "600", color: "#334155", marginBottom: "6px" },
+  textInput: { width: "100%", padding: "12px", borderRadius: "8px", border: "1px solid #E2E8F0", fontSize: "14px", boxSizing: "border-box", outline: "none" },
+  textArea: { width: "100%", padding: "12px", borderRadius: "8px", border: "1px solid #E2E8F0", fontSize: "14px", boxSizing: "border-box", fontFamily: "inherit", resize: "vertical", outline: "none" },
+  modalActions: { display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "8px" },
+  cancelButton: { padding: "12px 24px", background: "#F1F5F9", color: "#475569", border: "none", borderRadius: "8px", fontSize: "14px", fontWeight: "600", cursor: "pointer" },
+  sendButton: { padding: "12px 32px", background: "#2563EB", color: "white", border: "none", borderRadius: "8px", fontSize: "14px", fontWeight: "600", cursor: "pointer", boxShadow: "0 4px 12px rgba(37, 99, 235, 0.25)" },
 };
