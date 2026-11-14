@@ -1,6 +1,5 @@
 // pages/supervisor/manage-candidate/[userId]/index.js
-// Phase 7A: fetches candidate detail from server-side endpoint instead of
-// reading Supabase directly. Prepares for RLS enforcement.
+// Phase 9: Added "Pending Assessments" section with Unblock buttons.
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -44,9 +43,10 @@ export default function CandidateReports() {
   const [loading, setLoading] = useState(true);
   const [candidate, setCandidate] = useState(null);
   const [reports, setReports] = useState([]);
+  const [assignments, setAssignments] = useState([]);
   const [error, setError] = useState(null);
-  const [currentSupervisor, setCurrentSupervisor] = useState(null);
   const [assignedSupervisors, setAssignedSupervisors] = useState([]);
+  const [unblockingId, setUnblockingId] = useState(null);
 
   useEffect(() => {
     if (!router.isReady || !userId) return;
@@ -68,30 +68,12 @@ export default function CandidateReports() {
 
       const token = session.access_token;
 
-      // Load current supervisor identity for the header (own row read)
-      const { data: profile, error: profileError } = await supabase
-        .from('supervisor_profiles')
-        .select('id, full_name, email, role')
-        .eq('id', session.user.id)
-        .maybeSingle();
-
-      if (profileError) {
-        setError('Unable to verify your account.');
-        setLoading(false);
-        return;
-      }
-
-      setCurrentSupervisor(profile);
-
-      // Load candidate detail via API (server-side, scoped)
+      // 1. Load candidate detail AND completed reports
       const response = await fetch(
         `/api/supervisor/manage-candidates/${encodeURIComponent(userId)}/detail`,
         {
           method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
         }
       );
 
@@ -103,30 +85,66 @@ export default function CandidateReports() {
       }
 
       if (!response.ok || !payload.success) {
-        if (response.status === 403) {
-          throw new Error(payload.error || 'You do not have permission to view this candidate.');
-        }
-        if (response.status === 404) {
-          throw new Error(payload.error || 'Candidate not found.');
-        }
-        throw new Error(payload.error || `Failed to load candidate (HTTP ${response.status}).`);
+        throw new Error(payload.error || 'Failed to load candidate.');
       }
 
-      const candidateData = payload.candidate || null;
-      if (!candidateData) {
-        setError('Candidate not found.');
-        setLoading(false);
-        return;
-      }
-
-      setCandidate(candidateData);
+      setCandidate(payload.candidate || null);
       setReports(Array.isArray(payload.reports) ? payload.reports : []);
       setAssignedSupervisors(Array.isArray(payload.assignedSupervisors) ? payload.assignedSupervisors : []);
+
+      // 2. Fetch candidate assignments (to see pending/blocked ones)
+      const assignRes = await fetch(`/api/supervisor/candidate-assignments?action=load&candidateId=${userId}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const assignData = await assignRes.json();
+      
+      if (assignData.success) {
+        const assignmentMap = {};
+        assignData.assigned.forEach(a => { assignmentMap[a.assessment_id] = a; });
+        
+        const combined = assignData.assessments
+          .filter(a => assignmentMap[a.id])
+          .map(a => ({
+            ...assignmentMap[a.id],
+            assessment_title: a.title,
+            assessment_id: a.id,
+            isCompleted: assignmentMap[a.id].status === 'completed'
+          }));
+          
+        setAssignments(combined);
+      }
+
     } catch (error) {
-      console.error('Error loading candidate reports:', error);
+      console.error('Error loading data:', error);
       setError(error.message || 'Failed to load data.');
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleUnblock(assessmentId) {
+    setUnblockingId(assessmentId);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
+
+      const res = await fetch('/api/supervisor/unblock-assessment', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        // 👇 The unblock endpoint expects `userId`, not `candidateId`
+        body: JSON.stringify({ userId: userId, assessmentId })
+      });
+      
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || data.message);
+
+      const emailMsg = data.emailSent ? ' Candidate has been notified via email.' : '';
+      alert('Assessment unlocked successfully.' + emailMsg);
+      await loadData();
+    } catch (err) {
+      alert('Failed to unblock: ' + err.message);
+    } finally {
+      setUnblockingId(null);
     }
   }
 
@@ -141,66 +159,21 @@ export default function CandidateReports() {
     });
   };
 
-  const handleBack = () => {
-    router.push('/supervisor/manage-candidate');
-  };
+  if (loading) return <AppLayout><div style={styles.loadingContainer}><div style={styles.spinner} /><p>Loading...</p></div></AppLayout>;
+  if (error) return <AppLayout><div style={styles.errorContainer}><h2>Error</h2><p>{error}</p><button onClick={loadData} style={styles.errorButton}>Retry</button></div></AppLayout>;
+  if (!candidate) return <AppLayout><div style={styles.errorContainer}><h2>Not Found</h2><button onClick={() => router.push('/supervisor/manage-candidate')} style={styles.errorButton}>Go Back</button></div></AppLayout>;
 
-  const handleRetry = () => {
-    loadData();
-  };
-
-  if (loading) {
-    return (
-      <AppLayout>
-        <div style={styles.loadingContainer}>
-          <div style={styles.spinner} />
-          <p>Loading reports...</p>
-        </div>
-      </AppLayout>
-    );
-  }
-
-  if (error) {
-    return (
-      <AppLayout>
-        <div style={styles.errorContainer}>
-          <div style={styles.errorIcon}>⚠️</div>
-          <h2>Error Loading Reports</h2>
-          <p style={styles.errorMessage}>{error}</p>
-          <div style={styles.errorButtonGroup}>
-            <button onClick={handleBack} style={styles.errorButton}>Go Back</button>
-            <button onClick={handleRetry} style={styles.retryButton}>Retry</button>
-          </div>
-        </div>
-      </AppLayout>
-    );
-  }
-
-  if (!candidate) {
-    return (
-      <AppLayout>
-        <div style={styles.errorContainer}>
-          <div style={styles.errorIcon}>👤</div>
-          <h2>Candidate Not Found</h2>
-          <p style={styles.errorMessage}>The candidate you are looking for does not exist.</p>
-          <button onClick={handleBack} style={styles.errorButton}>Go Back</button>
-        </div>
-      </AppLayout>
-    );
-  }
+  const pendingAssignments = assignments.filter(a => a.status === 'blocked');
+  const activeAssignments = assignments.filter(a => a.status === 'unblocked');
 
   return (
     <AppLayout>
       <div style={styles.container}>
         <div style={styles.header}>
-          <button onClick={handleBack} style={styles.backButton}>
+          <button onClick={() => router.push('/supervisor/manage-candidate')} style={styles.backButton}>
             ← Back to Candidates
           </button>
-          <div style={styles.headerActions}>
-            <button onClick={handleRetry} style={styles.refreshButton}>
-              🔄 Refresh
-            </button>
-          </div>
+          <button onClick={loadData} style={styles.refreshButton}>🔄 Refresh</button>
         </div>
 
         <div style={styles.candidateCard}>
@@ -214,23 +187,65 @@ export default function CandidateReports() {
               <div style={styles.candidateDetails}>
                 <span style={styles.detailTag}>🏫 {candidate.university || 'Not Specified'}</span>
                 <span style={styles.detailTag}>📚 {candidate.programme || 'Not Specified'}</span>
-                <span style={styles.detailTag}>📅 {candidate.created_at ? new Date(candidate.created_at).toLocaleDateString() : 'N/A'}</span>
               </div>
             </div>
           </div>
-          {assignedSupervisors.length > 0 && (
-            <div style={styles.assignedSupervisors}>
-              <span style={styles.assignedLabel}>Assigned Supervisors:</span>
-              {assignedSupervisors.map((sup, index) => (
-                <span key={sup.id} style={styles.supervisorTag}>
-                  {sup.full_name || sup.email}
-                  {index < assignedSupervisors.length - 1 && ', '}
-                </span>
-              ))}
-            </div>
-          )}
         </div>
 
+        {/* =========================================
+            PENDING ASSIGNMENTS (Blocked)
+            ========================================= */}
+        {pendingAssignments.length > 0 && (
+          <div style={{...styles.reportsSection, background: '#fff7ed', borderColor: '#fed7aa', borderStyle: 'solid', borderWidth: '1px'}}>
+            <h2 style={{...styles.sectionTitle, color: '#c2410c'}}>⏳ Pending Assignments (Blocked)</h2>
+            <p style={{fontSize: '13px', color: '#9a3412', marginBottom: '16px'}}>These assessments are assigned but blocked. Candidates cannot start them until you unblock them.</p>
+            <div style={styles.reportGrid}>
+              {pendingAssignments.map((assignment) => (
+                <div key={assignment.id} style={{...styles.reportCard, borderColor: '#fed7aa', background: '#ffffff'}}>
+                  <div style={styles.reportHeader}>
+                    <h3 style={styles.reportTitle}>{assignment.assessment_title}</h3>
+                    <span style={{...styles.statusBadge, background: '#f97316'}}>Blocked</span>
+                  </div>
+                  <div style={styles.reportFooter}>
+                    <button 
+                      onClick={() => handleUnblock(assignment.assessment_id)} 
+                      disabled={unblockingId === assignment.assessment_id}
+                      style={{...styles.viewButton, background: '#16a34a'}}
+                    >
+                      {unblockingId === assignment.assessment_id ? 'Unblocking...' : '🔓 Unblock & Notify Candidate'}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* =========================================
+            ACTIVE ASSIGNMENTS (Ready to Start)
+            ========================================= */}
+        {activeAssignments.length > 0 && (
+          <div style={{...styles.reportsSection, background: '#eff6ff', borderColor: '#bfdbfe', borderStyle: 'solid', borderWidth: '1px', marginTop: '20px'}}>
+            <h2 style={{...styles.sectionTitle, color: '#1e40af'}}>📋 Ready to Start (Unblocked)</h2>
+            <div style={styles.reportGrid}>
+              {activeAssignments.map((assignment) => (
+                <div key={assignment.id} style={{...styles.reportCard, borderColor: '#bfdbfe'}}>
+                  <div style={styles.reportHeader}>
+                    <h3 style={styles.reportTitle}>{assignment.assessment_title}</h3>
+                    <span style={{...styles.statusBadge, background: '#4299e1'}}>Ready</span>
+                  </div>
+                  <div style={styles.reportFooter}>
+                    <p style={{fontSize: '12px', color: '#64748b', margin: 0}}>Candidate has been notified.</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* =========================================
+            COMPLETED REPORTS
+            ========================================= */}
         <div style={styles.reportsSection}>
           <h2 style={styles.sectionTitle}>Assessment Reports ({reports.length})</h2>
 
@@ -249,20 +264,14 @@ export default function CandidateReports() {
                 >
                   <div style={styles.reportHeader}>
                     <h3 style={styles.reportTitle}>{report.assessment_title}</h3>
-                    <span style={{
-                      ...styles.statusBadge,
-                      background: getStatusColor(report.status)
-                    }}>
+                    <span style={{...styles.statusBadge, background: getStatusColor(report.status)}}>
                       {report.status}
                     </span>
                   </div>
                   <div style={styles.reportBody}>
                     <div style={styles.reportScore}>
                       {report.isCompleted && report.score > 0 ? (
-                        <span style={{
-                          ...styles.scoreBadge,
-                          background: getScoreColor(report.score)
-                        }}>
+                        <span style={{...styles.scoreBadge, background: getScoreColor(report.score)}}>
                           {report.score}%
                         </span>
                       ) : (
@@ -274,26 +283,12 @@ export default function CandidateReports() {
                     </div>
                   </div>
                   <div style={styles.reportFooter}>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleOpenReport(report.id);
-                      }}
-                      style={styles.viewButton}
-                    >
+                    <button onClick={(e) => { e.stopPropagation(); handleOpenReport(report.id); }} style={styles.viewButton}>
                       View Report Details →
                     </button>
-
                     {report.isCompleted && (
                       <div style={{ marginTop: '8px' }}>
-                        <ResetAssessmentButton
-                          candidateId={userId}
-                          assessmentId={report.assessment_id}
-                          assessmentName={report.assessment_title}
-                          candidateName={candidate?.full_name}
-                          onReset={loadData}
-                          variant="inline"
-                        />
+                        <ResetAssessmentButton candidateId={userId} assessmentId={report.assessment_id} assessmentName={report.assessment_title} candidateName={candidate?.full_name} onReset={loadData} variant="inline" />
                       </div>
                     )}
                   </div>
@@ -303,13 +298,7 @@ export default function CandidateReports() {
           )}
         </div>
       </div>
-
-      <style jsx>{`
-        @keyframes spin {
-          0% { transform: rotate(0deg); }
-          100% { transform: rotate(360deg); }
-        }
-      `}</style>
+      <style jsx>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
     </AppLayout>
   );
 }
@@ -319,13 +308,8 @@ const styles = {
   loadingContainer: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '400px', gap: '16px' },
   spinner: { width: '40px', height: '40px', border: '4px solid #E2E8F0', borderTop: '4px solid #0A1929', borderRadius: '50%', animation: 'spin 1s linear infinite' },
   errorContainer: { maxWidth: '500px', margin: '40px auto', textAlign: 'center', padding: '40px', background: 'white', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.1)' },
-  errorIcon: { fontSize: '48px', marginBottom: '16px' },
-  errorMessage: { color: '#dc2626', marginBottom: '20px' },
-  errorButtonGroup: { display: 'flex', gap: '8px', justifyContent: 'center', marginTop: '16px' },
-  errorButton: { padding: '10px 24px', background: '#1a237e', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', fontWeight: '500' },
-  retryButton: { padding: '10px 24px', background: '#e2e8f0', color: '#1a202c', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', fontWeight: '500' },
+  errorButton: { padding: '10px 24px', background: '#1a237e', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', fontWeight: '500', marginTop: '16px' },
   header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' },
-  headerActions: { display: 'flex', gap: '10px' },
   backButton: { padding: '8px 16px', background: 'transparent', border: '1px solid #e2e8f0', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', color: '#475569' },
   refreshButton: { padding: '8px 16px', background: '#e2e8f0', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', color: '#475569' },
   candidateCard: { background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' },
@@ -336,10 +320,7 @@ const styles = {
   candidateEmail: { fontSize: '14px', color: '#718096', margin: '0 0 8px 0' },
   candidateDetails: { display: 'flex', gap: '12px', flexWrap: 'wrap' },
   detailTag: { fontSize: '13px', color: '#4A5568', background: '#f7fafc', padding: '4px 12px', borderRadius: '16px' },
-  assignedSupervisors: { marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #eef2f7', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '4px' },
-  assignedLabel: { fontSize: '13px', fontWeight: '600', color: '#475569', marginRight: '8px' },
-  supervisorTag: { fontSize: '13px', color: '#2563EB', background: '#eff6ff', padding: '2px 10px', borderRadius: '12px' },
-  reportsSection: { background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' },
+  reportsSection: { background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', marginBottom: '20px' },
   sectionTitle: { fontSize: '18px', fontWeight: '600', color: '#0A1929', margin: '0 0 16px 0' },
   reportGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' },
   reportCard: { background: '#f8fafc', borderRadius: '12px', padding: '16px', border: '1px solid #e2e8f0', cursor: 'pointer', transition: 'all 0.2s ease' },
@@ -352,7 +333,7 @@ const styles = {
   statusBadge: { padding: '4px 12px', borderRadius: '20px', fontSize: '11px', fontWeight: '600', color: 'white', whiteSpace: 'nowrap' },
   scoreBadge: { display: 'inline-block', padding: '4px 12px', borderRadius: '12px', fontSize: '16px', fontWeight: '700', color: 'white' },
   noScoreBadge: { display: 'inline-block', padding: '4px 12px', borderRadius: '12px', fontSize: '16px', fontWeight: '500', color: '#94a3b8', background: '#f1f5f9' },
-  viewButton: { padding: '6px 16px', background: '#2563EB', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: '500', width: '100%' },
+  viewButton: { padding: '8px 16px', background: '#2563EB', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: '600', width: '100%' },
   emptyState: { textAlign: 'center', padding: '40px 20px', color: '#94a3b8' },
   emptyIcon: { fontSize: '48px', display: 'block', marginBottom: '16px' }
 };
