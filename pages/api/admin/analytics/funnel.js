@@ -1,6 +1,7 @@
 // pages/api/admin/analytics/funnel.js
 // Phase 6 Extension: Assessment Completion Funnel Analytics.
-// Uses defensive filtering to exclude legacy pre-Phase-8 data.
+// Phase 9 (2026-11-14): Smarter engagement time calc — excludes
+//   sessions with < 60s tracked time (broken legacy data).
 
 import { createClient } from "@supabase/supabase-js";
 
@@ -60,7 +61,7 @@ export default async function handler(req, res) {
     const totalStarted = cleanSessions.length;
     const completed = cleanSessions.filter(s => s.status === "completed");
     const inProgress = cleanSessions.filter(s => s.status === "in_progress");
-    const abandoned = cleanSessions.filter(s => s.status === "in_progress" && 
+    const abandoned = cleanSessions.filter(s => s.status === "in_progress" &&
       s.started_at && new Date(s.started_at) < new Date(Date.now() - 24 * 60 * 60 * 1000));
     const completedCount = completed.length;
     const inProgressCount = inProgress.length;
@@ -71,14 +72,12 @@ export default async function handler(req, res) {
     inProgress.forEach(s => {
       const idx = s.current_question_index || 0;
       if (idx > 0) {
-        // Bucket into ranges of 10 for cleaner visualization
         const bucket = Math.floor(idx / 10) * 10;
         const label = `Q${bucket + 1}-${bucket + 10}`;
         stopPositions[label] = (stopPositions[label] || 0) + 1;
       }
     });
 
-    // Convert to sorted array
     const abandonmentChart = Object.keys(stopPositions)
       .sort((a, b) => {
         const numA = parseInt(a.replace(/[^\d]/g, ""), 10);
@@ -87,25 +86,37 @@ export default async function handler(req, res) {
       })
       .map(label => ({ range: label, count: stopPositions[label] }));
 
-    // 5. Engagement time — use time_spent_seconds, fallback to total_time_spent
-    const completedWithTime = completed.filter(s => 
-      (Number(s.time_spent_seconds) > 0) || (Number(s.total_time_spent) > 0)
-    );
+    // 5. Engagement time
+    // Uses time_spent_seconds (correct for new sessions after Phase 9)
+    // OR total_time_spent (mostly correct for pre-fix sessions).
+    // EXCLUDES sessions with both < 60s (broken tracking).
+    const sessionsWithValidTime = completed.filter(s => {
+      const seconds = Math.max(
+        Number(s.time_spent_seconds) || 0,
+        Number(s.total_time_spent) || 0
+      );
+      return seconds >= 60;
+    });
 
-    const avgEngagementSeconds = completedWithTime.length > 0
-      ? completedWithTime.reduce((sum, s) => {
-          const seconds = Number(s.time_spent_seconds) || Number(s.total_time_spent) || 0;
-          return sum + seconds;
-        }, 0) / completedWithTime.length
+    const avgEngagementSeconds = sessionsWithValidTime.length > 0
+      ? sessionsWithValidTime.reduce((sum, s) => {
+          return sum + Math.max(
+            Number(s.time_spent_seconds) || 0,
+            Number(s.total_time_spent) || 0
+          );
+        }, 0) / sessionsWithValidTime.length
       : 0;
 
     const avgEngagementMinutes = (avgEngagementSeconds / 60).toFixed(1);
 
     // 6. Data health
-    const sessionsWithZeroTime = completed.filter(s => 
-      (Number(s.time_spent_seconds) || 0) === 0 && 
-      (Number(s.total_time_spent) || 0) === 0
-    ).length;
+    const sessionsWithZeroTime = completed.filter(s => {
+      const seconds = Math.max(
+        Number(s.time_spent_seconds) || 0,
+        Number(s.total_time_spent) || 0
+      );
+      return seconds < 60;
+    }).length;
 
     const dataHealthWarning = completed.length > 0 && (sessionsWithZeroTime / completed.length) > 0.1;
 
